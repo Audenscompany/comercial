@@ -410,6 +410,32 @@ function startRealtimeSync(){
     }
   });
 
+  // Sync daily_map in realtime (leads extras gerados)
+  fbDb.ref('daily_map').on('value', function(snap){
+    var fbDaily = snap.val();
+    if(!fbDaily) return;
+    var prevKeys = JSON.stringify(Object.keys(_dailyMap).sort());
+    var nextKeys = JSON.stringify(Object.keys(fbDaily).sort());
+    if(prevKeys !== nextKeys || JSON.stringify(_dailyMap) !== JSON.stringify(fbDaily)){
+      _dailyMap = fbDaily;
+      localStorage.setItem('audens_daily', JSON.stringify(_dailyMap));
+      var area = document.getElementById('content');
+      var pg = area ? area.getAttribute('data-page') : null;
+      if(pg==='ligar') showPage('ligar');
+    }
+  });
+
+  // Sync config (goals, investido, meta_comercial, sheets)
+  fbDb.ref('config').on('value', function(snap){
+    var cfg = snap.val();
+    if(!cfg) return;
+    if(cfg.goals){ goals=cfg.goals; localStorage.setItem('audens_goals',JSON.stringify(goals)); }
+    if(cfg.investido){ _investidoMes=cfg.investido; localStorage.setItem('audens_inv',JSON.stringify(_investidoMes)); }
+    if(cfg.meta_comercial){ _metaComercial=cfg.meta_comercial; localStorage.setItem('audens_mcom',JSON.stringify(_metaComercial)); }
+    if(cfg.sheets_ids){ SHEETS_IDS=Object.assign(SHEETS_IDS,cfg.sheets_ids); localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS)); }
+    if(cfg.sheets_gids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,cfg.sheets_gids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
+  });
+
   // Sync meta token — shared across devices (gestor only writes, all can read)
   fbDb.ref('meta_token').on('value', function(snap){
     var fbMeta = snap.val();
@@ -534,12 +560,6 @@ function saveAll(){
     localStorage.setItem('audens_leads',JSON.stringify(allLeads));
     localStorage.setItem('audens_meetings',JSON.stringify(meetings));
     localStorage.setItem('audens_followups',JSON.stringify(followups));
-    // Also sync to Firebase if connected
-    if(fbDb){
-      try{
-        fbDb.ref('followups').set(followups);
-      }catch(e){}
-    }
     localStorage.setItem('audens_goals',JSON.stringify(goals));
     if(gcalClientId)localStorage.setItem('audens_gcal_id',gcalClientId);
     if(gcalToken)localStorage.setItem('audens_gcal_token',JSON.stringify(gcalToken));
@@ -550,6 +570,18 @@ function saveAll(){
     if(metaAppId)localStorage.setItem('audens_meta_app',metaAppId);
     if(metaAccountId)localStorage.setItem('audens_meta_acc',metaAccountId);
     if(metaToken)localStorage.setItem('audens_meta_token',JSON.stringify(metaToken));
+    // Sync to Firebase
+    if(fbDb){
+      try{
+        fbDb.ref('followups').set(followups);
+        fbDb.ref('daily_map').set(_dailyMap);
+        fbDb.ref('config/goals').set(goals);
+        fbDb.ref('config/investido').set(_investidoMes);
+        fbDb.ref('config/meta_comercial').set(_metaComercial);
+        fbDb.ref('config/sheets_ids').set(SHEETS_IDS);
+        fbDb.ref('config/sheets_gids').set(SHEETS_GIDS);
+      }catch(e){}
+    }
   }catch(e){}
 }
 loadStorage();
@@ -987,6 +1019,24 @@ function showMain(){
           localStorage.setItem('audens_leads', JSON.stringify(allLeads));
         }
       }
+    }),
+    fbGet('daily_map').then(function(fbDaily){
+      if(fbDaily){ _dailyMap=fbDaily; localStorage.setItem('audens_daily',JSON.stringify(_dailyMap)); }
+    }),
+    fbGet('config/goals').then(function(fbGoals){
+      if(fbGoals){ goals=fbGoals; localStorage.setItem('audens_goals',JSON.stringify(goals)); }
+    }),
+    fbGet('config/investido').then(function(fbInv){
+      if(fbInv){ _investidoMes=fbInv; localStorage.setItem('audens_inv',JSON.stringify(_investidoMes)); }
+    }),
+    fbGet('config/meta_comercial').then(function(fbMcom){
+      if(fbMcom){ _metaComercial=fbMcom; localStorage.setItem('audens_mcom',JSON.stringify(_metaComercial)); }
+    }),
+    fbGet('config/sheets_ids').then(function(fbSids){
+      if(fbSids){ SHEETS_IDS=Object.assign(SHEETS_IDS,fbSids); localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS)); }
+    }),
+    fbGet('config/sheets_gids').then(function(fbSgids){
+      if(fbSgids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,fbSgids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
     })
   ]).then(function(){
     // Load meta token from Firebase
@@ -1356,6 +1406,36 @@ function mergeAndSave(allParsed,log){
 
 // ===== LIGAR =====
 var _curCallIdx=null,_callStep=1,_callData={};
+var _extraLeadsTotal=0; // tracks extra leads added today
+
+// ===== LEADS EXTRAS =====
+function gerarLeadsExtras(qtd){
+  var hoje = todayStr();
+  var dl = getDailyLeads()||[];
+  var usedTels = new Set(dl.map(function(l){return (l.telefone||'').replace(/\D/g,'');}));
+  // Buscar leads não usados hoje
+  var disponiveis = allLeads.filter(function(l){
+    return !usedTels.has((l.telefone||'').replace(/\D/g,''));
+  });
+  if(!disponiveis.length){
+    alert('Não há mais leads disponíveis na base.');
+    return;
+  }
+  var novos = disponiveis.sort(function(){return Math.random()-.5;}).slice(0,qtd);
+  // Adicionar ao mapa do dia
+  if(!_dailyMap[hoje]) _dailyMap[hoje]=[];
+  novos.forEach(function(l){ _dailyMap[hoje].push(l.telefone); });
+  _extraLeadsTotal += novos.length;
+  saveAll();
+  showPage('ligar');
+}
+
+function checkLeadsConcluidos(){
+  var dl = getDailyLeads()||[];
+  if(!dl.length) return false;
+  var done = dl.filter(function(l){return calls[l.telefone];}).length;
+  return done >= dl.length;
+}
 function renderLigar(){
   var check=checkDay(new Date());
   if(!check.ok){
@@ -1394,6 +1474,17 @@ function renderLigar(){
       '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);">'+pct+'% concluido</span>'+
       '<div style="width:200px;"><div class="prog-wrap"><div class="prog-fill" style="width:'+pct+'%;background:var(--green);"></div></div></div>'+
     '</div>'+
+    // Todos concluídos — mostrar banner de parabéns + botão de mais leads
+    (done >= dl.length && dl.length > 0 ?
+      '<div style="background:linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04));border:1.5px solid rgba(34,197,94,0.4);border-radius:12px;padding:24px;margin:16px;text-align:center;">'+
+        '<div style="font-size:48px;margin-bottom:12px;">🏆</div>'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;letter-spacing:2px;color:var(--green);margin-bottom:6px;">PARABÉNS, '+((CU&&CU.name)||'VOCÊ').toUpperCase().split(' ')[0]+'!</div>'+
+        '<div style="font-family:var(--font-bc),sans-serif;font-size:15px;color:var(--muted);margin-bottom:20px;">Você completou todos os '+dl.length+' leads do dia!'+(_extraLeadsTotal?' (incluindo '+_extraLeadsTotal+' extras)':'')+'</div>'+
+        '<button class="btn btn-primary" onclick="gerarLeadsExtras(10)" style="padding:14px 32px;font-size:16px;letter-spacing:2px;">'+
+          '<i class="ti ti-plus"></i> GERAR MAIS 10 LEADS'+
+        '</button>'+
+      '</div>'
+    : '')+
     '<div class="t-scroll"><table><thead><tr><th>#</th><th>Nome</th><th>Telefone</th><th>Cidade</th><th>Status</th><th>Acao</th></tr></thead><tbody>'+
     dl.map(function(l,i){
       var reg=calls[l.telefone];
