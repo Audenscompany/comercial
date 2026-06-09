@@ -976,6 +976,15 @@ function showMain(){
     }),
     fbGet('followups').then(function(fbFollowups){
       if(fbFollowups){Object.assign(followups, fbFollowups);saveAll();}
+    }),
+    fbGet('leads').then(function(fbLeads){
+      if(fbLeads){
+        var arr = Array.isArray(fbLeads) ? fbLeads : Object.values(fbLeads);
+        if(arr.length > allLeads.length){
+          allLeads = arr;
+          localStorage.setItem('audens_leads', JSON.stringify(allLeads));
+        }
+      }
     })
   ]).then(function(){
     // Load meta token from Firebase
