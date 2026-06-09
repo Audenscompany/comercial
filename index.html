@@ -398,10 +398,12 @@ function startRealtimeSync(){
   fbDb.ref('tarefas_dia').on('value', function(snap){
     var fbTarefas = snap.val();
     var arr = fbTarefas ? Object.values(fbTarefas) : [];
-    var prev = localStorage.getItem('tarefas_dia')||'[]';
-    var next = JSON.stringify(arr);
-    if(next !== prev){
-      localStorage.setItem('tarefas_dia', next);
+    var localArr = JSON.parse(localStorage.getItem('tarefas_dia')||'[]');
+    // Compare by IDs+done state to avoid false positives from JSON ordering
+    var fbIds = arr.map(function(t){return t.id+'|'+t.done+'|'+t.doneDate;}).sort().join(',');
+    var lcIds = localArr.map(function(t){return t.id+'|'+t.done+'|'+t.doneDate;}).sort().join(',');
+    if(fbIds !== lcIds){
+      localStorage.setItem('tarefas_dia', JSON.stringify(arr));
       var area = document.getElementById('content');
       var pg = area ? area.getAttribute('data-page') : null;
       if(pg==='tarefas-dia') showPage('tarefas-dia');
@@ -2266,8 +2268,7 @@ function buildHistoricoMensal(todosClientes){
     todosClientes.forEach(function(c){
       var dInicio = parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
       var dCancel = parseBRDate(col(c,['DATA DE CANCELAMENTO','Data de Cancelamento','DATA CANCELAMENTO','Data Cancelamento']));
-      var valorMes = parseMoney(col(c,['VALOR MENSALIDADE','VALOR MÊS','VALOR MES','Valor Mensalidade','Valor Mes','VALOR MENSAL','Valor Mensal']));
-      if(!valorMes) valorMes = parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido','VALOR VENDIDO']));
+      var valorMes = parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes','VALOR MENSALIDADE','VALOR MÊS','VALOR MES','Valor Mensalidade','Valor Mensal']));
 
       // Novo neste mês
       if(dInicio && dInicio >= inicioMes && dInicio <= fimMes) novos++;
@@ -2834,12 +2835,13 @@ function addTarefa(){
     proximaData: recorrente ? nextRecurrenceAfter(diasSemana, todayStr()) || todayStr() : null
   };
 
-  saveTarefaFB(nova);
+  // Optimistic local update — Firebase listener will re-render
   var tarefas = getTarefasLocal();
   tarefas.push(nova);
   localStorage.setItem('tarefas_dia', JSON.stringify(tarefas));
   txt.value='';
-  showPage('tarefas-dia');
+  showPage('tarefas-dia'); // render immediately
+  saveTarefaFB(nova); // then sync to Firebase (listener will NOT re-render since local already matches)
 }
 
 function concluirTarefa(id){
