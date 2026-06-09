@@ -1521,7 +1521,7 @@ async function saveCallFinalAsync(){
   var mid='m_'+Date.now();
   var meeting={id:mid,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
     status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||''};
-  meetings[mid]=meeting;saveAll();
+  meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
   // Grava ligação + reunião no Google Sheets
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
   var btn=document.querySelector('#mc-body .btn-primary');
@@ -1529,13 +1529,21 @@ async function saveCallFinalAsync(){
   var result=await createGcalEvent(meeting);
   if(result.success){
     meetings[mid].gcalEventId=result.eventId;meetings[mid].meetLink=result.meetLink;meetings[mid].gcalLink=result.htmlLink;
-    saveAll();closeModal('modal-call');showPage('ligar');
+    saveAll();saveMeetingFB(mid,meetings[mid]);closeModal('modal-call');showPage('ligar');
     setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
   }else{closeModal('modal-call');showPage('ligar');}
 }
 async function saveCallFinal(){
   var dl=getDailyLeads()||[],l=dl[_curCallIdx];
   calls[l.telefone]={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
+  // Se agendou reunião, salva no Firebase também
+  if(_callData.agendou){
+    var mid2='m_'+Date.now();
+    var mtg2={id:mid2,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
+      status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||''};
+    meetings[mid2]=mtg2;
+    saveMeetingFB(mid2,mtg2);
+  }
   saveAll();
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
   saveCallFB(l.telefone, {nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''});
