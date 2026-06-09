@@ -774,7 +774,7 @@ async function testSheetsConnection(){
   if(btn){btn.textContent='Testar Conexao';btn.disabled=false;}
 }
 async function fetchSheetVals(sheetId,gid){
-  if(!isGcalConnected())return null;
+  if(!isGcalConnected()) throw new Error('Token do Google expirado. Reconecte em Configurações.');
   try{
     if(!_sheetsMeta[sheetId+'_fetched']){
       var mr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'?fields=sheets.properties',
@@ -794,7 +794,7 @@ async function fetchSheetVals(sheetId,gid){
     var r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(tabName),
       {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
     var d=await r.json();
-    if(d.error){console.error('Sheets err',sheetId,tabName,d.error);return null;}
+    if(d.error){console.error('Sheets err',sheetId,tabName,d.error);throw new Error('Planilha: '+JSON.stringify(d.error.message||d.error));}
     return d.values||[];
   }catch(e){console.error('fetchSheetVals',e);return null;}
 }
@@ -2223,7 +2223,111 @@ function buildDashComHTML(data){
       '</tbody></table></div></div>';
   }
 
+  // ===== EVOLUÇÃO MENSAL =====
+  var historicoHtml = buildHistoricoMensal(todosClientes);
+  html += historicoHtml;
+
   return html;
+}
+
+// Calcula evolução mensal: novos clientes, cancelamentos, ativos, churn, MRR
+function buildHistoricoMensal(todosClientes){
+  if(!todosClientes||todosClientes.length===0) return '';
+
+  // Coletar todos os meses com atividade
+  var mesesSet = {};
+  todosClientes.forEach(function(c){
+    var dInicio = parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+    var dCancel = parseBRDate(col(c,['DATA DE CANCELAMENTO','Data de Cancelamento','DATA CANCELAMENTO','Data Cancelamento']));
+    if(dInicio) mesesSet[periodStr(dInicio)] = true;
+    if(dCancel) mesesSet[periodStr(dCancel)] = true;
+  });
+
+  // Sort meses desc (mais recente primeiro)
+  var meses = Object.keys(mesesSet).sort(function(a,b){
+    // format: MM/YYYY
+    var pa=a.split('/'), pb=b.split('/');
+    var da=new Date(parseInt(pa[1]),parseInt(pa[0])-1,1);
+    var db=new Date(parseInt(pb[1]),parseInt(pb[0])-1,1);
+    return db-da;
+  }).slice(0,12); // últimos 12 meses
+
+  if(meses.length===0) return '';
+
+  // Para cada mês calcular métricas
+  var rows = meses.map(function(mes){
+    var partes = mes.split('/');
+    var mesNum = parseInt(partes[0]), ano = parseInt(partes[1]);
+    var inicioMes = new Date(ano, mesNum-1, 1);
+    var fimMes = new Date(ano, mesNum, 0, 23, 59, 59);
+
+    var novos = 0, cancelamentos = 0, mrr = 0, ativosNoFim = 0;
+
+    todosClientes.forEach(function(c){
+      var dInicio = parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+      var dCancel = parseBRDate(col(c,['DATA DE CANCELAMENTO','Data de Cancelamento','DATA CANCELAMENTO','Data Cancelamento']));
+      var valorMes = parseMoney(col(c,['VALOR MENSALIDADE','VALOR MÊS','VALOR MES','Valor Mensalidade','Valor Mes','VALOR MENSAL','Valor Mensal']));
+      if(!valorMes) valorMes = parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido','VALOR VENDIDO']));
+
+      // Novo neste mês
+      if(dInicio && dInicio >= inicioMes && dInicio <= fimMes) novos++;
+
+      // Cancelou neste mês
+      if(dCancel && dCancel >= inicioMes && dCancel <= fimMes) cancelamentos++;
+
+      // Ativo no fim do mês = iniciou antes ou durante E (não cancelou OU cancelou depois)
+      var ativoNoFim = dInicio && dInicio <= fimMes && (!dCancel || dCancel > fimMes);
+      if(ativoNoFim){
+        ativosNoFim++;
+        mrr += valorMes;
+      }
+    });
+
+    // Ativos no início do mês
+    var ativosNoInicio = ativosNoFim - novos + cancelamentos;
+    var churn = ativosNoInicio > 0 ? (cancelamentos / ativosNoInicio * 100) : 0;
+
+    // Label mês
+    var nomesMes = ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'];
+    var label = nomesMes[mesNum-1]+'/'+String(ano).slice(2);
+
+    return {label:label, novos:novos, cancelamentos:cancelamentos, ativos:ativosNoFim, churn:churn, mrr:mrr};
+  });
+
+  // Build table
+  var tbody = rows.map(function(r){
+    var churnCor = r.churn > 25 ? 'var(--red)' : r.churn > 10 ? 'var(--amber)' : 'var(--green)';
+    var cancelCor = r.cancelamentos > 10 ? 'rgba(239,68,68,0.25)' : r.cancelamentos > 5 ? 'rgba(245,158,11,0.15)' : 'transparent';
+    var novosCor = r.novos >= 20 ? 'rgba(34,197,94,0.2)' : r.novos >= 10 ? 'rgba(34,197,94,0.1)' : 'transparent';
+    var mrrFmt = r.mrr >= 1000 ? 'R$ '+r.mrr.toLocaleString('pt-BR',{maximumFractionDigits:0}) : 'R$ '+r.mrr.toFixed(0);
+    return '<tr>'+
+      '<td style="font-family:Barlow Condensed,sans-serif;font-weight:700;color:var(--white);white-space:nowrap;">'+r.label+'</td>'+
+      '<td style="background:'+novosCor+';color:var(--white);font-weight:700;text-align:center;">'+r.novos+'</td>'+
+      '<td style="background:'+cancelCor+';color:var(--white);font-weight:700;text-align:center;">'+r.cancelamentos+'</td>'+
+      '<td style="color:var(--cyan);font-weight:700;text-align:center;">'+r.ativos+'</td>'+
+      '<td style="color:'+churnCor+';font-weight:700;text-align:center;">'+r.churn.toFixed(2).replace('.',',')+'%</td>'+
+      '<td style="color:var(--green);font-weight:700;text-align:right;">'+mrrFmt+'</td>'+
+    '</tr>';
+  }).join('');
+
+  return '<div class="cb" style="margin-bottom:16px;">'+
+    '<div class="cb-hd">'+
+      '<div class="cb-title"><i class="ti ti-calendar-stats" style="color:var(--purple3);margin-right:6px;"></i>Evolução Mensal · Últimos 12 Meses</div>'+
+    '</div>'+
+    '<div style="overflow-x:auto;padding:0;">'+
+      '<table style="width:100%;border-collapse:collapse;">'+
+        '<thead><tr>'+
+          '<th style="text-align:left;padding:10px 16px;font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Mês</th>'+
+          '<th style="text-align:center;padding:10px 12px;font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Novos Clientes</th>'+
+          '<th style="text-align:center;padding:10px 12px;font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Cancelamentos</th>'+
+          '<th style="text-align:center;padding:10px 12px;font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Clientes Ativos</th>'+
+          '<th style="text-align:center;padding:10px 12px;font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Churn</th>'+
+          '<th style="text-align:right;padding:10px 16px;font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">MRR Acumulada</th>'+
+        '</tr></thead>'+
+        '<tbody>'+tbody+'</tbody>'+
+      '</table>'+
+    '</div>'+
+  '</div>';
 }
 
 function card(label, val, sub, color, bg){
@@ -3238,7 +3342,7 @@ async function calcCloserFromSheets(nivelIdx, month){
   var lv = CLOSER_LEVELS[nivelIdx];
   var result = {base: lv.base, minG: lv.minG, reunioes: 0, incentivReun: 0,
     contratos: 0, tipoContrato: 'Mensal', bonusMeta: 0, comissaoUnit: 0,
-    comissaoContratos: 0, valorVendido: 0, total: 0,
+    comissaoContratos: 0, comissaoVendas25: 0, valorVendido: 0, total: 0,
     loading: false, error: null};
   try{
     // Load reunioes sheet
@@ -3656,12 +3760,19 @@ async function triggerCloserCalc(mode){
   var sel = document.getElementById('closer-auto-'+mode+'-month');
   var resEl = document.getElementById('closer-auto-result-'+mode);
   if(!resEl) return;
-  resEl.innerHTML = '<i class="ti ti-loader"></i> Buscando dados da planilha...';
-  _sheetDataCache = {}; // force refresh
+  // Check Google connection first
+  if(!isGcalConnected()){
+    resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Google desconectado. Reconecte em <b>Configuracoes - Google Calendar</b> e tente novamente.</div>';
+    return;
+  }
+  resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados da planilha...</div>';
+  _sheetDataCache = {}; _sheetsMeta = {}; // force refresh
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = mode==='gestor' ? (_careerLevels.gustavo||0) : (_careerLevels.gustavo||0);
-  var r = await calcCloserFromSheets(nivelIdx, month);
-  if(r.error){resEl.innerHTML='<div style="color:var(--red);">Erro: '+r.error+'</div>';return;}
+  var r;
+  try{ r = await calcCloserFromSheets(nivelIdx, month); }
+  catch(e){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e.message+'</div>'; return; }
+  if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = CLOSER_LEVELS[nivelIdx];
   var atingiu = r.contratos >= lv.meta;
   var acima = Math.max(0,r.contratos-lv.meta);
@@ -3691,12 +3802,18 @@ async function triggerSDRCalc(mode){
   var sel = document.getElementById('sdr-auto-'+mode+'-month');
   var resEl = document.getElementById('sdr-auto-result-'+mode);
   if(!resEl) return;
-  resEl.innerHTML = '<i class="ti ti-loader"></i> Buscando dados da planilha...';
-  _sheetDataCache = {};
+  if(!isGcalConnected()){
+    resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Google desconectado. Reconecte em <b>Configuracoes - Google Calendar</b> e tente novamente.</div>';
+    return;
+  }
+  resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados da planilha...</div>';
+  _sheetDataCache = {}; _sheetsMeta = {};
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = _careerLevels.joao||0;
-  var r = await calcSDRFromSheets(nivelIdx, month);
-  if(r.error){resEl.innerHTML='<div style="color:var(--red);">Erro: '+r.error+'</div>';return;}
+  var r;
+  try{ r = await calcSDRFromSheets(nivelIdx, month); }
+  catch(e){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e.message+'</div>'; return; }
+  if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = SDR_LEVELS[nivelIdx];
   var atingiu = r.agendamentos >= lv.meta;
   var acima = Math.max(0, r.agendamentos - lv.meta);
