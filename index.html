@@ -641,12 +641,29 @@ function getCurrentPeriod(){var n=new Date();return String(n.getMonth()+1).padSt
 // ===== UTILITY =====
 function parseFaturamento(s){
   if(!s)return 0;
-  var l=s.toLowerCase().replace(/\s/g,'');
-  var hasK=l.includes('k');
-  var nums=l.match(/(\d+)/g);
-  if(!nums)return 0;
-  var vals=nums.map(function(n){return parseFloat(n)*(hasK?1000:1);});
-  return vals.length>1?(vals[0]+vals[1])/2:vals[0];
+  s=s.toLowerCase().trim();
+  // Handle "acima de X" or "mais de X"
+  var acimaMatch=s.match(/(?:acima de|mais de|acima|\+)\s*(\d+(?:[.,]\d+)?)\s*(k|mil)?/);
+  if(acimaMatch){
+    var v=parseFloat(acimaMatch[1].replace(',','.'));
+    var mult=acimaMatch[2]&&acimaMatch[2].includes('k')?1000:acimaMatch[2]&&acimaMatch[2].includes('mil')?1000:1;
+    return v*mult;
+  }
+  // Handle ranges like "40 mil até 60 mil", "10k a 20k", "40k-60k" — return MIN value
+  var rangeMatch=s.match(/(\d+(?:[.,]\d+)?)\s*(k|mil)?\s*(?:até|ate|a|-)\s*(\d+(?:[.,]\d+)?)\s*(k|mil)?/);
+  if(rangeMatch){
+    var v1=parseFloat(rangeMatch[1].replace(',','.'));
+    var m1=rangeMatch[2]&&(rangeMatch[2].includes('k')||rangeMatch[2].includes('mil'))?1000:1;
+    return v1*m1; // return minimum of range
+  }
+  // Single value: "40k", "40 mil", "40000"
+  var singleMatch=s.match(/(\d+(?:[.,]\d+)?)\s*(k|mil)?/);
+  if(singleMatch){
+    var v2=parseFloat(singleMatch[1].replace(',','.'));
+    var m2=singleMatch[2]&&(singleMatch[2].includes('k')||singleMatch[2].includes('mil'))?1000:1;
+    return v2*m2;
+  }
+  return 0;
 }
 function isRealizada(s){
   if(!s)return false;
