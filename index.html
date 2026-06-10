@@ -2041,6 +2041,15 @@ async function refreshDashCom(){
       var period=_dashPeriod||getCurrentPeriod();
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
+      // Buscar mês anterior também para comparação
+      var pp2=period.split('/');
+      var prevM=parseInt(pp2[0])===1?12:parseInt(pp2[0])-1;
+      var prevA=parseInt(pp2[0])===1?parseInt(pp2[1])-1:parseInt(pp2[1]);
+      var prevP=String(prevM).padStart(2,'0')+'/'+prevA;
+      if(!_investidoMes[prevP]){
+        var spendPrev=await fetchMetaSpend(prevP);
+        if(spendPrev!==null){_investidoMes[prevP]=spendPrev;saveAll();}
+      }
     }
     content.innerHTML=buildDashComHTML(data);
     content.style.display='block';loading.style.display='none';
@@ -2423,8 +2432,8 @@ function buildDashComHTML(data){
   html+='<div class="cb" style="margin-bottom:16px;">'+
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-speakerphone" style="color:var(--purple3);margin-right:6px;"></i>Tráfego Pago · '+periodLabel+'</div></div>'+
     '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'+
-      trafegoCard('Ticket Médio', ticketMedio, ticketMedio>0?'R$ '+(ticketMedio/1000).toFixed(2).replace('.',',').replace(',00','')+' mil':'—', '', ticketMedioP, 'rgba(123,47,255,0.35)', false)+
-      trafegoCard('Investido em Tráfego', inv, inv>0?'R$ '+(inv/1000).toFixed(2).replace('.',',').replace(',00','')+' mil':'R$ 0', '', invPrev, 'rgba(245,158,11,0.3)', false)+
+      trafegoCard('Ticket Médio', ticketMedio, ticketMedio>0?'R$ '+Math.round(ticketMedio).toLocaleString('pt-BR'):'—', '', ticketMedioP, 'rgba(123,47,255,0.35)', false)+
+      trafegoCard('Investido em Tráfego', inv, inv>0?'R$ '+Math.round(inv).toLocaleString('pt-BR'):'R$ 0', '', invPrev, 'rgba(245,158,11,0.3)', false)+
       trafegoCard('Leads Tráfego', leadsTrafegoCount, leadsTrafegoCount, '', leadsTrafegoCountP, 'rgba(56,189,248,0.3)', false)+
       trafegoCard('Leads Qualificados', leadsTrafegoQ, leadsTrafegoQ, '', leadsTrafegoQP, 'rgba(56,189,248,0.25)', false)+
       trafegoCard('Custo por Lead', cpl, cpl>0?'R$ '+Math.round(cpl).toLocaleString('pt-BR'):'—', '', cplP, 'rgba(239,68,68,0.25)', true)+
@@ -2433,52 +2442,6 @@ function buildDashComHTML(data){
       trafegoCard('Custo por Aquisição', cpa, cpa>0?'R$ '+Math.round(cpa).toLocaleString('pt-BR'):'—', '', cpaP, 'rgba(34,197,94,0.25)', true)+
     '</div>'+
   '</div>';
-
-  // ===== FUNIL VISUAL =====
-  html+='<div class="cb" style="margin-bottom:16px;">'+
-    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-filter" style="color:var(--purple3);margin-right:6px;"></i>Funil de Conversão · '+periodLabel+'</div></div>'+
-    '<div style="padding:20px 24px;">';
-
-  var etapas=[
-    {label:'Leads Tráfego',val:totLeads,cor:'var(--purple3)',icon:'ti-users'},
-    {label:'Reuniões Agend.',val:totReun,cor:'var(--amber)',icon:'ti-calendar'},
-    {label:'Reuniões Reais',val:totReal,cor:'var(--cyan)',icon:'ti-calendar-check'},
-    {label:'Fechamentos',val:totFech,cor:'var(--green)',icon:'ti-trophy'}
-  ];
-  var maxVal=totLeads||1;
-  html+='<div style="display:flex;flex-direction:column;gap:8px;max-width:600px;margin:0 auto;">';
-  etapas.forEach(function(e,i){
-    var pct=Math.round(e.val/maxVal*100);
-    var convPct=i>0&&etapas[i-1].val>0?Math.round(e.val/etapas[i-1].val*100):null;
-    var w=Math.max(pct,8);
-    html+='<div style="text-align:center;">'+
-      (convPct!==null?'<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;color:var(--muted);margin-bottom:4px;">↓ '+convPct+'% de conversão</div>':'')+
-      '<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:2px;">'+
-        '<div style="width:'+w+'%;margin:0 auto;background:'+e.cor+';border-radius:8px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;min-width:220px;transition:width .5s;">'+
-          '<div style="display:flex;align-items:center;gap:10px;">'+
-            '<i class="ti '+e.icon+'" style="font-size:20px;color:rgba(0,0,0,0.5);"></i>'+
-            '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;color:rgba(0,0,0,0.7);letter-spacing:1px;text-transform:uppercase;">'+e.label+'</span>'+
-          '</div>'+
-          '<span style="font-family:var(--font-bn),sans-serif;font-size:28px;color:rgba(0,0,0,0.75);">'+e.val+'</span>'+
-        '</div>'+
-      '</div>'+
-    '</div>';
-  });
-  html+='</div>';
-  // Taxa geral
-  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px;">';
-  var taxas=[
-    {l:'Lead → Reunião',v:totLeads>0?Math.round(totReun/totLeads*100):0},
-    {l:'Reunião → Fechamento',v:totReal>0?Math.round(totFech/totReal*100):0},
-    {l:'Lead → Fechamento',v:totLeads>0?Math.round(totFech/totLeads*100):0}
-  ];
-  taxas.forEach(function(t){
-    html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;">'+
-      '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+t.l+'</div>'+
-      '<div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:var(--white);">'+t.v+'%</div>'+
-    '</div>';
-  });
-  html+='</div></div></div>';
 
   // ===== RANKING DE ADS =====
   if(adRanking.length>0){
@@ -2912,6 +2875,51 @@ function buildAnaliseAdsHTML(data){
     '</div>';
   });
   html+='</div>';
+
+
+  // ===== FUNIL VISUAL =====
+  if(ads.length>0){
+    html+='<div class="cb" style="margin-bottom:16px;">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-filter" style="color:var(--purple3);margin-right:6px;"></i>Funil de Conversão</div></div>'+
+      '<div style="padding:20px 24px;">';
+    var etapas=[
+      {label:'Leads Tráfego',val:totLeads,cor:'var(--purple3)',icon:'ti-users'},
+      {label:'Reuniões Agend.',val:totReun,cor:'var(--amber)',icon:'ti-calendar'},
+      {label:'Reuniões Reais',val:totReal,cor:'var(--cyan)',icon:'ti-calendar-check'},
+      {label:'Fechamentos',val:totFech,cor:'var(--green)',icon:'ti-trophy'}
+    ];
+    var maxVal2=totLeads||1;
+    html+='<div style="display:flex;flex-direction:column;gap:8px;max-width:600px;margin:0 auto;">';
+    etapas.forEach(function(e,i){
+      var pct=Math.round(e.val/maxVal2*100);
+      var convPct=i>0&&etapas[i-1].val>0?Math.round(e.val/etapas[i-1].val*100):null;
+      var w=Math.max(pct,8);
+      html+='<div style="text-align:center;">'+
+        (convPct!==null?'<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;color:var(--muted);margin-bottom:4px;">↓ '+convPct+'% de conversão</div>':'')+
+        '<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:2px;">'+
+          '<div style="width:'+w+'%;margin:0 auto;background:'+e.cor+';border-radius:8px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;min-width:220px;">'+
+            '<div style="display:flex;align-items:center;gap:10px;">'+
+              '<i class="ti '+e.icon+'" style="font-size:20px;color:rgba(0,0,0,0.5);"></i>'+
+              '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:rgba(0,0,0,0.7);letter-spacing:1px;text-transform:uppercase;">'+e.label+'</span>'+
+            '</div>'+
+            '<span style="font-family:var(--font-bn),sans-serif;font-size:28px;color:rgba(0,0,0,0.75);">'+e.val+'</span>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px;">';
+    [{l:'Lead → Reunião',v:totLeads>0?Math.round(totReun/totLeads*100):0},
+     {l:'Reunião → Fechamento',v:totReal>0?Math.round(totFech/totReal*100):0},
+     {l:'Lead → Fechamento',v:totLeads>0?Math.round(totFech/totLeads*100):0}
+    ].forEach(function(t){
+      html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+t.l+'</div>'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:var(--white);">'+t.v+'%</div>'+
+      '</div>';
+    });
+    html+='</div></div></div>';
+  }
 
   // ===== SCORE RANKING =====
   html+='<div class="cb" style="margin-bottom:16px;">'+
