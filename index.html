@@ -2037,8 +2037,8 @@ function buildDashComHTML(data){
 
   // ---- TRÁFEGO METRICS (Fonte = Anúncios) ----
   var leadsTrafego=leadsF.filter(function(l){
-    var fonte=(col(l,['Fonte','FONTE','fonte','Source','SOURCE'])||'').toLowerCase().trim();
-    return fonte.includes('anuncio')||fonte.includes('anúncio')||fonte.includes('ads')||fonte.includes('trafego')||fonte.includes('tráfego');
+    var ad=(col(l,['Ad','AD','ad'])||'').trim();
+    return ad && ad!=='-';
   });
   var leadsTrafegoCount=leadsTrafego.length;
   var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']))>=40000;}).length;
@@ -2147,8 +2147,8 @@ function buildDashComHTML(data){
   });
 
   var leadsTrafegoP=leadsFP.filter(function(l){
-    var fonte=(col(l,['Fonte','FONTE','fonte'])||'').toLowerCase();
-    return fonte.includes('anuncio')||fonte.includes('anúncio')||fonte.includes('ads');
+    var ad=(col(l,['Ad','AD','ad'])||'').trim();
+    return ad && ad!=='-';
   });
   var leadsTrafegoCountP=leadsTrafegoP.length;
   var leadsTrafegoQP=leadsTrafegoP.filter(function(l){return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']))>=40000;}).length;
@@ -2703,14 +2703,12 @@ function buildAnaliseAdsHTML(data){
     return periodStr(d)===period;
   }
 
-  // Filter leads by period and Fonte=Anúncios
-  var leadsAll=data.leads.rows.filter(function(r){
+  // Filter leads by period — all leads with Ad filled = paid traffic
+  var leadsTrafego=data.leads.rows.filter(function(r){
     var d=parseBRDate(col(r,['Data','DATA','data']));
-    return inAdsRange(d);
-  });
-  var leadsTrafego=leadsAll.filter(function(l){
-    var fonte=(col(l,['Fonte','FONTE','fonte'])||'').toLowerCase();
-    return fonte.includes('anuncio')||fonte.includes('anúncio')||fonte.includes('ads');
+    if(!inAdsRange(d)) return false;
+    var ad=(col(r,['Ad','AD','ad'])||'').trim();
+    return ad && ad!=='-' && ad!=='(sem ad)';
   });
 
   // Build phone→reuniao map (normalize phone: digits only, last 9 digits)
