@@ -2109,6 +2109,61 @@ function buildDashComHTML(data){
   var cpr=inv>0&&reunReal>0?inv/reunReal:0;
   var cpa=inv>0&&novosClientes>0?inv/novosClientes:0;
 
+  // Ticket médio = valorVendido / novosClientes
+  var ticketMedio=novosClientes>0?valorVendido/novosClientes:0;
+
+  // ---- PERÍODO ANTERIOR (para comparação) ----
+  var ppNum=parseInt(pp[0]), ppAno=parseInt(pp[1]);
+  var prevMes=ppNum===1?12:ppNum-1;
+  var prevAno=ppNum===1?ppAno-1:ppAno;
+  var prevPeriod=String(prevMes).padStart(2,'0')+'/'+prevAno;
+  var invPrev=_investidoMes[prevPeriod]||0;
+
+  function inPrevRange(d){
+    if(!d) return false;
+    return periodStr(d)===prevPeriod;
+  }
+  var leadsFP=data.leads.rows.filter(function(r){
+    var d=parseBRDate(col(r,['Data','DATA','data']));return inPrevRange(d);
+  });
+  var reunioesFP=data.reunioes.rows.filter(function(r){
+    var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+    return inPrevRange(d);
+  });
+  var clientesFP=data.clientes.rows.filter(function(r){
+    var d=parseBRDate(col(r,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+    return inPrevRange(d);
+  });
+
+  var leadsTrafegoP=leadsFP.filter(function(l){
+    var fonte=(col(l,['Fonte','FONTE','fonte'])||'').toLowerCase();
+    return fonte.includes('anuncio')||fonte.includes('anúncio')||fonte.includes('ads');
+  });
+  var leadsTrafegoCountP=leadsTrafegoP.length;
+  var leadsTrafegoQP=leadsTrafegoP.filter(function(l){return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']))>=40000;}).length;
+  var reunRealP=reunioesFP.filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
+  var novosClientesP=clientesFP.length;
+  var valorVendidoP=clientesFP.reduce(function(s,c){
+    return s+parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+  },0);
+  var ticketMedioP=novosClientesP>0?valorVendidoP/novosClientesP:0;
+  var cplP=invPrev>0&&leadsTrafegoCountP>0?invPrev/leadsTrafegoCountP:0;
+  var cplqP=invPrev>0&&leadsTrafegoQP>0?invPrev/leadsTrafegoQP:0;
+  var cprP=invPrev>0&&reunRealP>0?invPrev/reunRealP:0;
+  var cpaP=invPrev>0&&novosClientesP>0?invPrev/novosClientesP:0;
+
+  // Helper: delta % com seta e cor
+  function delta(curr, prev, inverse){
+    if(!prev||prev===0) return '<span style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">—</span>';
+    var pct=Math.round((curr-prev)/prev*100);
+    var up=pct>=0;
+    // inverse = true means lower is better (costs)
+    var good=inverse?(pct<=0):(pct>=0);
+    var cor=good?'var(--green)':'var(--red)';
+    var seta=up?'↑':'↓';
+    return '<span style="font-size:11px;color:'+cor+';font-family:Barlow Condensed,sans-serif;">'+seta+' '+Math.abs(pct)+'% de mês anterior</span>';
+  }
+
   // ---- BY CLOSER ----
   var cData={};
   clientesF.forEach(function(c){
@@ -2295,36 +2350,25 @@ function buildDashComHTML(data){
   '</div>';
 
   // ===== CARDS DE TRÁFEGO =====
+  function trafegoCard(label, val, valFmt, deltaSuffix, prevVal, border, isInverse){
+    return '<div style="background:var(--bg2);border:1px solid '+border+';border-radius:12px;padding:16px;text-align:center;">'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">'+label+'</div>'+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:34px;color:var(--white);line-height:1;">'+valFmt+'</div>'+
+      '<div style="margin-top:6px;">'+delta(val,prevVal,isInverse)+'</div>'+
+    '</div>';
+  }
+
   html+='<div class="cb" style="margin-bottom:16px;">'+
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-speakerphone" style="color:var(--purple3);margin-right:6px;"></i>Tráfego Pago · '+periodLabel+'</div></div>'+
-    '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">'+
-      '<div style="background:var(--bg2);border:1px solid rgba(123,47,255,0.3);border-radius:10px;padding:14px;text-align:center;">'+
-        '<div class="m-lbl">Leads Tráfego</div>'+
-        '<div style="font-family:var(--font-bn),sans-serif;font-size:36px;color:var(--purple3);">'+leadsTrafegoCount+'</div>'+
-        (inv>0&&leadsTrafegoCount>0?'<div style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">CPL R$'+Math.round(inv/leadsTrafegoCount)+'</div>':'')+
-      '</div>'+
-      '<div style="background:var(--bg2);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:14px;text-align:center;">'+
-        '<div class="m-lbl">Leads Qualif. (40k+)</div>'+
-        '<div style="font-family:var(--font-bn),sans-serif;font-size:36px;color:var(--cyan);">'+leadsTrafegoQ+'</div>'+
-        (inv>0&&leadsTrafegoQ>0?'<div style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">CPL Qual. R$'+Math.round(inv/leadsTrafegoQ)+'</div>':'')+
-      '</div>'+
-      '<div style="background:var(--bg2);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px;text-align:center;">'+
-        '<div class="m-lbl">Taxa Qualificação</div>'+
-        '<div style="font-family:var(--font-bn),sans-serif;font-size:36px;color:var(--amber);">'+txQualifTrafego+'%</div>'+
-        '<div style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">'+leadsTrafegoQ+' / '+leadsTrafegoCount+' leads</div>'+
-      '</div>'+
-      (inv>0?
-        '<div style="background:var(--bg2);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:14px;text-align:center;">'+
-          '<div class="m-lbl">Investido</div>'+
-          '<div style="font-family:var(--font-bn),sans-serif;font-size:36px;color:var(--red);">R$'+inv.toLocaleString('pt-BR')+'</div>'+
-          (reunReal>0?'<div style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">CPR R$'+Math.round(inv/reunReal)+'</div>':'')+
-        '</div>':'')+
-      (inv>0&&novosClientes>0?
-        '<div style="background:var(--bg2);border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:14px;text-align:center;">'+
-          '<div class="m-lbl">Custo por Aquisição</div>'+
-          '<div style="font-family:var(--font-bn),sans-serif;font-size:36px;color:var(--green);">R$'+Math.round(inv/novosClientes).toLocaleString('pt-BR')+'</div>'+
-          '<div style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">'+novosClientes+' contratos</div>'+
-        '</div>':'')+
+    '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'+
+      trafegoCard('Ticket Médio', ticketMedio, ticketMedio>0?'R$ '+(ticketMedio/1000).toFixed(2).replace('.',',').replace(',00','')+' mil':'—', '', ticketMedioP, 'rgba(123,47,255,0.35)', false)+
+      trafegoCard('Investido em Tráfego', inv, inv>0?'R$ '+(inv/1000).toFixed(2).replace('.',',').replace(',00','')+' mil':'R$ 0', '', invPrev, 'rgba(245,158,11,0.3)', false)+
+      trafegoCard('Leads Tráfego', leadsTrafegoCount, leadsTrafegoCount, '', leadsTrafegoCountP, 'rgba(56,189,248,0.3)', false)+
+      trafegoCard('Leads Qualificados', leadsTrafegoQ, leadsTrafegoQ, '', leadsTrafegoQP, 'rgba(56,189,248,0.25)', false)+
+      trafegoCard('Custo por Lead', cpl, cpl>0?'R$ '+Math.round(cpl).toLocaleString('pt-BR'):'—', '', cplP, 'rgba(239,68,68,0.25)', true)+
+      trafegoCard('Custo Lead Qualif.', cplq, cplq>0?'R$ '+Math.round(cplq).toLocaleString('pt-BR'):'—', '', cplqP, 'rgba(239,68,68,0.2)', true)+
+      trafegoCard('Custo por Reunião', cpr, cpr>0?'R$ '+Math.round(cpr).toLocaleString('pt-BR'):'—', '', cprP, 'rgba(245,158,11,0.25)', true)+
+      trafegoCard('Custo por Aquisição', cpa, cpa>0?'R$ '+Math.round(cpa).toLocaleString('pt-BR'):'—', '', cpaP, 'rgba(34,197,94,0.25)', true)+
     '</div>'+
   '</div>';
 
@@ -3797,26 +3841,7 @@ function currentMonthStr(){
 }
 
 // Parse Brazilian date formats: DD/MM/YYYY, DD/mmm./YY, etc.
-function parseBRDate(str){
-  if(!str) return null;
-  str = str.trim();
-  // DD/mmm./YY or DD/mmm./YYYY
-  var meses = {jan:0,fev:1,mar:2,abr:3,mai:4,jun:5,jul:6,ago:7,set:8,out:9,nov:10,dez:11};
-  var m = str.match(/(\d{1,2})\/(\w{3})\.?\/(\d{2,4})/);
-  if(m){
-    var day=parseInt(m[1]), mon=meses[m[2].toLowerCase().substring(0,3)], yr=parseInt(m[3]);
-    if(yr<100) yr+=2000;
-    if(mon!==undefined) return new Date(yr, mon, day);
-  }
-  // DD/MM/YYYY
-  var m2 = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-  if(m2){
-    var yr2=parseInt(m2[3]);
-    if(yr2<100) yr2+=2000;
-    return new Date(yr2, parseInt(m2[2])-1, parseInt(m2[1]));
-  }
-  return null;
-}
+// parseBRDate duplicate removed
 
 function dateToMonthStr(d){
   if(!d) return '';
