@@ -410,14 +410,21 @@ function startRealtimeSync(){
     }
   });
 
-  // Sync daily_map in realtime (leads extras gerados)
-  fbDb.ref('daily_map').on('value', function(snap){
-    var fbDaily = snap.val();
-    if(!fbDaily) return;
-    var prevKeys = JSON.stringify(Object.keys(_dailyMap).sort());
-    var nextKeys = JSON.stringify(Object.keys(fbDaily).sort());
-    if(prevKeys !== nextKeys || JSON.stringify(_dailyMap) !== JSON.stringify(fbDaily)){
-      _dailyMap = fbDaily;
+  // Sync daily_map por usuário — cada um tem sua própria chave
+  var _userDailyRef = 'daily_map/'+(CU?CU.name.toLowerCase().replace(/\s+/g,'_'):'default');
+  fbDb.ref(_userDailyRef).on('value', function(snap){
+    var fbUserDaily = snap.val();
+    if(!fbUserDaily) return;
+    // Merge apenas as chaves deste usuário
+    var changed = false;
+    Object.keys(fbUserDaily).forEach(function(k){
+      var fullKey = k; // já é a chave completa (data_usuario)
+      if(JSON.stringify(_dailyMap[fullKey]) !== JSON.stringify(fbUserDaily[k])){
+        _dailyMap[fullKey] = fbUserDaily[k];
+        changed = true;
+      }
+    });
+    if(changed){
       localStorage.setItem('audens_daily', JSON.stringify(_dailyMap));
       var area = document.getElementById('content');
       var pg = area ? area.getAttribute('data-page') : null;
@@ -584,7 +591,15 @@ function saveAll(){
     if(fbDb){
       try{
         fbDb.ref('followups').set(followups);
-        fbDb.ref('daily_map').set(_dailyMap);
+        var _userPath = 'daily_map/'+(CU?CU.name.toLowerCase().replace(/\s+/g,'_'):'default');
+        // Salvar só as chaves deste usuário
+        var userKey = getDailyKey ? getDailyKey() : todayStr();
+        var userPrefix = userKey.split('_').slice(1).join('_'); // nome do usuário
+        var userKeys = {};
+        Object.keys(_dailyMap).forEach(function(k){
+          if(k.endsWith('_'+userPrefix)||k===todayStr()) userKeys[k]=_dailyMap[k];
+        });
+        if(Object.keys(userKeys).length) fbDb.ref(_userPath).set(userKeys);
         fbDb.ref('config/goals').set(goals);
         fbDb.ref('config/investido').set(_investidoMes);
         fbDb.ref('config/meta_comercial').set(_metaComercial);
@@ -1112,8 +1127,8 @@ function showMain(){
         }
       }
     }),
-    fbGet('daily_map').then(function(fbDaily){
-      if(fbDaily){ _dailyMap=fbDaily; localStorage.setItem('audens_daily',JSON.stringify(_dailyMap)); }
+    fbGet('daily_map/'+(CU?CU.name.toLowerCase().replace(/\s+/g,'_'):'default')).then(function(fbDaily){
+      if(fbDaily){ Object.assign(_dailyMap, fbDaily); localStorage.setItem('audens_daily',JSON.stringify(_dailyMap)); }
     }),
     fbGet('config/goals').then(function(fbGoals){
       if(fbGoals){ goals=fbGoals; localStorage.setItem('audens_goals',JSON.stringify(goals)); }
@@ -1270,9 +1285,39 @@ function calcBonusForCloser(closerName){
   var bonusV=vendas.reduce(function(s,f){return s+(parseFloat(f.mensalidade)||0)*BONUS_VENDA_PCT;},0);
   return{comparecimentos:comps,vendas:vendas.length,bonusComp:comps*BONUS_COMP,bonusVendas:bonusV,total:comps*BONUS_COMP+bonusV,detalhe:vendas};
 }
+function getDailyKey(){
+  var user = CU ? CU.name.toLowerCase().replace(/\s+/g,'_') : 'default';
+  return todayStr()+'_'+user;
+}
 function getDailyLeads(){
-  var key=todayStr();
+  var key=getDailyKey();
   if(_dailyMap[key])return _dailyMap[key];
+  // Fallback: chave antiga sem usuário (migração)
+  var oldKey=todayStr();
+  if(_dailyMap[oldKey]){
+    _dailyMap[key]=_dailyMap[oldKey];
+    delete _dailyMap[oldKey];
+    saveAll();
+    return _dailyMap[key];
+  }
+  // Fallback 2: reconstruir do histórico de calls de hoje
+  // Se o usuário já fez ligações hoje, reconstruir a lista a partir do calls
+  var hoje=todayStr();
+  var callsHoje=Object.values(calls).filter(function(c){return c.data===hoje;});
+  if(callsHoje.length>0){
+    // Montar lista com os leads que já foram ligados hoje + completar com novos se necessário
+    var telsHoje=callsHoje.map(function(c){return c.tel;});
+    var leadsHoje=telsHoje.map(function(tel){
+      return allLeads.find(function(l){return l.telefone===tel;})||{telefone:tel,nome:calls[tel]?calls[tel].nome:'',data:hoje};
+    }).filter(Boolean);
+    // Completar até 50 se ainda não chegou
+    if(leadsHoje.length<50){
+      var usedSet=new Set(telsHoje.concat(Object.keys(calls)));
+      var extra=allLeads.filter(function(l){return !usedSet.has(l.telefone);}).sort(function(){return Math.random()-.5;}).slice(0,50-leadsHoje.length);
+      leadsHoje=leadsHoje.concat(extra);
+    }
+    _dailyMap[key]=leadsHoje;saveAll();return leadsHoje;
+  }
   if(!checkDay(new Date()).ok)return null;
   var used=new Set(Object.keys(calls));
   var returns=allLeads.filter(function(l){return l._requeue&&!used.has(l.telefone);});
@@ -1522,8 +1567,9 @@ function gerarLeadsExtras(qtd){
   }
   var novos = disponiveis.sort(function(){return Math.random()-.5;}).slice(0,qtd);
   // Adicionar ao mapa do dia
-  if(!_dailyMap[hoje]) _dailyMap[hoje]=[];
-  novos.forEach(function(l){ _dailyMap[hoje].push(l.telefone); });
+  var extraKey = getDailyKey();
+  if(!_dailyMap[extraKey]) _dailyMap[extraKey]=[];
+  novos.forEach(function(l){ _dailyMap[extraKey].push(l.telefone); });
   _extraLeadsTotal += novos.length;
   saveAll();
   showPage('ligar');
@@ -4321,7 +4367,12 @@ function renderReunioesPersonal(){
   var rows = Object.values(meetings);
   if(!isGestor){
     rows = rows.filter(function(m){
-      return (m.responsavel||'').toLowerCase().includes(nome.toLowerCase());
+      var resp = (m.responsavel||'').toLowerCase();
+      var sdr = (m.sdr||'').toLowerCase();
+      var criador = (m.criador||'').toLowerCase();
+      var n = nome.toLowerCase();
+      // Ver reuniões onde é responsável, SDR, ou criador
+      return resp.includes(n) || sdr.includes(n) || criador.includes(n);
     });
   }
   rows = rows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
