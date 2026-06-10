@@ -2702,18 +2702,23 @@ function buildAnaliseAdsHTML(data){
     return fonte.includes('anuncio')||fonte.includes('anúncio')||fonte.includes('ads');
   });
 
-  // Build phone→reuniao map
+  // Build phone→reuniao map (normalize phone: digits only, last 9 digits)
   var reunMap={};
+  var reunNomeMap={};
   data.reunioes.rows.forEach(function(r){
-    var tel=(col(r,['TELEFONE','Telefone','telefone','WHATSAPP','Whatsapp'])||'').replace(/\D/g,'');
+    var tel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+    if(tel.length>9) tel=tel.slice(-9);
     if(tel) reunMap[tel]=r;
+    // Also index by nome for fallback
+    var nome=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
+    if(nome) reunNomeMap[nome]=r;
   });
 
-  // Build phone→cliente map
-  var cliMap={};
+  // Build nome→cliente map (reuniao.CLIENTE → clientes.CLIENTE)
+  var cliNomeMap={};
   data.clientes.rows.forEach(function(c){
-    var tel=(col(c,['TELEFONE','Telefone','telefone','WHATSAPP','Whatsapp'])||'').replace(/\D/g,'');
-    if(tel) cliMap[tel]=c;
+    var nome=(col(c,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
+    if(nome) cliNomeMap[nome]=c;
   });
 
   // Aggregate by ad
@@ -2723,22 +2728,29 @@ function buildAnaliseAdsHTML(data){
     var campanha=(col(l,['Campanha','CAMPANHA','campanha'])||'').trim();
     var conjunto=(col(l,['Conjunto','CONJUNTO','conjunto'])||'').trim();
     var fat=parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']));
-    var tel=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    var telRaw=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    var tel=telRaw.length>9?telRaw.slice(-9):telRaw;
     if(!ad||ad==='-') ad='(sem ad)';
     if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
     if(fat>=40000) d.qualif++;
     d.fats.push(fat);
-    if(tel&&reunMap[tel]){
+    // Lead → Reunião por telefone
+    var reun=tel?reunMap[tel]:null;
+    if(reun){
       d.reunioes++;
-      var st=(col(reunMap[tel],['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
+      var st=(col(reun,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
       if(isRealizada(st)) d.realizadas++;
-    }
-    if(tel&&cliMap[tel]){
-      d.fechamentos++;
-      var mrr=parseMoney(col(cliMap[tel],['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês']));
-      d.mrr+=mrr;
+      // Reunião → Cliente: tenta EMPRESA primeiro, depois CLIENTE como fallback
+      var empresaReun=(col(reun,['EMPRESA','Empresa','empresa'])||'').trim().toLowerCase();
+      var nomeReun=(col(reun,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
+      var cli=cliNomeMap[empresaReun]||cliNomeMap[nomeReun];
+      if(cli){
+        d.fechamentos++;
+        var mrr=parseMoney(col(cli,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês']));
+        d.mrr+=mrr;
+      }
     }
   });
 
