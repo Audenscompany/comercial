@@ -620,11 +620,11 @@ function parseBRDate(s){
         // definitely DD/MM
         day2=p1; mon2=p2;
       } else if(p2>12){
-        // definitely MM/DD
+        // definitely MM/DD (month first)
         mon2=p1; day2=p2;
       } else {
-        // both <= 12: assume MM/DD since that's how Google Sheets exports short dates
-        mon2=p1; day2=p2;
+        // both <= 12: assume DD/MM (Brazilian standard)
+        day2=p1; mon2=p2;
       }
       if(mon2>=1&&mon2<=12&&day2>=1&&day2<=31){
         return new Date(anoAtual,mon2-1,day2);
