@@ -743,13 +743,14 @@ function gcalDisconnect(){gcalToken=null;localStorage.removeItem('audens_gcal_to
 // ===== META ADS API =====
 function isMetaConnected(){return metaToken&&metaToken.expires_at>Date.now();}
 function metaConnect(){
-  if(!metaAppId){alert('Configure o Meta App ID em Configuracoes.');return;}
-  var origin=window.location.origin;
+  // Business app com ads_read — App ID fixo Audens Ads
+  var ADS_APP_ID='2236247267134204';
+  var redirectUri=window.location.origin+window.location.pathname;
   var url='https://www.facebook.com/dialog/oauth'+
-    '?client_id='+encodeURIComponent(metaAppId)+
-    '&redirect_uri='+encodeURIComponent(origin)+
+    '?client_id='+encodeURIComponent(ADS_APP_ID)+
+    '&redirect_uri='+encodeURIComponent(redirectUri)+
     '&response_type=token'+
-        '&scope=ads_read';
+    '&scope=ads_read,ads_management';
   var w=window.open(url,'meta_auth','width=520,height=620,left=200,top=100');
   var poll=setInterval(function(){
     try{
