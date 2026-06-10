@@ -770,6 +770,16 @@ function metaConnect(){
     }catch(e2){}
   },800);
 }
+function saveMetaManualToken(){
+  var inp = document.getElementById('meta-manual-token');
+  if(!inp||!inp.value.trim()){alert('Cole o token primeiro.');return;}
+  metaToken={access_token:inp.value.trim(), expires_at:Date.now()+(60*24*60*60*1000)}; // 60 days
+  saveAll();
+  try{if(fbDb)fbDb.ref('meta_token').set(metaToken);}catch(e){}
+  inp.value='';
+  showPage('config');
+  alert('Token salvo! Meta Ads conectado.');
+}
 function metaDisconnect(){metaToken=null;localStorage.removeItem('audens_meta_token');saveAll();try{if(fbDb)fbDb.ref('meta_token').remove();}catch(e){}showPage('config');}
 async function fetchMetaSpend(period){
   if(!isMetaConnected()||!metaAccountId)return null;
@@ -2980,6 +2990,14 @@ function renderConfig(){
         '<input class="f-input" id="meta-app-id" value="'+metaAppId+'" placeholder="000000000000000" style="margin-bottom:0;"></div>'+
       '<div><label class="f-label">Ad Account ID</label>'+
         '<input class="f-input" id="meta-account-id" value="'+metaAccountId+'" placeholder="act_000000000 ou so os numeros" style="margin-bottom:0;"></div>'+
+    '</div>'+
+    '<div style="margin-bottom:12px;">'+
+      '<label class="f-label">Token Manual (Graph API Explorer)</label>'+
+      '<div style="display:flex;gap:8px;">'+
+        '<input class="f-input" id="meta-manual-token" placeholder="Cole aqui o token gerado no Graph API Explorer..." style="margin-bottom:0;flex:1;">'+
+        '<button class="btn btn-primary" onclick="saveMetaManualToken()" style="background:#1877f2;white-space:nowrap;"><i class="ti ti-key"></i> Usar Token</button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:4px;font-family:Barlow Condensed,sans-serif;">Gere em: developers.facebook.com/tools/explorer — selecione ads_read e cole aqui</div>'+
     '</div>'+
     '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
       '<button class="btn btn-primary" onclick="saveMetaConfig()" style="background:#1877f2;"><i class="ti ti-device-floppy"></i> Salvar Meta Config</button>'+
