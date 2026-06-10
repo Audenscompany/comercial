@@ -606,12 +606,29 @@ function parseBRDate(s){
     var mNum=parseInt(mpart);
     if(!isNaN(mNum))return new Date(yr,mNum-1,day);
   }
-  // Aceitar d/m sem ano (ex: 9/6, 18/5)
+  // Aceitar d/m ou m/d sem ano (ex: 9/6, 06/10)
   if(parts.length===2){
-    var day2=parseInt(parts[0]);
-    var mon2=parseInt(parts[1]);
-    if(!isNaN(day2)&&!isNaN(mon2)&&mon2>=1&&mon2<=12&&day2>=1&&day2<=31){
-      return new Date(anoAtual,mon2-1,day2);
+    var p1=parseInt(parts[0]);
+    var p2=parseInt(parts[1]);
+    if(!isNaN(p1)&&!isNaN(p2)){
+      // Detect MM/DD (American): if p1 <= 12 and p2 <= 31, ambiguous
+      // Heuristic: if p1 <= 12 and p2 > 12, it's MM/DD (month first)
+      // if p1 > 12, it's DD/MM (day first)
+      // if both <= 12, try DD/MM first (BR standard) but also check context
+      var day2,mon2;
+      if(p1>12){
+        // definitely DD/MM
+        day2=p1; mon2=p2;
+      } else if(p2>12){
+        // definitely MM/DD
+        mon2=p1; day2=p2;
+      } else {
+        // both <= 12: assume MM/DD since that's how Google Sheets exports short dates
+        mon2=p1; day2=p2;
+      }
+      if(mon2>=1&&mon2<=12&&day2>=1&&day2<=31){
+        return new Date(anoAtual,mon2-1,day2);
+      }
     }
   }
   var iso=s.match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -1102,6 +1119,7 @@ function buildNav(){
   var aI=CU.funcao==='sdr'?sdrNav:closerNav;
   var gIG=[
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
+    {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
     {id:'calendario',icon:'ti-calendar',label:'Calendario'},
     {id:'plano-carreira',icon:'ti-award',label:'Planos de Carreira'},
@@ -1124,7 +1142,7 @@ function showPage(id){
   var map={
     dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioesPersonal,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar
   };
@@ -2544,6 +2562,265 @@ function buildHistoricoMensal(todosClientes){
       '</table>'+
     '</div>'+
   '</div>';
+}
+
+// ===== ANÁLISE DE ADS =====
+var _adsPeriod=null, _adsStart=null, _adsEnd=null, _adsCampanha='';
+
+function renderAnaliseAds(){
+  if(!isGcalConnected()){
+    return '<div class="page active"><div class="page-header"><div><div class="page-title">Análise de Ads</div></div></div>'+
+      '<div class="warn-note"><i class="ti ti-alert-triangle"></i> Reconecte o Google em <strong>Configuracoes</strong> para carregar os dados.</div></div>';
+  }
+  if(!_adsPeriod) _adsPeriod=getCurrentPeriod();
+  var mn=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var opts='';
+  for(var i=5;i>=0;i--){
+    var d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);
+    var p=String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+    opts+='<option value="'+p+'"'+(p===_adsPeriod?' selected':'')+'>'+mn[d.getMonth()]+' '+d.getFullYear()+'</option>';
+  }
+
+  var html='<div class="page active">'+
+    '<div class="page-header">'+
+      '<div><div class="page-title">Análise de Ads</div><div class="page-sub">Cruzamento leads × reuniões × fechamentos por ad</div></div>'+
+    '</div>'+
+    // Filtros
+    '<div class="cb" style="margin-bottom:16px;">'+
+      '<div style="padding:14px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
+        '<select onchange="changeAdsPeriod(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:8px 12px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;outline:none;">'+opts+'</select>'+
+        '<span style="color:var(--muted);font-size:11px;font-family:Barlow Condensed,sans-serif;">OU</span>'+
+        '<input type="date" id="ads-start" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
+        '<span style="color:var(--muted);font-size:11px;">até</span>'+
+        '<input type="date" id="ads-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
+        '<button class="btn btn-outline" onclick="applyAdsDateRange()" style="font-size:12px;padding:8px 14px;"><i class="ti ti-filter"></i></button>'+
+        '<button class="btn btn-outline" onclick="clearAdsDateRange()" style="font-size:12px;padding:8px 12px;" title="Limpar"><i class="ti ti-x"></i></button>'+
+        '<button class="btn btn-primary" onclick="refreshAnaliseAds()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
+      '</div>'+
+    '</div>'+
+    '<div id="ads-loading" style="text-align:center;padding:80px;color:var(--muted);font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:2px;text-transform:uppercase;display:none;">'+
+      '<i class="ti ti-loader-2" style="font-size:40px;display:block;margin-bottom:16px;color:var(--purple2);animation:spin 1s linear infinite;"></i>Cruzando dados...'+
+    '</div>'+
+    '<div id="ads-content" style="display:none;"></div>'+
+  '</div>';
+
+  setTimeout(refreshAnaliseAds, 80);
+  return html;
+}
+
+function changeAdsPeriod(p){_adsPeriod=p;_adsStart=null;_adsEnd=null;refreshAnaliseAds();}
+function applyAdsDateRange(){
+  var s=document.getElementById('ads-start');
+  var e=document.getElementById('ads-end');
+  if(s&&e&&s.value&&e.value){
+    _adsStart=new Date(s.value+'T00:00:00');
+    _adsEnd=new Date(e.value+'T23:59:59');
+    _adsPeriod=null;
+    refreshAnaliseAds();
+  }
+}
+function clearAdsDateRange(){
+  _adsStart=null;_adsEnd=null;_adsPeriod=getCurrentPeriod();
+  refreshAnaliseAds();
+}
+
+async function refreshAnaliseAds(){
+  var loading=document.getElementById('ads-loading');
+  var cont=document.getElementById('ads-content');
+  if(!loading||!cont) return;
+  loading.style.display='block'; cont.style.display='none';
+  try{
+    var data=await loadAllSheets();
+    cont.innerHTML=buildAnaliseAdsHTML(data);
+    cont.style.display='block'; loading.style.display='none';
+  }catch(e){
+    loading.style.display='none';
+    cont.style.display='block';
+    cont.innerHTML='<div class="warn-note"><i class="ti ti-alert-triangle"></i> Erro: '+e.message+'</div>';
+  }
+}
+
+function buildAnaliseAdsHTML(data){
+  var period=_adsPeriod||getCurrentPeriod();
+  function inAdsRange(d){
+    if(!d) return false;
+    if(_adsStart&&_adsEnd) return d>=_adsStart&&d<=_adsEnd;
+    return periodStr(d)===period;
+  }
+
+  // Filter leads by period and Fonte=Anúncios
+  var leadsAll=data.leads.rows.filter(function(r){
+    var d=parseBRDate(col(r,['Data','DATA','data']));
+    return inAdsRange(d);
+  });
+  var leadsTrafego=leadsAll.filter(function(l){
+    var fonte=(col(l,['Fonte','FONTE','fonte'])||'').toLowerCase();
+    return fonte.includes('anuncio')||fonte.includes('anúncio')||fonte.includes('ads');
+  });
+
+  // Build phone→reuniao map
+  var reunMap={};
+  data.reunioes.rows.forEach(function(r){
+    var tel=(col(r,['TELEFONE','Telefone','telefone','WHATSAPP','Whatsapp'])||'').replace(/\D/g,'');
+    if(tel) reunMap[tel]=r;
+  });
+
+  // Build phone→cliente map
+  var cliMap={};
+  data.clientes.rows.forEach(function(c){
+    var tel=(col(c,['TELEFONE','Telefone','telefone','WHATSAPP','Whatsapp'])||'').replace(/\D/g,'');
+    if(tel) cliMap[tel]=c;
+  });
+
+  // Aggregate by ad
+  var adData={};
+  leadsTrafego.forEach(function(l){
+    var ad=(col(l,['Ad','AD','ad'])||'').trim();
+    var campanha=(col(l,['Campanha','CAMPANHA','campanha'])||'').trim();
+    var conjunto=(col(l,['Conjunto','CONJUNTO','conjunto'])||'').trim();
+    var fat=parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']));
+    var tel=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    if(!ad||ad==='-') ad='(sem ad)';
+    if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    var d=adData[ad];
+    d.leads++;
+    if(fat>=40000) d.qualif++;
+    d.fats.push(fat);
+    if(tel&&reunMap[tel]){
+      d.reunioes++;
+      var st=(col(reunMap[tel],['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
+      if(isRealizada(st)) d.realizadas++;
+    }
+    if(tel&&cliMap[tel]){
+      d.fechamentos++;
+      var mrr=parseMoney(col(cliMap[tel],['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês']));
+      d.mrr+=mrr;
+    }
+  });
+
+  var ads=Object.values(adData).sort(function(a,b){return b.leads-a.leads;});
+  if(ads.length===0) return '<div class="empty-st"><i class="ti ti-ad-2"></i><p>Nenhum lead de anúncio encontrado no período</p></div>';
+
+  // ===== SCORING =====
+  // Dimensions (weights sum to 100):
+  // 1. Taxa qualificação 40k+ (25%) — qualif/leads
+  // 2. Taxa reunião agendada (20%) — reunioes/qualif
+  // 3. Taxa reunião realizada (20%) — realizadas/reunioes
+  // 4. Taxa fechamento (25%) — fechamentos/realizadas
+  // 5. Volume (10%) — leads rel. to max
+  var maxLeads=Math.max.apply(null,ads.map(function(a){return a.leads;}));
+
+  ads.forEach(function(a){
+    var txQ=a.leads>0?a.qualif/a.leads:0;
+    var txR=a.qualif>0?a.reunioes/a.qualif:0;
+    var txReal=a.reunioes>0?a.realizadas/a.reunioes:0;
+    var txF=a.realizadas>0?a.fechamentos/a.realizadas:0;
+    var vol=maxLeads>0?a.leads/maxLeads:0;
+    a.score=Math.round(txQ*25+txR*20+txReal*20+txF*25+vol*10);
+    a.txQ=txQ; a.txR=txR; a.txReal=txReal; a.txF=txF;
+  });
+
+  // Sort by score desc
+  var adsSorted=[].concat(ads).sort(function(a,b){return b.score-a.score;});
+
+  // ===== SUMMARY CARDS =====
+  var totLeads=ads.reduce(function(s,a){return s+a.leads;},0);
+  var totQualif=ads.reduce(function(s,a){return s+a.qualif;},0);
+  var totReun=ads.reduce(function(s,a){return s+a.reunioes;},0);
+  var totReal=ads.reduce(function(s,a){return s+a.realizadas;},0);
+  var totFech=ads.reduce(function(s,a){return s+a.fechamentos;},0);
+  var totMrr=ads.reduce(function(s,a){return s+a.mrr;},0);
+
+  var html='';
+
+  // Summary cards
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">';
+  var sumCards=[
+    {l:'Leads Tráfego',v:totLeads,c:'var(--purple3)'},
+    {l:'Qualificados 40k+',v:totQualif,c:'var(--cyan)'},
+    {l:'Reuniões Agend.',v:totReun,c:'var(--amber)'},
+    {l:'Reuniões Reais',v:totReal,c:'var(--green)'},
+    {l:'Fechamentos',v:totFech,c:'var(--green)'},
+    {l:'MRR Gerado',v:'R$'+totMrr.toLocaleString('pt-BR',{maximumFractionDigits:0}),c:'var(--green)'}
+  ];
+  sumCards.forEach(function(c){
+    html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;">'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+c.l+'</div>'+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:'+c.c+';">'+c.v+'</div>'+
+    '</div>';
+  });
+  html+='</div>';
+
+  // ===== SCORE RANKING =====
+  html+='<div class="cb" style="margin-bottom:16px;">'+
+    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-trophy" style="color:var(--amber);margin-right:6px;"></i>Score Ranking · Top Ads</div>'+
+    '<span class="badge b-amber">'+adsSorted.length+' ads</span></div>'+
+    '<div style="padding:14px 16px;">';
+
+  adsSorted.slice(0,15).forEach(function(a,i){
+    var badge=a.score>=70?'<span style="background:rgba(34,197,94,0.2);color:var(--green);border:1px solid rgba(34,197,94,0.4);border-radius:4px;font-size:10px;font-weight:700;padding:2px 7px;font-family:Barlow Condensed,sans-serif;letter-spacing:1px;">TOP</span>':
+              a.score>=40?'<span style="background:rgba(245,158,11,0.2);color:var(--amber);border:1px solid rgba(245,158,11,0.4);border-radius:4px;font-size:10px;font-weight:700;padding:2px 7px;font-family:Barlow Condensed,sans-serif;letter-spacing:1px;">MÉD</span>':
+              '<span style="background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;font-size:10px;font-weight:700;padding:2px 7px;font-family:Barlow Condensed,sans-serif;letter-spacing:1px;">FRACO</span>';
+    var corScore=a.score>=70?'var(--green)':a.score>=40?'var(--amber)':'var(--red)';
+    var medalha=i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+    html+='<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<div style="width:32px;text-align:center;font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;color:var(--muted);flex-shrink:0;">'+(medalha||'#'+(i+1))+'</div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;">'+a.ad+'</span>'+
+          badge+
+        '</div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+          '<span style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">'+a.leads+' leads</span>'+
+          '<span style="font-size:11px;color:var(--cyan);font-family:Barlow Condensed,sans-serif;">'+a.qualif+' qualif.</span>'+
+          '<span style="font-size:11px;color:var(--amber);font-family:Barlow Condensed,sans-serif;">'+a.reunioes+' reun.</span>'+
+          '<span style="font-size:11px;color:var(--green);font-family:Barlow Condensed,sans-serif;">'+a.fechamentos+' fechou</span>'+
+          (a.mrr>0?'<span style="font-size:11px;color:var(--green);font-family:Barlow Condensed,sans-serif;">R$'+a.mrr.toLocaleString('pt-BR',{maximumFractionDigits:0})+' MRR</span>':'')+
+        '</div>'+
+        // Score bar
+        '<div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;">'+
+          '<div style="height:4px;background:'+corScore+';border-radius:2px;width:'+a.score+'%;transition:width .5s;"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+corScore+';min-width:48px;text-align:right;">'+a.score+'</div>'+
+    '</div>';
+  });
+  html+='</div></div>';
+
+  // ===== TABELA DETALHADA =====
+  html+='<div class="cb" style="margin-bottom:16px;">'+
+    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-table" style="color:var(--purple3);margin-right:6px;"></i>Tabela Completa</div></div>'+
+    '<div style="overflow-x:auto;">'+
+    '<table style="width:100%;border-collapse:collapse;font-family:Barlow Condensed,sans-serif;font-size:13px;">'+
+    '<thead><tr style="border-bottom:1px solid var(--border);">'+
+      '<th style="text-align:left;padding:10px 14px;color:var(--muted);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Ad</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--muted);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Leads</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--cyan);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Qualif.</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--muted);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">% Qual</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--amber);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Reun.</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--muted);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Realiz.</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--green);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Fech.</th>'+
+      '<th style="text-align:center;padding:10px 10px;color:var(--green);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">MRR</th>'+
+      '<th style="text-align:center;padding:10px 14px;color:var(--amber);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Score</th>'+
+    '</tr></thead><tbody>';
+
+  ads.sort(function(a,b){return b.score-a.score;}).forEach(function(a){
+    var corS=a.score>=70?'var(--green)':a.score>=40?'var(--amber)':'var(--red)';
+    html+='<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+      '<td style="padding:10px 14px;color:var(--white);font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.ad+'</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--white);">'+a.leads+'</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--cyan);font-weight:700;">'+a.qualif+'</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--muted);">'+Math.round(a.txQ*100)+'%</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--amber);">'+a.reunioes+'</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--muted);">'+a.realizadas+'</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--green);font-weight:700;">'+a.fechamentos+'</td>'+
+      '<td style="text-align:center;padding:10px;color:var(--green);">'+(a.mrr>0?'R$'+a.mrr.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—')+'</td>'+
+      '<td style="text-align:center;padding:10px 14px;font-weight:700;color:'+corS+';font-size:16px;">'+a.score+'</td>'+
+    '</tr>';
+  });
+
+  html+='</tbody></table></div></div>';
+  return html;
 }
 
 function card(label, val, sub, color, bg){
