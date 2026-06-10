@@ -532,7 +532,7 @@ var gcalToken=null,gcalClientId='';
 var metaToken=null,metaAppId='',metaAccountId='';
 var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1xQVyaGDgghqHCY19nDCjQpgyQIEWJh4cOy-WGNCF37Q',clientes:'1UDRR1zwQEXnzJv8UBFujhnZzol75n6UNmUAjxGPLUjU',ligacoes:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk'};
 var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852137};
-var _sheetsMeta={},_investidoMes={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null;
+var _sheetsMeta={},_investidoMes={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
 
 function loadStorage(){
   try{
@@ -819,6 +819,7 @@ async function testSheetsConnection(){
 async function fetchSheetVals(sheetId,gid){
   if(!isGcalConnected()) throw new Error('Token do Google expirado. Reconecte em Configurações.');
   try{
+    // Step 1: get sheet title from GID
     if(!_sheetsMeta[sheetId+'_fetched']){
       var mr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'?fields=sheets.properties',
         {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
@@ -829,17 +830,26 @@ async function fetchSheetVals(sheetId,gid){
       }
     }
     var tabName=_sheetsMeta[sheetId+'_'+gid];
+    // Fallback: first sheet
     if(!tabName){
       var keys=Object.keys(_sheetsMeta).filter(function(k){return k.startsWith(sheetId+'_')&&k!==sheetId+'_fetched';});
-      if(keys.length>0)tabName=_sheetsMeta[keys[0]];
+      if(keys.length>0) tabName=_sheetsMeta[keys[0]];
     }
-    if(!tabName)tabName='Sheet1';
+    if(!tabName) tabName='Sheet1';
+    // Step 2: fetch values by tab name
     var r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(tabName),
       {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
     var d=await r.json();
-    if(d.error){console.error('Sheets err',sheetId,tabName,d.error);throw new Error('Planilha: '+JSON.stringify(d.error.message||d.error));}
+    // Step 3: if tab name failed (400), try fetching first sheet by omitting range
+    if(d.error){
+      console.warn('fetchSheetVals fallback for',sheetId,'gid',gid,'tabName',tabName,'err',d.error.message);
+      var r2=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1:ZZ10000',
+        {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+      d=await r2.json();
+    }
+    if(d.error){throw new Error('Planilha (gid='+gid+'): '+JSON.stringify(d.error.message||d.error));}
     return d.values||[];
-  }catch(e){console.error('fetchSheetVals',e);return null;}
+  }catch(e){console.error('fetchSheetVals error',sheetId,gid,e);throw e;}
 }
 function rawToObjs(raw){
   if(!raw||raw.length<2)return{headers:[],rows:[]};
@@ -1894,6 +1904,12 @@ function renderDashComercial(){
       '</div>'+
       '<div style="display:flex;gap:10px;align-items:center;">'+
         '<select id="dcp-sel" onchange="changeDashPeriod(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:8px 12px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;outline:none;">'+opts+'</select>'+
+        '<span style="color:var(--muted);font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:1px;">OU</span>'+
+        '<input type="date" id="dash-start" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;font-family:Barlow Condensed,sans-serif;">'+
+        '<span style="color:var(--muted);font-size:11px;">até</span>'+
+        '<input type="date" id="dash-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;font-family:Barlow Condensed,sans-serif;">'+
+        '<button class="btn btn-outline" onclick="applyDashDateRange()" style="font-size:12px;padding:8px 14px;letter-spacing:1px;"><i class="ti ti-filter"></i></button>'+
+        '<button class="btn btn-outline" onclick="clearDashDateRange()" style="font-size:12px;padding:8px 12px;" title="Limpar filtro"><i class="ti ti-x"></i></button>'+
         '<button class="btn btn-primary" onclick="refreshDashCom()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;">'+
           '<i class="ti ti-refresh"></i> ATUALIZAR'+
         '</button>'+
@@ -1907,7 +1923,25 @@ function renderDashComercial(){
     '<div id="dc-content" style="display:none;"></div>'+
   '</div>';
 }
-function changeDashPeriod(p){_dashPeriod=p;refreshDashCom();}
+function changeDashPeriod(p){_dashPeriod=p;_dashStart=null;_dashEnd=null;refreshDashCom();}
+function applyDashDateRange(){
+  var s=document.getElementById('dash-start');
+  var e=document.getElementById('dash-end');
+  if(s&&e&&s.value&&e.value){
+    _dashStart=new Date(s.value+'T00:00:00');
+    _dashEnd=new Date(e.value+'T23:59:59');
+    _dashPeriod=null; // override period filter with date range
+    refreshDashCom();
+  }
+}
+function clearDashDateRange(){
+  _dashStart=null;_dashEnd=null;
+  _dashPeriod=getCurrentPeriod();
+  var s=document.getElementById('dash-start');
+  var e=document.getElementById('dash-end');
+  if(s)s.value='';if(e)e.value='';
+  refreshDashCom();
+}
 async function refreshDashCom(){
   var loading=document.getElementById('dc-loading');
   var content=document.getElementById('dc-content');
@@ -1948,17 +1982,22 @@ function buildDashComHTML(data){
   var mlong=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   var periodLabel=mlong[parseInt(pp[0])-1]+' '+pp[1];
 
-  // ---- FILTER DATA BY PERIOD ----
+  // ---- FILTER DATA BY PERIOD OR DATE RANGE ----
+  function inRange(d){
+    if(!d) return false;
+    if(_dashStart&&_dashEnd) return d>=_dashStart&&d<=_dashEnd;
+    return periodStr(d)===period;
+  }
   var leadsF=data.leads.rows.filter(function(r){
-    var d=parseBRDate(col(r,['Data','DATA','data']));return d&&periodStr(d)===period;
+    var d=parseBRDate(col(r,['Data','DATA','data']));return inRange(d);
   });
   var reunioesF=data.reunioes.rows.filter(function(r){
     var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
-    return d&&periodStr(d)===period;
+    return inRange(d);
   });
   var clientesF=data.clientes.rows.filter(function(r){
     var d=parseBRDate(col(r,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
-    return d&&periodStr(d)===period;
+    return inRange(d);
   });
   // All clientes for annual metrics
   var todosClientes=data.clientes.rows;
@@ -1975,6 +2014,18 @@ function buildDashComHTML(data){
   var leadsTrafegoCount=leadsTrafego.length;
   var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']))>=40000;}).length;
   var txQualifTrafego=leadsTrafegoCount>0?Math.round(leadsTrafegoQ/leadsTrafegoCount*100):0;
+
+  // ---- RANKING DE ADS ----
+  var adMap={};
+  leadsTrafego.filter(function(l){
+    return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']))>=40000;
+  }).forEach(function(l){
+    var ad=(col(l,['Ad','AD','ad'])||'').trim();
+    if(!ad||ad==='-'||ad==='') return;
+    adMap[ad]=(adMap[ad]||0)+1;
+  });
+  var adRanking=Object.keys(adMap).map(function(a){return{ad:a,count:adMap[a]};})
+    .sort(function(a,b){return b.count-a.count;}).slice(0,10);
 
   // Meetings
   var reunAgend=reunioesF.length;
@@ -2258,6 +2309,27 @@ function buildDashComHTML(data){
         '</div>':'')+
     '</div>'+
   '</div>';
+
+  // ===== RANKING DE ADS =====
+  if(adRanking.length>0){
+    html+='<div class="cb" style="margin-bottom:16px;">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-podium" style="color:var(--amber);margin-right:6px;"></i>Ranking de Ads · Leads Qualif. (40k+)</div>'+
+      '<span class="badge b-amber">'+leadsTrafegoQ+' qualif.</span></div>'+
+      '<div style="padding:14px 16px;">';
+    adRanking.forEach(function(a,i){
+      var pct=leadsTrafegoQ>0?Math.round(a.count/leadsTrafegoQ*100):0;
+      var cor=i===0?'var(--amber)':i===1?'var(--muted)':i===2?'rgba(205,127,50,0.8)':'var(--border2)';
+      html+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">'+
+        '<div style="width:24px;height:24px;border-radius:50%;background:'+cor+';display:flex;align-items:center;justify-content:center;font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:700;color:var(--bg);flex-shrink:0;">'+(i+1)+'</div>'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+a.ad+'</div>'+
+          '<div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px;"><div style="height:4px;background:'+cor+';border-radius:2px;width:'+pct+'%;"></div></div>'+
+        '</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:15px;font-weight:700;color:'+cor+';flex-shrink:0;">'+a.count+'</div>'+
+      '</div>';
+    });
+    html+='</div></div>';
+  }
 
   // ===== FUNIL DE CONVERSAO =====
   html+='<div class="cb" style="margin-bottom:16px;">'+
