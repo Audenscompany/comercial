@@ -1158,6 +1158,15 @@ function showMain(){
       if(fbGcal && fbGcal.expires_at > Date.now()){
         gcalToken = fbGcal;
         localStorage.setItem('audens_gcal_token', JSON.stringify(gcalToken));
+      } else {
+        // Fallback/migracao: token antigo (compartilhado, pre-migracao para chave por usuario)
+        return fbGet('gcal_token').then(function(legacy){
+          if(legacy && legacy.access_token && legacy.expires_at > Date.now()){
+            gcalToken = {access_token:legacy.access_token, expires_at:legacy.expires_at};
+            localStorage.setItem('audens_gcal_token', JSON.stringify(gcalToken));
+            try{ if(fbDb) fbDb.ref('gcal_token/'+gcalUserKey()).set(gcalToken); }catch(e){}
+          }
+        });
       }
     }),
     fbGet('config/gcalClientId').then(function(fbCid){
