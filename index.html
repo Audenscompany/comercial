@@ -3533,6 +3533,9 @@ function ccHeader(nome, cpf, admissao, cargo, mesLabel){
 }
 
 function ccFooter(nome, cpf, cargo, mesLabel, refCode){
+  var refParts = mesLabel.replace(' / ','/').split('/');
+  var refAno = refParts.length>1 ? refParts[1] : new Date().getFullYear();
+  var refMes = refParts.length>0 ? refParts[0].replace('/','') : '';
   var ref = mesLabel.replace(' / ','').replace('/','').toUpperCase().substring(0,6);
   return '<div class="section-title">✍️ Assinaturas</div>'+
     '<div class="footer-row">'+
@@ -3548,7 +3551,7 @@ function ccFooter(nome, cpf, cargo, mesLabel, refCode){
   '</div>'+
   '<div class="doc-footer">'+
     '<div class="footer-note">Documento gerado para fins internos — Audens Company</div>'+
-    '<div class="footer-ref">REF: AUD-'+refCode+'-'+parts[1]+'-'+String(parseInt(parts[0])).padStart(2,'0')+'</div>'+
+    '<div class="footer-ref">REF: AUD-'+refCode+'-'+refAno+'-'+String(parseInt(refMes)||1).padStart(2,'0')+'</div>'+
   '</div>';
 }
 
@@ -3559,8 +3562,6 @@ function buildCCCloser(r, mesLabel, lvNome){
   if(r.bonusMeta>0) rows += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+r.contratos+' contratos — meta atingida</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusMeta)+'</td></tr>';
   if(r.comissaoContratos>0) rows += '<tr><td><div class="td-label">Comissão por Contratos</div></td><td><div class="td-detail">'+r.contratos+' contratos × '+fmt(r.comissaoUnit)+'</div></td><td>'+r.contratos+'</td><td>'+fmt(r.comissaoUnit)+'</td><td>'+fmt(r.comissaoContratos)+'</td></tr>';
   rows += '<tr class="subtotal-row"><td colspan="4">TOTAL BRUTO</td><td>'+fmt(total)+'</td></tr>';
-
-  var parts2 = mesLabel.replace(' / ','/').split('/');
 
   return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'+
     '<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">'+
@@ -4446,9 +4447,20 @@ function renderReunioesPersonal(){
   }
 
   // Sheets reunioes general view
+  var mn2=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var monthOpts2='<option value="">Todos os meses</option>';
+  for(var mi2=5;mi2>=0;mi2--){var md2=new Date();md2.setDate(1);md2.setMonth(md2.getMonth()-mi2);var mp2=String(md2.getMonth()+1).padStart(2,'0')+'/'+md2.getFullYear();monthOpts2+='<option value="'+mp2+'">'+mn2[md2.getMonth()]+' '+md2.getFullYear()+'</option>';}
+
   var sheetsHtml = '<div class="cb" style="margin-top:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-table" style="margin-right:6px;color:var(--muted);"></i>Todas as Reunioes (Planilha)</div>'+
-    '<button class="btn btn-outline" style="font-size:11px;" onclick="loadReunioesSheet()"><i class="ti ti-refresh"></i> Carregar</button></div>'+
-    '<div id="reunioes-sheet-view"><div style="padding:20px;color:var(--muted);font-size:13px;">Clique em Carregar para buscar todas as reunioes da planilha.</div></div>'+
+    '<button class="btn btn-primary" style="font-size:11px;" onclick="loadReunioesSheet()"><i class="ti ti-refresh"></i> Carregar</button></div>'+
+    '<div style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--border);">'+
+      '<select id="reun-filter-month" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:8px 12px;font-family:Barlow Condensed,sans-serif;font-size:13px;outline:none;">'+monthOpts2+'</select>'+
+      '<span style="color:var(--muted);font-size:11px;">OU</span>'+
+      '<input type="date" id="reun-filter-start" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
+      '<span style="color:var(--muted);font-size:11px;">até</span>'+
+      '<input type="date" id="reun-filter-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
+    '</div>'+
+    '<div id="reunioes-sheet-view"><div style="padding:20px;color:var(--muted);font-size:13px;">Selecione o filtro e clique em Carregar.</div></div>'+
   '</div>';
 
   // Reuniões de hoje (da planilha)
@@ -4595,15 +4607,40 @@ async function loadReunioesSheet(){
     var rows = await fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes);
     if(!rows||rows.length<2){el.innerHTML='<div style="padding:20px;color:var(--muted);">Sem dados</div>';return;}
     var h = rows[0].map(function(x){return(x||'').trim();});
-    var trs = rows.slice(1).filter(function(r){return r.some(function(c){return c;});}).map(function(row){
+
+    // Filtros
+    var filterMonth = (document.getElementById('reun-filter-month')||{}).value||'';
+    var filterStart = (document.getElementById('reun-filter-start')||{}).value||'';
+    var filterEnd = (document.getElementById('reun-filter-end')||{}).value||'';
+    var startDt = filterStart ? new Date(filterStart+'T00:00:00') : null;
+    var endDt = filterEnd ? new Date(filterEnd+'T23:59:59') : null;
+
+    // Encontrar coluna de data (DATA DE AGENDAMENTO = col 0)
+    var dateColIdx = 0;
+
+    var dataRows = rows.slice(1).filter(function(r){
+      if(!r.some(function(c){return c;})) return false;
+      var dateStr = (r[dateColIdx]||'').trim();
+      if(!dateStr) return true; // sem data, não filtrar
+      var d = parseBRDate(dateStr);
+      if(!d) return true;
+      if(filterMonth && periodStr(d)!==filterMonth) return false;
+      if(startDt && d<startDt) return false;
+      if(endDt && d>endDt) return false;
+      return true;
+    });
+
+    var trs = dataRows.map(function(row){
       var st=(row[4]||'').toUpperCase();
-      var col=st==='REALIZADA'?'var(--green)':st==='NO-SHOW'?'var(--red)':'var(--amber)';
+      var cor2=st==='REALIZADA'?'var(--green)':st.includes('NO')&&st.includes('SHOW')?'var(--red)':'var(--amber)';
       return '<tr>'+row.slice(0,8).map(function(c,i){
-        if(i===4) return '<td><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+col+'22;color:'+col+';">'+(c||'—')+'</span></td>';
+        if(i===4) return '<td><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+cor2+'22;color:'+cor2+';">'+(c||'—')+'</span></td>';
         return '<td style="font-size:12px;">'+(c||'—')+'</td>';
       }).join('')+'</tr>';
     }).join('');
-    el.innerHTML='<div style="overflow-x:auto;"><table><thead><tr>'+h.slice(0,8).map(function(x){return'<th>'+x+'</th>';}).join('')+'</tr></thead><tbody>'+trs+'</tbody></table></div>';
+
+    var countBadge = '<div style="padding:10px 16px;font-family:Barlow Condensed,sans-serif;font-size:12px;color:var(--muted);">'+dataRows.length+' reuniões encontradas</div>';
+    el.innerHTML=countBadge+'<div style="overflow-x:auto;"><table><thead><tr>'+h.slice(0,8).map(function(x){return'<th>'+x+'</th>';}).join('')+'</tr></thead><tbody>'+trs+'</tbody></table></div>';
   }catch(e){el.innerHTML='<div style="padding:20px;color:var(--red);">Erro: '+e.message+'</div>';}
 }
 
@@ -4843,17 +4880,21 @@ async function calcCloserFromSheets(nivelIdx, month){
     }
     if(cliRows && cliRows.length>1){
       var ch2=cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      var ciSDR=ch2.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
-      var ciOri=ch2.findIndex(function(h){return h.includes('ORIGEM');});
-      var ciVal=ch2.findIndex(function(h){return(h.includes('VALOR')&&h.includes('MES'))||(h.includes('VALOR')&&h.includes('MÊS'));});
-      var ciDt=ch2.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
+      // Log headers para debug
+      console.log('Clientes headers:', ch2);
+      var ciSDR=ch2.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
+      var ciOri=ch2.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
+      var ciVal=ch2.findIndex(function(h){return(h.includes('VALOR')&&(h.includes('MES')||h.includes('MÊS')||h.includes('MENS')))||h.includes('CONTRATO');});
+      var ciDt=ch2.findIndex(function(h){return h.includes('DATA')&&(h.includes('INI')||h.includes('INÍCIO'));});
+      console.log('ciSDR='+ciSDR+' ciOri='+ciOri+' ciVal='+ciVal+' ciDt='+ciDt);
       cliRows.slice(1).forEach(function(row){
         var sdrC=(ciSDR>=0?row[ciSDR]||'':'').trim();
         var oriC=(ciOri>=0?row[ciOri]||'':'').toLowerCase();
         var dtC=ciDt>=0?row[ciDt]||'':'';
         var monthC=dtC?dateToMonthStr(parseBRDate(dtC)):'';
-        if(normCloserName(sdrC)==='Gustavo' && oriC.includes('cold') && monthC===month){
+        if(normCloserName(sdrC)==='Gustavo' && (oriC.includes('cold')||oriC.includes('call')) && monthC===month){
           var mrrV=ciVal>=0?parseMoney(row[ciVal]):0;
+          console.log('ColdCall match:', sdrC, oriC, monthC, mrrV);
           mrrColdCall+=mrrV;
         }
       });
