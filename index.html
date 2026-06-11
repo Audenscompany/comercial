@@ -2150,6 +2150,22 @@ function buildDashComHTML(data){
   var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamentoLead(l)>=40000;}).length;
   var txQualifTrafego=leadsTrafegoCount>0?Math.round(leadsTrafegoQ/leadsTrafegoCount*100):0;
 
+  // ---- TRÁFEGO: reuniões e clientes atribuídos a Tráfego Pago (via ORIGEM) ----
+  var reunRealTrafego=reunioesF.filter(function(r){
+    var o=categorizeOrigem(col(r,['ORIGEM','Origem','origem']));
+    return o==='Trafego Pago'&&isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
+  }).length;
+  var clientesTrafego=clientesF.filter(function(c){
+    return categorizeOrigem(col(c,['ORIGEM','Origem','origem']))==='Trafego Pago';
+  });
+  var novosClientesTrafego=clientesTrafego.length;
+  var valorVendidoTrafego=clientesTrafego.reduce(function(s,c){
+    var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    return s+mrr;
+  },0);
+  var ticketMedioTrafego=novosClientesTrafego>0?valorVendidoTrafego/novosClientesTrafego:0;
+
   // ---- RANKING DE ADS ----
   var adMap={};
   leadsTrafego.filter(function(l){
@@ -2223,11 +2239,11 @@ function buildDashComHTML(data){
       '<div style="width:'+pct+'%;background:'+col+';border-radius:99px;height:6px;transition:width .5s;"></div></div>';
   }
 
-  // ---- COST METRICS ----
-  var cpl=inv>0&&totalLeads>0?inv/totalLeads:0;
-  var cplq=inv>0&&leadsQ>0?inv/leadsQ:0;
-  var cpr=inv>0&&reunReal>0?inv/reunReal:0;
-  var cpa=inv>0&&novosClientes>0?inv/novosClientes:0;
+  // ---- COST METRICS (Tráfego Pago) ----
+  var cpl=inv>0&&leadsTrafegoCount>0?inv/leadsTrafegoCount:0;
+  var cplq=inv>0&&leadsTrafegoQ>0?inv/leadsTrafegoQ:0;
+  var cpr=inv>0&&reunRealTrafego>0?inv/reunRealTrafego:0;
+  var cpa=inv>0&&novosClientesTrafego>0?inv/novosClientesTrafego:0;
 
   // Ticket médio = valorVendido / novosClientes
   var ticketMedio=novosClientes>0?valorVendido/novosClientes:0;
@@ -2269,10 +2285,24 @@ function buildDashComHTML(data){
     return s+mrr;
   },0);
   var ticketMedioP=novosClientesP>0?valorVendidoP/novosClientesP:0;
+  var reunRealTrafegoP=reunioesFP.filter(function(r){
+    var o=categorizeOrigem(col(r,['ORIGEM','Origem','origem']));
+    return o==='Trafego Pago'&&isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
+  }).length;
+  var clientesTrafegoP=clientesFP.filter(function(c){
+    return categorizeOrigem(col(c,['ORIGEM','Origem','origem']))==='Trafego Pago';
+  });
+  var novosClientesTrafegoP=clientesTrafegoP.length;
+  var valorVendidoTrafegoP=clientesTrafegoP.reduce(function(s,c){
+    var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    return s+mrr;
+  },0);
+  var ticketMedioTrafegoP=novosClientesTrafegoP>0?valorVendidoTrafegoP/novosClientesTrafegoP:0;
   var cplP=invPrev>0&&leadsTrafegoCountP>0?invPrev/leadsTrafegoCountP:0;
   var cplqP=invPrev>0&&leadsTrafegoQP>0?invPrev/leadsTrafegoQP:0;
-  var cprP=invPrev>0&&reunRealP>0?invPrev/reunRealP:0;
-  var cpaP=invPrev>0&&novosClientesP>0?invPrev/novosClientesP:0;
+  var cprP=invPrev>0&&reunRealTrafegoP>0?invPrev/reunRealTrafegoP:0;
+  var cpaP=invPrev>0&&novosClientesTrafegoP>0?invPrev/novosClientesTrafegoP:0;
 
   // Helper: delta % com seta e cor
   function delta(curr, prev, inverse){
@@ -2483,7 +2513,7 @@ function buildDashComHTML(data){
   html+='<div class="cb" style="margin-bottom:16px;">'+
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-speakerphone" style="color:var(--purple3);margin-right:6px;"></i>Tráfego Pago · '+periodLabel+'</div></div>'+
     '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'+
-      trafegoCard('Ticket Médio', ticketMedio, ticketMedio>0?'R$ '+Math.round(ticketMedio).toLocaleString('pt-BR'):'—', '', ticketMedioP, 'rgba(123,47,255,0.35)', false)+
+      trafegoCard('Ticket Médio', ticketMedioTrafego, ticketMedioTrafego>0?'R$ '+Math.round(ticketMedioTrafego).toLocaleString('pt-BR'):'—', '', ticketMedioTrafegoP, 'rgba(123,47,255,0.35)', false)+
       trafegoCard('Investido em Tráfego', inv, inv>0?'R$ '+Math.round(inv).toLocaleString('pt-BR'):'R$ 0', '', invPrev, 'rgba(245,158,11,0.3)', false)+
       trafegoCard('Leads Tráfego', leadsTrafegoCount, leadsTrafegoCount, '', leadsTrafegoCountP, 'rgba(56,189,248,0.3)', false)+
       trafegoCard('Leads Qualificados', leadsTrafegoQ, leadsTrafegoQ, '', leadsTrafegoQP, 'rgba(56,189,248,0.25)', false)+
@@ -4405,6 +4435,37 @@ async function registrarReuniaoSDR(){
   }
 }
 
+// ===== FUNIL DE REUNIOES (Agendadas -> Realizadas -> Vendas) =====
+function renderFunilReunioes(rows){
+  var total = rows.length;
+  var realizadas = rows.filter(function(m){return m.status==='done';}).length;
+  var noshow = rows.filter(function(m){return m.status==='noshow';}).length;
+  var vendas = rows.filter(function(m){
+    var f = followups[m.id];
+    return f && f.venda==='sim';
+  }).length;
+  var pctReal = total>0?Math.round(realizadas/total*100):0;
+  var pctVendaTotal = total>0?Math.round(vendas/total*100):0;
+  var pctVendaReal = realizadas>0?Math.round(vendas/realizadas*100):0;
+  var steps=[
+    {n:'Agendadas',v:total,p:100,c:'var(--cyan)',hint:''},
+    {n:'Realizadas',v:realizadas,p:pctReal,c:'var(--purple3)',hint:total>0?(pctReal+'% das agendadas'):''},
+    {n:'Vendas',v:vendas,p:pctVendaTotal,c:'var(--green)',hint:realizadas>0?(pctVendaReal+'% das realizadas'):''}
+  ];
+  return '<div class="cb" style="margin-bottom:16px;">'+
+    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-filter" style="color:var(--purple3);margin-right:6px;"></i>Funil de Reuniões</div>'+
+    (noshow>0?'<span class="badge b-red">'+noshow+' no-show</span>':'')+
+    '</div>'+
+    '<div style="padding:20px;">'+
+    steps.map(function(st){
+      return '<div class="funil-step"><div class="funil-row"><span class="funil-name">'+st.n+'</span>'+
+        '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;color:'+st.c+';">'+st.v+
+        (st.hint?' <span style="color:var(--muted);font-weight:600;">('+st.hint+')</span>':'')+'</span></div>'+
+        '<div class="prog-wrap"><div class="prog-fill" style="width:'+st.p+'%;background:'+st.c+';"></div></div></div>';
+    }).join('')+
+    '</div></div>';
+}
+
 // Update renderReunioes to filter by person
 function renderReunioesPersonal(){
   var nome = CU.name||'';
@@ -4532,6 +4593,7 @@ function renderReunioesPersonal(){
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Reunioes</div><div class="page-sub">'+(isGestor?'Visao completa':'Minhas reunioes')+'</div></div>'+
     '<span class="badge b-amber">'+rows.length+' registradas</span></div>'+
+    renderFunilReunioes(rows)+
     reunHojeHtml+
     createForm + fbHtml + sheetsHtml +
   '</div>';
