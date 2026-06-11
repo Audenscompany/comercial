@@ -3556,32 +3556,52 @@ function ccFooter(nome, cpf, cargo, mesLabel, refCode){
 }
 
 function buildCCCloser(r, mesLabel, lvNome){
-  var total = r.total || (r.base + r.bonusMeta + r.comissaoContratos + (r.comissaoVendas25||0));
-  var rows = '';
-  rows += '<tr><td><div class="td-label">Salário Base</div></td><td><div class="td-detail">'+lvNome+' — fixo mensal</div></td><td>—</td><td>—</td><td>'+fmt(r.base)+'</td></tr>';
-  if(r.bonusMeta>0) rows += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+r.contratos+' contratos — meta atingida</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusMeta)+'</td></tr>';
-  if(r.comissaoContratos>0) rows += '<tr><td><div class="td-label">Comissão por Contratos</div></td><td><div class="td-detail">'+r.contratos+' contratos × '+fmt(r.comissaoUnit)+'</div></td><td>'+r.contratos+'</td><td>'+fmt(r.comissaoUnit)+'</td><td>'+fmt(r.comissaoContratos)+'</td></tr>';
-  rows += '<tr class="subtotal-row"><td colspan="4">TOTAL BRUTO</td><td>'+fmt(total)+'</td></tr>';
+  var base = r.base||0;
+  var bonusMeta = r.bonusMeta||0;
+  var comissaoContratos = r.comissaoContratos||0;
+  var incentivReun = r.incentivReun||0;
+  var comissaoColdCall = r.comissaoColdCall||0;
+  var incentivColdCall = r.incentivColdCall||0;
+  var totalPadrao = base + bonusMeta + comissaoContratos + incentivReun;
+  var totalCC = incentivColdCall + comissaoColdCall;
+  var total = r.total || (totalPadrao + totalCC);
+  var meta = r.contratos||0;
+  var acima = Math.max(0, meta - 4);
+
+  var rowsPad = '';
+  rowsPad += '<tr><td><div class="td-label">Salário Base <span class="td-badge" style="background:#6B2FA022;color:#9B5FD0;border-color:#6B2FA0;">CLO</span></div></td><td><div class="td-detail">'+lvNome+' — fixo mensal</div></td><td>—</td><td>—</td><td>'+fmt(base)+'</td></tr>';
+  rowsPad += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+meta+' contratos '+(bonusMeta>0?'≥ meta ✅':'— meta não atingida')+'</div></td><td>—</td><td>—</td>'+(bonusMeta>0?'<td>'+fmt(bonusMeta)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  rowsPad += '<tr><td><div class="td-label">Comissão por Contratos</div></td><td><div class="td-detail">'+acima+' acima da meta × '+fmt(r.comissaoUnit||0)+'</div></td><td>'+acima+'</td><td>'+fmt(r.comissaoUnit||0)+'</td>'+(comissaoContratos>0?'<td>'+fmt(comissaoContratos)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  rowsPad += '<tr><td><div class="td-label">Reuniões Realizadas</div></td><td><div class="td-detail">'+(r.reunioes||0)+' reuniões comparecidas — sem threshold</div></td><td>'+(r.reunioes||0)+'</td><td>R$ 30,00</td>'+(incentivReun>0?'<td>'+fmt(incentivReun)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  rowsPad += '<tr class="subtotal-row"><td colspan="4">SUBTOTAL CLOSER PADRÃO</td><td>'+fmt(totalPadrao)+'</td></tr>';
+
+  var rowsCC = '';
+  rowsCC += '<tr><td><div class="td-label">Reuniões Cold Call <span class="td-badge" style="background:#A0521822;color:#D07030;border-color:#A05218;">CC</span></div></td><td><div class="td-detail">'+(r.reunColdCall||0)+' reuniões realizadas via prospecção ativa</div></td><td>'+(r.reunColdCall||0)+'</td><td>R$ 30,00</td>'+(incentivColdCall>0?'<td>'+fmt(incentivColdCall)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  rowsCC += '<tr><td><div class="td-label">Comissão 25% MRR <span class="td-badge" style="background:#A0521822;color:#D07030;border-color:#A05218;">CC</span></div></td><td><div class="td-detail">R$ '+(r.mrrColdCall||0).toLocaleString("pt-BR")+' MRR Cold Call × 25%</div></td><td>—</td><td>25%</td>'+(comissaoColdCall>0?'<td>'+fmt(comissaoColdCall)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  rowsCC += '<tr class="subtotal-row"><td colspan="4">SUBTOTAL COLD CALL</td><td>'+fmt(totalCC)+'</td></tr>';
 
   return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'+
     '<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">'+
     '<style>'+CC_CSS+'</style></head><body><div class="page">'+
-    ccHeader('Gustavo Henrique','***.***.***/***','Dezembro / 2024','Closer — '+lvNome, mesLabel)+
+    ccHeader('Gustavo Henrique','064.485.396-05','Dezembro / 2024','Closer — '+lvNome, mesLabel)+
     '<div class="body">'+
-      '<div class="section-title">📋 Remuneração Closer</div>'+
+      '<div class="section-title">📋 Remuneração Closer Padrão</div>'+
       '<table class="pay-table"><thead><tr><th>Componente</th><th>Descrição</th><th>Qtd.</th><th>Valor Unit.</th><th>Total</th></tr></thead>'+
-      '<tbody>'+rows+'</tbody></table>'+
+      '<tbody>'+rowsPad+'</tbody></table>'+
+      '<div class="section-title">📞 Remuneração Cold Call</div>'+
+      '<table class="pay-table"><thead><tr><th>Componente</th><th>Descrição</th><th>Qtd.</th><th>Valor Unit.</th><th>Total</th></tr></thead>'+
+      '<tbody>'+rowsCC+'</tbody></table>'+
       '<div class="total-block">'+
         '<div class="total-left">'+
           '<div class="total-label">Remuneração Total — '+mesLabel+'</div>'+
-          '<div class="total-breakdown">Base <span>'+fmt(r.base)+'</span> + Comissões <span>'+fmt(total-r.base)+'</span></div>'+
+          '<div class="total-breakdown">Closer Padrão <span>'+fmt(totalPadrao)+'</span> &nbsp;+&nbsp; Cold Call <span>'+fmt(totalCC)+'</span></div>'+
         '</div>'+
         '<div class="total-right">'+
           '<div class="total-value">'+fmt(total)+'</div>'+
           '<div class="total-ext">'+numeroExtenso(total)+'</div>'+
         '</div>'+
       '</div>'+
-    ccFooter('Gustavo Henrique','***.***.***/***','Closer '+lvNome, mesLabel,'CLO')+
+    ccFooter('Gustavo Henrique','064.485.396-05','Closer '+lvNome, mesLabel,'CLO')+
     '</body></html>';
 }
 
@@ -4894,15 +4914,10 @@ async function calcCloserFromSheets(nivelIdx, month){
         var dt3=parseBRDate(dateStr3);
         var monthC=dateToMonthStr(dt3);
         if(normCloserName(sdrC)==='Gustavo' && (oriC.includes('cold')||oriC.includes('call')) && monthC===month){
-          // 25% do valor vendido total (ex: R$6.000 trimestral)
-          var valorVendidoCC=ciValorVendido>=0?parseMoney(row[ciValorVendido]):0;
-          // fallback: usar valor mensal × 3 se plano trimestral
-          if(!valorVendidoCC){
-            var planoCC=(iPlano>=0?row[iPlano]||'':'').toUpperCase();
-            var mrrMes=parseMoney(row[2]||'');
-            valorVendidoCC=planoCC.includes('TRIMESTRAL')?mrrMes*3:planoCC.includes('SEMESTRAL')?mrrMes*6:mrrMes;
-          }
-          mrrColdCall+=valorVendidoCC;
+          // 25% do MRR mensal (VALOR CONTRATO/MÊS — só o primeiro mês)
+          var mrrMensal=parseMoney(row[2]||''); // coluna VALOR CONTRATO/MÊS = col 2
+          if(!mrrMensal && ciValorVendido>=0) mrrMensal=parseMoney(row[ciValorVendido]||'');
+          mrrColdCall+=mrrMensal;
         }
       });
     }
