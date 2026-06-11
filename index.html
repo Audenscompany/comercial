@@ -1228,6 +1228,7 @@ function showPage(id){
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
+    if(id==='reunioes') setTimeout(loadFunilReunioes,50);
   }
   var tnav=document.getElementById('nav-tarefas');
   if(tnav){var p=getPendingFollowups().length;var ex=tnav.querySelector('.nav-badge');
@@ -4435,35 +4436,79 @@ async function registrarReuniaoSDR(){
   }
 }
 
-// ===== FUNIL DE REUNIOES (Agendadas -> Realizadas -> Vendas) =====
-function renderFunilReunioes(rows){
-  var total = rows.length;
-  var realizadas = rows.filter(function(m){return m.status==='done';}).length;
-  var noshow = rows.filter(function(m){return m.status==='noshow';}).length;
-  var vendas = rows.filter(function(m){
-    var f = followups[m.id];
-    return f && f.venda==='sim';
-  }).length;
-  var pctReal = total>0?Math.round(realizadas/total*100):0;
-  var pctVendaTotal = total>0?Math.round(vendas/total*100):0;
-  var pctVendaReal = realizadas>0?Math.round(vendas/realizadas*100):0;
-  var steps=[
-    {n:'Agendadas',v:total,p:100,c:'var(--cyan)',hint:''},
-    {n:'Realizadas',v:realizadas,p:pctReal,c:'var(--purple3)',hint:total>0?(pctReal+'% das agendadas'):''},
-    {n:'Vendas',v:vendas,p:pctVendaTotal,c:'var(--green)',hint:realizadas>0?(pctVendaReal+'% das realizadas'):''}
-  ];
+// ===== FUNIL DE REUNIOES (Agendadas -> Realizadas -> Vendas), baseado na planilha =====
+function renderFunilReunioes(){
+  var mlong=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  var pp=getCurrentPeriod().split('/');
+  var periodLabel=mlong[parseInt(pp[0])-1]+' '+pp[1];
   return '<div class="cb" style="margin-bottom:16px;">'+
-    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-filter" style="color:var(--purple3);margin-right:6px;"></i>Funil de Reuniões</div>'+
-    (noshow>0?'<span class="badge b-red">'+noshow+' no-show</span>':'')+
-    '</div>'+
-    '<div style="padding:20px;">'+
-    steps.map(function(st){
-      return '<div class="funil-step"><div class="funil-row"><span class="funil-name">'+st.n+'</span>'+
-        '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;color:'+st.c+';">'+st.v+
-        (st.hint?' <span style="color:var(--muted);font-weight:600;">('+st.hint+')</span>':'')+'</span></div>'+
-        '<div class="prog-wrap"><div class="prog-fill" style="width:'+st.p+'%;background:'+st.c+';"></div></div></div>';
-    }).join('')+
+    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-filter" style="color:var(--purple3);margin-right:6px;"></i>Funil de Reunioes - '+periodLabel+'</div></div>'+
+    '<div id="funil-reunioes-body" style="padding:20px;">'+
+      '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
     '</div></div>';
+}
+
+async function loadFunilReunioes(){
+  var el = document.getElementById('funil-reunioes-body');
+  if(!el) return;
+  if(typeof isGcalConnected!=='function' || !isGcalConnected()){
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;">Conecte o Google em Configuracoes para ver o funil da planilha.</div>';
+    return;
+  }
+  try{
+    var data = await loadAllSheets();
+    var period = getCurrentPeriod();
+    var isGestor = CU.role==='gestor';
+    var nome = (CU.name||'').toLowerCase();
+
+    function isMine(r){
+      if(isGestor) return true;
+      var sdr=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').toLowerCase();
+      var closer=(col(r,['CLOSER','Closer','closer'])||'').toLowerCase();
+      return sdr.includes(nome)||closer.includes(nome);
+    }
+
+    var reunioesF = (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
+      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+      if(periodStr(d)!==period) return false;
+      return isMine(r);
+    });
+    var clientesF = (data.clientes&&data.clientes.rows?data.clientes.rows:[]).filter(function(c){
+      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+      if(periodStr(d)!==period) return false;
+      return isMine(c);
+    });
+
+    var total = reunioesF.length;
+    var realizadas = reunioesF.filter(function(r){
+      return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
+    }).length;
+    var noshow = reunioesF.filter(function(r){
+      var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
+      return st==='NO-SHOW'||st==='NO SHOW'||st==='NOSHOW';
+    }).length;
+    var vendas = clientesF.length;
+
+    var pctReal = total>0?Math.round(realizadas/total*100):0;
+    var pctVendaTotal = total>0?Math.round(vendas/total*100):0;
+    var pctVendaReal = realizadas>0?Math.round(vendas/realizadas*100):0;
+
+    var steps=[
+      {n:'Agendadas',v:total,p:100,c:'var(--cyan)',hint:''},
+      {n:'Realizadas',v:realizadas,p:pctReal,c:'var(--purple3)',hint:total>0?(pctReal+'% das agendadas'):''},
+      {n:'Vendas',v:vendas,p:pctVendaTotal,c:'var(--green)',hint:realizadas>0?(pctVendaReal+'% das realizadas'):''}
+    ];
+
+    el.innerHTML = (noshow>0?'<div style="margin-bottom:12px;"><span class="badge b-red">'+noshow+' no-show</span></div>':'')+
+      steps.map(function(st){
+        return '<div class="funil-step"><div class="funil-row"><span class="funil-name">'+st.n+'</span>'+
+          '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;color:'+st.c+';">'+st.v+
+          (st.hint?' <span style="color:var(--muted);font-weight:600;">('+st.hint+')</span>':'')+'</span></div>'+
+          '<div class="prog-wrap"><div class="prog-fill" style="width:'+st.p+'%;background:'+st.c+';"></div></div></div>';
+      }).join('');
+  }catch(e){
+    el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar funil: '+e.message+'</div>';
+  }
 }
 
 // Update renderReunioes to filter by person
@@ -4593,7 +4638,7 @@ function renderReunioesPersonal(){
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Reunioes</div><div class="page-sub">'+(isGestor?'Visao completa':'Minhas reunioes')+'</div></div>'+
     '<span class="badge b-amber">'+rows.length+' registradas</span></div>'+
-    renderFunilReunioes(rows)+
+    renderFunilReunioes()+
     reunHojeHtml+
     createForm + fbHtml + sheetsHtml +
   '</div>';
