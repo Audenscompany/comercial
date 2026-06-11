@@ -275,6 +275,11 @@ function checkDay(d){
   if(h)return{ok:false,type:'holiday',label:h};
   return{ok:true};
 }
+function nextBusinessDay(d){
+  var nd=new Date(d);
+  do{ nd.setDate(nd.getDate()+1); }while(!checkDay(nd).ok);
+  return nd;
+}
 
 // ===== STATE =====
 var CU=null,selRole='gestor';
@@ -441,10 +446,11 @@ function startRealtimeSync(){
     if(cfg.meta_comercial){ _metaComercial=cfg.meta_comercial; localStorage.setItem('audens_mcom',JSON.stringify(_metaComercial)); }
     if(cfg.sheets_ids){ SHEETS_IDS=Object.assign(SHEETS_IDS,cfg.sheets_ids); localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS)); }
     if(cfg.sheets_gids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,cfg.sheets_gids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
+    if(cfg.gcalClientId){ gcalClientId=cfg.gcalClientId; localStorage.setItem('audens_gcal_id',gcalClientId); }
   });
 
-  // Sync gcal_token in realtime
-  fbDb.ref('gcal_token').on('value', function(snap){
+  // Sync gcal_token in realtime (per usuario)
+  fbDb.ref('gcal_token/'+gcalUserKey()).on('value', function(snap){
     var fbGcal = snap.val();
     if(!fbGcal) return;
     if(!gcalToken || gcalToken.expires_at <= Date.now()){
@@ -495,6 +501,7 @@ async function saveLigacaoFB(lead, callData, meetingDisplay){
     reuniao: callData.reuniao==='sim'?'Sim':'Não',
     dataReuniao: meetingDisplay||'',
     responsavel: callData.responsavel||CU.name||'',
+    faturamentoLead: callData.faturamento||'',
     ts: Date.now()
   };
   try{
@@ -605,6 +612,7 @@ function saveAll(){
         fbDb.ref('config/meta_comercial').set(_metaComercial);
         fbDb.ref('config/sheets_ids').set(SHEETS_IDS);
         fbDb.ref('config/sheets_gids').set(SHEETS_GIDS);
+        if(gcalClientId) fbDb.ref('config/gcalClientId').set(gcalClientId);
       }catch(e){}
     }
   }catch(e){}
@@ -612,7 +620,7 @@ function saveAll(){
 loadStorage();
 
 function todayStr(){return new Date().toLocaleDateString('pt-BR');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');if(id==='modal-call')_callLeadSource='daily';}
 
 // ===== DATE HELPERS =====
 var MON_ABR={jan:0,fev:1,mar:2,abr:3,mai:4,jun:5,jul:6,ago:7,set:8,out:9,nov:10,dez:11};
@@ -748,6 +756,7 @@ function parseMoney(s){return parseFloat((s||'').replace(/[R$.\s]/g,'').replace(
 function metaColor(pct){return pct>=100?'var(--green)':pct>=70?'var(--purple2)':pct>=40?'var(--amber)':'var(--red)';}
 
 // ===== GOOGLE OAUTH =====
+function gcalUserKey(){return CU?CU.name.toLowerCase().replace(/\s+/g,'_'):'default';}
 function isGcalConnected(){
   if(!gcalToken||!gcalToken.expires_at) return false;
   if(Date.now() > gcalToken.expires_at - 300000){
@@ -790,15 +799,15 @@ function gcalConnect(){
           gcalToken={access_token:p.access_token,expires_at:Date.now()+(parseInt(p.expires_in)||3600)*1000};
           try{w.close();}catch(e2){}
           saveAll();
-          // Compartilhar token com todos via Firebase
-          try{if(fbDb)fbDb.ref('gcal_token').set(gcalToken);}catch(e3){}
+          // Salvar token deste usuario no Firebase (cada um com o seu)
+          try{if(fbDb)fbDb.ref('gcal_token/'+gcalUserKey()).set(gcalToken);}catch(e3){}
           showPage('config');alert('Google conectado com sucesso!');
         }
       }
     }catch(e2){}
   },800);
 }
-function gcalDisconnect(){gcalToken=null;localStorage.removeItem('audens_gcal_token');saveAll();try{if(fbDb)fbDb.ref('gcal_token').remove();}catch(e){}showPage('config');}
+function gcalDisconnect(){gcalToken=null;localStorage.removeItem('audens_gcal_token');saveAll();try{if(fbDb)fbDb.ref('gcal_token/'+gcalUserKey()).remove();}catch(e){}showPage('config');}
 
 // ===== META ADS API =====
 function isMetaConnected(){return metaToken&&metaToken.expires_at>Date.now();}
@@ -1145,11 +1154,14 @@ function showMain(){
     fbGet('config/sheets_gids').then(function(fbSgids){
       if(fbSgids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,fbSgids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
     }),
-    fbGet('gcal_token').then(function(fbGcal){
+    fbGet('gcal_token/'+gcalUserKey()).then(function(fbGcal){
       if(fbGcal && fbGcal.expires_at > Date.now()){
         gcalToken = fbGcal;
         localStorage.setItem('audens_gcal_token', JSON.stringify(gcalToken));
       }
+    }),
+    fbGet('config/gcalClientId').then(function(fbCid){
+      if(fbCid){ gcalClientId=fbCid; localStorage.setItem('audens_gcal_id',gcalClientId); }
     })
   ]).then(function(){
     // Load meta token from Firebase
@@ -1188,6 +1200,7 @@ function buildNav(){
     {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
   ];
   var sdrNav=[
+    {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
     {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
     {id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
@@ -1221,7 +1234,8 @@ function showPage(id){
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioesPersonal,
     bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
-    'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar
+    'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
+    'reativacao':renderReativacao
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -1229,6 +1243,7 @@ function showPage(id){
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
     if(id==='reunioes') setTimeout(loadFunilReunioes,50);
+    if(id==='reativacao') setTimeout(loadReativacao,50);
   }
   var tnav=document.getElementById('nav-tarefas');
   if(tnav){var p=getPendingFollowups().length;var ex=tnav.querySelector('.nav-badge');
@@ -1653,9 +1668,25 @@ function renderLigar(){
         '<td>'+sb+'</td><td>'+btn+'</td></tr>';
     }).join('')+'</tbody></table></div></div></div>';
 }
+// ===== REATIVACAO: estado e helpers do fluxo de ligacao reaproveitado =====
+var _callLeadSource='daily',_reativacaoLeads=[];
+function _getCallLeads(){return _callLeadSource==='reativacao'?(_reativacaoLeads||[]):(getDailyLeads()||[]);}
+function reativacaoKey(tel){return(tel||'').replace(/\D/g,'')||'sem_tel';}
+function reativacaoVisible(reativ,tel){
+  var rec=reativ?reativ[reativacaoKey(tel)]:null;
+  if(!rec) return true;
+  if(rec.status==='agendou') return false;
+  var dias=(Date.now()-(rec.ts||0))/86400000;
+  if(rec.status==='nao-atendeu') return dias>=7;
+  if(rec.status==='sem-interesse') return dias>=60;
+  return true;
+}
+async function saveReativacaoStatus(tel,status){
+  try{ await fbSet('reativacoes/'+reativacaoKey(tel),{status:status,ts:Date.now(),por:(CU?CU.name:'')}); }catch(e){}
+}
 function openCallModal(idx){
   _curCallIdx=idx;_callStep=1;_callData={};
-  var dl=getDailyLeads()||[],l=dl[idx],reg=calls[l.telefone];
+  var dl=_getCallLeads(),l=dl[idx],reg=calls[l.telefone];
   document.getElementById('mc-name').textContent='Tel: '+l.nome;
   document.getElementById('mc-sub').textContent='Passo 1 - Resultado da ligacao';
   updateStepDots4(1);
@@ -1716,6 +1747,9 @@ function callStep3(){
   _callStep=3;updateStepDots4(3);
   document.getElementById('mc-sub').textContent='Passo 3 - Detalhes da reuniao';
   document.getElementById('mc-body').innerHTML=
+    '<div style="margin-bottom:16px;"><label class="f-label">Faturamento do lead (R$)</label>'+
+    '<input class="f-input" id="mc-fat" type="number" min="0" step="100" placeholder="Ex: 25000" style="margin-bottom:0;" oninput="autoAssignCloser()" value="'+(_callData.faturamento||'')+'">'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Abaixo de R$40.000 → Gustavo · A partir de R$40.000 → Lucas</div></div>'+
     '<div style="margin-bottom:16px;"><label class="f-label">Responsavel pela reuniao</label>'+
     '<select class="f-select" id="mc-resp">'+
       CLOSERS.map(function(c){return'<option value="'+c+'">'+(c===CU.closer?c+' (voce)':c)+'</option>';}).join('')+
@@ -1726,18 +1760,28 @@ function callStep3(){
       '<button class="btn btn-outline" onclick="callStep2()">Voltar</button>'+
       '<button class="btn btn-primary" onclick="callStep4()">Proximo</button>'+
     '</div>';
+  if(_callData.faturamento) autoAssignCloser();
+}
+function autoAssignCloser(){
+  var fatEl=document.getElementById('mc-fat'),respEl=document.getElementById('mc-resp');
+  if(!fatEl||!respEl) return;
+  var fat=parseFloat(fatEl.value);
+  if(isNaN(fat)) return;
+  respEl.value = fat < 40000 ? 'Gustavo' : 'Lucas';
 }
 function callStep4(){
   _callData.responsavel=document.getElementById('mc-resp').value;
   _callData.guestEmail=document.getElementById('mc-email').value.trim();
+  _callData.faturamento=document.getElementById('mc-fat').value.trim();
   _callStep=4;updateStepDots4(4);
   document.getElementById('mc-sub').textContent='Passo 4 - Confirmacao';
-  var dl=getDailyLeads()||[],l=dl[_curCallIdx];
+  var dl=_getCallLeads(),l=dl[_curCallIdx];
   document.getElementById('mc-body').innerHTML=
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px;">'+
       '<div><b>Lead:</b> '+l.nome+'</div>'+
       '<div style="margin-top:6px;"><b>Reuniao:</b> <span class="badge b-amber">'+_callData.meetingDisplay+'</span></div>'+
       '<div style="margin-top:6px;"><b>Responsavel:</b> <span class="badge b-purple">'+_callData.responsavel+'</span></div>'+
+      (_callData.faturamento?'<div style="margin-top:6px;color:var(--muted);">Faturamento: R$ '+Number(_callData.faturamento).toLocaleString('pt-BR')+'</div>':'')+
       (_callData.guestEmail?'<div style="margin-top:6px;color:var(--muted);">Email: '+_callData.guestEmail+'</div>':'')+
     '</div>'+
     '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
@@ -1746,20 +1790,26 @@ function callStep4(){
     '</div>';
 }
 async function saveCallDirect(){
-  var dl=getDailyLeads()||[],l=dl[_curCallIdx];
+  var dl=_getCallLeads(),l=dl[_curCallIdx];
   var callObj={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
   calls[l.telefone]=callObj;
   saveAll();
   saveLigacaoFB(l, _callData, '');
   saveCallFB(l.telefone, callObj);
+  if(_callLeadSource==='reativacao'){
+    await saveReativacaoStatus(l.telefone,'nao-atendeu');
+    closeModal('modal-call');_callLeadSource='daily';showPage('reativacao');return;
+  }
   closeModal('modal-call');showPage('ligar');
 }
 async function saveCallFinalAsync(){
-  var dl=getDailyLeads()||[],l=dl[_curCallIdx];
+  var dl=_getCallLeads(),l=dl[_curCallIdx];
+  var fromReativacao=_callLeadSource==='reativacao';
   calls[l.telefone]={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
   var mid='m_'+Date.now();
   var meeting={id:mid,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
-    status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||''};
+    status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||''};
+  if(fromReativacao){meeting.origem='Recuperacao';}
   meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
   // Grava ligação + reunião no Google Sheets
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
@@ -1768,24 +1818,40 @@ async function saveCallFinalAsync(){
   var result=await createGcalEvent(meeting);
   if(result.success){
     meetings[mid].gcalEventId=result.eventId;meetings[mid].meetLink=result.meetLink;meetings[mid].gcalLink=result.htmlLink;
-    saveAll();saveMeetingFB(mid,meetings[mid]);closeModal('modal-call');showPage('ligar');
+    saveAll();saveMeetingFB(mid,meetings[mid]);
+  }
+  if(fromReativacao){
+    await saveReativacaoStatus(l.telefone,'agendou');
+    // Registra a nova reuniao na planilha de Reunioes (Origem = Recuperacao)
+    try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', CU.name||'João', _callData.responsavel||'', 'Recuperacao']); }catch(e){}
+    closeModal('modal-call');_callLeadSource='daily';showPage('reativacao');
+    if(result.success) setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
+    return;
+  }
+  if(result.success){
+    closeModal('modal-call');showPage('ligar');
     setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
   }else{closeModal('modal-call');showPage('ligar');}
 }
 async function saveCallFinal(){
-  var dl=getDailyLeads()||[],l=dl[_curCallIdx];
+  var dl=_getCallLeads(),l=dl[_curCallIdx];
   calls[l.telefone]={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
   // Se agendou reunião, salva no Firebase também
   if(_callData.agendou){
     var mid2='m_'+Date.now();
     var mtg2={id:mid2,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
-      status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||''};
+      status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||''};
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
   }
   saveAll();
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
   saveCallFB(l.telefone, {nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''});
+  if(_callLeadSource==='reativacao'){
+    await saveReativacaoStatus(l.telefone,'sem-interesse');
+    closeModal('modal-call');_callLeadSource='daily';showPage('reativacao');return;
+  }
   closeModal('modal-call');showPage('ligar');
 }
 function updateStepDots4(step){
@@ -3819,7 +3885,7 @@ function renderConfig(){
     '<input class="f-input" id="gcal-client-id" placeholder="XXXXXXXXXX.apps.googleusercontent.com" value="'+gcalClientId+'" style="margin-bottom:12px;">'+
     '<div style="display:flex;gap:10px;">'+
       '<button class="btn btn-primary" onclick="saveGcalId()"><i class="ti ti-device-floppy"></i> Salvar Client ID</button>'+
-      (gcalClientId&&!connected?'<button class="btn btn-gcal" onclick="gcalConnect()"><i class="ti ti-brand-google"></i> Conectar Google</button>':'')+
+      (!connected?'<button class="btn btn-gcal" onclick="gcalConnect()"><i class="ti ti-brand-google"></i> Conectar Google</button>':'')+
     '</div>'+
     '<div style="margin-top:14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);line-height:2;">'+
       '<div style="font-weight:700;color:var(--white);margin-bottom:6px;">Passo a passo:</div>'+
@@ -4288,6 +4354,121 @@ function renderSDRRegistrar(){
       '</div>'+
     '</div>'+
   '</div>';
+}
+
+// ===== REATIVACAO (No-shows recentes + Leads frios 30+ dias) =====
+function renderReativacao(){
+  return '<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title">Reativacao</div><div class="page-sub">Recontato de leads e no-shows</div></div></div>'+
+    '<div class="cb" style="margin-bottom:16px;">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-alert-triangle" style="color:var(--red);margin-right:6px;"></i>No-shows recentes</div></div>'+
+      '<div id="reativ-noshow-body" style="padding:20px;">'+
+        '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="cb">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-snowflake" style="color:var(--cyan);margin-right:6px;"></i>Leads frios (30+ dias sem fechar)</div></div>'+
+      '<div id="reativ-frios-body" style="padding:20px;">'+
+        '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+function _reunRowToLead(r){
+  return {
+    nome: col(r,['CLIENTE','Cliente','cliente'])||'—',
+    telefone: (col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,''),
+    cidade: col(r,['CIDADE','Cidade','cidade'])||'',
+    faturamento: ''
+  };
+}
+function openReativacaoCall(tipo,i){
+  var rows = tipo==='noshow' ? (window._reativNoshowRows||[]) : (window._reativFriosRows||[]);
+  _reativacaoLeads = rows.map(_reunRowToLead);
+  _callLeadSource='reativacao';
+  openCallModal(i);
+}
+async function loadReativacao(){
+  var elNS=document.getElementById('reativ-noshow-body'), elFR=document.getElementById('reativ-frios-body');
+  if(!elNS||!elFR) return;
+  if(typeof isGcalConnected!=='function' || !isGcalConnected()){
+    var msgg='<div style="color:var(--muted);font-size:13px;">Conecte o Google em Configuracoes para carregar.</div>';
+    elNS.innerHTML=msgg;elFR.innerHTML=msgg;return;
+  }
+  try{
+    var data=await loadAllSheets();
+    var reativ=await fbGet('reativacoes')||{};
+    var rows=(data.reunioes&&data.reunioes.rows)?data.reunioes.rows:[];
+    var hoje=new Date();hoje.setHours(0,0,0,0);
+    var trintaAtras=new Date();trintaAtras.setDate(trintaAtras.getDate()-30);trintaAtras.setHours(0,0,0,0);
+
+    function isJoao(r){
+      var sdr=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').toLowerCase();
+      return sdr.includes('joão')||sdr.includes('joao');
+    }
+    function dataAg(r){
+      return parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+    }
+
+    var noshows=rows.filter(function(r){
+      var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
+      if(st!=='NO-SHOW'&&st!=='NO SHOW'&&st!=='NOSHOW') return false;
+      if(!isJoao(r)) return false;
+      var d=dataAg(r);if(!d) return false;
+      var nbd=nextBusinessDay(d);nbd.setHours(0,0,0,0);
+      if(nbd.getTime()!==hoje.getTime()) return false;
+      var tel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+      return reativacaoVisible(reativ,tel);
+    });
+
+    var frios=rows.filter(function(r){
+      var st=col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'';
+      if(!isRealizada(st)) return false;
+      var emp=(col(r,['EMPRESA','Empresa','empresa'])||'').trim();
+      if(emp) return false;
+      if(!isJoao(r)) return false;
+      var d=dataAg(r);if(!d) return false;
+      if(d.getTime()>trintaAtras.getTime()) return false;
+      var tel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+      return reativacaoVisible(reativ,tel);
+    }).sort(function(a,b){
+      var da=dataAg(a),db=dataAg(b);
+      return (da?da.getTime():0)-(db?db.getTime():0);
+    });
+
+    window._reativNoshowRows=noshows;
+    window._reativFriosRows=frios;
+
+    function renderList(list,emptyMsg,tipo,extraInfoFn){
+      if(!list.length) return '<div class="empty-st"><i class="ti ti-circle-check"></i><p>'+emptyMsg+'</p></div>';
+      return '<div style="display:grid;gap:10px;">'+list.map(function(r,i){
+        var lead=_reunRowToLead(r);
+        var dAgStr=col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'—';
+        return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'+
+          '<div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:16px;font-weight:700;">'+lead.nome+'</div>'+
+            '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px;">'+
+              '<span><i class="ti ti-phone"></i> '+(lead.telefone||'—')+'</span>'+
+              '<span><i class="ti ti-calendar"></i> Agendado: '+dAgStr+'</span>'+
+              (extraInfoFn?extraInfoFn(r):'')+
+            '</div>'+
+          '</div>'+
+          '<button class="btn btn-reg" onclick="openReativacaoCall(\''+tipo+'\','+i+')"><i class="ti ti-phone"></i> Ligar</button>'+
+        '</div>';
+      }).join('')+'</div>';
+    }
+
+    elNS.innerHTML='<div class="info-note" style="margin-bottom:14px;"><i class="ti ti-info-circle"></i> '+noshows.length+' no-show(s) para reagendar hoje</div>'+
+      renderList(noshows,'Nenhum no-show pendente hoje.','noshow');
+    elFR.innerHTML='<div class="info-note" style="margin-bottom:14px;"><i class="ti ti-info-circle"></i> '+frios.length+' lead(s) frio(s) elegiveis</div>'+
+      renderList(frios,'Nenhum lead frio elegivel no momento.','frio',function(r){
+        var d=dataAg(r);var dias=d?Math.floor((Date.now()-d.getTime())/86400000):0;
+        return '<span><i class="ti ti-clock"></i> '+dias+' dias</span>';
+      });
+  }catch(e){
+    var em='<div style="color:var(--red);font-size:13px;">Erro ao carregar: '+e.message+'</div>';
+    elNS.innerHTML=em;elFR.innerHTML=em;
+  }
 }
 
 async function loadSDRHoje(){
