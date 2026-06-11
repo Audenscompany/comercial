@@ -4488,24 +4488,70 @@ async function loadFunilReunioes(){
       return st==='NO-SHOW'||st==='NO SHOW'||st==='NOSHOW';
     }).length;
     var vendas = clientesF.length;
+    var mrrGerado = clientesF.reduce(function(s,c){
+      var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+      if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+      return s+mrr;
+    },0);
 
-    var pctReal = total>0?Math.round(realizadas/total*100):0;
-    var pctVendaTotal = total>0?Math.round(vendas/total*100):0;
-    var pctVendaReal = realizadas>0?Math.round(vendas/realizadas*100):0;
-
-    var steps=[
-      {n:'Agendadas',v:total,p:100,c:'var(--cyan)',hint:''},
-      {n:'Realizadas',v:realizadas,p:pctReal,c:'var(--purple3)',hint:total>0?(pctReal+'% das agendadas'):''},
-      {n:'Vendas',v:vendas,p:pctVendaTotal,c:'var(--green)',hint:realizadas>0?(pctVendaReal+'% das realizadas'):''}
+    // ---- Summary cards ----
+    var sumCards=[
+      {l:'Agendadas',v:total,c:'var(--cyan)'},
+      {l:'Realizadas',v:realizadas,c:'var(--purple3)'},
+      {l:'No-Show',v:noshow,c:'var(--red)'},
+      {l:'Vendas',v:vendas,c:'var(--green)'},
+      {l:'MRR Gerado',v:'R$'+Math.round(mrrGerado).toLocaleString('pt-BR'),c:'var(--green)'}
     ];
+    var html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:20px;">';
+    sumCards.forEach(function(c){
+      html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+c.l+'</div>'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:'+c.c+';">'+c.v+'</div>'+
+      '</div>';
+    });
+    html+='</div>';
 
-    el.innerHTML = (noshow>0?'<div style="margin-bottom:12px;"><span class="badge b-red">'+noshow+' no-show</span></div>':'')+
-      steps.map(function(st){
-        return '<div class="funil-step"><div class="funil-row"><span class="funil-name">'+st.n+'</span>'+
-          '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;color:'+st.c+';">'+st.v+
-          (st.hint?' <span style="color:var(--muted);font-weight:600;">('+st.hint+')</span>':'')+'</span></div>'+
-          '<div class="prog-wrap"><div class="prog-fill" style="width:'+st.p+'%;background:'+st.c+';"></div></div></div>';
-      }).join('');
+    // ---- Funil visual ----
+    var etapas=[
+      {label:'Agendadas',val:total,cor:'var(--purple3)',icon:'ti-calendar'},
+      {label:'Realizadas',val:realizadas,cor:'var(--amber)',icon:'ti-calendar-check'},
+      {label:'Vendas',val:vendas,cor:'var(--green)',icon:'ti-trophy'}
+    ];
+    var maxVal=total||1;
+    html+='<div style="display:flex;flex-direction:column;gap:8px;max-width:600px;margin:0 auto;">';
+    etapas.forEach(function(e,i){
+      var pct=Math.round(e.val/maxVal*100);
+      var convPct=i>0&&etapas[i-1].val>0?Math.round(e.val/etapas[i-1].val*100):null;
+      var w=Math.max(pct,8);
+      html+='<div style="text-align:center;">'+
+        (convPct!==null?'<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;color:var(--muted);margin-bottom:4px;">↓ '+convPct+'% de conversão</div>':'')+
+        '<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:2px;">'+
+          '<div style="width:'+w+'%;margin:0 auto;background:'+e.cor+';border-radius:8px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;min-width:220px;">'+
+            '<div style="display:flex;align-items:center;gap:10px;">'+
+              '<i class="ti '+e.icon+'" style="font-size:20px;color:rgba(0,0,0,0.5);"></i>'+
+              '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:rgba(0,0,0,0.7);letter-spacing:1px;text-transform:uppercase;">'+e.label+'</span>'+
+            '</div>'+
+            '<span style="font-family:var(--font-bn),sans-serif;font-size:28px;color:rgba(0,0,0,0.75);">'+e.val+'</span>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div>';
+
+    // ---- Bottom conversion summary ----
+    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px;">';
+    [{l:'Agendada → Realizada',v:total>0?Math.round(realizadas/total*100):0},
+     {l:'Realizada → Venda',v:realizadas>0?Math.round(vendas/realizadas*100):0},
+     {l:'Agendada → Venda',v:total>0?Math.round(vendas/total*100):0}
+    ].forEach(function(t){
+      html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+t.l+'</div>'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:var(--white);">'+t.v+'%</div>'+
+      '</div>';
+    });
+    html+='</div>';
+
+    el.innerHTML = html;
   }catch(e){
     el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar funil: '+e.message+'</div>';
   }
