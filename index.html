@@ -2189,7 +2189,10 @@ function buildDashComHTML(data){
 
   // Revenue
   var valorVendido=clientesF.reduce(function(s,c){
-    return s+parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    // MRR = soma do VALOR CONTRATO/MÊS dos fechamentos do período
+    var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    return s+mrr;
   },0);
 
   // ---- ANNUAL METRICS ----
@@ -2261,7 +2264,9 @@ function buildDashComHTML(data){
   var reunRealP=reunioesFP.filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
   var novosClientesP=clientesFP.length;
   var valorVendidoP=clientesFP.reduce(function(s,c){
-    return s+parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    return s+mrr;
   },0);
   var ticketMedioP=novosClientesP>0?valorVendidoP/novosClientesP:0;
   var cplP=invPrev>0&&leadsTrafegoCountP>0?invPrev/leadsTrafegoCountP:0;
@@ -2727,6 +2732,7 @@ function buildHistoricoMensal(todosClientes){
 
 // ===== ANÁLISE DE ADS =====
 var _adsPeriod=null, _adsStart=null, _adsEnd=null, _adsCampanha='';
+var _tarefasData=null; // data selecionada para visualização de tarefas
 
 function renderAnaliseAds(){
   if(!isGcalConnected()){
@@ -3857,22 +3863,31 @@ function nextRecurrenceAfter(diasSemana, fromDateStr){
 
 // Get all tasks visible for current user today or overdue (and scheduled future ones filtered out)
 function getTarefasVisiveis(){
-  var hoje = todayStr();
+  var hoje = _tarefasData || todayStr();
   var hojeSort = dateToSort(hoje);
   var all = JSON.parse(localStorage.getItem('tarefas_dia')||'[]');
   var userName = CU ? CU.name : '';
-  // Filter by assignee — show if assigned to me OR if I'm gestor and created it (and not assigned to someone else)
   return all.filter(function(t){
     var isMineTarefa = t.atribuido === userName || (!t.atribuido && t.criador === userName) || (CU && CU.role==='gestor' && !t.atribuido);
     if(!isMineTarefa) return false;
-    if(t.done) return t.doneDate === hoje; // only show today's completed
-    // Recurring: show if nextDate <= hoje
+    if(t.done) return t.doneDate === hoje;
     if(t.recorrente && t.proximaData){
       return dateToSort(t.proximaData) <= hojeSort;
     }
-    // Normal: show if date <= hoje
     return !t.date || dateToSort(t.date) <= hojeSort;
   });
+}
+function navTarefasData(delta){
+  var ref = _tarefasData || todayStr();
+  var p = ref.split('/');
+  var d = new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0]));
+  d.setDate(d.getDate()+delta);
+  _tarefasData = d.toLocaleDateString('pt-BR');
+  showPage('tarefas-dia');
+}
+function resetTarefasData(){
+  _tarefasData = null;
+  showPage('tarefas-dia');
 }
 
 // For gestor: get all tasks they created assigned to others (to monitor)
@@ -3926,7 +3941,7 @@ function renderTarefasDia(){
     var dataTag = atrasada ? '<span style="font-size:11px;color:var(--red);">Atrasada · '+dataRef+'</span>' :
                   (dataRef&&dataRef!==hoje ? '<span style="font-size:11px;color:var(--muted);">'+dataRef+'</span>' : '');
     listHtml += '<div style="display:flex;align-items:flex-start;gap:12px;padding:13px 16px;background:var(--bg2);border:1px solid '+bordaCor+';border-radius:10px;margin-bottom:8px;">'+
-      '<button onclick="concluirTarefa(\''+t.id+'\')" style="width:22px;height:22px;border-radius:50%;border:2px solid '+bordaCor+';background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px;transition:background .2s;" onmouseover="this.style.background=\'rgba(123,47,255,0.25)\'" onmouseout="this.style.background=\'transparent\'"></button>'+
+      '<button type="button" onclick="concluirTarefa(\''+t.id+'\')" style="width:22px;height:22px;border-radius:50%;border:2px solid '+bordaCor+';background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px;transition:background .2s;" onmouseover="this.style.background=\'rgba(123,47,255,0.25)\'" onmouseout="this.style.background=\'transparent\'"></button>'+
       '<div style="flex:1;min-width:0;">'+
         '<div style="font-family:Barlow Condensed,sans-serif;font-size:15px;font-weight:600;color:var(--white);margin-bottom:5px;">'+t.texto+'</div>'+
         '<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">'+
@@ -3998,9 +4013,15 @@ function renderTarefasDia(){
     }).join('')+
     '</div></div>';
 
+  var isHoje = !_tarefasData || _tarefasData===todayStr();
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Tarefas do Dia</div><div class="page-sub">'+hoje+' · '+pendentes.length+' pendentes</div></div>'+
-    '<span class="badge b-purple">'+pendentes.length+' pendentes</span></div>'+
+    '<div style="display:flex;align-items:center;gap:8px;">'+
+      '<button class="btn btn-outline" onclick="navTarefasData(-1)" style="padding:6px 10px;font-size:13px;"><i class="ti ti-chevron-left"></i></button>'+
+      (!isHoje?'<button class="btn btn-outline" onclick="resetTarefasData()" style="padding:6px 12px;font-size:12px;">Hoje</button>':'')+
+      '<button class="btn btn-outline" onclick="navTarefasData(1)" style="padding:6px 10px;font-size:13px;"><i class="ti ti-chevron-right"></i></button>'+
+      '<span class="badge b-purple">'+pendentes.length+' pendentes</span>'+
+    '</div></div>'+
 
     '<div class="cb" style="margin-bottom:16px;">'+
       '<div class="cb-hd"><div class="cb-title"><i class="ti ti-plus" style="margin-right:6px;color:var(--purple3);"></i>Nova Tarefa</div></div>'+
@@ -4430,9 +4451,53 @@ function renderReunioesPersonal(){
     '<div id="reunioes-sheet-view"><div style="padding:20px;color:var(--muted);font-size:13px;">Clique em Carregar para buscar todas as reunioes da planilha.</div></div>'+
   '</div>';
 
+  // Reuniões de hoje (da planilha)
+  var hoje2 = todayStr();
+  var reunHoje = Object.values(meetings).filter(function(m){
+    if(!m.dtISO && !m.dtDisplay) return false;
+    var dtRef = m.dtDisplay || '';
+    // Verificar se é hoje
+    if(dtRef.includes(hoje2)) return true;
+    if(m.dtISO){
+      var p2=hoje2.split('/');
+      var isoHoje=p2[2]+'-'+p2[1]+'-'+p2[0];
+      return m.dtISO.startsWith(isoHoje);
+    }
+    return false;
+  }).filter(function(m){
+    if(isGestor) return true;
+    return (m.responsavel||'').toLowerCase().includes(nome.toLowerCase()) ||
+           (m.sdr||'').toLowerCase().includes(nome.toLowerCase()) ||
+           (m.criador||'').toLowerCase().includes(nome.toLowerCase());
+  });
+
+  var reunHojeHtml = '';
+  if(reunHoje.length>0){
+    reunHojeHtml = '<div class="cb" style="margin-bottom:16px;border-color:rgba(245,158,11,0.4);">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-event" style="color:var(--amber);margin-right:6px;"></i>Reuniões de Hoje</div>'+
+      '<span class="badge b-amber">'+reunHoje.length+'</span></div>'+
+      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
+      reunHoje.map(function(m){
+        var st=m.status||'pending';
+        var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
+        var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
+        var hora=m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'';
+        return '<tr>'+
+          '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
+          '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
+          '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
+          '<td>'+(m.responsavel||'—')+'</td>'+
+          '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;"><i class="ti ti-video"></i> Abrir</a>':'—')+'</td>'+
+          '<td><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;"><i class="ti ti-edit"></i></button></td>'+
+        '</tr>';
+      }).join('')+
+      '</tbody></table></div></div>';
+  }
+
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Reunioes</div><div class="page-sub">'+(isGestor?'Visao completa':'Minhas reunioes')+'</div></div>'+
     '<span class="badge b-amber">'+rows.length+' registradas</span></div>'+
+    reunHojeHtml+
     createForm + fbHtml + sheetsHtml +
   '</div>';
 }
@@ -4755,7 +4820,50 @@ async function calcCloserFromSheets(nivelIdx, month){
     var commUnit = result.tipoContrato==='Trimestral'?lv.commTrim:(result.tipoContrato==='Semestral'?lv.commSem:lv.commMens);
     result.comissaoUnit = commUnit;
     result.comissaoContratos = (result.contratos >= meta && acima > 0) ? acima * commUnit : 0;
-    var totalBruto = result.base + result.bonusMeta + result.comissaoContratos + result.incentivReun;
+
+    // Cold Call: R$30/reunião realizada (SDR=Gustavo, ORIGEM=Cold Call) + 25% MRR vendas cold call
+    var mrrColdCall=0, reunColdCall=0;
+    if(reunRows && reunRows.length>1){
+      var rh2=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var riSDR=rh2.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
+      var riOri=rh2.findIndex(function(h){return h.includes('ORIGEM');});
+      var riSt=rh2.findIndex(function(h){return h.includes('STATUS');});
+      var riDt=rh2.findIndex(function(h){return(h.includes('DATA')&&(h.includes('REAL')||h.includes('SERA')))||h.includes('DATA QUE');});
+      if(riDt<0) riDt=rh2.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
+      reunRows.slice(1).forEach(function(row){
+        var sdrR=(riSDR>=0?row[riSDR]||'':'').trim();
+        var oriR=(riOri>=0?row[riOri]||'':'').toLowerCase();
+        var stR=(riSt>=0?row[riSt]||'':'').toUpperCase();
+        var dtR=riDt>=0?row[riDt]||'':'';
+        var monthR=dtR?dateToMonthStr(parseBRDate(dtR)):'';
+        if(normCloserName(sdrR)==='Gustavo' && oriR.includes('cold') && isRealizada(stR) && monthR===month){
+          reunColdCall++;
+        }
+      });
+    }
+    if(cliRows && cliRows.length>1){
+      var ch2=cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var ciSDR=ch2.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
+      var ciOri=ch2.findIndex(function(h){return h.includes('ORIGEM');});
+      var ciVal=ch2.findIndex(function(h){return(h.includes('VALOR')&&h.includes('MES'))||(h.includes('VALOR')&&h.includes('MÊS'));});
+      var ciDt=ch2.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
+      cliRows.slice(1).forEach(function(row){
+        var sdrC=(ciSDR>=0?row[ciSDR]||'':'').trim();
+        var oriC=(ciOri>=0?row[ciOri]||'':'').toLowerCase();
+        var dtC=ciDt>=0?row[ciDt]||'':'';
+        var monthC=dtC?dateToMonthStr(parseBRDate(dtC)):'';
+        if(normCloserName(sdrC)==='Gustavo' && oriC.includes('cold') && monthC===month){
+          var mrrV=ciVal>=0?parseMoney(row[ciVal]):0;
+          mrrColdCall+=mrrV;
+        }
+      });
+    }
+    result.mrrColdCall=mrrColdCall;
+    result.reunColdCall=reunColdCall;
+    result.comissaoColdCall=Math.round(mrrColdCall*0.25);
+    result.incentivColdCall=reunColdCall*30;
+
+    var totalBruto = result.base + result.bonusMeta + result.comissaoContratos + result.incentivReun + result.comissaoColdCall + result.incentivColdCall;
     result.total = Math.max(totalBruto, result.minG);
     result.totalBruto = totalBruto;
 
