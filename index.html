@@ -5023,9 +5023,9 @@ async function calcSDRFromSheets(nivelIdx, month){
     var vendasEfetivas = Math.max(0, result.vendas - (threshold - 1));
     result.comissaoVendas = vendasEfetivas > 0 ? vendasEfetivas * lv.commVenda : 0;
     result.ssIncentiv = result.ssReun * 30;
-    result.ssTotal = result.ssIncentiv + result.ssComm;
-    var totalBrutoSDR = result.base + result.bonusMeta + result.acelerador + result.incentivReun + result.comissaoVendas;
-    result.totalSDR = Math.max(totalBrutoSDR, result.minG);
+    result.ssTotal = result.incentivReun + result.ssIncentiv + result.ssComm;
+    var totalBrutoSDR = result.base + result.bonusMeta + result.acelerador + result.comissaoVendas;
+    result.totalSDR = totalBrutoSDR;
     result.grandTotal = result.totalSDR + result.ssTotal;
 
   }catch(e){
@@ -5357,7 +5357,8 @@ async function triggerSDRCalc(mode){
     (r.ssTotal>0?
       '<div style="background:linear-gradient(135deg,rgba(26,58,107,0.2),rgba(11,110,86,0.1));border:1.5px solid rgba(42,90,160,0.4);border-radius:12px;padding:16px 20px;margin-bottom:14px;">'+
         '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);margin-bottom:10px;">SOCIAL SELLING</div>'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">'+
+          '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--cyan);">'+r.reunioesComp+'×R$'+lv.incentivReun+'=R$'+r.incentivReun+'</div></div>'+
           '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Reuniões SS</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--cyan);">'+r.ssReun+'×R$30=R$'+r.ssIncentiv+'</div></div>'+
           '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Comissão SS 25%</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#4ade80;">R$'+r.ssComm.toFixed(0)+'</div></div>'+
           '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Total SS</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--purple3);">R$'+r.ssTotal.toFixed(0)+'</div></div>'+
