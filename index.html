@@ -3483,11 +3483,11 @@ async function gerarContracheque(modo){
   var html;
   if(modo==='closer'){
     var lv = CLOSER_LEVELS[_careerLevels.gustavo||0];
-    var lvNome = lv ? lv.nome : 'Closer';
+    var lvNome = lv ? 'Closer '+lv.tier+' '+lv.n : 'Closer';
     html = buildCCCloser(r, mesLabel, lvNome);
   } else {
     var lv2 = SDR_LEVELS[_careerLevels.joao||0];
-    var lvNome2 = lv2 ? lv2.nome : 'SDR';
+    var lvNome2 = lv2 ? 'SDR '+lv2.tier+' '+lv2.n : 'SDR';
     html = buildCCSDR(r, mesLabel, lvNome2);
   }
 
@@ -3587,17 +3587,20 @@ function buildCCCloser(r, mesLabel, lvNome){
 
 function buildCCSDR(r, mesLabel, lvNome){
   var totalPadrao = r.base + (r.bonusMeta||0) + (r.acelerador||0);
-  var totalSS = (r.incentivReun||0) + (r.comissaoVendas||0);
+  var totalSS = (r.incentivReun||0) + (r.ssIncentiv||0) + (r.ssComm||0) + (r.comissaoVendas||0);
   var total = totalPadrao + totalSS;
   var rowsPad = '';
   rowsPad += '<tr><td><div class="td-label">Salário Base <span class="td-badge badge-sdr">SDR</span></div></td><td><div class="td-detail">'+lvNome+' — fixo mensal</div></td><td>—</td><td>—</td><td>'+fmt(r.base)+'</td></tr>';
-  if(r.bonusMeta>0) rowsPad += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+r.reunioes+' agendamentos ≥ meta</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusMeta)+'</td></tr>';
-  if(r.acelerador>0) rowsPad += '<tr><td><div class="td-label">Acelerador</div></td><td><div class="td-detail">Agendamentos extras acima da meta</div></td><td>'+(r.reunioes - (r.metaReun||0))+'</td><td>R$ 15,00</td><td>'+fmt(r.acelerador)+'</td></tr>';
+  if(r.bonusMeta>0) rowsPad += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+(r.agendamentos||0)+' agendamentos ≥ meta</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusMeta)+'</td></tr>';
+  if((r.acelerador||0)>0) rowsPad += '<tr><td><div class="td-label">Acelerador</div></td><td><div class="td-detail">Agendamentos extras acima da meta</div></td><td>'+Math.max(0,(r.agendamentos||0)-(r.metaReun||0))+'</td><td>R$ 15,00</td><td>'+fmt(r.acelerador)+'</td></tr>';
   rowsPad += '<tr class="subtotal-row"><td colspan="4">SUBTOTAL SDR PADRÃO</td><td>'+fmt(totalPadrao)+'</td></tr>';
 
   var rowsSS = '';
-  if(r.incentivReun>0) rowsSS += '<tr><td><div class="td-label">Incentivo por Reunião <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Reuniões com comparecimento</div></td><td>'+r.realizadas+'</td><td>R$ 30,00</td><td>'+fmt(r.incentivReun)+'</td></tr>';
-  if(r.comissaoVendas>0) rowsSS += '<tr><td><div class="td-label">Comissão por Venda <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Vendas originadas via prospecção</div></td><td>'+(r.vendasSS||0)+'</td><td>R$ 300,00</td><td>'+fmt(r.comissaoVendas)+'</td></tr>';
+  // incentivReun = reunioes realizadas × R$10 (SDR normal) — ssIncentiv = reunioes SS × R$30
+  if((r.incentivReun||0)>0) rowsSS += '<tr><td><div class="td-label">Incentivo por Reunião <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Reuniões com comparecimento</div></td><td>'+(r.reunioesComp||0)+'</td><td>R$ 10,00</td><td>'+fmt(r.incentivReun||0)+'</td></tr>';
+  if((r.ssIncentiv||0)>0) rowsSS += '<tr><td><div class="td-label">Bônus Reunião SS <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Reuniões Social Selling</div></td><td>'+(r.ssReun||0)+'</td><td>R$ 30,00</td><td>'+fmt(r.ssIncentiv||0)+'</td></tr>';
+  if((r.ssComm||0)>0) rowsSS += '<tr><td><div class="td-label">Comissão SS 25% <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Vendas via Social Selling</div></td><td>'+(r.ssVendas||0)+'</td><td>—</td><td>'+fmt(r.ssComm||0)+'</td></tr>';
+  if((r.comissaoVendas||0)>0) rowsSS += '<tr><td><div class="td-label">Comissão por Venda <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Vendas originadas via prospecção</div></td><td>—</td><td>—</td><td>'+fmt(r.comissaoVendas||0)+'</td></tr>';
   rowsSS += '<tr class="subtotal-row"><td colspan="4">SUBTOTAL SOCIAL SELLING</td><td>'+fmt(totalSS)+'</td></tr>';
 
   return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'+
@@ -4879,23 +4882,27 @@ async function calcCloserFromSheets(nivelIdx, month){
       });
     }
     if(cliRows && cliRows.length>1){
-      var ch2=cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      // Log headers para debug
-      console.log('Clientes headers:', ch2);
-      var ciSDR=ch2.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
-      var ciOri=ch2.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
-      var ciVal=ch2.findIndex(function(h){return(h.includes('VALOR')&&(h.includes('MES')||h.includes('MÊS')||h.includes('MENS')))||h.includes('CONTRATO');});
-      var ciDt=ch2.findIndex(function(h){return h.includes('DATA')&&(h.includes('INI')||h.includes('INÍCIO'));});
-      console.log('ciSDR='+ciSDR+' ciOri='+ciOri+' ciVal='+ciVal+' ciDt='+ciDt);
+      // Reuse headers already parsed above
+      var ciSDR2=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
+      var ciOri2=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
+      // Use VALOR VENDIDO DO CONTRATO for cold call commission (25% of total contract value)
+      var ciValorVendido=ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
       cliRows.slice(1).forEach(function(row){
-        var sdrC=(ciSDR>=0?row[ciSDR]||'':'').trim();
-        var oriC=(ciOri>=0?row[ciOri]||'':'').toLowerCase();
-        var dtC=ciDt>=0?row[ciDt]||'':'';
-        var monthC=dtC?dateToMonthStr(parseBRDate(dtC)):'';
+        var sdrC=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
+        var oriC=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
+        var dateStr3=row[iData2]||'';
+        var dt3=parseBRDate(dateStr3);
+        var monthC=dateToMonthStr(dt3);
         if(normCloserName(sdrC)==='Gustavo' && (oriC.includes('cold')||oriC.includes('call')) && monthC===month){
-          var mrrV=ciVal>=0?parseMoney(row[ciVal]):0;
-          console.log('ColdCall match:', sdrC, oriC, monthC, mrrV);
-          mrrColdCall+=mrrV;
+          // 25% do valor vendido total (ex: R$6.000 trimestral)
+          var valorVendidoCC=ciValorVendido>=0?parseMoney(row[ciValorVendido]):0;
+          // fallback: usar valor mensal × 3 se plano trimestral
+          if(!valorVendidoCC){
+            var planoCC=(iPlano>=0?row[iPlano]||'':'').toUpperCase();
+            var mrrMes=parseMoney(row[2]||'');
+            valorVendidoCC=planoCC.includes('TRIMESTRAL')?mrrMes*3:planoCC.includes('SEMESTRAL')?mrrMes*6:mrrMes;
+          }
+          mrrColdCall+=valorVendidoCC;
         }
       });
     }
@@ -5274,8 +5281,17 @@ async function triggerCloserCalc(mode){
       '<div style="background:var(--bg2);border:1px solid '+(r.bonusMeta?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Bônus Meta</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.bonusMeta?'#4ade80':'var(--muted)')+';">R$'+r.bonusMeta.toLocaleString('pt-BR')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.comissaoContratos?'rgba(123,47,255,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão contratos</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoContratos?'var(--purple3)':'var(--muted)')+';">R$'+r.comissaoContratos.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+' acima × R$'+r.comissaoUnit+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.reunioes?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Reuniões realizadas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.reunioes?'var(--cyan)':'var(--muted)')+';">'+r.reunioes+'</div><div style="font-size:11px;color:var(--muted);">R$'+r.incentivReun.toLocaleString('pt-BR')+' (×R$30)</div></div>'+
-      '<div style="background:var(--bg2);border:1px solid '+(r.comissaoVendas25?'rgba(245,158,11,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão 25% vendas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoVendas25?'var(--amber)':'var(--muted)')+';">R$'+(r.comissaoVendas25).toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div><div style="font-size:11px;color:var(--muted);">R$'+r.valorVendido.toLocaleString('pt-BR',{maximumFractionDigits:0})+' vendidos × 25%</div></div>'+
+      '<div style="background:var(--bg2);border:1px solid '+(r.comissaoColdCall?'rgba(245,158,11,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão 25% Cold Call</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoColdCall?'var(--amber)':'var(--muted)')+';">R$'+(r.comissaoColdCall||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div><div style="font-size:11px;color:var(--muted);">R$'+(r.mrrColdCall||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+' vendidos × 25%</div></div>'+
     '</div>'+
+    ((r.reunColdCall||0)>0||(r.comissaoColdCall||0)>0?
+      '<div style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(245,158,11,0.03));border:1.5px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px 20px;margin-bottom:14px;">'+
+        '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--amber);margin-bottom:10px;">COLD CALL</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">'+
+          '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Reuniões CC</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--amber);">'+(r.reunColdCall||0)+'×R$30=R$'+(r.incentivColdCall||0)+'</div></div>'+
+          '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Comissão CC 25%</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#4ade80;">R$'+(r.comissaoColdCall||0).toFixed(0)+'</div></div>'+
+          '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Total Cold Call</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--purple3);">R$'+((r.incentivColdCall||0)+(r.comissaoColdCall||0)).toFixed(0)+'</div></div>'+
+        '</div>'+
+      '</div>':'')+
     '<div style="background:linear-gradient(135deg,rgba(123,47,255,0.15),rgba(123,47,255,0.05));border:1.5px solid var(--border2);border-radius:12px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
       '<div><div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">TOTAL ESTIMADO</div>'+
       '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:48px;letter-spacing:1px;color:'+cor+';line-height:1;">R$'+r.total.toLocaleString('pt-BR')+'</div>'+
