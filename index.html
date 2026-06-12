@@ -180,10 +180,24 @@ tbody tr:hover td{background:var(--pglow2);}
 .kanban-card.dragging{opacity:0.4;}
 .kanban-card-name{font-weight:700;font-size:14px;color:var(--white);margin-bottom:4px;}
 .kanban-card-sub{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:5px;}
-.kanban-card-actions{display:flex;justify-content:space-between;margin-top:10px;}
+.kanban-card-sub.kanban-fat-hot{background:var(--purple);color:#fff;padding:3px 8px;border-radius:6px;margin-top:6px;font-weight:700;display:inline-flex;}
+.kanban-card-actions{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:10px;}
 .kbtn{background:transparent;border:1px solid var(--border2);color:var(--purple3);border-radius:6px;padding:4px 9px;cursor:pointer;font-size:13px;}
 .kbtn:hover{background:var(--pglow);}
+.kbtn-danger{color:var(--red);border-color:rgba(239,68,68,0.35);}
+.kbtn-danger:hover{background:rgba(239,68,68,0.12);}
 .kanban-empty{text-align:center;padding:24px 8px;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:1px;}
+.sdr-task-row{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--border);}
+.sdr-task-row:last-child{border-bottom:none;}
+.sdr-task-row.done{opacity:0.45;}
+.sdr-task-row.done .sdr-task-lead,.sdr-task-row.done .sdr-task-tipo{text-decoration:line-through;}
+.sdr-task-check{display:flex;align-items:center;cursor:pointer;flex-shrink:0;}
+.sdr-task-check input{width:19px;height:19px;accent-color:var(--purple);cursor:pointer;}
+.sdr-task-icon{width:38px;height:38px;border-radius:10px;background:var(--pglow2);display:flex;align-items:center;justify-content:center;color:var(--purple3);font-size:17px;flex-shrink:0;}
+.sdr-task-info{flex:1;min-width:0;}
+.sdr-task-lead{font-weight:700;font-size:14px;color:var(--white);}
+.sdr-task-tipo{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:0.5px;}
+.sdr-task-date{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -435,6 +449,25 @@ function startRealtimeSync(){
     }
   });
 
+  // Sync tarefas de cadencia (SDR - Joao) em tempo real
+  fbDb.ref('sdr_tarefas').on('value', function(snap){
+    var fbTarefas = snap.val() || {};
+    var prev = JSON.stringify(sdrTarefas);
+    sdrTarefas = fbTarefas;
+    if(JSON.stringify(sdrTarefas) !== prev){
+      localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+      var area = document.getElementById('content');
+      var pg = area ? area.getAttribute('data-page') : null;
+      if(pg==='minhas-tarefas'||pg==='desempenho-sdr') showPage(pg);
+      var tnav=document.getElementById('nav-minhas-tarefas');
+      if(tnav){
+        var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+        if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+        else if(ex)ex.remove();
+      }
+    }
+  });
+
   // Sync followups in realtime
   fbDb.ref('followups').on('value', function(snap){
     var fbFU = snap.val();
@@ -621,6 +654,8 @@ function ensureKanbanEntry(lead){
         status:'novo',
         statusAt:Date.now()
       });
+      // Lead qualificado (>= R$20 mil) -> gera cadencia de tarefas para o Joao
+      generateCadenciaTasks(lead,key);
     }
   }).catch(function(e){console.error('ensureKanbanEntry error',e);});
 }
@@ -632,6 +667,21 @@ function moveKanbanCard(key,newStatus){
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
     fbDb.ref('kanban/'+key).update({status:newStatus,statusAt:Date.now()});
+  }
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+}
+// Arquiva o lead (sai das colunas do funil, vai para "Arquivados")
+function archiveKanbanCard(key){
+  moveKanbanCard(key,'arquivado');
+}
+// Apaga definitivamente o lead do funil
+function deleteKanbanCard(key){
+  if(!confirm('Apagar este lead do funil definitivamente? Essa ação não pode ser desfeita.')) return;
+  delete kanbanData[key];
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  if(fbDb || initFirebase()){
+    fbDb.ref('kanban/'+key).remove();
   }
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
@@ -683,19 +733,133 @@ function renderKanban(){
   return html;
 }
 function kanbanCardHtml(e,idx){
+  var col=KANBAN_COLS[idx];
+  var isArchived=col.id==='arquivado';
   var prevCol=KANBAN_COLS[idx-1];
-  var nextCol=KANBAN_COLS[idx+1];
+  var nextCol=(!isArchived)?KANBAN_COLS[idx+1]:null;
+  if(nextCol && nextCol.id==='arquivado') nextCol=null;
+  if(isArchived) prevCol=null;
   var nome=e.nome||'(sem nome)';
+  var fatVal=parseFaturamentoValue(e.faturamento);
+  var fatClass=(fatVal>=KANBAN_FAT_DESTAQUE)?' kanban-fat-hot':'';
+  var actions;
+  if(isArchived){
+    actions='<button class="kbtn" title="Restaurar para Novo Lead" onclick="moveKanbanCard(\''+e._key+'\',\'novo\')"><i class="ti ti-rotate-clockwise-2"></i></button>'+
+      '<span style="flex:1"></span>'+
+      '<button class="kbtn kbtn-danger" title="Apagar definitivamente" onclick="deleteKanbanCard(\''+e._key+'\')"><i class="ti ti-trash"></i></button>';
+  } else {
+    actions=(prevCol?'<button class="kbtn" title="Voltar para '+prevCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+prevCol.id+'\')"><i class="ti ti-arrow-left"></i></button>':'<span></span>')+
+      (nextCol?'<button class="kbtn" title="Avancar para '+nextCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+nextCol.id+'\')"><i class="ti ti-arrow-right"></i></button>':'<span></span>')+
+      '<span style="flex:1"></span>'+
+      '<button class="kbtn" title="Arquivar" onclick="archiveKanbanCard(\''+e._key+'\')"><i class="ti ti-archive"></i></button>'+
+      '<button class="kbtn kbtn-danger" title="Apagar" onclick="deleteKanbanCard(\''+e._key+'\')"><i class="ti ti-trash"></i></button>';
+  }
   return '<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
     '<div class="kanban-card-name">'+nome+'</div>'+
     (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
     (e.telefone?'<div class="kanban-card-sub"><i class="ti ti-phone"></i> '+e.telefone+'</div>':'')+
-    (e.faturamento?'<div class="kanban-card-sub"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
+    (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
     (e.cidade?'<div class="kanban-card-sub"><i class="ti ti-map-pin"></i> '+e.cidade+'</div>':'')+
-    '<div class="kanban-card-actions">'+
-    (prevCol?'<button class="kbtn" title="Voltar para '+prevCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+prevCol.id+'\')"><i class="ti ti-arrow-left"></i></button>':'<span></span>')+
-    (nextCol?'<button class="kbtn" title="Avancar para '+nextCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+nextCol.id+'\')"><i class="ti ti-arrow-right"></i></button>':'<span></span>')+
+    '<div class="kanban-card-actions">'+actions+'</div></div>';
+}
+
+// ===== MINHAS TAREFAS (Joao - cadencia de contato) =====
+function fmtDateBR(iso){
+  if(!iso) return '';
+  var p=iso.split('-');
+  return p[2]+'/'+p[1]+'/'+p[0];
+}
+function sdrTaskRowHtml(t,showDate){
+  return '<div class="sdr-task-row'+(t.done?' done':'')+'">'+
+    '<label class="sdr-task-check"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleSdrTarefa(\''+t._key+'\',this.checked)"><span class="sdr-check-mark"></span></label>'+
+    '<div class="sdr-task-icon"><i class="ti '+(t.icon||'ti-checkbox')+'"></i></div>'+
+    '<div class="sdr-task-info">'+
+      '<div class="sdr-task-lead">'+(t.nome||'(sem nome)')+'</div>'+
+      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(t.telefone?' &middot; '+t.telefone:'')+'</div>'+
+    '</div>'+
+    (showDate?'<div class="sdr-task-date">'+fmtDateBR(t.dataISO)+'</div>':'')+
+  '</div>';
+}
+function renderMinhasTarefas(){
+  var hojeISO=new Date().toISOString().split('T')[0];
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;});
+  var pend=all.filter(function(t){return !t.done;});
+  var atrasadas=pend.filter(function(t){return t.dataISO<hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
+  var hojeT=pend.filter(function(t){return t.dataISO===hojeISO;});
+  var futuras=pend.filter(function(t){return t.dataISO>hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
+  var concluidas=all.filter(function(t){return t.done;}).sort(function(a,b){return (b.doneAt||0)-(a.doneAt||0);}).slice(0,30);
+
+  var html='<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 20 mil)</div></div>'+
+    (atrasadas.length?'<span class="badge b-red">'+atrasadas.length+' atrasada'+(atrasadas.length>1?'s':'')+'</span>':'<span class="badge b-green">Em dia</span>')+
+    '</div>';
+
+  if(atrasadas.length){
+    html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Atrasadas</span><span class="badge b-red">'+atrasadas.length+'</span></div>'+
+      atrasadas.map(function(t){return sdrTaskRowHtml(t,true);}).join('')+'</div>';
+  }
+  html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Hoje</span><span class="badge b-purple">'+hojeT.length+'</span></div>'+
+    (hojeT.length?hojeT.map(function(t){return sdrTaskRowHtml(t,false);}).join(''):'<div class="empty-st"><i class="ti ti-check"></i><p>Nenhuma tarefa para hoje</p></div>')+
+    '</div>';
+  if(futuras.length){
+    html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Proximas</span><span class="badge b-cyan">'+futuras.length+'</span></div>'+
+      futuras.slice(0,30).map(function(t){return sdrTaskRowHtml(t,true);}).join('')+'</div>';
+  }
+  if(concluidas.length){
+    html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Concluidas recentemente</span></div>'+
+      concluidas.map(function(t){return sdrTaskRowHtml(t,true);}).join('')+'</div>';
+  }
+  if(!all.length){
+    html+='<div class="cb"><div class="empty-st"><i class="ti ti-checkbox"></i><p>Nenhuma tarefa de cadencia gerada ainda</p></div></div>';
+  }
+  html+='</div>';
+  return html;
+}
+
+// ===== DESEMPENHO SDR (Lucas - acompanhamento das tarefas do Joao) =====
+function sdrKpiBoxHtml(label,value,colorVar){
+  return '<div style="flex:1;min-width:150px;padding:18px 22px;border-right:1px solid var(--border);">'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+label+'</div>'+
+    '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:30px;color:'+colorVar+';">'+value+'</div>'+
+  '</div>';
+}
+function renderDesempenhoSDR(){
+  var hojeISO=new Date().toISOString().split('T')[0];
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;});
+  var total=all.length;
+  var done=all.filter(function(t){return t.done;}).length;
+  var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
+  var pendHoje=all.filter(function(t){return !t.done && t.dataISO===hojeISO;}).length;
+  var pct=total?Math.round(done/total*100):0;
+
+  var byLead={};
+  all.forEach(function(t){
+    var k=t.leadKey;
+    if(!byLead[k]) byLead[k]={nome:t.nome,telefone:t.telefone,faturamento:t.faturamento,total:0,done:0,atrasadas:0};
+    byLead[k].total++;
+    if(t.done) byLead[k].done++;
+    else if(t.dataISO<hojeISO) byLead[k].atrasadas++;
+  });
+  var leadRows=Object.keys(byLead).map(function(k){return byLead[k];})
+    .sort(function(a,b){return b.atrasadas-a.atrasadas || b.total-a.total;});
+
+  var html='<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title">Desempenho SDR</div><div class="page-sub">Acompanhamento da cadencia de contato - Joao</div></div></div>'+
+    '<div class="cb" style="display:flex;flex-wrap:wrap;padding:0;">'+
+      sdrKpiBoxHtml('Total de Tarefas',total,'var(--white)')+
+      sdrKpiBoxHtml('Concluidas',done+' ('+pct+'%)','var(--green)')+
+      sdrKpiBoxHtml('Pendentes Hoje',pendHoje,'var(--cyan)')+
+      sdrKpiBoxHtml('Atrasadas',atrasadas,'var(--red)')+
+    '</div>'+
+    '<div class="cb"><div class="cb-hd"><span class="cb-title">Desempenho por Lead</span></div>'+
+    (leadRows.length?('<div class="t-scroll"><table><thead><tr><th>Lead</th><th>Telefone</th><th>Concluidas</th><th>Total</th><th>%</th><th>Atrasadas</th></tr></thead><tbody>'+
+      leadRows.map(function(r){
+        var p=r.total?Math.round(r.done/r.total*100):0;
+        return '<tr><td>'+(r.nome||'(sem nome)')+'</td><td>'+(r.telefone||'')+'</td><td>'+r.done+'</td><td>'+r.total+'</td><td>'+p+'%</td><td>'+(r.atrasadas>0?'<span class="badge b-red">'+r.atrasadas+'</span>':'-')+'</td></tr>';
+      }).join('')+'</tbody></table></div>')
+      :'<div class="empty-st"><i class="ti ti-report-analytics"></i><p>Nenhuma tarefa de cadencia gerada ainda</p></div>')+
     '</div></div>';
+  return html;
 }
 
 var allLeads=[],calls={},meetings={},followups={},goals={metaDiaria:50,metaMensal:1000},_dailyMap={};
@@ -706,8 +870,107 @@ var KANBAN_COLS=[
   {id:'reuniao',label:'Reunião Agendada',color:'amber'},
   {id:'proposta',label:'Proposta Apresentada',color:'green'},
   {id:'recuperacao',label:'Recuperação',color:'orange'},
-  {id:'fechado',label:'Fechado',color:'gold'}
+  {id:'fechado',label:'Fechado',color:'gold'},
+  {id:'arquivado',label:'Arquivados',color:'muted'}
 ];
+// Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card
+var KANBAN_FAT_DESTAQUE=40000;
+// Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
+var KANBAN_TASK_FAT_MIN=20000;
+// Estado das tarefas de cadencia (SDR)
+var sdrTarefas={};
+// Cadencia de contato (sem e-mail), baseada na planilha "Cadencia de Inbound"
+// "Periodo seguinte" = mesmo dia util, periodo da tarde
+var CADENCIA_SDR=[
+  {dia:1,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:1,periodo:'manha',tipo:'WhatsApp (Texto)',icon:'ti-message'},
+  {dia:1,periodo:'manha',tipo:'WhatsApp (Audio)',icon:'ti-microphone'},
+  {dia:1,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:1,periodo:'tarde',tipo:'WhatsApp (Video)',icon:'ti-video'},
+  {dia:2,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:2,periodo:'manha',tipo:'WhatsApp (Texto)',icon:'ti-message'},
+  {dia:2,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:2,periodo:'tarde',tipo:'WhatsApp (Texto)',icon:'ti-message'},
+  {dia:3,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:3,periodo:'tarde',tipo:'WhatsApp (Foto)',icon:'ti-photo'},
+  {dia:4,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:4,periodo:'manha',tipo:'WhatsApp (Texto)',icon:'ti-message'},
+  {dia:5,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:5,periodo:'tarde',tipo:'WhatsApp (Texto)',icon:'ti-message'}
+];
+function slugify(s){
+  return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_');
+}
+// Retorna a data (Date, 00:00) correspondente ao "Dia N" da cadencia, contando
+// apenas dias uteis (seg-sex, sem feriados) a partir de hoje (Dia 1).
+function kanbanBusinessDay(baseDate,n){
+  var d=new Date(baseDate);
+  d.setHours(0,0,0,0);
+  if(!checkDay(d).ok) d=nextBusinessDay(d);
+  for(var i=1;i<n;i++){ d=nextBusinessDay(d); }
+  return d;
+}
+// Gera as tarefas de cadencia para o Joao quando um lead qualificado (>= R$20 mil) entra no funil
+function generateCadenciaTasks(lead,leadKey){
+  if(!fbDb && !initFirebase()) return;
+  var fatVal=parseFaturamentoValue(lead.faturamento);
+  if(fatVal<KANBAN_TASK_FAT_MIN) return;
+  var base=new Date();
+  CADENCIA_SDR.forEach(function(item){
+    var d=kanbanBusinessDay(base,item.dia);
+    var iso=d.toISOString().split('T')[0];
+    var taskId=leadKey+'_d'+item.dia+'_'+item.periodo+'_'+slugify(item.tipo);
+    fbDb.ref('sdr_tarefas/'+taskId).once('value').then(function(snap){
+      if(!snap.exists()){
+        fbDb.ref('sdr_tarefas/'+taskId).set({
+          leadKey:leadKey,nome:lead.nome||'',telefone:(lead.telefone||''),
+          empresa:lead.empresa||'',faturamento:lead.faturamento||'',
+          tipo:item.tipo,icon:item.icon,dia:item.dia,periodo:item.periodo,
+          dataISO:iso,done:false,doneAt:null,createdAt:Date.now()
+        });
+      }
+    }).catch(function(e){console.error('generateCadenciaTasks error',e);});
+  });
+}
+// Marca/desmarca uma tarefa de cadencia como concluida
+function toggleSdrTarefa(taskId,doneVal){
+  if(!sdrTarefas[taskId]) return;
+  sdrTarefas[taskId].done=!!doneVal;
+  sdrTarefas[taskId].doneAt=doneVal?Date.now():null;
+  localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+  if(fbDb || initFirebase()){
+    fbDb.ref('sdr_tarefas/'+taskId).update({done:!!doneVal,doneAt:sdrTarefas[taskId].doneAt});
+  }
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='minhas-tarefas') showPage('minhas-tarefas');
+  var tnav=document.getElementById('nav-minhas-tarefas');
+  if(tnav){
+    var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+    if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+    else if(ex)ex.remove();
+  }
+}
+// Tarefas pendentes (atrasadas + hoje) - usado pro badge do menu
+function getPendingSdrTarefas(){
+  var hojeISO=new Date().toISOString().split('T')[0];
+  return Object.keys(sdrTarefas||{}).map(function(k){return sdrTarefas[k];})
+    .filter(function(t){return t && !t.done && t.dataISO<=hojeISO;});
+}
+// Extrai um valor numerico aproximado de strings de faturamento ("60 mil até 100 mil", "R$ 50.000", etc.)
+function parseFaturamentoValue(str){
+  if(!str) return 0;
+  var s=String(str).toLowerCase();
+  var matches=s.match(/[\d.,]+/g);
+  if(!matches) return 0;
+  var nums=matches.map(function(m){
+    var clean=m.replace(/\./g,'').replace(/,/g,'.');
+    return parseFloat(clean)||0;
+  });
+  var val=nums[0]||0;
+  if(s.indexOf('mil')!==-1 && val<1000) val=val*1000;
+  if(s.indexOf('milh')!==-1) val=val*1000000;
+  return val;
+}
 var _dragKanbanKey=null;
 var gcalToken=null,gcalClientId='';
 var metaToken=null,metaAppId='',metaAccountId='';
@@ -733,6 +996,7 @@ function loadStorage(){
     var mac=localStorage.getItem('audens_meta_acc');if(mac)metaAccountId=mac;
     var mt=localStorage.getItem('audens_meta_token');if(mt)metaToken=JSON.parse(mt);
     var kb=localStorage.getItem('audens_kanban');if(kb)kanbanData=JSON.parse(kb);
+    var st=localStorage.getItem('audens_sdr_tarefas');if(st)sdrTarefas=JSON.parse(st);
   }catch(e){}
 }
 function saveAll(){
@@ -1358,6 +1622,7 @@ function showMain(){
 function buildNav(){
   var nav=document.getElementById('sidebar-nav');
   var pendFU=getPendingFollowups().length;
+  var pendSDR=getPendingSdrTarefas().length;
   // gI merged into gIG below
   var closerNav=[
     {id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
@@ -1368,6 +1633,7 @@ function buildNav(){
   ];
   var sdrNav=[
     {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+    {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
     {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
     {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
@@ -1377,6 +1643,7 @@ function buildNav(){
   var aI=CU.funcao==='sdr'?sdrNav:closerNav;
   var gIG=[
     {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+    {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
@@ -1404,7 +1671,8 @@ function showPage(id){
     bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
-    'reativacao':renderReativacao,'kanban':renderKanban
+    'reativacao':renderReativacao,'kanban':renderKanban,
+    'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
