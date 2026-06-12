@@ -115,6 +115,8 @@ tbody tr:hover td{background:var(--pglow2);}
 .prog-fill{height:100%;border-radius:4px;background:var(--purple);transition:width .4s;}
 .modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center;}
 .modal-ov.open,.modal-ov.active{display:flex;}
+.kanban-tel{cursor:pointer;}.kanban-tel:hover{color:var(--cyan);}
+.tel-copiado{color:var(--green)!important;}
 .modal-box{background:var(--card2);border:1px solid var(--border2);border-radius:16px;padding:28px;width:520px;max-width:96vw;max-height:90vh;overflow-y:auto;}
 .modal-title{font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;color:var(--white);margin-bottom:4px;}
 .modal-sub{font-family:Barlow Condensed,sans-serif;font-size:13px;color:var(--muted);letter-spacing:1px;margin-bottom:20px;}
@@ -289,6 +291,8 @@ var USERS={
 var CLOSERS=['Lucas','Gustavo'];
 var SDR_USERS=['João'];
 var BONUS_COMP=30,BONUS_VENDA_PCT=0.25;
+// Tempo apos o horario marcado da reuniao em que o follow-up (Realizada/No-show) passa a ficar pendente
+var MEETING_DURATION_MS=60*60*1000;
 
 // ===== HOLIDAYS =====
 var FIXED_HOL={'01-01':'Confraternizacao','04-21':'Tiradentes','05-01':'Dia do Trabalho',
@@ -705,6 +709,10 @@ function abrirAgendarReuniao(key){
           '<div><label class="f-label">Data</label><input class="f-input" type="date" id="ar-date" min="'+minDate+'" value="'+(e.meetingISO?e.meetingISO.split('T')[0]:'')+'" style="margin-bottom:0;"></div>'+
           '<div><label class="f-label">Horario</label><input class="f-input" type="time" id="ar-time" value="'+(e.meetingDisplay?e.meetingDisplay.split(' ')[1]:'09:00')+'" style="margin-bottom:0;"></div>'+
         '</div>'+
+        '<label class="f-label" style="margin-top:12px;display:block;">Responsavel pela reuniao</label>'+
+        '<select class="f-select" id="ar-resp" style="margin-bottom:0;">'+
+          CLOSERS.map(function(c){return'<option value="'+c+'"'+((e.responsavel?e.responsavel===c:CU&&CU.closer===c)?' selected':'')+'>'+c+'</option>';}).join('')+
+        '</select>'+
         '<label class="f-label" style="margin-top:12px;display:block;">E-mail do contato (opcional, convite no Google Agenda)</label>'+
         '<input class="f-input" type="email" id="ar-email" value="'+(e.email||'')+'" placeholder="email@exemplo.com" style="margin-bottom:0;">'+
         (!isGcalConnected()?'<div class="info-note" style="margin-top:12px;"><i class="ti ti-info-circle"></i> Sua agenda do Google nao esta conectada. O evento sera aberto numa nova aba pra voce salvar manualmente.</div>':'')+
@@ -724,6 +732,8 @@ function cancelarAgendamentoReuniao(){
 async function confirmarAgendamentoReuniao(key){
   var dt=document.getElementById('ar-date').value, hr=document.getElementById('ar-time').value;
   var email=document.getElementById('ar-email').value.trim();
+  var respEl=document.getElementById('ar-resp');
+  var responsavel=respEl?respEl.value:(CLOSERS&&CLOSERS[0])||'';
   if(!dt||!hr){alert('Preencha a data e o horario da reuniao.');return;}
   var dtObj=new Date(dt+'T'+hr+':00');
   var meetingISO=dtObj.toISOString();
@@ -733,6 +743,7 @@ async function confirmarAgendamentoReuniao(key){
   kanbanData[key].statusAt=Date.now();
   kanbanData[key].meetingISO=meetingISO;
   kanbanData[key].meetingDisplay=meetingDisplay;
+  kanbanData[key].responsavel=responsavel;
   kanbanData[key].lembretes={h2:false,h1:false,m10:false};
   if(email) kanbanData[key].email=email;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -742,10 +753,21 @@ async function confirmarAgendamentoReuniao(key){
       statusAt:Date.now(),
       meetingISO:meetingISO,
       meetingDisplay:meetingDisplay,
+      responsavel:responsavel,
       lembretes:{h2:false,h1:false,m10:false},
       email:kanbanData[key].email||''
     });
   }
+  // Cria a tarefa de follow-up pos-reuniao para o responsavel (Realizada / No-show / Venda / Retorno)
+  var mid='km_'+key+'_'+Date.now();
+  var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
+    status:'pending',responsavel:responsavel,guestEmail:email||'',faturamentoLead:kanbanData[key].faturamento||'',
+    origem:'Kanban',kanbanKey:key};
+  meetings[mid]=meetingObj;
+  kanbanData[key].meetingId=mid;
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  saveAll();saveMeetingFB(mid,meetingObj);
+  if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
@@ -755,7 +777,7 @@ async function confirmarAgendamentoReuniao(key){
   try{
     var gcalResult=await createGcalEvent({
       id:key, nome:kanbanData[key].nome, tel:kanbanData[key].telefone,
-      dtISO:meetingISO, responsavel:(CU&&CU.name)||'', guestEmail:email
+      dtISO:meetingISO, responsavel:responsavel||(CU&&CU.name)||'', guestEmail:email
     });
     if(gcalResult && gcalResult.success){
       kanbanData[key].gcalEventId=gcalResult.eventId;
@@ -765,6 +787,12 @@ async function confirmarAgendamentoReuniao(key){
       if(fbDb || initFirebase()){
         fbDb.ref('kanban/'+key).update({gcalEventId:gcalResult.eventId,meetLink:kanbanData[key].meetLink,gcalLink:kanbanData[key].gcalLink});
       }
+      if(meetings[mid]){
+        meetings[mid].gcalEventId=gcalResult.eventId;
+        meetings[mid].meetLink=gcalResult.meetLink||'';
+        meetings[mid].gcalLink=gcalResult.htmlLink||'';
+        saveAll();saveMeetingFB(mid,meetings[mid]);
+      }
       var area2=document.getElementById('content');
       if(area2 && area2.getAttribute('data-page')==='kanban') showPage('kanban');
     }
@@ -772,6 +800,32 @@ async function confirmarAgendamentoReuniao(key){
 }
 // ===== Editar lead (dados do card do Kanban) =====
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+// ===== Telefone copiavel / link WhatsApp no Kanban =====
+function waLink(tel){
+  var d=(tel||'').replace(/\D/g,'');
+  if(d && d.length<=11) d='55'+d;
+  return 'https://wa.me/'+d;
+}
+function copiarTelefoneKanban(ev,tel){
+  if(ev){ev.stopPropagation();ev.preventDefault();}
+  var txt=(tel||'').replace(/\D/g,'');
+  function done(){
+    var el=ev&&ev.currentTarget;
+    if(!el) return;
+    var orig=el.getAttribute('data-orig')||el.innerHTML;
+    el.setAttribute('data-orig',orig);
+    el.classList.add('tel-copiado');
+    el.innerHTML='<i class="ti ti-check"></i> Copiado!';
+    setTimeout(function(){el.classList.remove('tel-copiado');el.innerHTML=orig;},1200);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(done);
+  }else{
+    var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);done();
+  }
+}
 function abrirEditarLead(key){
   var e=kanbanData[key];
   if(!e) return;
@@ -950,11 +1004,13 @@ function kanbanCardHtml(e,idx){
   return '<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
     '<div class="kanban-card-name">'+nome+'</div>'+
     (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
-    (e.telefone?'<div class="kanban-card-sub"><i class="ti ti-phone"></i> '+e.telefone+'</div>':'')+
+    (e.telefone?'<div class="kanban-card-sub kanban-tel" title="Clique para copiar o telefone" onclick="copiarTelefoneKanban(event,\''+e.telefone+'\')"><i class="ti ti-phone"></i> '+e.telefone+' <i class="ti ti-copy" style="opacity:.5;"></i></div>'+
+      '<a class="kanban-card-sub" href="'+waLink(e.telefone)+'" target="_blank" title="Abrir no WhatsApp" onclick="event.stopPropagation()" style="color:var(--green);text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
     (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
     (e.cidade?'<div class="kanban-card-sub"><i class="ti ti-map-pin"></i> '+e.cidade+'</div>':'')+
-    (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+'</div>':'')+
+    (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+(e.responsavel?' ('+e.responsavel+')':'')+'</div>':'')+
     (e.meetLink?'<div class="kanban-card-sub"><a href="'+e.meetLink+'" target="_blank" style="color:var(--cyan);"><i class="ti ti-video"></i> Abrir Meet</a></div>':'')+
+    (e.retornoDisplay?'<div class="kanban-card-sub" style="color:var(--amber);"><i class="ti ti-calendar-due"></i> Retorno: '+e.retornoDisplay+'</div>':'')+
     '<div class="kanban-card-actions">'+actions+'</div></div>';
 }
 
@@ -1903,7 +1959,7 @@ function showPage(id){
 function getPendingFollowups(){
   return Object.values(meetings).filter(function(m){
     return m.status==='pending'&&!followups[m.id]&&
-      Date.now()>new Date(m.dtISO).getTime()+24*3600*1000&&
+      Date.now()>new Date(m.dtISO).getTime()+MEETING_DURATION_MS&&
       m.responsavel===CU.closer;
   });
 }
@@ -2300,10 +2356,16 @@ function renderLigar(){
       var mtg=Object.values(meetings).find(function(m){return m.tel===l.telefone;});
       var fu=mtg?followups[mtg.id]:null;
       var sb,btn='';
-      if(fu){sb=fu.venda==='sim'?'<span class="badge b-green">Venda</span>':'<span class="badge b-muted">Sem venda</span>';btn='<span style="font-size:11px;color:var(--muted);">Concluido</span>';}
+      if(fu){
+        sb=fu.resultado==='noshow'?'<span class="badge b-red">No-show</span>':
+          fu.venda==='sim'?'<span class="badge b-green">Venda</span>':
+          fu.retornoData?'<span class="badge b-amber">Retorno '+new Date(fu.retornoData+'T00:00:00').toLocaleDateString('pt-BR')+'</span>':
+          '<span class="badge b-muted">Sem venda</span>';
+        btn='<span style="font-size:11px;color:var(--muted);">Concluido</span>';
+      }
       else if(mtg){
         sb='<span class="badge b-amber">'+mtg.dtDisplay+'</span>';
-        var isDue=Date.now()>new Date(mtg.dtISO).getTime()+24*3600*1000;
+        var isDue=Date.now()>new Date(mtg.dtISO).getTime()+MEETING_DURATION_MS;
         btn=isDue&&mtg.responsavel===CU.closer?'<button class="btn btn-task" onclick="openFollowup(meetings[\''+mtg.id+'\'])"><i class="ti ti-check"></i> Follow-up</button>':
           '<span style="font-size:11px;color:var(--muted);">'+mtg.responsavel+'</span>';
       }
@@ -2324,13 +2386,17 @@ function reativacaoVisible(reativ,tel){
   var rec=reativ?reativ[reativacaoKey(tel)]:null;
   if(!rec) return true;
   if(rec.status==='agendou') return false;
+  if(rec.status==='retorno'){
+    if(!rec.retornoData) return true;
+    return Date.now()>=new Date(rec.retornoData+'T00:00:00').getTime();
+  }
   var dias=(Date.now()-(rec.ts||0))/86400000;
   if(rec.status==='nao-atendeu') return dias>=7;
   if(rec.status==='sem-interesse') return dias>=60;
   return true;
 }
-async function saveReativacaoStatus(tel,status){
-  try{ await fbSet('reativacoes/'+reativacaoKey(tel),{status:status,ts:Date.now(),por:(CU?CU.name:'')}); }catch(e){}
+async function saveReativacaoStatus(tel,status,extra){
+  try{ await fbSet('reativacoes/'+reativacaoKey(tel),Object.assign({status:status,ts:Date.now(),por:(CU?CU.name:'')},extra||{})); }catch(e){}
 }
 function openCallModal(idx){
   _curCallIdx=idx;_callStep=1;_callData={};
@@ -2459,6 +2525,8 @@ async function saveCallFinalAsync(){
     status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||''};
   if(fromReativacao){meeting.origem='Recuperacao';}
   meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
+  // Dispara confirmacao da reuniao + materiais de aquecimento por WhatsApp (nao bloqueia a UI)
+  enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
   // Grava ligação + reunião no Google Sheets
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
   var btn=document.querySelector('#mc-body .btn-primary');
@@ -2492,6 +2560,7 @@ async function saveCallFinal(){
       status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||''};
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
+    enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
   }
   saveAll();
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
@@ -2524,19 +2593,23 @@ function openFollowup(meeting){
   document.getElementById('modal-followup').classList.add('open');
 }
 function renderFollowupBody(){
-  return '<div style="margin-bottom:16px;"><label class="f-label" style="margin-bottom:10px;">Houve comparecimento?</label>'+
+  var minDate=new Date().toISOString().split('T')[0];
+  return '<div style="margin-bottom:16px;"><label class="f-label" style="margin-bottom:10px;">A reuniao foi realizada?</label>'+
     '<div style="display:flex;gap:10px;">'+
-      '<button class="btn" id="fu-comp-sim" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectComp(\'sim\')">Sim, compareceu</button>'+
-      '<button class="btn" id="fu-comp-nao" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectComp(\'nao\')">Nao compareceu</button>'+
+      '<button class="btn" id="fu-comp-sim" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectComp(\'sim\')">Realizada</button>'+
+      '<button class="btn" id="fu-comp-nao" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectComp(\'nao\')">No-show</button>'+
     '</div></div>'+
+    '<div id="fu-noshow-note" style="display:none;margin-bottom:16px;padding:10px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">'+
+      'O lead vai entrar no fluxo de recontato de no-shows.'+
+    '</div>'+
     '<div id="fu-venda-section" style="display:none;">'+
       '<div style="padding:10px 12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px;margin-bottom:16px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#4ade80;">'+
-        'Gustavo ganha $'+BONUS_COMP+' pelo comparecimento'+
+        (_fuMeeting&&_fuMeeting.responsavel?_fuMeeting.responsavel:'Closer')+' ganha $'+BONUS_COMP+' pelo comparecimento'+
       '</div>'+
-      '<div style="margin-bottom:16px;"><label class="f-label" style="margin-bottom:10px;">A reuniao resultou em venda?</label>'+
+      '<div style="margin-bottom:16px;"><label class="f-label" style="margin-bottom:10px;">Foi feita a venda?</label>'+
       '<div style="display:flex;gap:10px;">'+
-        '<button class="btn" id="fu-sim" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'sim\')">Sim, fechou!</button>'+
-        '<button class="btn" id="fu-nao" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'nao\')">Nao fechou</button>'+
+        '<button class="btn" id="fu-sim" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'sim\')">Venda</button>'+
+        '<button class="btn" id="fu-nao" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'retorno\')">Retorno</button>'+
       '</div></div>'+
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
         '<div class="modal-grid2">'+
@@ -2546,13 +2619,15 @@ function renderFollowupBody(){
         '<div id="fu-bonus-preview" style="padding:10px 12px;background:rgba(253,224,71,0.08);border:1px solid rgba(253,224,71,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#fde047;"></div>'+
       '</div>'+
       '<div id="fu-motivo-fields" style="display:none;margin-bottom:16px;">'+
-        '<label class="f-label">Motivo de nao ter fechado</label>'+
+        '<label class="f-label">Quando sera o retorno?</label>'+
+        '<input class="f-input" type="date" id="fu-retorno-date" min="'+minDate+'" style="margin-bottom:10px;">'+
+        '<label class="f-label">Motivo de nao ter fechado agora</label>'+
         '<select class="f-select" id="fu-motivo" style="margin-bottom:10px;">'+
           '<option value="preco">Preco alto</option><option value="tempo">Sem tempo</option>'+
           '<option value="concorrente">Vai com concorrente</option><option value="nao_convenceu">Nao se convenceu</option>'+
           '<option value="socio">Precisa consultar socio</option><option value="outro">Outro</option>'+
         '</select>'+
-        '<div style="padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">Lead voltara para a fila.</div>'+
+        '<div style="padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">Lead volta para a coluna de Recuperacao com a data de retorno marcada.</div>'+
       '</div>'+
     '</div>'+
     '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">'+
@@ -2574,33 +2649,70 @@ function selectComp(val){
   document.getElementById('fu-comp-nao').style.background=val==='nao'?'rgba(239,68,68,0.2)':'transparent';
   document.getElementById('fu-comp-nao').style.borderColor=val==='nao'?'var(--red)':'var(--border)';
   document.getElementById('fu-venda-section').style.display=val==='sim'?'block':'none';
-  if(val==='nao'){document.getElementById('fu-save-btn').disabled=false;window._fuChoice='nao_comp';}
+  document.getElementById('fu-noshow-note').style.display=val==='nao'?'block':'none';
+  if(val==='nao'){document.getElementById('fu-save-btn').disabled=false;window._fuChoice='noshow';}
   else{document.getElementById('fu-save-btn').disabled=true;window._fuChoice=null;}
 }
 function selectFU(val){
   window._fuChoice=val;
-  document.getElementById('fu-sim').style.background=val==='sim'?'rgba(34,197,94,0.2)':'transparent';
-  document.getElementById('fu-sim').style.borderColor=val==='sim'?'var(--green)':'var(--border)';
-  document.getElementById('fu-nao').style.background=val==='nao'?'rgba(239,68,68,0.2)':'transparent';
-  document.getElementById('fu-nao').style.borderColor=val==='nao'?'var(--red)':'var(--border)';
-  document.getElementById('fu-venda-fields').style.display=val==='sim'?'block':'none';
-  document.getElementById('fu-motivo-fields').style.display=val==='nao'?'block':'none';
+  var isVenda=val==='sim',isRetorno=val==='retorno';
+  document.getElementById('fu-sim').style.background=isVenda?'rgba(34,197,94,0.2)':'transparent';
+  document.getElementById('fu-sim').style.borderColor=isVenda?'var(--green)':'var(--border)';
+  document.getElementById('fu-nao').style.background=isRetorno?'rgba(245,158,11,0.2)':'transparent';
+  document.getElementById('fu-nao').style.borderColor=isRetorno?'var(--amber)':'var(--border)';
+  document.getElementById('fu-venda-fields').style.display=isVenda?'block':'none';
+  document.getElementById('fu-motivo-fields').style.display=isRetorno?'block':'none';
   document.getElementById('fu-save-btn').disabled=false;
   updateBonusPreview();
 }
 function saveFollowup(){
   if(!_fuMeeting||!window._fuChoice)return;
-  var fid=_fuMeeting.id,comp=window._fuComp==='sim',venda=window._fuChoice==='sim';
+  var fid=_fuMeeting.id;
+  if(window._fuChoice==='noshow'){
+    followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
+      comparecimento:'nao',venda:'nao',resultado:'noshow',
+      bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:todayStr()};
+    meetings[fid].status='noshow';
+    saveAll();closeModal('modal-followup');
+    // Envia o lead para o fluxo de recontato de no-shows
+    saveReativacaoStatus(_fuMeeting.tel,'nao-atendeu');
+    if(_fuMeeting.kanbanKey) moveKanbanCard(_fuMeeting.kanbanKey,'recuperacao');
+    if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
+    return;
+  }
+  var venda=window._fuChoice==='sim';
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
   var mensalidade=venda?(parseFloat(document.getElementById('fu-mensalidade').value)||0):0;
+  var retornoData='';
+  if(!venda){
+    retornoData=document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:'';
+    if(!retornoData){alert('Informe a data do retorno.');return;}
+  }
   followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
-    comparecimento:comp?'sim':'nao',venda:venda?'sim':'nao',
+    comparecimento:'sim',venda:venda?'sim':'nao',
     contrato:contrato,mensalidade:mensalidade,
-    bonusComp:comp?BONUS_COMP:0,bonusVenda:venda?mensalidade*BONUS_VENDA_PCT:0,
-    motivo:!venda&&comp?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'',
+    bonusComp:BONUS_COMP,bonusVenda:venda?mensalidade*BONUS_VENDA_PCT:0,
+    motivo:!venda?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'',
+    retornoData:retornoData,
     dt:todayStr()};
   meetings[fid].status='done';
-  if(!venda&&comp){var lead=allLeads.find(function(l){return l.telefone===_fuMeeting.tel;});if(lead)lead._requeue=true;}
+  if(!venda){
+    var lead=allLeads.find(function(l){return l.telefone===_fuMeeting.tel;});if(lead)lead._requeue=true;
+    // Agenda o retorno: lead vai para Recuperacao com a data marcada
+    saveReativacaoStatus(_fuMeeting.tel,'retorno',{retornoData:retornoData});
+    var retornoDisplay=new Date(retornoData+'T00:00:00').toLocaleDateString('pt-BR');
+    if(_fuMeeting.kanbanKey && kanbanData[_fuMeeting.kanbanKey]){
+      var kk=_fuMeeting.kanbanKey;
+      kanbanData[kk].status='recuperacao';
+      kanbanData[kk].statusAt=Date.now();
+      kanbanData[kk].retornoData=retornoData;
+      kanbanData[kk].retornoDisplay=retornoDisplay;
+      localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+      if(fbDb || initFirebase()){
+        fbDb.ref('kanban/'+kk).update({status:'recuperacao',statusAt:Date.now(),retornoData:retornoData,retornoDisplay:retornoDisplay});
+      }
+    }
+  }
   saveAll();closeModal('modal-followup');
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
 }
