@@ -670,7 +670,8 @@ function ensureKanbanEntry(lead){
         _source:lead._source||'',
         _createdAt:lead._createdAt||Date.now(),
         status:'novo',
-        statusAt:Date.now()
+        statusAt:Date.now(),
+        origem:'Tráfego'
       });
       // Lead qualificado (>= R$20 mil) -> gera cadencia de tarefas para o Joao
       generateCadenciaTasks(lead,key);
@@ -772,7 +773,7 @@ async function confirmarAgendamentoReuniao(key){
   if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
   // Preenche a planilha de reunioes (mesma usada pelo Make antes) via Google Sheets API
   try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-    [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', CU.name||'João', responsavel||'', 'Kanban']); }catch(e){}
+    [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', (CU&&CU.closer)||'João', responsavel||'', kanbanData[key].origem||'Tráfego']); }catch(e){}
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
@@ -837,6 +838,9 @@ function abrirEditarLead(key){
   var opts='<option value="">Selecione</option>'+FATURAMENTO_OPTS.map(function(o){
     return '<option value="'+esc(o)+'"'+(e.faturamento===o?' selected':'')+'>'+o+'</option>';
   }).join('');
+  var origemOpts='<option value="">Selecione</option>'+KANBAN_ORIGENS.map(function(o){
+    return '<option value="'+esc(o)+'"'+(e.origem===o?' selected':'')+'>'+o+'</option>';
+  }).join('');
   var html='<div class="modal-ov active" id="modal-editar-lead" onclick="if(event.target===this)cancelarEdicaoLead()">'+
     '<div class="modal-box" style="max-width:460px;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-edit"></i> Editar Lead</div>'+
@@ -848,7 +852,8 @@ function abrirEditarLead(key){
         '<label class="f-label">CNPJ</label><input class="f-input" id="el-cnpj" value="'+esc(e.cnpj||'')+'" placeholder="00.000.000/0000-00" style="margin-bottom:12px;">'+
         '<label class="f-label">Cidade</label><input class="f-input" id="el-cidade" value="'+esc(e.cidade)+'" style="margin-bottom:12px;">'+
         '<label class="f-label">E-mail</label><input class="f-input" type="email" id="el-email" value="'+esc(e.email)+'" style="margin-bottom:12px;">'+
-        '<label class="f-label">Faturamento</label><select class="f-input" id="el-faturamento" style="margin-bottom:0;">'+opts+'</select>'+
+        '<label class="f-label">Faturamento</label><select class="f-input" id="el-faturamento" style="margin-bottom:12px;">'+opts+'</select>'+
+        '<label class="f-label">Origem</label><select class="f-input" id="el-origem" style="margin-bottom:0;">'+origemOpts+'</select>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="salvarEdicaoLead(\''+key+'\')"><i class="ti ti-check"></i> Salvar</button>'+
@@ -871,6 +876,7 @@ function salvarEdicaoLead(key){
   var cidade=document.getElementById('el-cidade').value.trim();
   var email=document.getElementById('el-email').value.trim();
   var faturamento=document.getElementById('el-faturamento').value;
+  var origem=document.getElementById('el-origem').value;
   if(!nome){alert('Informe o nome do lead.');return;}
   if(!telefone){alert('Informe o telefone do lead.');return;}
   kanbanData[key].nome=nome;
@@ -880,11 +886,86 @@ function salvarEdicaoLead(key){
   kanbanData[key].cidade=cidade;
   kanbanData[key].email=email;
   kanbanData[key].faturamento=faturamento;
+  kanbanData[key].origem=origem;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
-    fbDb.ref('kanban/'+key).update({nome:nome,telefone:telefone,empresa:empresa,cnpj:cnpj,cidade:cidade,email:email,faturamento:faturamento});
+    fbDb.ref('kanban/'+key).update({nome:nome,telefone:telefone,empresa:empresa,cnpj:cnpj,cidade:cidade,email:email,faturamento:faturamento,origem:origem});
   }
   cancelarEdicaoLead();
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+}
+// ===== Criar Lead manualmente (Organico / Social Selling / Indicacao etc.) =====
+// Abre o modal de criacao manual de lead, com os mesmos campos do lead vindo da LP
+function abrirCriarLead(){
+  var opts='<option value="">Selecione</option>'+FATURAMENTO_OPTS.map(function(o){
+    return '<option value="'+esc(o)+'">'+o+'</option>';
+  }).join('');
+  var origemOpts='<option value="">Selecione</option>'+KANBAN_ORIGENS.map(function(o){
+    return '<option value="'+esc(o)+'">'+o+'</option>';
+  }).join('');
+  var html='<div class="modal-ov active" id="modal-criar-lead" onclick="if(event.target===this)cancelarCriarLead()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-user-plus"></i> Novo Lead</div>'+
+        '<button class="modal-close" onclick="cancelarCriarLead()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<label class="f-label">Nome</label><input class="f-input" id="cl-nome" style="margin-bottom:12px;">'+
+        '<label class="f-label">Telefone</label><input class="f-input" id="cl-telefone" placeholder="DDD + numero" style="margin-bottom:12px;">'+
+        '<label class="f-label">Empresa</label><input class="f-input" id="cl-empresa" style="margin-bottom:12px;">'+
+        '<label class="f-label">CNPJ</label><input class="f-input" id="cl-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:12px;">'+
+        '<label class="f-label">Cidade</label><input class="f-input" id="cl-cidade" style="margin-bottom:12px;">'+
+        '<label class="f-label">E-mail</label><input class="f-input" type="email" id="cl-email" style="margin-bottom:12px;">'+
+        '<label class="f-label">Faturamento</label><select class="f-input" id="cl-faturamento" style="margin-bottom:12px;">'+opts+'</select>'+
+        '<label class="f-label">Origem</label><select class="f-input" id="cl-origem" style="margin-bottom:0;">'+origemOpts+'</select>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="salvarCriarLead()"><i class="ti ti-check"></i> Criar Lead</button>'+
+        '<button class="btn btn-outline" onclick="cancelarCriarLead()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function cancelarCriarLead(){
+  var el=document.getElementById('modal-criar-lead');
+  if(el) el.remove();
+}
+// Cria um novo card no Kanban (coluna "Novo Lead") com os dados informados manualmente.
+// O card criado tem o mesmo formato dos cards vindos da LP (ensureKanbanEntry),
+// entao passa por todos os fluxos normais: agendar reuniao, follow-up, venda/contrato, etc.
+function salvarCriarLead(){
+  var nome=document.getElementById('cl-nome').value.trim();
+  var telefone=document.getElementById('cl-telefone').value.replace(/\D/g,'');
+  var empresa=document.getElementById('cl-empresa').value.trim();
+  var cnpj=document.getElementById('cl-cnpj').value.trim();
+  var cidade=document.getElementById('cl-cidade').value.trim();
+  var email=document.getElementById('cl-email').value.trim();
+  var faturamento=document.getElementById('cl-faturamento').value;
+  var origem=document.getElementById('cl-origem').value;
+  if(!nome){alert('Informe o nome do lead.');return;}
+  if(!telefone){alert('Informe o telefone do lead.');return;}
+  var key=telefone.replace(/[.#$\[\]]/g,'_');
+  if(kanbanData[key]){alert('Ja existe um lead no funil com esse telefone.');return;}
+  var novo={
+    nome:nome,
+    telefone:telefone,
+    empresa:empresa,
+    cnpj:cnpj,
+    cidade:cidade,
+    email:email,
+    faturamento:faturamento,
+    _source:'manual',
+    _createdAt:Date.now(),
+    status:'novo',
+    statusAt:Date.now(),
+    origem:origem||'Orgânico'
+  };
+  kanbanData[key]=novo;
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  if(fbDb || initFirebase()){
+    fbDb.ref('kanban/'+key).set(novo);
+  }
+  cancelarCriarLead();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
 }
@@ -972,7 +1053,7 @@ function renderKanban(){
   });
   entries.sort(function(a,b){return (b.statusAt||b._createdAt||0)-(a.statusAt||a._createdAt||0);});
   var html='<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div><span class="badge b-purple">'+entries.length+' leads</span></div>'+
+    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div><div style="display:flex;align-items:center;gap:10px;"><button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button><span class="badge b-purple">'+entries.length+' leads</span></div></div>'+
     '<div class="kanban-board">';
   KANBAN_COLS.forEach(function(col,idx){
     var items=entries.filter(function(e){return (e.status||'novo')===col.id;});
@@ -1137,6 +1218,8 @@ var KANBAN_COLS=[
   {id:'fechado',label:'Fechado',color:'gold'},
   {id:'arquivado',label:'Arquivados',color:'muted'}
 ];
+// Origens possiveis de um lead/reuniao (usado no card do Kanban e na coluna ORIGEM da planilha de reunioes)
+var KANBAN_ORIGENS=['Tráfego','Coldcall','Recuperação','Social Selling','Orgânico','Indicação'];
 // Opcoes de faturamento (mesmas do formulario da LP), usadas no modal de edicao do lead
 var FATURAMENTO_OPTS=['até 10 mil','10 mil até 20 mil','20 mil até 40 mil','40 mil até 60 mil','60 mil até 100 mil','100 mil até 150 mil','150 mil até 300 mil','300 mil até 500 mil','500 mil até 700 mil','acima de 700 mil'];
 // URL base da Cloud Function receberlead (Cloud Run) e secret do webhook,
@@ -2558,7 +2641,7 @@ async function saveCallFinalAsync(){
     await saveReativacaoStatus(l.telefone,'agendou');
     // Registra a nova reuniao na planilha de Reunioes (Origem = Recuperacao)
     try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', CU.name||'João', _callData.responsavel||'', 'Recuperacao']); }catch(e){}
+      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', (CU&&CU.closer)||'João', _callData.responsavel||'', 'Recuperação']); }catch(e){}
     closeModal('modal-call');_callLeadSource='daily';showPage('reativacao');
     if(result.success) setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
     return;
@@ -5537,7 +5620,7 @@ async function registrarReuniaoSDR(){
     return p[2]+'/'+p[1]+'/'+p[0];
   }
   
-  var row=[fmtDate(dataAg),cliente,tel,fmtDate(dataReun),'AGENDADA',CU.name||'João',closer,origem];
+  var row=[fmtDate(dataAg),cliente,tel,fmtDate(dataReun),'AGENDADA',(CU&&CU.closer)||'João',closer,origem];
   var ok = await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, row);
   if(ok){
     showSheetToast('Reuniao registrada com sucesso!',false);
