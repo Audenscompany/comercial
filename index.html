@@ -770,6 +770,9 @@ async function confirmarAgendamentoReuniao(key){
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   saveAll();saveMeetingFB(mid,meetingObj);
   if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
+  // Preenche a planilha de reunioes (mesma usada pelo Make antes) via Google Sheets API
+  try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+    [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', CU.name||'João', responsavel||'', 'Kanban']); }catch(e){}
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
