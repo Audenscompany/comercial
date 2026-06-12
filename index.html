@@ -170,7 +170,8 @@ tbody tr:hover td{background:var(--pglow2);}
 .gcal-status.connected{background:rgba(34,197,94,0.1);color:#4ade80;border:1px solid rgba(34,197,94,0.3);}
 .gcal-status.disconnected{background:rgba(245,158,11,0.1);color:var(--amber);border:1px solid rgba(245,158,11,0.3);}
 @keyframes spin{to{transform:rotate(360deg)}}
-.kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;}
+.kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;scrollbar-width:none;-ms-overflow-style:none;}
+.kanban-board::-webkit-scrollbar{display:none;}
 .kanban-col{flex:0 0 270px;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:75vh;}
 .kanban-col-hd{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg2);font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--white);border-radius:12px 12px 0 0;}
 .kanban-col-body{padding:10px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;min-height:120px;transition:background .15s;}
@@ -198,6 +199,17 @@ tbody tr:hover td{background:var(--pglow2);}
 .sdr-task-lead{font-weight:700;font-size:14px;color:var(--white);}
 .sdr-task-tipo{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:0.5px;}
 .sdr-task-date{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
+.tarefas-board{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;}
+.tarefas-col{flex:1;min-width:280px;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:75vh;}
+.tarefas-col-hd{padding:12px 16px;border-bottom:1px solid var(--border);border-top:3px solid var(--muted);display:flex;align-items:center;justify-content:space-between;background:var(--bg2);font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--white);border-radius:12px 12px 0 0;}
+.tarefas-col-hd.tarefas-hd-red{border-top-color:var(--red);}
+.tarefas-col-hd.tarefas-hd-purple{border-top-color:var(--purple);}
+.tarefas-col-hd.tarefas-hd-cyan{border-top-color:var(--cyan);}
+.tarefas-col-count{background:var(--pglow2);color:var(--purple3);border-radius:20px;padding:2px 10px;font-size:12px;}
+.tarefas-col-body{overflow-y:auto;flex:1;scrollbar-width:none;-ms-overflow-style:none;}
+.tarefas-col-body::-webkit-scrollbar{display:none;}
+.tarefas-col-body .sdr-task-row{padding:12px 16px;}
+.tarefas-col-body .kanban-empty{padding:24px 12px;}
 </style>
 </head>
 <body>
@@ -806,30 +818,34 @@ function sdrTaskRowHtml(t,showDate){
   '</div>';
 }
 function renderMinhasTarefas(){
-  var hojeISO=new Date().toISOString().split('T')[0];
+  var hoje=new Date(); hoje.setHours(0,0,0,0);
+  var hojeISO=hoje.toISOString().split('T')[0];
+  var amanha=new Date(hoje); amanha.setDate(amanha.getDate()+1);
+  var amanhaISO=amanha.toISOString().split('T')[0];
+
   var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;});
   var pend=all.filter(function(t){return !t.done;});
   var atrasadas=pend.filter(function(t){return t.dataISO<hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
   var hojeT=pend.filter(function(t){return t.dataISO===hojeISO;});
-  var futuras=pend.filter(function(t){return t.dataISO>hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
-  var concluidas=all.filter(function(t){return t.done;}).sort(function(a,b){return (b.doneAt||0)-(a.doneAt||0);}).slice(0,30);
+  var amanhaT=pend.filter(function(t){return t.dataISO===amanhaISO;});
+  var concluidas=all.filter(function(t){return t.done;}).sort(function(a,b){return (b.doneAt||0)-(a.doneAt||0);}).slice(0,20);
+
+  function colHtml(title,items,hdClass,showDate,emptyMsg){
+    return '<div class="tarefas-col">'+
+      '<div class="tarefas-col-hd '+hdClass+'"><span>'+title+'</span><span class="tarefas-col-count">'+items.length+'</span></div>'+
+      '<div class="tarefas-col-body">'+
+      (items.length?items.map(function(t){return sdrTaskRowHtml(t,showDate);}).join(''):'<div class="kanban-empty">'+emptyMsg+'</div>')+
+      '</div></div>';
+  }
 
   var html='<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 20 mil)</div></div>'+
-    (atrasadas.length?'<span class="badge b-red">'+atrasadas.length+' atrasada'+(atrasadas.length>1?'s':'')+'</span>':'<span class="badge b-green">Em dia</span>')+
+    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 20 mil)</div></div></div>'+
+    '<div class="tarefas-board">'+
+      colHtml('Atrasadas',atrasadas,'tarefas-hd-red',true,'Nenhuma tarefa atrasada')+
+      colHtml('Hoje',hojeT,'tarefas-hd-purple',false,'Nenhuma tarefa para hoje')+
+      colHtml('Amanha',amanhaT,'tarefas-hd-cyan',false,'Nenhuma tarefa para amanha')+
     '</div>';
 
-  if(atrasadas.length){
-    html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Atrasadas</span><span class="badge b-red">'+atrasadas.length+'</span></div>'+
-      atrasadas.map(function(t){return sdrTaskRowHtml(t,true);}).join('')+'</div>';
-  }
-  html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Hoje</span><span class="badge b-purple">'+hojeT.length+'</span></div>'+
-    (hojeT.length?hojeT.map(function(t){return sdrTaskRowHtml(t,false);}).join(''):'<div class="empty-st"><i class="ti ti-check"></i><p>Nenhuma tarefa para hoje</p></div>')+
-    '</div>';
-  if(futuras.length){
-    html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Proximas</span><span class="badge b-cyan">'+futuras.length+'</span></div>'+
-      futuras.slice(0,30).map(function(t){return sdrTaskRowHtml(t,true);}).join('')+'</div>';
-  }
   if(concluidas.length){
     html+='<div class="cb"><div class="cb-hd"><span class="cb-title">Concluidas recentemente</span></div>'+
       concluidas.map(function(t){return sdrTaskRowHtml(t,true);}).join('')+'</div>';
