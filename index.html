@@ -700,11 +700,14 @@ function abrirAgendarReuniao(key){
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-calendar-event"></i> Agendar Reuniao</div>'+
         '<button class="modal-close" onclick="cancelarAgendamentoReuniao()">×</button></div>'+
       '<div style="padding:20px;">'+
-        '<div style="margin-bottom:14px;color:var(--muted);font-size:13px;">Informe a data e o horario da reuniao com <b>'+(e.nome||'')+'</b>. Vamos usar isso para enviar a confirmacao e os lembretes automaticos (2h, 1h e 10min antes) por WhatsApp.</div>'+
+        '<div style="margin-bottom:14px;color:var(--muted);font-size:13px;">Informe a data e o horario da reuniao com <b>'+(e.nome||'')+'</b>. Vamos criar o evento no Google Agenda (com link do Meet) e enviar a confirmacao + lembretes automaticos (2h, 1h e 10min antes) por WhatsApp.</div>'+
         '<div class="modal-grid2">'+
-          '<div><label class="f-label">Data</label><input class="f-input" type="date" id="ar-date" min="'+minDate+'" style="margin-bottom:0;"></div>'+
-          '<div><label class="f-label">Horario</label><input class="f-input" type="time" id="ar-time" value="09:00" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">Data</label><input class="f-input" type="date" id="ar-date" min="'+minDate+'" value="'+(e.meetingISO?e.meetingISO.split('T')[0]:'')+'" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">Horario</label><input class="f-input" type="time" id="ar-time" value="'+(e.meetingDisplay?e.meetingDisplay.split(' ')[1]:'09:00')+'" style="margin-bottom:0;"></div>'+
         '</div>'+
+        '<label class="f-label" style="margin-top:12px;display:block;">E-mail do contato (opcional, convite no Google Agenda)</label>'+
+        '<input class="f-input" type="email" id="ar-email" value="'+(e.email||'')+'" placeholder="email@exemplo.com" style="margin-bottom:0;">'+
+        (!isGcalConnected()?'<div class="info-note" style="margin-top:12px;"><i class="ti ti-info-circle"></i> Sua agenda do Google nao esta conectada. O evento sera aberto numa nova aba pra voce salvar manualmente.</div>':'')+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="confirmarAgendamentoReuniao(\''+key+'\')"><i class="ti ti-check"></i> Confirmar</button>'+
@@ -720,6 +723,7 @@ function cancelarAgendamentoReuniao(){
 }
 async function confirmarAgendamentoReuniao(key){
   var dt=document.getElementById('ar-date').value, hr=document.getElementById('ar-time').value;
+  var email=document.getElementById('ar-email').value.trim();
   if(!dt||!hr){alert('Preencha a data e o horario da reuniao.');return;}
   var dtObj=new Date(dt+'T'+hr+':00');
   var meetingISO=dtObj.toISOString();
@@ -730,6 +734,7 @@ async function confirmarAgendamentoReuniao(key){
   kanbanData[key].meetingISO=meetingISO;
   kanbanData[key].meetingDisplay=meetingDisplay;
   kanbanData[key].lembretes={h2:false,h1:false,m10:false};
+  if(email) kanbanData[key].email=email;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
     fbDb.ref('kanban/'+key).update({
@@ -737,7 +742,8 @@ async function confirmarAgendamentoReuniao(key){
       statusAt:Date.now(),
       meetingISO:meetingISO,
       meetingDisplay:meetingDisplay,
-      lembretes:{h2:false,h1:false,m10:false}
+      lembretes:{h2:false,h1:false,m10:false},
+      email:kanbanData[key].email||''
     });
   }
   cancelarAgendamentoReuniao();
@@ -745,6 +751,80 @@ async function confirmarAgendamentoReuniao(key){
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
   // Dispara a mensagem de confirmacao da reuniao por WhatsApp (nao bloqueia a UI)
   enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay);
+  // Cria o evento no Google Agenda (com link do Meet, se a conta estiver conectada)
+  try{
+    var gcalResult=await createGcalEvent({
+      id:key, nome:kanbanData[key].nome, tel:kanbanData[key].telefone,
+      dtISO:meetingISO, responsavel:(CU&&CU.name)||'', guestEmail:email
+    });
+    if(gcalResult && gcalResult.success){
+      kanbanData[key].gcalEventId=gcalResult.eventId;
+      kanbanData[key].meetLink=gcalResult.meetLink||'';
+      kanbanData[key].gcalLink=gcalResult.htmlLink||'';
+      localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+      if(fbDb || initFirebase()){
+        fbDb.ref('kanban/'+key).update({gcalEventId:gcalResult.eventId,meetLink:kanbanData[key].meetLink,gcalLink:kanbanData[key].gcalLink});
+      }
+      var area2=document.getElementById('content');
+      if(area2 && area2.getAttribute('data-page')==='kanban') showPage('kanban');
+    }
+  }catch(e){console.error('createGcalEvent error',e);}
+}
+// ===== Editar lead (dados do card do Kanban) =====
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function abrirEditarLead(key){
+  var e=kanbanData[key];
+  if(!e) return;
+  var opts='<option value="">Selecione</option>'+FATURAMENTO_OPTS.map(function(o){
+    return '<option value="'+esc(o)+'"'+(e.faturamento===o?' selected':'')+'>'+o+'</option>';
+  }).join('');
+  var html='<div class="modal-ov active" id="modal-editar-lead" onclick="if(event.target===this)cancelarEdicaoLead()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-edit"></i> Editar Lead</div>'+
+        '<button class="modal-close" onclick="cancelarEdicaoLead()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<label class="f-label">Nome</label><input class="f-input" id="el-nome" value="'+esc(e.nome)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Telefone</label><input class="f-input" id="el-telefone" value="'+esc(e.telefone)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Empresa</label><input class="f-input" id="el-empresa" value="'+esc(e.empresa)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Cidade</label><input class="f-input" id="el-cidade" value="'+esc(e.cidade)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">E-mail</label><input class="f-input" type="email" id="el-email" value="'+esc(e.email)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Faturamento</label><select class="f-input" id="el-faturamento" style="margin-bottom:0;">'+opts+'</select>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="salvarEdicaoLead(\''+key+'\')"><i class="ti ti-check"></i> Salvar</button>'+
+        '<button class="btn btn-outline" onclick="cancelarEdicaoLead()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function cancelarEdicaoLead(){
+  var el=document.getElementById('modal-editar-lead');
+  if(el) el.remove();
+}
+function salvarEdicaoLead(key){
+  if(!kanbanData[key]) return;
+  var nome=document.getElementById('el-nome').value.trim();
+  var telefone=document.getElementById('el-telefone').value.replace(/\D/g,'');
+  var empresa=document.getElementById('el-empresa').value.trim();
+  var cidade=document.getElementById('el-cidade').value.trim();
+  var email=document.getElementById('el-email').value.trim();
+  var faturamento=document.getElementById('el-faturamento').value;
+  if(!nome){alert('Informe o nome do lead.');return;}
+  if(!telefone){alert('Informe o telefone do lead.');return;}
+  kanbanData[key].nome=nome;
+  kanbanData[key].telefone=telefone;
+  kanbanData[key].empresa=empresa;
+  kanbanData[key].cidade=cidade;
+  kanbanData[key].email=email;
+  kanbanData[key].faturamento=faturamento;
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  if(fbDb || initFirebase()){
+    fbDb.ref('kanban/'+key).update({nome:nome,telefone:telefone,empresa:empresa,cidade:cidade,email:email,faturamento:faturamento});
+  }
+  cancelarEdicaoLead();
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
 }
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
@@ -862,6 +942,8 @@ function kanbanCardHtml(e,idx){
     actions=(prevCol?'<button class="kbtn" title="Voltar para '+prevCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+prevCol.id+'\')"><i class="ti ti-arrow-left"></i></button>':'<span></span>')+
       (nextCol?'<button class="kbtn" title="Avancar para '+nextCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+nextCol.id+'\')"><i class="ti ti-arrow-right"></i></button>':'<span></span>')+
       '<span style="flex:1"></span>'+
+      '<button class="kbtn" title="Agendar Reuniao" onclick="abrirAgendarReuniao(\''+e._key+'\')"><i class="ti ti-calendar-event"></i></button>'+
+      '<button class="kbtn" title="Editar Lead" onclick="abrirEditarLead(\''+e._key+'\')"><i class="ti ti-edit"></i></button>'+
       '<button class="kbtn" title="Arquivar" onclick="archiveKanbanCard(\''+e._key+'\')"><i class="ti ti-archive"></i></button>'+
       '<button class="kbtn kbtn-danger" title="Apagar" onclick="deleteKanbanCard(\''+e._key+'\')"><i class="ti ti-trash"></i></button>';
   }
@@ -871,6 +953,8 @@ function kanbanCardHtml(e,idx){
     (e.telefone?'<div class="kanban-card-sub"><i class="ti ti-phone"></i> '+e.telefone+'</div>':'')+
     (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
     (e.cidade?'<div class="kanban-card-sub"><i class="ti ti-map-pin"></i> '+e.cidade+'</div>':'')+
+    (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+'</div>':'')+
+    (e.meetLink?'<div class="kanban-card-sub"><a href="'+e.meetLink+'" target="_blank" style="color:var(--cyan);"><i class="ti ti-video"></i> Abrir Meet</a></div>':'')+
     '<div class="kanban-card-actions">'+actions+'</div></div>';
 }
 
@@ -988,6 +1072,8 @@ var KANBAN_COLS=[
   {id:'fechado',label:'Fechado',color:'gold'},
   {id:'arquivado',label:'Arquivados',color:'muted'}
 ];
+// Opcoes de faturamento (mesmas do formulario da LP), usadas no modal de edicao do lead
+var FATURAMENTO_OPTS=['até 10 mil','10 mil até 20 mil','20 mil até 40 mil','40 mil até 60 mil','60 mil até 100 mil','100 mil até 150 mil','150 mil até 300 mil','300 mil até 500 mil','500 mil até 700 mil','acima de 700 mil'];
 // URL base da Cloud Function receberlead (Cloud Run) e secret do webhook,
 // usados para disparar mensagens automaticas de WhatsApp (confirmacao de reuniao etc.)
 var RECEBERLEAD_URL='https://receberlead-471063273836.us-central1.run.app';
