@@ -675,16 +675,41 @@ function moveKanbanCard(key,newStatus){
 function archiveKanbanCard(key){
   moveKanbanCard(key,'arquivado');
 }
-// Apaga definitivamente o lead do funil
+// Apaga definitivamente o lead do funil (kanban + lead de origem + tarefas de cadencia)
 function deleteKanbanCard(key){
   if(!confirm('Apagar este lead do funil definitivamente? Essa ação não pode ser desfeita.')) return;
   delete kanbanData[key];
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+
+  // Remove tarefas de cadencia desse lead (para nao ficarem orfas / nao reaparecerem)
+  Object.keys(sdrTarefas||{}).forEach(function(tk){
+    if(sdrTarefas[tk] && sdrTarefas[tk].leadKey===key){
+      delete sdrTarefas[tk];
+      if(fbDb || initFirebase()) fbDb.ref('sdr_tarefas/'+tk).remove();
+    }
+  });
+  localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+
+  // Remove o lead de /leads tambem, senao o listener recria o card do kanban ao recarregar a pagina
+  allLeads = allLeads.filter(function(l){return (l.telefone||'').replace(/\D/g,'')!==key;});
+  saveAll();
+
   if(fbDb || initFirebase()){
     fbDb.ref('kanban/'+key).remove();
+    fbDb.ref('leads/'+key).remove();
   }
+
   var area=document.getElementById('content');
-  if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+  if(area){
+    var pg=area.getAttribute('data-page');
+    if(pg==='kanban'||pg==='minhas-tarefas'||pg==='desempenho-sdr') showPage(pg);
+  }
+  var tnav=document.getElementById('nav-minhas-tarefas');
+  if(tnav){
+    var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+    if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+    else if(ex)ex.remove();
+  }
 }
 // Drag-and-drop handlers
 function kanbanDragStart(ev,key){
