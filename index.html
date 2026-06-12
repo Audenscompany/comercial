@@ -170,6 +170,20 @@ tbody tr:hover td{background:var(--pglow2);}
 .gcal-status.connected{background:rgba(34,197,94,0.1);color:#4ade80;border:1px solid rgba(34,197,94,0.3);}
 .gcal-status.disconnected{background:rgba(245,158,11,0.1);color:var(--amber);border:1px solid rgba(245,158,11,0.3);}
 @keyframes spin{to{transform:rotate(360deg)}}
+.kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;}
+.kanban-col{flex:0 0 270px;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:75vh;}
+.kanban-col-hd{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg2);font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--white);border-radius:12px 12px 0 0;}
+.kanban-col-body{padding:10px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;min-height:120px;transition:background .15s;}
+.kanban-col-body.drag-over{background:var(--pglow2);border-radius:0 0 12px 12px;}
+.kanban-card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;cursor:grab;transition:border-color .15s,opacity .15s;}
+.kanban-card:hover{border-color:var(--border2);}
+.kanban-card.dragging{opacity:0.4;}
+.kanban-card-name{font-weight:700;font-size:14px;color:var(--white);margin-bottom:4px;}
+.kanban-card-sub{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:5px;}
+.kanban-card-actions{display:flex;justify-content:space-between;margin-top:10px;}
+.kbtn{background:transparent;border:1px solid var(--border2);color:var(--purple3);border-radius:6px;padding:4px 9px;cursor:pointer;font-size:13px;}
+.kbtn:hover{background:var(--pglow);}
+.kanban-empty{text-align:center;padding:24px 8px;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:1px;}
 </style>
 </head>
 <body>
@@ -404,6 +418,21 @@ function startRealtimeSync(){
       var pg = area ? area.getAttribute('data-page') : null;
       if(pg==='ligar'||pg==='leads'||pg==='dashboard') showPage(pg);
     }
+    // Garante que todo lead novo entre no Kanban (coluna "Novo Lead")
+    loaded.forEach(function(l){ ensureKanbanEntry(l); });
+  });
+
+  // Sync kanban (Funil de Leads) em tempo real
+  fbDb.ref('kanban').on('value', function(snap){
+    var fbKanban = snap.val() || {};
+    var prev = JSON.stringify(kanbanData);
+    kanbanData = fbKanban;
+    if(JSON.stringify(kanbanData) !== prev){
+      localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+      var area = document.getElementById('content');
+      var pg = area ? area.getAttribute('data-page') : null;
+      if(pg==='kanban') showPage('kanban');
+    }
   });
 
   // Sync followups in realtime
@@ -572,7 +601,114 @@ async function syncLeadsToFB(){
   }
 }
 
+// ===== KANBAN (Funil de Leads) =====
+// Garante que o lead recebido pela LP entre no Kanban na coluna "Novo Lead"
+function ensureKanbanEntry(lead){
+  if(!fbDb && !initFirebase()) return;
+  var tel=(lead.telefone||'').replace(/\D/g,'');
+  var key=(tel||'lead_'+(lead._createdAt||Date.now())).replace(/[.#$\[\]]/g,'_');
+  fbDb.ref('kanban/'+key).once('value').then(function(snap){
+    if(!snap.exists()){
+      fbDb.ref('kanban/'+key).set({
+        nome:lead.nome||'',
+        telefone:tel,
+        faturamento:lead.faturamento||'',
+        empresa:lead.empresa||'',
+        cidade:lead.cidade||'',
+        email:lead.email||'',
+        _source:lead._source||'',
+        _createdAt:lead._createdAt||Date.now(),
+        status:'novo',
+        statusAt:Date.now()
+      });
+    }
+  }).catch(function(e){console.error('ensureKanbanEntry error',e);});
+}
+// Move um card do kanban para outra coluna
+function moveKanbanCard(key,newStatus){
+  if(!kanbanData[key]) return;
+  kanbanData[key].status=newStatus;
+  kanbanData[key].statusAt=Date.now();
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  if(fbDb || initFirebase()){
+    fbDb.ref('kanban/'+key).update({status:newStatus,statusAt:Date.now()});
+  }
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+}
+// Drag-and-drop handlers
+function kanbanDragStart(ev,key){
+  _dragKanbanKey=key;
+  ev.currentTarget.classList.add('dragging');
+  try{ ev.dataTransfer.setData('text/plain',key); ev.dataTransfer.effectAllowed='move'; }catch(e){}
+}
+function kanbanDragEnd(ev){
+  ev.currentTarget.classList.remove('dragging');
+}
+function kanbanDragOver(ev){
+  ev.preventDefault();
+  ev.currentTarget.classList.add('drag-over');
+}
+function kanbanDragLeave(ev){
+  ev.currentTarget.classList.remove('drag-over');
+}
+function kanbanDrop(ev,status){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  var key=_dragKanbanKey;
+  try{ if(!key) key=ev.dataTransfer.getData('text/plain'); }catch(e){}
+  if(key) moveKanbanCard(key,status);
+  _dragKanbanKey=null;
+}
+function renderKanban(){
+  var entries=Object.keys(kanbanData||{}).map(function(k){
+    var v=kanbanData[k]||{};
+    var o=Object.assign({},v);
+    o._key=k;
+    return o;
+  });
+  entries.sort(function(a,b){return (b.statusAt||b._createdAt||0)-(a.statusAt||a._createdAt||0);});
+  var html='<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div><span class="badge b-purple">'+entries.length+' leads</span></div>'+
+    '<div class="kanban-board">';
+  KANBAN_COLS.forEach(function(col,idx){
+    var items=entries.filter(function(e){return (e.status||'novo')===col.id;});
+    html+='<div class="kanban-col">'+
+      '<div class="kanban-col-hd"><span>'+col.label+'</span><span class="badge b-'+col.color+'">'+items.length+'</span></div>'+
+      '<div class="kanban-col-body" ondragover="kanbanDragOver(event)" ondragleave="kanbanDragLeave(event)" ondrop="kanbanDrop(event,\''+col.id+'\')">'+
+      (items.length?items.map(function(e){return kanbanCardHtml(e,idx);}).join(''):'<div class="kanban-empty">Nenhum lead</div>')+
+      '</div></div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+function kanbanCardHtml(e,idx){
+  var prevCol=KANBAN_COLS[idx-1];
+  var nextCol=KANBAN_COLS[idx+1];
+  var nome=e.nome||'(sem nome)';
+  return '<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
+    '<div class="kanban-card-name">'+nome+'</div>'+
+    (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
+    (e.telefone?'<div class="kanban-card-sub"><i class="ti ti-phone"></i> '+e.telefone+'</div>':'')+
+    (e.faturamento?'<div class="kanban-card-sub"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
+    (e.cidade?'<div class="kanban-card-sub"><i class="ti ti-map-pin"></i> '+e.cidade+'</div>':'')+
+    '<div class="kanban-card-actions">'+
+    (prevCol?'<button class="kbtn" title="Voltar para '+prevCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+prevCol.id+'\')"><i class="ti ti-arrow-left"></i></button>':'<span></span>')+
+    (nextCol?'<button class="kbtn" title="Avancar para '+nextCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+nextCol.id+'\')"><i class="ti ti-arrow-right"></i></button>':'<span></span>')+
+    '</div></div>';
+}
+
 var allLeads=[],calls={},meetings={},followups={},goals={metaDiaria:50,metaMensal:1000},_dailyMap={};
+var kanbanData={};
+var KANBAN_COLS=[
+  {id:'novo',label:'Novo Lead',color:'purple'},
+  {id:'qualificado',label:'Lead Qualificado',color:'cyan'},
+  {id:'reuniao',label:'Reunião Agendada',color:'amber'},
+  {id:'proposta',label:'Proposta Apresentada',color:'green'},
+  {id:'recuperacao',label:'Recuperação',color:'orange'},
+  {id:'fechado',label:'Fechado',color:'gold'}
+];
+var _dragKanbanKey=null;
 var gcalToken=null,gcalClientId='';
 var metaToken=null,metaAppId='',metaAccountId='';
 var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1xQVyaGDgghqHCY19nDCjQpgyQIEWJh4cOy-WGNCF37Q',clientes:'1UDRR1zwQEXnzJv8UBFujhnZzol75n6UNmUAjxGPLUjU',ligacoes:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk'};
@@ -596,6 +732,7 @@ function loadStorage(){
     var mai=localStorage.getItem('audens_meta_app');if(mai)metaAppId=mai;
     var mac=localStorage.getItem('audens_meta_acc');if(mac)metaAccountId=mac;
     var mt=localStorage.getItem('audens_meta_token');if(mt)metaToken=JSON.parse(mt);
+    var kb=localStorage.getItem('audens_kanban');if(kb)kanbanData=JSON.parse(kb);
   }catch(e){}
 }
 function saveAll(){
@@ -1230,6 +1367,7 @@ function buildNav(){
     {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
   ];
   var sdrNav=[
+    {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
     {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
     {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
@@ -1238,6 +1376,7 @@ function buildNav(){
   ];
   var aI=CU.funcao==='sdr'?sdrNav:closerNav;
   var gIG=[
+    {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
@@ -1265,7 +1404,7 @@ function showPage(id){
     bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
-    'reativacao':renderReativacao
+    'reativacao':renderReativacao,'kanban':renderKanban
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
