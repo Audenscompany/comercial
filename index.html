@@ -1670,7 +1670,8 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Minhas Reunioes'},
-    {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
+    {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'},
+    {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var sdrNav=[
     {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
@@ -1679,7 +1680,8 @@ function buildNav(){
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
     {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
     {id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
-    {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
+    {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'},
+    {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var aI=CU.funcao==='sdr'?sdrNav:closerNav;
   var gIG=[
@@ -4350,7 +4352,7 @@ function renderConfig(){
 
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Configuracoes</div></div></div>'+
-  sheetsHtml+metaHtml+
+  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml:'')+
   '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-brand-google" style="color:var(--cyan);margin-right:6px;"></i>Google Calendar + Sheets</div></div>'+
   '<div style="padding:20px;">'+
     '<div class="gcal-status '+(connected?'connected':'disconnected')+'">'+
@@ -4358,13 +4360,19 @@ function renderConfig(){
       (connected?'Conectado - Token valido':'Desconectado - Configure o Client ID e conecte')+
     '</div>'+
     (connected?'<button class="btn btn-outline" style="font-size:11px;margin-bottom:16px;" onclick="gcalDisconnect()"><i class="ti ti-logout"></i> Desconectar</button>':'')+
+    (CU&&CU.role==='gestor'?(
     '<div class="warn-note"><i class="ti ti-info-circle"></i> Crie um projeto no Google Cloud Console, ative Calendar API + Sheets API, e configure o Client ID OAuth abaixo.</div>'+
     '<label class="f-label">Google OAuth Client ID</label>'+
     '<input class="f-input" id="gcal-client-id" placeholder="XXXXXXXXXX.apps.googleusercontent.com" value="'+gcalClientId+'" style="margin-bottom:12px;">'+
     '<div style="display:flex;gap:10px;">'+
       '<button class="btn btn-primary" onclick="saveGcalId()"><i class="ti ti-device-floppy"></i> Salvar Client ID</button>'+
       (!connected?'<button class="btn btn-gcal" onclick="gcalConnect()"><i class="ti ti-brand-google"></i> Conectar Google</button>':'')+
-    '</div>'+
+    '</div>'
+    ):(
+      (!connected?'<div style="margin-bottom:12px;"><button class="btn btn-gcal" onclick="gcalConnect()"><i class="ti ti-brand-google"></i> Conectar Google</button></div>':'')+
+      '<div class="info-note"><i class="ti ti-info-circle"></i> Se a sua agenda desconectar, clique em "Conectar Google" e faca login com sua conta Google novamente.</div>'
+    ))+
+    (CU&&CU.role==='gestor'?
     '<div style="margin-top:14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);line-height:2;">'+
       '<div style="font-weight:700;color:var(--white);margin-bottom:6px;">Passo a passo:</div>'+
       '<div>1. <a href="https://console.cloud.google.com" target="_blank" style="color:var(--cyan);">console.cloud.google.com</a></div>'+
@@ -4372,12 +4380,14 @@ function renderConfig(){
       '<div>3. Credenciais > ID do cliente OAuth > Aplicativo da Web</div>'+
       '<div>4. Origens JavaScript: <code style="color:var(--purple3);">'+window.location.origin+'</code></div>'+
       '<div>5. Cole o Client ID acima e clique Conectar</div>'+
-    '</div>'+
+    '</div>'
+    :'')+
   '</div></div>'+
   '<div class="cb" style="margin-top:16px;"><div class="cb-hd"><div class="cb-title">Usuarios</div></div>'+
   '<div style="padding:20px;"><div style="background:var(--bg2);border-radius:8px;padding:16px 18px;font-family:monospace;font-size:13px;color:var(--muted);line-height:2.2;border:1px solid var(--border);">'+
     '<div style="color:var(--muted);font-size:13px;">Gerencie usuarios e senhas na seção abaixo.</div>'+
   '</div></div></div>'+
+  (CU&&CU.role==='gestor'?
   '<div class="cb" style="margin-top:16px;"><div class="cb-hd"><div class="cb-title">Dados do Sistema</div></div>'+
   '<div style="padding:20px;">'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'+
@@ -4400,7 +4410,8 @@ function renderConfig(){
       '<button class="btn btn-primary" onclick="syncLeadsToFB()"><i class="ti ti-cloud-upload"></i> Sincronizar Leads no Firebase (' + allLeads.length + ')</button>'+
     '</div>'+
   '</div>'+
-  '</div>'+
+  '</div>'
+  :'')+
   (CU&&CU.role==='gestor'?
     '<div class="cb" style="margin-top:16px;">'+
       '<div class="cb-hd"><div class="cb-title"><i class="ti ti-users" style="color:var(--cyan);margin-right:6px;"></i>Gerenciar Usuarios</div></div>'+
