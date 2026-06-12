@@ -674,6 +674,13 @@ function ensureKanbanEntry(lead){
 // Move um card do kanban para outra coluna
 function moveKanbanCard(key,newStatus){
   if(!kanbanData[key]) return;
+  // Ao mover para "Reuniao Agendada" (e o card ainda nao estiver nessa coluna),
+  // pede a data/hora da reuniao antes de mover - usada na mensagem de confirmacao
+  // por WhatsApp e no calculo dos lembretes (2h/1h/10min).
+  if(newStatus==='reuniao' && kanbanData[key].status!=='reuniao'){
+    abrirAgendarReuniao(key);
+    return;
+  }
   kanbanData[key].status=newStatus;
   kanbanData[key].statusAt=Date.now();
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -682,6 +689,73 @@ function moveKanbanCard(key,newStatus){
   }
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+}
+// ===== Agendamento de reuniao (popup de data/hora ao mover para "Reuniao Agendada") =====
+function abrirAgendarReuniao(key){
+  var e=kanbanData[key];
+  if(!e) return;
+  var minDate=new Date().toISOString().split('T')[0];
+  var html='<div class="modal-ov active" id="modal-agendar-reuniao" onclick="if(event.target===this)cancelarAgendamentoReuniao()">'+
+    '<div class="modal-box" style="max-width:420px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-calendar-event"></i> Agendar Reuniao</div>'+
+        '<button class="modal-close" onclick="cancelarAgendamentoReuniao()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="margin-bottom:14px;color:var(--muted);font-size:13px;">Informe a data e o horario da reuniao com <b>'+(e.nome||'')+'</b>. Vamos usar isso para enviar a confirmacao e os lembretes automaticos (2h, 1h e 10min antes) por WhatsApp.</div>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Data</label><input class="f-input" type="date" id="ar-date" min="'+minDate+'" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">Horario</label><input class="f-input" type="time" id="ar-time" value="09:00" style="margin-bottom:0;"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="confirmarAgendamentoReuniao(\''+key+'\')"><i class="ti ti-check"></i> Confirmar</button>'+
+        '<button class="btn btn-outline" onclick="cancelarAgendamentoReuniao()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function cancelarAgendamentoReuniao(){
+  var el=document.getElementById('modal-agendar-reuniao');
+  if(el) el.remove();
+}
+async function confirmarAgendamentoReuniao(key){
+  var dt=document.getElementById('ar-date').value, hr=document.getElementById('ar-time').value;
+  if(!dt||!hr){alert('Preencha a data e o horario da reuniao.');return;}
+  var dtObj=new Date(dt+'T'+hr+':00');
+  var meetingISO=dtObj.toISOString();
+  var meetingDisplay=dtObj.toLocaleDateString('pt-BR')+' '+hr;
+  if(!kanbanData[key]) return;
+  kanbanData[key].status='reuniao';
+  kanbanData[key].statusAt=Date.now();
+  kanbanData[key].meetingISO=meetingISO;
+  kanbanData[key].meetingDisplay=meetingDisplay;
+  kanbanData[key].lembretes={h2:false,h1:false,m10:false};
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  if(fbDb || initFirebase()){
+    fbDb.ref('kanban/'+key).update({
+      status:'reuniao',
+      statusAt:Date.now(),
+      meetingISO:meetingISO,
+      meetingDisplay:meetingDisplay,
+      lembretes:{h2:false,h1:false,m10:false}
+    });
+  }
+  cancelarAgendamentoReuniao();
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+  // Dispara a mensagem de confirmacao da reuniao por WhatsApp (nao bloqueia a UI)
+  enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay);
+}
+// Chama o endpoint /agendar da Cloud Function receberlead para disparar a
+// mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
+async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay){
+  try{
+    await fetch(RECEBERLEAD_URL+'/agendar?secret='+WEBHOOK_SECRET,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({telefone:telefone, nome:nome, meetingDisplay:meetingDisplay})
+    });
+  }catch(e){console.error('enviarConfirmacaoReuniaoWA error',e);}
 }
 // Arquiva o lead (sai das colunas do funil, vai para "Arquivados")
 function archiveKanbanCard(key){
@@ -914,6 +988,10 @@ var KANBAN_COLS=[
   {id:'fechado',label:'Fechado',color:'gold'},
   {id:'arquivado',label:'Arquivados',color:'muted'}
 ];
+// URL base da Cloud Function receberlead (Cloud Run) e secret do webhook,
+// usados para disparar mensagens automaticas de WhatsApp (confirmacao de reuniao etc.)
+var RECEBERLEAD_URL='https://receberlead-471063273836.us-central1.run.app';
+var WEBHOOK_SECRET='audens2025xk';
 // Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card
 var KANBAN_FAT_DESTAQUE=40000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
@@ -1230,7 +1308,11 @@ function isGcalConnected(){
   return true;
 }
 function gcalConnect(){
-  if(!gcalClientId){alert('Configure o Google Client ID em Configuracoes.');return;}
+  if(!gcalClientId){
+    if(CU&&CU.role==='gestor'){alert('Configure o Google Client ID em Configuracoes.');}
+    else{alert('O Google Client ID ainda nao foi configurado pelo administrador. Peca para o Lucas configurar em Configuracoes > Google Calendar.');}
+    return;
+  }
   var origin=window.location.origin;
   var scope='https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
   var url='https://accounts.google.com/o/oauth2/v2/auth'+
@@ -4357,7 +4439,7 @@ function renderConfig(){
   '<div style="padding:20px;">'+
     '<div class="gcal-status '+(connected?'connected':'disconnected')+'">'+
       '<i class="ti '+(connected?'ti-circle-check':'ti-circle-x')+'"></i>'+
-      (connected?'Conectado - Token valido':'Desconectado - Configure o Client ID e conecte')+
+      (connected?'Conectado - Token valido':(CU&&CU.role==='gestor'?'Desconectado - Configure o Client ID e conecte':'Desconectado - Clique em "Conectar Google"'))+
     '</div>'+
     (connected?'<button class="btn btn-outline" style="font-size:11px;margin-bottom:16px;" onclick="gcalDisconnect()"><i class="ti ti-logout"></i> Desconectar</button>':'')+
     (CU&&CU.role==='gestor'?(
