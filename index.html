@@ -385,6 +385,27 @@ function startRealtimeSync(){
     }
   });
 
+  // Sync leads (Módulo 1 — webhook LP -> /leads grava aqui em tempo real)
+  fbDb.ref('leads').on('value', function(snap){
+    var fbLeads = snap.val();
+    if(!fbLeads) return;
+    var loaded = [];
+    Object.values(fbLeads).forEach(function(l){
+      // só pega leads criados pelo webhook da LP (têm _createdAt) — ignora a base antiga
+      if(l && l.nome && l.telefone && l._createdAt) loaded.push(l);
+    });
+    var existingTels = new Set(allLeads.map(function(l){return(l.telefone||'').replace(/\D/g,'');}));
+    var newOnes = loaded.filter(function(l){return !existingTels.has((l.telefone||'').replace(/\D/g,''));});
+    if(newOnes.length){
+      allLeads = allLeads.concat(newOnes);
+      _dailyMap = {};
+      saveAll();
+      var area = document.getElementById('content');
+      var pg = area ? area.getAttribute('data-page') : null;
+      if(pg==='ligar'||pg==='leads'||pg==='dashboard') showPage(pg);
+    }
+  });
+
   // Sync followups in realtime
   fbDb.ref('followups').on('value', function(snap){
     var fbFU = snap.val();
