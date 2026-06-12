@@ -773,7 +773,7 @@ async function confirmarAgendamentoReuniao(key){
   if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
   // Preenche a planilha de reunioes (mesma usada pelo Make antes) via Google Sheets API
   try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-    [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', (CU&&CU.closer)||'João', responsavel||'', kanbanData[key].origem||'Tráfego']); }catch(e){}
+    [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (responsavel||'').toUpperCase(), (kanbanData[key].origem||'Tráfego').toUpperCase()]); }catch(e){}
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
@@ -2637,7 +2637,7 @@ async function saveCallFinalAsync(){
     await saveReativacaoStatus(l.telefone,'agendou');
     // Registra a nova reuniao na planilha de Reunioes (Origem = Recuperacao)
     try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', (CU&&CU.closer)||'João', _callData.responsavel||'', 'Recuperação']); }catch(e){}
+      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'RECUPERAÇÃO']); }catch(e){}
     closeModal('modal-call');_callLeadSource='daily';showPage('reativacao');
     if(result.success) setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
     return;
@@ -5616,7 +5616,7 @@ async function registrarReuniaoSDR(){
     return p[2]+'/'+p[1]+'/'+p[0];
   }
   
-  var row=[fmtDate(dataAg),cliente,tel,fmtDate(dataReun),'AGENDADA',(CU&&CU.closer)||'João',closer,origem];
+  var row=[fmtDate(dataAg),cliente,tel,fmtDate(dataReun),'AGENDADA',((CU&&CU.closer)||'João').toUpperCase(),(closer||'').toUpperCase(),(origem||'').toUpperCase()];
   var ok = await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, row);
   if(ok){
     showSheetToast('Reuniao registrada com sucesso!',false);
@@ -5940,7 +5940,7 @@ async function criarReuniaoGeral(){
   if(!cliente||!data){showSheetToast('Preencha cliente e data',true);return;}
   function fmtDate(iso){if(!iso)return'';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
   var hoje = fmtDate(new Date().toISOString().split('T')[0]);
-  var row = [hoje, cliente, tel, fmtDate(data), 'AGENDADA', sdr, closer, origem];
+  var row = [hoje, cliente, tel, fmtDate(data), 'AGENDADA', (sdr||'').toUpperCase(), (closer||'').toUpperCase(), (origem||'').toUpperCase()];
   var ok = await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, row);
   if(ok){
     ['rm-cliente','rm-tel','rm-data'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
