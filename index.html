@@ -510,6 +510,8 @@ function startRealtimeSync(){
       var pg = area ? area.getAttribute('data-page') : null;
       if(pg==='tarefas'||pg==='meu-hist') showPage(pg);
     }
+    // Corrige em background os meetings com status desatualizado no Firebase
+    setTimeout(migrateStaleStatuses, 500);
   });
 
   // Sync tarefas_dia in realtime
@@ -2140,9 +2142,54 @@ function showPage(id){
 }
 
 // ===== HELPERS =====
+// Retorna o status real de uma reunião cruzando com followups,
+// corrigindo registros antigos onde meetings[id].status ficou como 'pending'
+// mesmo após o resultado ter sido lançado.
+function getMeetingStatus(m){
+  var st = m.status || 'pending';
+  if(st === 'pending' && followups[m.id]){
+    var fu = followups[m.id];
+    st = fu.resultado === 'noshow' ? 'noshow' : 'done';
+  }
+  return st;
+}
+
+// Normaliza dtDisplay: converte "YYYY-MM-DD HH:MM" para "DD/MM/YYYY HH:MM"
+// Reuniões criadas pelo form manual tinham o valor raw do input de data (ISO)
+function normalizeDtDisplay(s){
+  if(!s) return s;
+  // Detecta "YYYY-MM-DD HH:MM" (input de data bruto)
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2})$/);
+  if(m) return m[3]+'/'+m[2]+'/'+m[1]+' '+m[4];
+  // Detecta "YYYY-MM-DD" sem hora
+  var m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m2) return m2[3]+'/'+m2[2]+'/'+m2[1];
+  return s;
+}
+
+// Migração em background: corrige no Firebase meetings com status 'pending'
+// que já têm followup registrado (bug pré-fix de 15/06/2026).
+// Roda uma única vez após os dados do Firebase carregarem.
+var _migratedStatuses = false;
+function migrateStaleStatuses(){
+  if(_migratedStatuses) return;
+  _migratedStatuses = true;
+  var fixed = 0;
+  Object.values(meetings).forEach(function(m){
+    if((m.status==='pending'||!m.status) && followups[m.id]){
+      var fu = followups[m.id];
+      var newSt = fu.resultado==='noshow' ? 'noshow' : 'done';
+      meetings[m.id].status = newSt;
+      saveMeetingFB(m.id, meetings[m.id]);
+      fixed++;
+    }
+  });
+  if(fixed > 0) console.log('[CRM] Corrigidos '+fixed+' status de reuniões no Firebase.');
+}
+
 function getPendingFollowups(){
   return Object.values(meetings).filter(function(m){
-    return m.status!=='done'&&m.status!=='noshow'&&!followups[m.id]&&
+    return getMeetingStatus(m)!=='done'&&getMeetingStatus(m)!=='noshow'&&!followups[m.id]&&
       Date.now()>new Date(m.dtISO).getTime()+MEETING_DURATION_MS&&
       m.responsavel===CU.closer;
   });
@@ -6489,12 +6536,12 @@ function renderReunioesPersonal(){
     fbHtml = '<div class="cb"><div class="empty-st"><i class="ti ti-calendar-check"></i><p>Nenhuma reuniao registrada</p></div></div>';
   } else {
     var trs = rows.map(function(m){
-      var st=m.status||'pending';
+      var st=getMeetingStatus(m); // deriva de followups se status do Firebase estiver desatualizado
       var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
       var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
       return '<tr>'+
         '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
-        '<td style="font-size:12px;">'+(m.dtDisplay||'—')+'</td>'+
+        '<td style="font-size:12px;">'+(normalizeDtDisplay(m.dtDisplay)||'—')+'</td>'+
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
         '<td>'+(m.responsavel||'—')+'</td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
@@ -6554,10 +6601,11 @@ function renderReunioesPersonal(){
       '<span class="badge b-amber">'+reunHoje.length+'</span></div>'+
       '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
       reunHoje.map(function(m){
-        var st=m.status||'pending';
+        var st=getMeetingStatus(m);
         var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
         var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
-        var hora=(m.dtDisplay&&m.dtDisplay.includes(' '))?m.dtDisplay.split(' ')[1]:(m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'');
+        var dtN=normalizeDtDisplay(m.dtDisplay||'');
+        var hora=(dtN&&dtN.includes(' '))?dtN.split(' ')[1]:(m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'');
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
           '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
@@ -6698,7 +6746,8 @@ function confirmarLancarResultadoManual(){
   var closer = document.getElementById('lm-closer').value;
   if(!nomeC||!data){alert('Preencha o cliente e a data da reunião.');return;}
   var mid = 'manual_'+Date.now();
-  var meetingObj = {id:mid,tel:tel,nome:nomeC,dtISO:data+'T09:00:00',dtDisplay:data+' 09:00',status:'pending',responsavel:closer,origem:'Manual',criador:CU.name};
+  function _fmtD(iso){if(!iso)return'';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+  var meetingObj = {id:mid,tel:tel,nome:nomeC,dtISO:data+'T09:00:00',dtDisplay:_fmtD(data)+' 09:00',status:'pending',responsavel:closer,origem:'Manual',criador:CU.name};
   meetings[mid] = meetingObj;
   saveAll();
   saveMeetingFB(mid, meetingObj);
@@ -6736,7 +6785,8 @@ async function criarReuniaoCalendario(){
   var shRow = await criarReuniaoGeral();
   // Cria a reunião no Firebase + Google Meet
   var dtISO = data+'T09:00:00';
-  var meeting = {id:'m_'+Date.now(),tel:tel,nome:cliente,dtISO:dtISO,dtDisplay:data+' 09:00',status:'pending',responsavel:closer,sdr:sdr,origem:origem,criador:CU.name,guestEmail:''};
+  function _fmtD2(iso){if(!iso)return'';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+  var meeting = {id:'m_'+Date.now(),tel:tel,nome:cliente,dtISO:dtISO,dtDisplay:_fmtD2(data)+' 09:00',status:'pending',responsavel:closer,sdr:sdr,origem:origem,criador:CU.name,guestEmail:''};
   if(shRow) meeting.sheetRow=shRow; // vincula número da linha da planilha ao meeting
   meetings[meeting.id]=meeting;saveAll();saveMeetingFB(meeting.id,meeting);
   var result = await createGcalEvent(meeting);
