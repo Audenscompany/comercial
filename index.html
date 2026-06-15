@@ -5840,6 +5840,7 @@ function renderReunioesPersonal(){
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
         '<td style="white-space:nowrap;"><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
           (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;" title="Lançar Resultado"><i class="ti ti-flag-check"></i> Resultado</button>':'')+
+          ' <button class="btn btn-outline" onclick="reenviarConfirmacaoReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--green);border-color:rgba(34,197,94,0.4);" title="Enviar confirmacao por WhatsApp"><i class="ti ti-brand-whatsapp"></i></button>'+
           ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:rgba(239,68,68,0.4);" title="Apagar"><i class="ti ti-trash"></i></button>'+
         '</td>'+
       '</tr>';
@@ -5895,7 +5896,7 @@ function renderReunioesPersonal(){
         var st=m.status||'pending';
         var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
         var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
-        var hora=m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'';
+        var hora=(m.dtDisplay&&m.dtDisplay.includes(' '))?m.dtDisplay.split(' ')[1]:(m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'');
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
           '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
@@ -5962,6 +5963,20 @@ function apagarReuniao(mid){
   if(fbDb || initFirebase()){ fbDb.ref('meetings/'+mid).remove(); }
   showPage('reunioes');
   showSheetToast('Reunião apagada.', false);
+}
+// Reenvia (ou envia pela primeira vez) a mensagem de confirmacao de reuniao por WhatsApp,
+// igual ao fluxo automatico do SDR (Kanban / saveCallFinal).
+async function reenviarConfirmacaoReuniao(mid){
+  var m = meetings[mid];
+  if(!m) return;
+  if(!m.tel){ showSheetToast('Essa reunião não tem telefone cadastrado.', true); return; }
+  if(!confirm('Enviar mensagem de confirmação da reunião por WhatsApp para "'+(m.nome||'')+'" ('+m.tel+')?')) return;
+  try{
+    await enviarConfirmacaoReuniaoWA(m.tel, m.nome, m.dtDisplay);
+    showSheetToast('Mensagem de confirmação enviada.', false);
+  }catch(e){
+    showSheetToast('Erro ao enviar confirmação.', true);
+  }
 }
 
 function salvarEdicaoReuniao(mid){
