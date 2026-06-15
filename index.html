@@ -2738,6 +2738,7 @@ function renderFollowupBody(){
         '<button class="btn" id="fu-perdida" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'perdida\')">Venda Perdida</button>'+
       '</div></div>'+
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
+        '<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;">'+
             '<option value="marketplaces">Marketplaces</option>'+
@@ -2851,12 +2852,12 @@ async function generateContratoDocx(dados){
     if(dados.tipoValor==='mmr'){
       formaPagamento='o valor mensal de R$ '+fmtMoeda(dados.valorParcela)+', durante o prazo de '+dados.duracaoMeses+' meses, totalizando o valor global de R$ '+fmtMoeda(dados.valorTotal)+'.';
     }else{
-      formaPagamento='o valor total de R$ '+fmtMoeda(dados.valorTotal)+', correspondente ao plano contratado, com vigencia de '+dados.duracaoMeses+' meses.';
+      formaPagamento='o valor total de R$ '+fmtMoeda(dados.valorTotal)+', correspondente ao plano contratado, com vigência de '+dados.duracaoMeses+' meses.';
     }
 
     var FREQ_LABEL={mensal:'mensal',quinzenal:'quinzenal',semanal:'semanal'};
     if(dados.frequencia){
-      formaPagamento+=' O pagamento sera realizado de forma '+(FREQ_LABEL[dados.frequencia]||dados.frequencia)+', por meio de PIX, cartao de credito ou outro meio previamente acordado entre as partes';
+      formaPagamento+=' O pagamento será realizado de forma '+(FREQ_LABEL[dados.frequencia]||dados.frequencia)+', por meio de PIX, cartão de crédito ou outro meio previamente acordado entre as partes';
       if(dados.vencimento){
         formaPagamento+=', com vencimento '+dados.vencimento+'.';
       }else{
@@ -2942,6 +2943,7 @@ function saveFollowup(){
   var mensalidade=venda?(parseFloat(document.getElementById('fu-mensalidade').value)||0):0;
   var frequencia=venda?document.getElementById('fu-frequencia').value:'';
   var vencimento=venda?document.getElementById('fu-vencimento').value.trim():'';
+  var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
   var retornoData='';
   var motivo=(choice==='retorno'||choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
@@ -3005,10 +3007,11 @@ function saveFollowup(){
   if(venda){
     var kk2=_fuMeeting.kanbanKey;
     var leadInfo=(kk2&&kanbanData[kk2])?kanbanData[kk2]:null;
+    if(kk2) persistLeadCnpj(kk2, cnpj);
     generateContratoDocx({
       plano:plano,
       nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
-      cnpjCliente:leadInfo?(leadInfo.cnpj||''):'',
+      cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
       duracaoMeses:duracao,
       dataInicio:dataInicio,
       tipoValor:tipoValor,
@@ -3019,6 +3022,14 @@ function saveFollowup(){
     });
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
+}
+// Salva/atualiza o CNPJ do lead no Kanban (preenchido na hora de gerar o contrato)
+function persistLeadCnpj(kk, cnpj){
+  if(!kk || !cnpj || !kanbanData[kk]) return;
+  if(kanbanData[kk].cnpj === cnpj) return;
+  kanbanData[kk].cnpj = cnpj;
+  localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+  if(fbDb || initFirebase()){ fbDb.ref('kanban/'+kk).update({cnpj:cnpj}); }
 }
 // Atualiza um resultado ja lancado (sem repetir os efeitos colaterais do
 // primeiro lancamento, como mover card no funil ou criar tarefa de retorno).
@@ -3047,6 +3058,7 @@ function saveFollowupEdit(){
   var mensalidade=venda?(parseFloat(document.getElementById('fu-mensalidade').value)||0):0;
   var frequencia=venda?document.getElementById('fu-frequencia').value:'';
   var vencimento=venda?document.getElementById('fu-vencimento').value.trim():'';
+  var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
   var retornoData=(choice==='retorno')?(document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:''):'';
   var motivo=(choice==='retorno'||choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
@@ -3069,10 +3081,11 @@ function saveFollowupEdit(){
   if(venda){
     var kk2=_fuMeeting.kanbanKey;
     var leadInfo=(kk2&&kanbanData[kk2])?kanbanData[kk2]:null;
+    if(kk2) persistLeadCnpj(kk2, cnpj);
     generateContratoDocx({
       plano:plano,
       nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
-      cnpjCliente:leadInfo?(leadInfo.cnpj||''):'',
+      cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
       duracaoMeses:duracao,
       dataInicio:dataInicio,
       tipoValor:tipoValor,
@@ -6159,20 +6172,27 @@ async function criarReuniaoGeral(){
 
 async function criarReuniaoCalendario(){
   var cliente = document.getElementById('rm-cliente').value.trim();
+  var tel = document.getElementById('rm-tel').value.trim();
   var data = document.getElementById('rm-data').value;
   var closer = document.getElementById('rm-closer').value;
+  var sdr = document.getElementById('rm-sdr').value;
+  var origem = document.getElementById('rm-origem').value;
   if(!cliente||!data){showSheetToast('Preencha cliente e data',true);return;}
   // First save to sheet
   await criarReuniaoGeral();
   // Then create Google Meet
   var dtISO = data+'T09:00:00';
-  var meeting = {id:'m_'+Date.now(),tel:'',nome:cliente,dtISO:dtISO,dtDisplay:data+' 09:00',status:'pending',responsavel:closer,guestEmail:''};
+  var meeting = {id:'m_'+Date.now(),tel:tel,nome:cliente,dtISO:dtISO,dtDisplay:data+' 09:00',status:'pending',responsavel:closer,sdr:sdr,origem:origem,criador:CU.name,guestEmail:''};
   meetings[meeting.id]=meeting;saveAll();saveMeetingFB(meeting.id,meeting);
   var result = await createGcalEvent(meeting);
   if(result.success){
-    meetings[meeting.id].gcalEventId=result.eventId;meetings[meeting.id].meetLink=result.meetLink;
+    meetings[meeting.id].gcalEventId=result.eventId;meetings[meeting.id].meetLink=result.meetLink;meetings[meeting.id].gcalLink=result.htmlLink||'';
     saveAll();saveMeetingFB(meeting.id,meetings[meeting.id]);
     showSheetToast('Reuniao criada com Google Meet!',false);
+  }
+  // Dispara a confirmacao por WhatsApp (mesmo fluxo do Kanban/coldcall), se houver telefone
+  if(tel){
+    enviarConfirmacaoReuniaoWA(tel, cliente, meeting.dtDisplay);
   }
 }
 
