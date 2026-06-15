@@ -248,6 +248,9 @@ tbody tr:hover td{background:var(--pglow2);}
   </aside>
   <div class="main-content" id="content"></div>
 </div>
+<div id="sign-screen" class="screen" style="min-height:100vh;align-items:center;justify-content:center;padding:30px 16px;">
+  <div id="sign-content" style="width:100%;max-width:680px;"></div>
+</div>
 <!-- MODAL LIGACAO -->
 <div class="modal-ov" id="modal-call">
   <div class="modal-box">
@@ -332,6 +335,15 @@ var CU=null,selRole='gestor';
 
 // Auto-restore session on page load
 window.addEventListener('DOMContentLoaded', function(){
+  // Link de assinatura de contrato (?sign=<id>) - tela publica, sem login
+  var signId=new URLSearchParams(window.location.search).get('sign');
+  if(signId){
+    if(!fbDb) initFirebase();
+    document.getElementById('login-screen').classList.remove('active');
+    document.getElementById('sign-screen').classList.add('active');
+    renderSignPage(signId);
+    return;
+  }
   var saved = localStorage.getItem('audens_session');
   if(saved){
     try{
@@ -964,6 +976,21 @@ function salvarCriarLead(){
   cancelarCriarLead();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
+}
+// Chama o endpoint /assinatura da Cloud Function receberlead para enviar via
+// WhatsApp o link de assinatura eletronica do contrato. Falha silenciosamente
+// (so loga) para nao travar o fluxo caso o cliente nao tenha telefone valido
+// ou a Cloud Function esteja fora.
+async function enviarLinkAssinaturaWA(telefone, nome, link){
+  if(!telefone) return false;
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/assinatura?secret='+WEBHOOK_SECRET,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({telefone:telefone, nome:nome, link:link})
+    });
+    return r.ok;
+  }catch(e){console.error('enviarLinkAssinaturaWA error',e);return false;}
 }
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
@@ -1991,6 +2018,7 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Minhas Reunioes'},
+    {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
     {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
@@ -2013,6 +2041,7 @@ function buildNav(){
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
+    {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
     {id:'calendario',icon:'ti-calendar',label:'Calendario'},
     {id:'plano-carreira',icon:'ti-award',label:'Planos de Carreira'},
     {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'},
@@ -2038,7 +2067,8 @@ function showPage(id){
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
-    'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR
+    'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
+    'assinaturas':renderAssinaturas
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -2047,6 +2077,7 @@ function showPage(id){
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
     if(id==='reunioes') setTimeout(loadFunilReunioes,50);
     if(id==='reativacao') setTimeout(loadReativacao,50);
+    if(id==='assinaturas') setTimeout(loadAssinaturas,50);
   }
   var tnav=document.getElementById('nav-tarefas');
   if(tnav){var p=getPendingFollowups().length;var ex=tnav.querySelector('.nav-badge');
@@ -2477,6 +2508,195 @@ function renderLigar(){
         '<td>'+sb+'</td><td>'+btn+'</td></tr>';
     }).join('')+'</tbody></table></div></div></div>';
 }
+// ===== ASSINATURA DE CONTRATO (pagina publica via ?sign=<id>, sem login) =====
+async function renderSignPage(id){
+  var el=document.getElementById('sign-content');
+  el.innerHTML='<div class="cb" style="padding:40px;text-align:center;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:24px;animation:spin 1s linear infinite;"></i><div style="margin-top:10px;">Carregando documento...</div></div>';
+  try{
+    var data=await fbGet('assinaturas/'+id);
+    if(!data){
+      el.innerHTML='<div class="cb" style="padding:40px;text-align:center;"><i class="ti ti-file-off" style="font-size:32px;color:var(--red);"></i><div style="margin-top:10px;">Link de assinatura nao encontrado ou invalido.</div></div>';
+      return;
+    }
+    window._signData=data;window._signId=id;
+    if(data.status==='assinado'){ renderSignedView(id,data); return; }
+    var pdfEmbed=data.pdfUrl?('<iframe src="'+data.pdfUrl+'" style="width:100%;height:420px;border:1px solid var(--border);border-radius:10px;background:#fff;margin-bottom:18px;" allow="autoplay"></iframe>'):'';
+    el.innerHTML=
+      '<div class="cb" style="padding:24px;">'+
+        '<div style="text-align:center;margin-bottom:18px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;letter-spacing:4px;">AUDENS</div>'+
+          '<div style="color:var(--muted);font-size:13px;">Assinatura Eletronica de Contrato</div>'+
+        '</div>'+
+        '<div style="margin-bottom:14px;"><b>Cliente:</b> '+(data.cliente||'')+'</div>'+
+        (data.contratoNome?'<div style="margin-bottom:14px;"><b>Documento:</b> '+data.contratoNome+'</div>':'')+
+        pdfEmbed+
+        '<label class="f-label">Nome completo</label>'+
+        '<input class="f-input" id="sign-nome" placeholder="Seu nome completo" value="'+(data.cliente||'').replace(/"/g,'')+'">'+
+        '<label class="f-label">CPF</label>'+
+        '<input class="f-input" id="sign-cpf" placeholder="000.000.000-00">'+
+        '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--muted);margin-bottom:16px;cursor:pointer;">'+
+          '<input type="checkbox" id="sign-aceite" style="margin-top:3px;">'+
+          '<span>Li o contrato acima e concordo com seus termos. Ao clicar em "Assinar eletronicamente", declaro minha aceitacao e assino este documento eletronicamente, conforme a Lei n&deg; 14.063/2020.</span>'+
+        '</label>'+
+        '<button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="confirmarAssinatura(\''+id+'\')"><i class="ti ti-signature"></i> Assinar eletronicamente</button>'+
+        '<div class="login-err" id="sign-err" style="text-align:center;margin-top:10px;"></div>'+
+      '</div>';
+  }catch(e){
+    el.innerHTML='<div class="cb" style="padding:40px;text-align:center;color:var(--red);">Erro ao carregar: '+e.message+'</div>';
+  }
+}
+function renderSignedView(id,data){
+  var el=document.getElementById('sign-content');
+  var dt=data.signedAt?new Date(data.signedAt).toLocaleString('pt-BR'):'';
+  el.innerHTML=
+    '<div class="cb" style="padding:32px;text-align:center;">'+
+      '<i class="ti ti-circle-check" style="font-size:42px;color:var(--green);"></i>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;margin-top:10px;">Documento assinado</div>'+
+      '<div style="color:var(--muted);font-size:13px;margin-top:6px;">Assinado por '+(data.signerName||data.cliente||'')+' em '+dt+'</div>'+
+      (data.pdfUrl?'<a href="'+data.pdfUrl+'" target="_blank" class="btn btn-outline" style="margin-top:16px;display:inline-flex;"><i class="ti ti-file-text"></i> Ver documento</a>':'')+
+    '</div>';
+}
+async function confirmarAssinatura(id){
+  var nome=document.getElementById('sign-nome').value.trim();
+  var cpf=document.getElementById('sign-cpf').value.trim();
+  var aceite=document.getElementById('sign-aceite').checked;
+  var errEl=document.getElementById('sign-err');
+  errEl.textContent='';
+  if(!nome){errEl.textContent='Informe seu nome completo.';return;}
+  if(!cpf){errEl.textContent='Informe seu CPF.';return;}
+  if(!aceite){errEl.textContent='E necessario marcar a concordancia para assinar.';return;}
+  var btn=document.querySelector('#sign-content .btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Assinando...';}
+  var ip='';
+  try{
+    var r=await fetch('https://api.ipify.org?format=json');
+    var j=await r.json();
+    ip=j.ip||'';
+  }catch(e){}
+  var signData={status:'assinado',signerName:nome,signerCpf:cpf,signedAt:Date.now(),ip:ip,userAgent:navigator.userAgent};
+  try{
+    await fbSet('assinaturas/'+id,Object.assign({},window._signData,signData));
+  }catch(e){
+    errEl.textContent='Erro ao registrar assinatura: '+e.message;
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-signature"></i> Assinar eletronicamente';}
+    return;
+  }
+  window._signData=Object.assign({},window._signData,signData);
+  renderSignedView(id,window._signData);
+}
+
+// ===== ASSINATURAS: pagina interna (gestor/closer) =====
+function signLinkFor(id){
+  return window.location.origin+window.location.pathname+'?sign='+id;
+}
+function renderAssinaturas(){
+  return '<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title">Assinaturas</div><div class="page-sub">Contratos enviados para assinatura eletronica</div></div>'+
+      '<button class="btn btn-primary" onclick="abrirModalNovaAssinatura()"><i class="ti ti-plus"></i> Novo link de assinatura</button>'+
+    '</div>'+
+    '<div class="cb">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-signature" style="color:var(--purple3);margin-right:6px;"></i>Contratos</div></div>'+
+      '<div id="assinaturas-body" style="padding:20px;">'+
+        '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+async function loadAssinaturas(){
+  var el=document.getElementById('assinaturas-body');
+  if(!el) return;
+  try{
+    var data=await fbGet('assinaturas')||{};
+    var ids=Object.keys(data);
+    if(!ids.length){
+      el.innerHTML='<div class="empty-st"><i class="ti ti-signature"></i><p>Nenhum contrato enviado para assinatura ainda.</p></div>';
+      return;
+    }
+    ids.sort(function(a,b){return (data[b].createdAt||0)-(data[a].createdAt||0);});
+    var rows=ids.map(function(id){
+      var r=data[id];
+      var statusBadge = r.status==='assinado'
+        ? '<span class="badge b-green">Assinado'+(r.signedAt?(' em '+new Date(r.signedAt).toLocaleDateString('pt-BR')):'')+'</span>'
+        : '<span class="badge b-amber">Pendente</span>';
+      var criado=r.createdAt?new Date(r.createdAt).toLocaleDateString('pt-BR'):'-';
+      return '<tr>'+
+        '<td>'+esc(r.cliente||'-')+'</td>'+
+        '<td>'+esc(r.telefone||'-')+'</td>'+
+        '<td>'+esc(r.contratoNome||'-')+'</td>'+
+        '<td>'+statusBadge+'</td>'+
+        '<td>'+criado+'</td>'+
+        '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
+        '<td><button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button></td>'+
+      '</tr>';
+    }).join('');
+    el.innerHTML='<div class="t-scroll"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Documento</th><th>Status</th><th>Criado em</th><th>PDF</th><th>Link</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }catch(e){
+    el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar: '+e.message+'</div>';
+  }
+}
+function copiarLinkAssinatura(id,btn){
+  var txt=signLinkFor(id);
+  function done(){
+    var orig=btn.innerHTML;
+    btn.innerHTML='<i class="ti ti-check"></i> Copiado!';
+    setTimeout(function(){btn.innerHTML=orig;},1200);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(done);
+  }else{
+    var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);done();
+  }
+}
+function abrirModalNovaAssinatura(){
+  var html='<div class="modal-ov active" id="modal-nova-assinatura" onclick="if(event.target===this)cancelarNovaAssinatura()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-signature"></i> Novo Link de Assinatura</div>'+
+        '<button class="modal-close" onclick="cancelarNovaAssinatura()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<label class="f-label">Cliente</label><input class="f-input" id="na-cliente" placeholder="Nome do cliente/empresa" style="margin-bottom:12px;">'+
+        '<label class="f-label">Telefone (WhatsApp)</label><input class="f-input" id="na-telefone" placeholder="DDD + numero" style="margin-bottom:12px;">'+
+        '<label class="f-label">Nome do documento</label><input class="f-input" id="na-contrato" placeholder="Ex: Contrato Audens - Plano Premium" style="margin-bottom:12px;">'+
+        '<label class="f-label">Link do PDF (Google Drive, etc.)</label><input class="f-input" id="na-pdf" placeholder="https://..." style="margin-bottom:0;">'+
+        '<div class="login-err" id="na-err"></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="salvarNovaAssinatura()"><i class="ti ti-check"></i> Criar link</button>'+
+        '<button class="btn btn-outline" onclick="cancelarNovaAssinatura()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function cancelarNovaAssinatura(){
+  var el=document.getElementById('modal-nova-assinatura');
+  if(el) el.remove();
+}
+async function salvarNovaAssinatura(){
+  var cliente=document.getElementById('na-cliente').value.trim();
+  var telefone=document.getElementById('na-telefone').value.replace(/\D/g,'');
+  var contratoNome=document.getElementById('na-contrato').value.trim();
+  var pdfUrl=document.getElementById('na-pdf').value.trim();
+  var errEl=document.getElementById('na-err');
+  errEl.textContent='';
+  if(!cliente){errEl.textContent='Informe o nome do cliente.';return;}
+  try{
+    var ref=await fbPush('assinaturas',{cliente:cliente,contratoNome:contratoNome,pdfUrl:pdfUrl,telefone:telefone,status:'pendente',createdAt:Date.now()});
+    var id=ref&&ref.key;
+    cancelarNovaAssinatura();
+    var area=document.getElementById('content');
+    if(area && area.getAttribute('data-page')==='assinaturas') loadAssinaturas();
+    if(id){
+      var link=signLinkFor(id);
+      var waOk=await enviarLinkAssinaturaWA(telefone, cliente, link);
+      mostrarModalLinkAssinatura(link, waOk);
+    }
+  }catch(e){
+    errEl.textContent='Erro ao criar link: '+e.message;
+  }
+}
+
 // ===== REATIVACAO: estado e helpers do fluxo de ligacao reaproveitado =====
 var _callLeadSource='daily',_reativacaoLeads=[];
 function _getCallLeads(){return _callLeadSource==='reativacao'?(_reativacaoLeads||[]):(getDailyLeads()||[]);}
@@ -2893,6 +3113,95 @@ async function appendClienteRow(dados){
   return await appendSheetRow(SHEETS_IDS.clientes, SHEETS_GIDS.clientes, row, 'L');
 }
 // Gera e baixa o .docx do contrato preenchido com os dados do fechamento
+// Envia o .docx do contrato para o Google Drive, converte para Google Doc,
+// exporta como PDF, sobe o PDF como arquivo separado com link publico de
+// leitura ("qualquer pessoa com o link") e retorna esse link.
+// Retorna null se o Google nao estiver conectado ou se algo falhar.
+async function uploadContratoToDrive(blob, nomeArquivo){
+  if(!isGcalConnected()) return null;
+  try{
+    // 1) Upload do .docx convertendo para Google Doc
+    var metaDoc={name:nomeArquivo, mimeType:'application/vnd.google-apps.document'};
+    var formDoc=new FormData();
+    formDoc.append('metadata', new Blob([JSON.stringify(metaDoc)], {type:'application/json'}));
+    formDoc.append('file', blob);
+    var up1=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+gcalToken.access_token},
+      body:formDoc
+    });
+    if(!up1.ok) throw new Error('Upload Drive (doc) falhou: HTTP '+up1.status);
+    var docId=(await up1.json()).id;
+
+    // 2) Exporta o Google Doc como PDF
+    var exp=await fetch('https://www.googleapis.com/drive/v3/files/'+docId+'/export?mimeType=application/pdf', {
+      headers:{'Authorization':'Bearer '+gcalToken.access_token}
+    });
+    if(!exp.ok) throw new Error('Exportacao PDF falhou: HTTP '+exp.status);
+    var pdfBlob=await exp.blob();
+
+    // 3) Sobe o PDF como arquivo proprio no Drive
+    var nomePdf=nomeArquivo.replace(/\.docx?$/i,'')+'.pdf';
+    var formPdf=new FormData();
+    formPdf.append('metadata', new Blob([JSON.stringify({name:nomePdf})], {type:'application/json'}));
+    formPdf.append('file', pdfBlob);
+    var up2=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+gcalToken.access_token},
+      body:formPdf
+    });
+    if(!up2.ok) throw new Error('Upload Drive (pdf) falhou: HTTP '+up2.status);
+    var pdfId=(await up2.json()).id;
+
+    // 4) Permissao publica de leitura ("qualquer pessoa com o link")
+    await fetch('https://www.googleapis.com/drive/v3/files/'+pdfId+'/permissions', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+gcalToken.access_token,'Content-Type':'application/json'},
+      body:JSON.stringify({role:'reader',type:'anyone'})
+    });
+
+    // 5) Remove o Google Doc intermediario (mantemos so o PDF)
+    try{
+      await fetch('https://www.googleapis.com/drive/v3/files/'+docId, {
+        method:'DELETE',
+        headers:{'Authorization':'Bearer '+gcalToken.access_token}
+      });
+    }catch(e){}
+
+    return 'https://drive.google.com/file/d/'+pdfId+'/preview';
+  }catch(err){
+    console.error('Erro ao enviar contrato para o Drive:',err);
+    return null;
+  }
+}
+// Mostra um modal com o link de assinatura recem-criado, pronto para copiar
+function copiarLinkModalAssinatura(btn){
+  var inp=document.getElementById('link-assinatura-input');
+  if(!inp) return;
+  function done(){btn.innerHTML='<i class="ti ti-check"></i> Copiado!';}
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(inp.value).then(done).catch(done);
+  }else{
+    inp.select();try{document.execCommand('copy');}catch(e){}done();
+  }
+}
+function mostrarModalLinkAssinatura(link, waEnviado){
+  var waMsg = waEnviado
+    ? '<div style="color:var(--green);font-size:12px;margin-bottom:10px;display:flex;align-items:center;gap:6px;"><i class="ti ti-circle-check"></i> Link enviado automaticamente via WhatsApp para o cliente.</div>'
+    : '<div style="color:var(--muted);font-size:13px;margin-bottom:10px;">O PDF do contrato foi enviado ao Google Drive. Envie este link para o cliente assinar eletronicamente:</div>';
+  var html='<div class="modal-ov active" id="modal-link-assinatura" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-signature"></i> Contrato pronto para assinatura</div>'+
+        '<button class="modal-close" onclick="this.closest(\'.modal-ov\').remove()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        waMsg+
+        '<input class="f-input" id="link-assinatura-input" readonly value="'+esc(link)+'" onclick="this.select()" style="margin-bottom:12px;">'+
+        '<button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="copiarLinkModalAssinatura(this)"><i class="ti ti-link"></i> Copiar link</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
 async function generateContratoDocx(dados){
   try{
     var url=CONTRATO_TEMPLATES[dados.plano];
@@ -2934,10 +3243,39 @@ async function generateContratoDocx(dados){
     });
 
     var out=doc.getZip().generate({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    var nomeArquivo='Contrato - '+(dados.nomeCliente||'Cliente')+'.docx';
     var link=document.createElement('a');
     link.href=URL.createObjectURL(out);
-    link.download='Contrato - '+(dados.nomeCliente||'Cliente')+'.docx';
+    link.download=nomeArquivo;
     document.body.appendChild(link);link.click();document.body.removeChild(link);
+
+    // Envia o contrato para o Google Drive (PDF) e cria o link de assinatura eletronica
+    if(isGcalConnected()){
+      try{
+        var pdfUrl=await uploadContratoToDrive(out, nomeArquivo);
+        if(pdfUrl){
+          var ref=await fbPush('assinaturas',{
+            cliente:dados.nomeCliente||'',
+            contratoNome:nomeArquivo.replace(/\.docx$/i,''),
+            pdfUrl:pdfUrl,
+            telefone:dados.telefone||'',
+            status:'pendente',
+            createdAt:Date.now()
+          });
+          var signId=ref&&ref.key;
+          if(signId){
+            var signLink=signLinkFor(signId);
+            var waOk=await enviarLinkAssinaturaWA(dados.telefone, dados.nomeCliente, signLink);
+            mostrarModalLinkAssinatura(signLink, waOk);
+          }
+        }else{
+          showSheetToast('Contrato gerado, mas nao foi possivel enviar o PDF para o Drive.',true);
+        }
+      }catch(e2){
+        console.error('Erro ao criar link de assinatura:',e2);
+        showSheetToast('Contrato gerado, mas houve erro ao criar o link de assinatura.',true);
+      }
+    }
   }catch(err){
     console.error('Erro ao gerar contrato:',err);
     alert('Nao foi possivel gerar o contrato automaticamente (verifique se os modelos foram publicados em assets/contratos/ no GitHub Pages). Erro: '+err.message);
@@ -3070,6 +3408,7 @@ function saveFollowup(){
       plano:plano,
       nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
       cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
+      telefone:_fuMeeting.tel,
       duracaoMeses:duracao,
       dataInicio:dataInicio,
       tipoValor:tipoValor,
@@ -3157,6 +3496,7 @@ function saveFollowupEdit(){
       plano:plano,
       nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
       cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
+      telefone:_fuMeeting.tel,
       duracaoMeses:duracao,
       dataInicio:dataInicio,
       tipoValor:tipoValor,
