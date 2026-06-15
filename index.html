@@ -2009,6 +2009,7 @@ function buildNav(){
     {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
+    {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
@@ -2643,6 +2644,9 @@ async function saveCallFinalAsync(){
     if(result.success) setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
     return;
   }
+  // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes
+  try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+    [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'COLDCALL']); }catch(e){}
   if(result.success){
     closeModal('modal-call');showPage('ligar');
     setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
@@ -2659,6 +2663,9 @@ async function saveCallFinal(){
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
     enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
+    // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes
+    try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'COLDCALL']); }catch(e){}
   }
   saveAll();
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
@@ -5596,13 +5603,29 @@ function renderReativacao(){
         '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
       '</div>'+
     '</div>'+
-    '<div class="cb">'+
+    '<div class="cb" style="margin-bottom:16px;">'+
       '<div class="cb-hd"><div class="cb-title"><i class="ti ti-snowflake" style="color:var(--cyan);margin-right:6px;"></i>Leads frios (30+ dias sem fechar)</div></div>'+
       '<div id="reativ-frios-body" style="padding:20px;">'+
         '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
       '</div>'+
     '</div>'+
+    '<div class="cb">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-history" style="color:var(--purple3);margin-right:6px;"></i>Historico de Recuperacao</div></div>'+
+      '<div id="reativ-historico-body" style="padding:20px;">'+
+        '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
+      '</div>'+
+    '</div>'+
   '</div>';
+}
+// Traduz o status salvo em reativacoes/ para um rotulo + classe de badge legiveis
+function reativacaoStatusInfo(rec){
+  switch(rec&&rec.status){
+    case 'agendou': return {label:'Reagendou reuniao',cls:'b-green'};
+    case 'retorno': return {label:'Pediu retorno'+(rec.retornoData?(' ('+fmtDateBR(rec.retornoData)+')'):''),cls:'b-amber'};
+    case 'nao-atendeu': return {label:'Nao atendeu',cls:'b-red'};
+    case 'sem-interesse': return {label:'Sem interesse',cls:'b-muted'};
+    default: return {label:rec&&rec.status||'-',cls:'b-muted'};
+  }
 }
 function _reunRowToLead(r){
   return {
@@ -5619,11 +5642,11 @@ function openReativacaoCall(tipo,i){
   openCallModal(i);
 }
 async function loadReativacao(){
-  var elNS=document.getElementById('reativ-noshow-body'), elFR=document.getElementById('reativ-frios-body');
+  var elNS=document.getElementById('reativ-noshow-body'), elFR=document.getElementById('reativ-frios-body'), elHist=document.getElementById('reativ-historico-body');
   if(!elNS||!elFR) return;
   if(typeof isGcalConnected!=='function' || !isGcalConnected()){
     var msgg='<div style="color:var(--muted);font-size:13px;">Conecte o Google em Configuracoes para carregar.</div>';
-    elNS.innerHTML=msgg;elFR.innerHTML=msgg;return;
+    elNS.innerHTML=msgg;elFR.innerHTML=msgg;if(elHist)elHist.innerHTML=msgg;return;
   }
   try{
     var data=await loadAllSheets();
@@ -5695,9 +5718,34 @@ async function loadReativacao(){
         var d=dataAg(r);var dias=d?Math.floor((Date.now()-d.getTime())/86400000):0;
         return '<span><i class="ti ti-clock"></i> '+dias+' dias</span>';
       });
+
+    // Historico: o que ja foi feito com os leads de recuperacao (reativacoes/ no Firebase)
+    if(elHist){
+      var telToNome={};
+      rows.forEach(function(r){
+        var t=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+        if(t&&!telToNome[t]) telToNome[t]=col(r,['CLIENTE','Cliente','cliente'])||'';
+      });
+      var historico=Object.keys(reativ).map(function(k){
+        var rec=reativ[k]||{};
+        return {tel:k,nome:telToNome[k]||'(sem nome)',rec:rec};
+      }).filter(function(h){return h.rec&&h.rec.ts;})
+        .sort(function(a,b){return (b.rec.ts||0)-(a.rec.ts||0);})
+        .slice(0,30);
+      if(!historico.length){
+        elHist.innerHTML='<div class="empty-st"><i class="ti ti-history"></i><p>Nenhuma acao de recuperacao registrada ainda.</p></div>';
+      }else{
+        elHist.innerHTML='<div class="t-scroll"><table><thead><tr><th>Lead</th><th>Telefone</th><th>Resultado</th><th>Data</th><th>Por</th></tr></thead><tbody>'+
+          historico.map(function(h){
+            var si=reativacaoStatusInfo(h.rec);
+            var dt=h.rec.ts?new Date(h.rec.ts).toLocaleString('pt-BR'):'-';
+            return '<tr><td>'+h.nome+'</td><td>'+(h.tel||'')+'</td><td><span class="badge '+si.cls+'">'+si.label+'</span></td><td>'+dt+'</td><td>'+(h.rec.por||'-')+'</td></tr>';
+          }).join('')+'</tbody></table></div>';
+      }
+    }
   }catch(e){
     var em='<div style="color:var(--red);font-size:13px;">Erro ao carregar: '+e.message+'</div>';
-    elNS.innerHTML=em;elFR.innerHTML=em;
+    elNS.innerHTML=em;elFR.innerHTML=em;if(elHist)elHist.innerHTML=em;
   }
 }
 
