@@ -1753,7 +1753,7 @@ function showSheetToast(msg, isErr){
   clearTimeout(t._to);t._to=setTimeout(function(){t.style.opacity='0';},6000);
 }
 
-async function appendSheetRow(sheetId, gid, values){
+async function appendSheetRow(sheetId, gid, values, lastCol){
   if(!isGcalConnected()){
     showSheetToast('ERRO: Google nao conectado.',true);
     return false;
@@ -1790,7 +1790,7 @@ async function appendSheetRow(sheetId, gid, values){
       }
     }
     // Step 2: append row
-    var range=tabName+'!A:I';
+    var range=tabName+'!A:'+(lastCol||'I');
     var appendUrl='https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
     var resp=await fetch(appendUrl,{
       method:'POST',
@@ -2007,6 +2007,7 @@ function buildNav(){
   var aI=CU.funcao==='sdr'?sdrNav:closerNav;
   var gIG=[
     {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+    {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
@@ -2834,6 +2835,56 @@ function addMonthsISO(dateISO,months){
 }
 function fmtDataBR(d){return d.toLocaleDateString('pt-BR');}
 function fmtMoeda(v){return (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+// ===== PLANILHA DE CLIENTES (preenchida automaticamente ao fechar uma venda) =====
+// Formata data ISO (YYYY-MM-DD) no padrao "DD/mmm./AA" usado na planilha de Clientes
+function fmtDataClientes(dateISO){
+  if(!dateISO) return '';
+  var d=new Date(dateISO+'T00:00:00');
+  var meses=['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'];
+  return String(d.getDate()).padStart(2,'0')+'/'+meses[d.getMonth()]+'/'+String(d.getFullYear()).slice(2);
+}
+// Formata valor monetario no padrao "R$ X.XXX,XX" usado na planilha de Clientes
+function fmtBRLPlanilha(v){
+  return 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+// Monta o texto "Plano X - Frequencia" conforme padrao da coluna PLANO da planilha de Clientes
+function buildPlanoLabel(plano,duracao,tipoValor){
+  var nomes={marketplaces:'Marketplaces',premium:'Premium',elite:'Elite'};
+  var nome=nomes[plano]||(plano?(plano.charAt(0).toUpperCase()+plano.slice(1)):'');
+  var freq;
+  if(tipoValor==='mmr') freq='Recorrente';
+  else if(duracao===3) freq='Trimestral';
+  else if(duracao===6) freq='Semestral';
+  else if(duracao===12) freq='Anual';
+  else if(duracao===1) freq='Mensal';
+  else freq=(duracao||0)+' meses';
+  return 'Plano '+nome+' - '+freq;
+}
+// Adiciona uma linha na planilha de Clientes ao fechar uma venda, mantendo o
+// padrao de colunas: DATA DE INICIO | CLIENTE | VALOR CONTRATO/MES | GESTOR |
+// DATA DE CANCELAMENTO | MOTIVO | PLANO | ORIGEM | CLOSER | SDR/BDR |
+// VALOR VENDIDO DO CONTRATO | COMISSAO CLOSER
+async function appendClienteRow(dados){
+  var duracao=dados.duracao||0;
+  var contrato=dados.contrato||0;
+  var valorMes=dados.tipoValor==='mmr'?(dados.mensalidade||0):(duracao>0?(contrato/duracao):0);
+  var row=[
+    fmtDataClientes(dados.dataInicio),
+    dados.nomeCliente||'',
+    fmtBRLPlanilha(valorMes),
+    '',
+    '',
+    '',
+    buildPlanoLabel(dados.plano,duracao,dados.tipoValor),
+    dados.origem||'',
+    dados.closer||'',
+    dados.sdr||'',
+    fmtBRLPlanilha(contrato),
+    ''
+  ];
+  return await appendSheetRow(SHEETS_IDS.clientes, SHEETS_GIDS.clientes, row, 'L');
+}
 // Gera e baixa o .docx do contrato preenchido com os dados do fechamento
 async function generateContratoDocx(dados){
   try{
@@ -3020,6 +3071,19 @@ function saveFollowup(){
       frequencia:frequencia,
       vencimento:vencimento
     });
+    // Registra a venda na planilha de Clientes (computa em todo o sistema)
+    appendClienteRow({
+      nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+      plano:plano,
+      duracao:duracao,
+      dataInicio:dataInicio,
+      tipoValor:tipoValor,
+      contrato:contrato,
+      mensalidade:mensalidade,
+      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+      closer:_fuMeeting.responsavel||'',
+      sdr:_fuMeeting.sdr||''
+    });
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
 }
@@ -3094,6 +3158,23 @@ function saveFollowupEdit(){
       frequencia:frequencia,
       vencimento:vencimento
     });
+    // Registra a venda na planilha de Clientes (computa em todo o sistema) -
+    // so na primeira vez que esse follow-up se torna uma venda, pra nao
+    // duplicar linha quando o resultado for apenas corrigido/editado depois.
+    if(old.venda!=='sim'){
+      appendClienteRow({
+        nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+        plano:plano,
+        duracao:duracao,
+        dataInicio:dataInicio,
+        tipoValor:tipoValor,
+        contrato:contrato,
+        mensalidade:mensalidade,
+        origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+        closer:_fuMeeting.responsavel||'',
+        sdr:_fuMeeting.sdr||''
+      });
+    }
   }
   showSheetToast('Resultado atualizado.', false);
   showPage('reunioes');
