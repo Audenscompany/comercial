@@ -2678,9 +2678,9 @@ function updateStepDots4(step){
 
 // ===== FOLLOW-UP =====
 var _fuMeeting=null;
-function openFollowup(meeting){
-  _fuMeeting=meeting;window._fuChoice=null;window._fuComp=null;
-  document.getElementById('fu-title').textContent='Resultado da Reuniao';
+function openFollowup(meeting, editMode){
+  _fuMeeting=meeting;window._fuChoice=null;window._fuComp=null;window._fuEditMode=!!editMode;
+  document.getElementById('fu-title').textContent=editMode?'Editar Resultado da Reuniao':'Resultado da Reuniao';
   document.getElementById('fu-card').innerHTML=
     '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;letter-spacing:1px;">'+meeting.nome+'</div>'+
     '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:14px;color:var(--amber);margin-top:4px;font-weight:600;">'+meeting.dtDisplay+' - Resp: '+meeting.responsavel+'</div>'+
@@ -2688,6 +2688,34 @@ function openFollowup(meeting){
     (meeting.gcalLink?'<div><a href="'+meeting.gcalLink+'" target="_blank" style="color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;font-size:12px;"><i class="ti ti-calendar"></i> Ver no Google Calendar</a></div>':'');
   document.getElementById('fu-body').innerHTML=renderFollowupBody();
   document.getElementById('modal-followup').classList.add('open');
+  if(editMode && followups[meeting.id]) prefillFollowupEdit(followups[meeting.id]);
+}
+// Preenche o modal de Resultado com os dados de um followup ja existente,
+// para permitir corrigir/editar o resultado e regerar o contrato.
+function prefillFollowupEdit(fu){
+  if(fu.resultado==='noshow'){
+    selectComp('nao');
+    return;
+  }
+  selectComp('sim');
+  if(fu.resultado==='venda') selectFU('sim');
+  else if(fu.resultado==='retorno') selectFU('retorno');
+  else if(fu.resultado==='perdida') selectFU('perdida');
+  var setVal=function(id,val){var el=document.getElementById(id);if(el && val!==undefined && val!==null) el.value=val;};
+  setVal('fu-plano', fu.plano||'marketplaces');
+  setVal('fu-duracao', fu.duracao||6);
+  setVal('fu-data-inicio', fu.dataInicio||'');
+  setVal('fu-tipo-valor', fu.tipoValor||'tcv');
+  toggleMensalidadeField();
+  setVal('fu-contrato', fu.contrato||'');
+  setVal('fu-mensalidade', fu.mensalidade||'');
+  setVal('fu-frequencia', fu.frequencia||'mensal');
+  setVal('fu-vencimento', fu.vencimento||'');
+  setVal('fu-motivo', fu.motivo||'');
+  setVal('fu-retorno-date', fu.retornoData||'');
+  updateBonusPreview();
+  var btn=document.getElementById('fu-save-btn');
+  if(btn) btn.textContent='Salvar alteracoes';
 }
 function renderFollowupBody(){
   var minDate=new Date().toISOString().split('T')[0];
@@ -2889,6 +2917,7 @@ function selectFU(val){
   updateBonusPreview();
 }
 function saveFollowup(){
+  if(window._fuEditMode) return saveFollowupEdit();
   if(!_fuMeeting||!window._fuChoice)return;
   var fid=_fuMeeting.id;
   if(window._fuChoice==='noshow'){
@@ -2990,6 +3019,71 @@ function saveFollowup(){
     });
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
+}
+// Atualiza um resultado ja lancado (sem repetir os efeitos colaterais do
+// primeiro lancamento, como mover card no funil ou criar tarefa de retorno).
+// Permite corrigir dados e regerar o contrato .docx.
+function saveFollowupEdit(){
+  if(!_fuMeeting||!window._fuChoice)return;
+  var fid=_fuMeeting.id;
+  var old=followups[fid]||{};
+  if(window._fuChoice==='noshow'){
+    followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
+      comparecimento:'nao',venda:'nao',resultado:'noshow',
+      bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:old.dt||todayStr()};
+    meetings[fid].status='noshow';
+    saveAll();closeModal('modal-followup');
+    showSheetToast('Resultado atualizado.', false);
+    showPage('reunioes');
+    return;
+  }
+  var choice=window._fuChoice; // 'sim' (venda) | 'retorno' | 'perdida'
+  var venda=choice==='sim';
+  var plano=venda?document.getElementById('fu-plano').value:'';
+  var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
+  var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
+  var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
+  var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
+  var mensalidade=venda?(parseFloat(document.getElementById('fu-mensalidade').value)||0):0;
+  var frequencia=venda?document.getElementById('fu-frequencia').value:'';
+  var vencimento=venda?document.getElementById('fu-vencimento').value.trim():'';
+  var mensBase=venda?calcMensalidadeBase():0;
+  var retornoData=(choice==='retorno')?(document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:''):'';
+  var motivo=(choice==='retorno'||choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
+  if(venda){
+    if(!dataInicio){alert('Informe a data de inicio do contrato.');return;}
+    if(!contrato){alert('Informe o valor do contrato.');return;}
+    if(tipoValor==='mmr'&&!mensalidade){alert('Informe o valor da mensalidade.');return;}
+  }
+  if(choice==='retorno'&&!retornoData){alert('Informe a data do retorno.');return;}
+  followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
+    comparecimento:'sim',venda:venda?'sim':'nao',
+    resultado:venda?'venda':choice,
+    plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
+    contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
+    bonusComp:(old.bonusComp!=null?old.bonusComp:BONUS_COMP),bonusVenda:venda?mensBase*BONUS_VENDA_PCT:0,
+    motivo:motivo,retornoData:retornoData,
+    dt:old.dt||todayStr()};
+  meetings[fid].status='done';
+  saveAll();closeModal('modal-followup');
+  if(venda){
+    var kk2=_fuMeeting.kanbanKey;
+    var leadInfo=(kk2&&kanbanData[kk2])?kanbanData[kk2]:null;
+    generateContratoDocx({
+      plano:plano,
+      nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+      cnpjCliente:leadInfo?(leadInfo.cnpj||''):'',
+      duracaoMeses:duracao,
+      dataInicio:dataInicio,
+      tipoValor:tipoValor,
+      valorTotal:contrato,
+      valorParcela:mensalidade,
+      frequencia:frequencia,
+      vencimento:vencimento
+    });
+  }
+  showSheetToast('Resultado atualizado.', false);
+  showPage('reunioes');
 }
 
 // ===== TAREFAS =====
@@ -5839,7 +5933,8 @@ function renderReunioesPersonal(){
         '<td>'+(m.responsavel||'—')+'</td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
         '<td style="white-space:nowrap;"><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
-          (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;" title="Lançar Resultado"><i class="ti ti-flag-check"></i> Resultado</button>':'')+
+          (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;" title="Lançar Resultado"><i class="ti ti-flag-check"></i> Resultado</button>':
+            ' <button class="btn btn-outline" onclick="openFollowup(meetings[\''+m.id+'\'],true)" style="font-size:11px;padding:4px 10px;" title="Editar Resultado"><i class="ti ti-edit-circle"></i> Resultado</button>')+
           ' <button class="btn btn-outline" onclick="reenviarConfirmacaoReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--green);border-color:rgba(34,197,94,0.4);" title="Enviar confirmacao por WhatsApp"><i class="ti ti-brand-whatsapp"></i></button>'+
           ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:rgba(239,68,68,0.4);" title="Apagar"><i class="ti ti-trash"></i></button>'+
         '</td>'+
