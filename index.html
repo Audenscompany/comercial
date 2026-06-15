@@ -783,9 +783,12 @@ async function confirmarAgendamentoReuniao(key){
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   saveAll();saveMeetingFB(mid,meetingObj);
   if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
-  // Preenche a planilha de reunioes (mesma usada pelo Make antes) via Google Sheets API
-  try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-    [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (responsavel||'').toUpperCase(), (kanbanData[key].origem||'Tráfego').toUpperCase()]); }catch(e){}
+  // Preenche a planilha de reunioes e salva o número da linha no meeting para updates futuros
+  try{
+    var _shRow=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+      [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (responsavel||'').toUpperCase(), (kanbanData[key].origem||'Tráfego').toUpperCase()]);
+    if(_shRow&&typeof _shRow==='number'){meetings[mid].sheetRow=_shRow;saveMeetingFB(mid,meetings[mid]);}
+  }catch(e){}
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
@@ -1361,6 +1364,8 @@ var gcalToken=null,gcalClientId='';
 var metaToken=null,metaAppId='',metaAccountId='';
 var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1xQVyaGDgghqHCY19nDCjQpgyQIEWJh4cOy-WGNCF37Q',clientes:'1UDRR1zwQEXnzJv8UBFujhnZzol75n6UNmUAjxGPLUjU',ligacoes:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk'};
 var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852137};
+// Cache: gid (string) -> nome da aba resolvido, para evitar re-buscar metadata em cada updateSheetCell
+var _sheetTabNameCache={};
 var _sheetsMeta={},_investidoMes={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
 
 function loadStorage(){
@@ -1812,10 +1817,12 @@ async function appendSheetRow(sheetId, gid, values, lastCol){
       // last fallback: list all tabs in error
       if(!tabName){
         var allTabs=mm.sheets.map(function(s){return s.properties.title+'('+s.properties.sheetId+')'}).join(', ');
-        showSheetToast('ERRO: Aba Ligacao nao encontrada. Abas disponiveis: '+allTabs,true);
+        showSheetToast('ERRO: Aba nao encontrada. Abas disponiveis: '+allTabs,true);
         return false;
       }
     }
+    // Cacheia o nome da aba para uso posterior em updateSheetCell
+    _sheetTabNameCache[String(gid)]=tabName;
     // Step 2: append row
     var range=tabName+'!A:'+(lastCol||'I');
     var appendUrl='https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
@@ -1829,12 +1836,59 @@ async function appendSheetRow(sheetId, gid, values, lastCol){
       showSheetToast('ERRO ao gravar: '+result.error.message+' | Status: '+resp.status,true);
       return false;
     }
-    showSheetToast('Ligacao gravada na planilha!',false);
-    return true;
+    // Extrai o número da linha inserida do updatedRange (ex: "Reuniões!A11:H11" → 11)
+    var rowNum=0;
+    if(result.updates&&result.updates.updatedRange){
+      var rm=result.updates.updatedRange.match(/(\d+)/);
+      if(rm)rowNum=parseInt(rm[1]);
+    }
+    showSheetToast('Gravado na planilha!',false);
+    return rowNum||true; // rowNum (int > 0) se conseguiu extrair, true (fallback truthy) caso contrário
   }catch(e){
     showSheetToast('ERRO excecao: '+e.message,true);
     return false;
   }
+}
+
+// Atualiza uma célula específica da planilha via Sheets API PUT (values.update)
+// sheetId: ID da planilha | gid: ID da aba (número) | rowNum: número da linha (1-based)
+// colLetter: letra da coluna ('E', 'A', etc.) | value: valor a escrever
+async function updateSheetCell(sheetId, gid, rowNum, colLetter, value){
+  if(!isGcalConnected()||!rowNum) return false;
+  try{
+    var tabName=_sheetTabNameCache[String(gid)];
+    if(!tabName){
+      // Re-busca metadata se não tiver no cache
+      var mr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'?fields=sheets.properties',
+        {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+      var mm=await mr.json();
+      if(mm.error) return false;
+      for(var i=0;i<(mm.sheets||[]).length;i++){
+        var sp=mm.sheets[i].properties;
+        if(sp.sheetId===gid||sp.sheetId===parseInt(gid)){tabName=sp.title;break;}
+      }
+      if(!tabName) return false;
+      _sheetTabNameCache[String(gid)]=tabName;
+    }
+    var cellRef=tabName+'!'+colLetter+rowNum;
+    var url='https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(cellRef)+'?valueInputOption=USER_ENTERED';
+    var resp=await fetch(url,{method:'PUT',
+      headers:{'Authorization':'Bearer '+gcalToken.access_token,'Content-Type':'application/json'},
+      body:JSON.stringify({range:cellRef,majorDimension:'ROWS',values:[[value]]})
+    });
+    var r=await resp.json();
+    return !r.error;
+  }catch(e){ console.error('updateSheetCell error',e); return false; }
+}
+
+// Atualiza a coluna STATUS (E) da linha da planilha Reuniões vinculada ao meeting `mid`
+// statusLabel: 'NO-SHOW' | 'VENDA' | 'RETORNO' | 'PERDIDA'
+async function updateReuniaoSheetStatus(mid, statusLabel){
+  var m=meetings[mid];
+  if(!m||!m.sheetRow) return; // reunião sem linha salva (agendada antes desta feature), ignora
+  try{
+    await updateSheetCell(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, m.sheetRow, 'E', statusLabel);
+  }catch(e){ console.error('updateReuniaoSheetStatus error',e); }
 }
 
 async function appendLigacao(lead, callData, meetingDisplay){
@@ -2857,16 +2911,22 @@ async function saveCallFinalAsync(){
   }
   if(fromReativacao){
     await saveReativacaoStatus(l.telefone,'agendou');
-    // Registra a nova reuniao na planilha de Reunioes (Origem = Recuperacao)
-    try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'RECUPERAÇÃO']); }catch(e){}
+    // Registra a nova reuniao na planilha de Reunioes (Origem = Recuperacao) e salva sheetRow
+    try{
+      var _shRowR=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+        [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'RECUPERAÇÃO']);
+      if(_shRowR&&typeof _shRowR==='number'){meetings[mid].sheetRow=_shRowR;saveMeetingFB(mid,meetings[mid]);}
+    }catch(e){}
     closeModal('modal-call');_callLeadSource='daily';showPage('reativacao');
     if(result.success) setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
     return;
   }
-  // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes
-  try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-    [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'COLDCALL']); }catch(e){}
+  // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes e salva sheetRow
+  try{
+    var _shRowC=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'COLDCALL']);
+    if(_shRowC&&typeof _shRowC==='number'){meetings[mid].sheetRow=_shRowC;saveMeetingFB(mid,meetings[mid]);}
+  }catch(e){}
   if(result.success){
     closeModal('modal-call');showPage('ligar');
     setTimeout(function(){alert('Evento criado!\nMeet: '+(result.meetLink||'(gerado pelo Google)'));},200);
@@ -2883,9 +2943,12 @@ async function saveCallFinal(){
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
     enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
-    // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes
-    try{ await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-      [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'COLDCALL']); }catch(e){}
+    // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes e salva sheetRow
+    try{
+      var _shRowF=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+        [todayStr(), l.nome, l.telefone, _callData.meetingDisplay||'', 'AGENDADA', ((CU&&CU.closer)||'').toUpperCase(), (_callData.responsavel||'').toUpperCase(), 'COLDCALL']);
+      if(_shRowF&&typeof _shRowF==='number'){meetings[mid2].sheetRow=_shRowF;saveMeetingFB(mid2,meetings[mid2]);}
+    }catch(e){}
   }
   saveAll();
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
@@ -3110,6 +3173,19 @@ async function appendClienteRow(dados){
     fmtBRLPlanilha(contrato),
     ''
   ];
+  // Salva no Firebase (fonte de verdade) além da planilha
+  fbPush('clientes',{
+    nomeCliente:dados.nomeCliente||'',
+    dataInicio:dados.dataInicio||'',
+    plano:buildPlanoLabel(dados.plano,duracao,dados.tipoValor),
+    tipoValor:dados.tipoValor||'',
+    valorMensalidade:valorMes,
+    valorContrato:contrato,
+    origem:dados.origem||'',
+    closer:dados.closer||'',
+    sdr:dados.sdr||'',
+    createdAt:Date.now()
+  });
   return await appendSheetRow(SHEETS_IDS.clientes, SHEETS_GIDS.clientes, row, 'L');
 }
 // Gera e baixa o .docx do contrato preenchido com os dados do fechamento
@@ -3322,6 +3398,8 @@ function saveFollowup(){
       comparecimento:'nao',venda:'nao',resultado:'noshow',
       bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:todayStr()};
     meetings[fid].status='noshow';
+    saveMeetingFB(fid, meetings[fid]);
+    updateReuniaoSheetStatus(fid,'NO-SHOW');
     saveAll();closeModal('modal-followup');
     // Envia o lead para o fluxo de recontato de no-shows
     saveReativacaoStatus(_fuMeeting.tel,'nao-atendeu');
@@ -3362,6 +3440,8 @@ function saveFollowup(){
     retornoData:retornoData,
     dt:todayStr()};
   meetings[fid].status='done';
+  saveMeetingFB(fid, meetings[fid]);
+  updateReuniaoSheetStatus(fid, venda?'VENDA':choice==='retorno'?'RETORNO':'PERDIDA');
   if(choice==='retorno'){
     var lead=allLeads.find(function(l){return l.telefone===_fuMeeting.tel;});if(lead)lead._requeue=true;
     // Agenda o retorno: lead vai para Recuperacao com a data marcada
@@ -3453,6 +3533,8 @@ function saveFollowupEdit(){
       comparecimento:'nao',venda:'nao',resultado:'noshow',
       bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:old.dt||todayStr()};
     meetings[fid].status='noshow';
+    saveMeetingFB(fid, meetings[fid]);
+    updateReuniaoSheetStatus(fid,'NO-SHOW');
     saveAll();closeModal('modal-followup');
     showSheetToast('Resultado atualizado.', false);
     showPage('reunioes');
@@ -3487,6 +3569,8 @@ function saveFollowupEdit(){
     motivo:motivo,retornoData:retornoData,
     dt:old.dt||todayStr()};
   meetings[fid].status='done';
+  saveMeetingFB(fid, meetings[fid]);
+  updateReuniaoSheetStatus(fid, venda?'VENDA':choice==='retorno'?'RETORNO':'PERDIDA');
   saveAll();closeModal('modal-followup');
   if(venda){
     var kk2=_fuMeeting.kanbanKey;
@@ -6629,14 +6713,15 @@ async function criarReuniaoGeral(){
   var closer = document.getElementById('rm-closer').value;
   var sdr = document.getElementById('rm-sdr').value;
   var origem = document.getElementById('rm-origem').value;
-  if(!cliente||!data){showSheetToast('Preencha cliente e data',true);return;}
+  if(!cliente||!data){showSheetToast('Preencha cliente e data',true);return null;}
   function fmtDate(iso){if(!iso)return'';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
   var hoje = fmtDate(new Date().toISOString().split('T')[0]);
   var row = [hoje, cliente, tel, fmtDate(data), 'AGENDADA', (sdr||'').toUpperCase(), (closer||'').toUpperCase(), (origem||'').toUpperCase()];
-  var ok = await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, row);
-  if(ok){
+  var shRow = await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, row);
+  if(shRow){
     ['rm-cliente','rm-tel','rm-data'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
   }
+  return (typeof shRow==='number') ? shRow : null; // retorna número da linha para criarReuniaoCalendario
 }
 
 async function criarReuniaoCalendario(){
@@ -6647,11 +6732,12 @@ async function criarReuniaoCalendario(){
   var sdr = document.getElementById('rm-sdr').value;
   var origem = document.getElementById('rm-origem').value;
   if(!cliente||!data){showSheetToast('Preencha cliente e data',true);return;}
-  // First save to sheet
-  await criarReuniaoGeral();
-  // Then create Google Meet
+  // Primeiro salva na planilha e captura número da linha
+  var shRow = await criarReuniaoGeral();
+  // Cria a reunião no Firebase + Google Meet
   var dtISO = data+'T09:00:00';
   var meeting = {id:'m_'+Date.now(),tel:tel,nome:cliente,dtISO:dtISO,dtDisplay:data+' 09:00',status:'pending',responsavel:closer,sdr:sdr,origem:origem,criador:CU.name,guestEmail:''};
+  if(shRow) meeting.sheetRow=shRow; // vincula número da linha da planilha ao meeting
   meetings[meeting.id]=meeting;saveAll();saveMeetingFB(meeting.id,meeting);
   var result = await createGcalEvent(meeting);
   if(result.success){
