@@ -2055,7 +2055,7 @@ function showPage(id){
 // ===== HELPERS =====
 function getPendingFollowups(){
   return Object.values(meetings).filter(function(m){
-    return m.status==='pending'&&!followups[m.id]&&
+    return m.status!=='done'&&m.status!=='noshow'&&!followups[m.id]&&
       Date.now()>new Date(m.dtISO).getTime()+MEETING_DURATION_MS&&
       m.responsavel===CU.closer;
   });
@@ -5838,8 +5838,9 @@ function renderReunioesPersonal(){
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
         '<td>'+(m.responsavel||'—')+'</td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
-        '<td style="white-space:nowrap;"><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;"><i class="ti ti-edit"></i></button>'+
+        '<td style="white-space:nowrap;"><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
           (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;" title="Lançar Resultado"><i class="ti ti-flag-check"></i> Resultado</button>':'')+
+          ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:rgba(239,68,68,0.4);" title="Apagar"><i class="ti ti-trash"></i></button>'+
         '</td>'+
       '</tr>';
     }).join('');
@@ -5922,10 +5923,10 @@ function abrirEditarReuniao(mid){
   if(!m){ alert('Reunião não encontrada'); return; }
   var closers = ['Lucas','Gustavo','João'];
   var origens = ['Trafego Pago','Social Selling','Organico','Indicacao','Evento','Recuperacao','Ligacao'];
-  var html = '<div class="modal-ov active" id="modal-edit-reun" onclick="if(event.target===this)closeModal(\'modal-edit-reun\')">'+
+  var html = '<div class="modal-ov active" id="modal-edit-reun" onclick="if(event.target===this)cancelarEdicaoReuniao()">'+
     '<div class="modal-box" style="max-width:520px;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-calendar-edit"></i> Editar Reunião</div>'+
-        '<button class="modal-close" onclick="closeModal(\'modal-edit-reun\')">×</button></div>'+
+        '<button class="modal-close" onclick="cancelarEdicaoReuniao()">×</button></div>'+
       '<div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
         '<div><label class="f-label">Cliente</label><input id="er-nome" class="f-input" value="'+(m.nome||'')+'" style="margin-bottom:0;"></div>'+
         '<div><label class="f-label">Closer Responsável</label><select id="er-closer" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
@@ -5940,11 +5941,27 @@ function abrirEditarReuniao(mid){
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="salvarEdicaoReuniao(\''+mid+'\')"><i class="ti ti-device-floppy"></i> Salvar</button>'+
-        '<button class="btn btn-outline" onclick="closeModal(\'modal-edit-reun\')">Cancelar</button>'+
+        '<button class="btn btn-outline" onclick="cancelarEdicaoReuniao()">Cancelar</button>'+
       '</div>'+
     '</div>'+
   '</div>';
   document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function cancelarEdicaoReuniao(){
+  var el = document.getElementById('modal-edit-reun');
+  if(el) el.remove();
+}
+
+function apagarReuniao(mid){
+  var m = meetings[mid];
+  if(!m) return;
+  if(!confirm('Apagar a reunião de "'+(m.nome||'')+'"? Essa ação não pode ser desfeita.')) return;
+  delete meetings[mid];
+  saveAll();
+  if(fbDb || initFirebase()){ fbDb.ref('meetings/'+mid).remove(); }
+  showPage('reunioes');
+  showSheetToast('Reunião apagada.', false);
 }
 
 function salvarEdicaoReuniao(mid){
@@ -5957,10 +5974,8 @@ function salvarEdicaoReuniao(mid){
   meetings[mid] = m;
   saveAll();
   saveMeetingFB(mid, m);
-  closeModal('modal-edit-reun');
   // Remove modal from DOM
-  var el = document.getElementById('modal-edit-reun');
-  if(el) el.remove();
+  cancelarEdicaoReuniao();
   showPage('reunioes');
   showSheetToast('Reunião atualizada!', false);
 }
@@ -5969,10 +5984,10 @@ function salvarEdicaoReuniao(mid){
 function abrirLancarResultadoManual(){
   var closers = ['Lucas','Gustavo'];
   var hoje = new Date().toISOString().split('T')[0];
-  var html = '<div class="modal-ov active" id="modal-lancar-manual" onclick="if(event.target===this)closeModal(\'modal-lancar-manual\')">'+
+  var html = '<div class="modal-ov active" id="modal-lancar-manual" onclick="if(event.target===this)cancelarLancarResultadoManual()">'+
     '<div class="modal-box" style="max-width:480px;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-rocket"></i> Lançar Resultado de Reunião Antiga</div>'+
-        '<button class="modal-close" onclick="closeModal(\'modal-lancar-manual\')">×</button></div>'+
+        '<button class="modal-close" onclick="cancelarLancarResultadoManual()">×</button></div>'+
       '<div style="padding:20px;">'+
         '<div style="margin-bottom:14px;padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">'+
           'Use para reuniões realizadas antes desse fluxo existir (ex: leads que já tiveram reunião mas não têm tarefa de follow-up). Ao continuar, voce vai marcar o resultado (Venda / Retorno / Venda Perdida) e, se for venda, gerar o contrato.'+
@@ -5982,17 +5997,22 @@ function abrirLancarResultadoManual(){
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Data da Reunião</label><input id="lm-data" type="date" class="f-input" value="'+hoje+'" style="margin-bottom:0;"></div>'+
           '<div><label class="f-label">Closer Responsável</label><select id="lm-closer" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
-            closers.map(function(c){return'<option'+((CU.name===c)?' selected':'')+'>'+c+'</option>';}).join('')+
+            closers.map(function(c){return'<option'+((CU&&CU.closer===c)?' selected':'')+'>'+c+'</option>';}).join('')+
           '</select></div>'+
         '</div>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="confirmarLancarResultadoManual()"><i class="ti ti-arrow-right"></i> Continuar</button>'+
-        '<button class="btn btn-outline" onclick="closeModal(\'modal-lancar-manual\')">Cancelar</button>'+
+        '<button class="btn btn-outline" onclick="cancelarLancarResultadoManual()">Cancelar</button>'+
       '</div>'+
     '</div>'+
   '</div>';
   document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function cancelarLancarResultadoManual(){
+  var el = document.getElementById('modal-lancar-manual');
+  if(el) el.remove();
 }
 
 function confirmarLancarResultadoManual(){
@@ -6006,9 +6026,7 @@ function confirmarLancarResultadoManual(){
   meetings[mid] = meetingObj;
   saveAll();
   saveMeetingFB(mid, meetingObj);
-  closeModal('modal-lancar-manual');
-  var el = document.getElementById('modal-lancar-manual');
-  if(el) el.remove();
+  cancelarLancarResultadoManual();
   openFollowup(meetingObj);
 }
 
