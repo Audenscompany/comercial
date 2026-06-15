@@ -681,6 +681,7 @@ function ensureKanbanEntry(lead){
         empresa:lead.empresa||'',
         cidade:lead.cidade||'',
         email:lead.email||'',
+        ad:lead.ad||'',
         _source:lead._source||'',
         _createdAt:lead._createdAt||Date.now(),
         status:'novo',
@@ -870,7 +871,8 @@ function abrirEditarLead(key){
         '<label class="f-label">Cidade</label><input class="f-input" id="el-cidade" value="'+esc(e.cidade)+'" style="margin-bottom:12px;">'+
         '<label class="f-label">E-mail</label><input class="f-input" type="email" id="el-email" value="'+esc(e.email)+'" style="margin-bottom:12px;">'+
         '<label class="f-label">Faturamento</label><select class="f-input" id="el-faturamento" style="margin-bottom:12px;">'+opts+'</select>'+
-        '<label class="f-label">Origem</label><select class="f-input" id="el-origem" style="margin-bottom:0;">'+origemOpts+'</select>'+
+        '<label class="f-label">Origem</label><select class="f-input" id="el-origem" style="margin-bottom:12px;">'+origemOpts+'</select>'+
+        '<label class="f-label">Anúncio (Ad)</label><input class="f-input" id="el-ad" value="'+esc(e.ad||'')+'" placeholder="Nome do anúncio que trouxe o lead" style="margin-bottom:0;">'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="salvarEdicaoLead(\''+key+'\')"><i class="ti ti-check"></i> Salvar</button>'+
@@ -894,6 +896,7 @@ function salvarEdicaoLead(key){
   var email=document.getElementById('el-email').value.trim();
   var faturamento=document.getElementById('el-faturamento').value;
   var origem=document.getElementById('el-origem').value;
+  var ad=(document.getElementById('el-ad')?document.getElementById('el-ad').value.trim():'');
   if(!nome){alert('Informe o nome do lead.');return;}
   if(!telefone){alert('Informe o telefone do lead.');return;}
   kanbanData[key].nome=nome;
@@ -904,9 +907,10 @@ function salvarEdicaoLead(key){
   kanbanData[key].email=email;
   kanbanData[key].faturamento=faturamento;
   kanbanData[key].origem=origem;
+  kanbanData[key].ad=ad;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
-    fbDb.ref('kanban/'+key).update({nome:nome,telefone:telefone,empresa:empresa,cnpj:cnpj,cidade:cidade,email:email,faturamento:faturamento,origem:origem});
+    fbDb.ref('kanban/'+key).update({nome:nome,telefone:telefone,empresa:empresa,cnpj:cnpj,cidade:cidade,email:email,faturamento:faturamento,origem:origem,ad:ad});
   }
   cancelarEdicaoLead();
   var area=document.getElementById('content');
@@ -1125,6 +1129,7 @@ function kanbanCardHtml(e,idx){
     (e.telefone?'<div class="kanban-card-sub kanban-tel" title="Clique para copiar o telefone" onclick="copiarTelefoneKanban(event,\''+e.telefone+'\')"><i class="ti ti-phone"></i> '+e.telefone+' <i class="ti ti-copy" style="opacity:.5;"></i></div>'+
       '<a class="kanban-card-sub" href="'+waLink(e.telefone)+'" target="_blank" title="Abrir no WhatsApp" onclick="event.stopPropagation()" style="color:var(--green);text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
     (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
+    (e.ad?'<div class="kanban-card-sub" style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+e.ad+'"><i class="ti ti-ad-2"></i> '+e.ad+'</div>':'')+
     (e.cidade?'<div class="kanban-card-sub"><i class="ti ti-map-pin"></i> '+e.cidade+'</div>':'')+
     (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+(e.responsavel?' ('+e.responsavel+')':'')+'</div>':'')+
     (e.meetLink?'<div class="kanban-card-sub"><a href="'+e.meetLink+'" target="_blank" style="color:var(--cyan);"><i class="ti ti-video"></i> Abrir Meet</a></div>':'')+
@@ -6642,6 +6647,16 @@ function abrirEditarReuniao(mid){
         '<div><label class="f-label">Closer Responsável</label><select id="er-closer" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
           closers.map(function(c){return'<option'+(m.responsavel===c?' selected':'')+'>'+c+'</option>';}).join('')+
         '</select></div>'+
+        (function(){
+          var isoDate='', isoTime='';
+          if(m.dtISO){
+            var parts=m.dtISO.split('T');
+            isoDate=parts[0]||'';
+            isoTime=(parts[1]||'').substring(0,5)||'';
+          }
+          return '<div><label class="f-label">Data da Reunião</label><input id="er-data" type="date" class="f-input" value="'+isoDate+'" style="margin-bottom:0;"></div>'+
+                 '<div><label class="f-label">Horário</label><input id="er-hora" type="time" class="f-input" value="'+isoTime+'" style="margin-bottom:0;"></div>';
+        })() +
         '<div><label class="f-label">Status</label><select id="er-status" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
           ['pending','done','noshow'].map(function(s){var l=s==='done'?'Realizada':s==='noshow'?'No-Show':'Agendada';return'<option value="'+s+'"'+(m.status===s?' selected':'')+'>'+l+'</option>';}).join('')+
         '</select></div>'+
@@ -6688,20 +6703,65 @@ async function reenviarConfirmacaoReuniao(mid){
   }
 }
 
-function salvarEdicaoReuniao(mid){
+async function enviarReagendamentoWA(telefone, nome, meetingDisplay, kanbanKey, meetingISO){
+  var body = { telefone: telefone, nome: nome||'', meetingDisplay: meetingDisplay };
+  if(kanbanKey) body.kanbanKey = kanbanKey;
+  if(meetingISO) body.meetingISO = meetingISO;
+  var resp = await fetch(RECEBERLEAD_URL+'/reagendar?secret='+WEBHOOK_SECRET, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  var r = await resp.json();
+  if(!r.ok) throw new Error(r.error||'Erro reagendar');
+  return r;
+}
+
+async function salvarEdicaoReuniao(mid){
   var m = meetings[mid];
   if(!m) return;
   m.nome = document.getElementById('er-nome').value.trim()||m.nome;
   m.responsavel = document.getElementById('er-closer').value;
   m.status = document.getElementById('er-status').value;
   m.origem = document.getElementById('er-origem').value;
+
+  // Check if date/time changed
+  var newDate = document.getElementById('er-data') ? document.getElementById('er-data').value : '';
+  var newTime = document.getElementById('er-hora') ? document.getElementById('er-hora').value : '';
+  var dtChanged = false;
+  var newDtISO = m.dtISO || '';
+  var newDtDisplay = m.dtDisplay || '';
+  if(newDate && newTime){
+    var candidateISO = newDate + 'T' + newTime + ':00';
+    if(candidateISO !== (m.dtISO||'')){
+      dtChanged = true;
+      newDtISO = candidateISO;
+      // format DD/MM/YYYY HH:MM
+      var dp = newDate.split('-');
+      newDtDisplay = dp[2]+'/'+dp[1]+'/'+dp[0]+' '+newTime;
+    }
+  }
+  if(dtChanged){
+    m.dtISO = newDtISO;
+    m.dtDisplay = newDtDisplay;
+  }
+
   meetings[mid] = m;
   saveAll();
   saveMeetingFB(mid, m);
-  // Remove modal from DOM
   cancelarEdicaoReuniao();
   showPage('reunioes');
   showSheetToast('Reunião atualizada!', false);
+
+  // Send reagendamento WA + reset lembretes if time changed and phone available
+  if(dtChanged && m.tel){
+    try{
+      await enviarReagendamentoWA(m.tel, m.nome, newDtDisplay, m.kanbanKey, newDtISO);
+      showSheetToast('Mensagem de reagendamento enviada ao cliente.', false);
+    }catch(e){
+      showSheetToast('Reunião salva, mas erro ao enviar WhatsApp.', true);
+    }
+  }
 }
 
 // ===== LANÇAR RESULTADO DE REUNIÃO ANTIGA (sem entrada em meetings{}) =====
