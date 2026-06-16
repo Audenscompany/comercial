@@ -472,16 +472,25 @@ function startRealtimeSync(){
     var fbKanban = snap.val() || {};
     var prev = JSON.stringify(kanbanData);
     kanbanData = fbKanban;
-    if(JSON.stringify(kanbanData) !== prev){
+    var changed = JSON.stringify(kanbanData) !== prev;
+    if(changed){
       localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
       var area = document.getElementById('content');
       var pg = area ? area.getAttribute('data-page') : null;
       if(pg==='kanban') showPage('kanban');
     }
-    // Na primeira carga, tenta sincronizar leads pendentes na planilha
     if(_kanbanFirstLoad){
       _kanbanFirstLoad = false;
-      setTimeout(syncPendingLeadsToSheets, 2000); // aguarda Google auth estar pronto
+      // Na primeira carga: sync de pendentes após Google auth estar pronto
+      setTimeout(syncPendingLeadsToSheets, 2000);
+    } else if(changed && isGcalConnected()){
+      // Kanban atualizou em tempo real: verifica se há entradas novas sem _sheetSynced
+      Object.keys(fbKanban).forEach(function(key){
+        var e = fbKanban[key];
+        if(!e._sheetSynced && e.nome && e.telefone){
+          appendLeadToSheets(e, key);
+        }
+      });
     }
   });
 
@@ -699,7 +708,14 @@ function ensureKanbanEntry(lead){
       // Lead qualificado (>= R$20 mil) -> gera cadencia de tarefas para o Joao
       generateCadenciaTasks(lead,key);
       // Salvar na planilha de leads (substitui Make.com)
-      appendLeadToSheets(lead, key);
+      // Tenta imediatamente; se Google não estiver pronto ainda, tenta de novo em 4s e 10s
+      appendLeadToSheets(lead, key).then(function(ok){
+        if(!ok){
+          setTimeout(function(){ appendLeadToSheets(lead, key).then(function(ok2){
+            if(!ok2) setTimeout(function(){ appendLeadToSheets(lead, key); }, 10000);
+          }); }, 4000);
+        }
+      });
     }
   }).catch(function(e){console.error('ensureKanbanEntry error',e);});
 }
@@ -708,37 +724,96 @@ function ensureKanbanEntry(lead){
 async function appendLeadToSheets(lead, kanbanKey){
   if(!isGcalConnected()) return false;
   try{
-    var d = new Date(lead._createdAt || Date.now());
+    // Prefere dados do kanban (tem UTMs) mas se não houver usa o lead como fallback
+    var kb = (kanbanKey && kanbanData[kanbanKey]) ? kanbanData[kanbanKey] : null;
+    // Se o kanban ainda não estava em memória, tenta buscar do Firebase direto
+    if(!kb && kanbanKey && fbDb){
+      try{
+        var kbSnap = await fbDb.ref('kanban/'+kanbanKey).once('value');
+        if(kbSnap.exists()) kb = kbSnap.val();
+      }catch(ignored){}
+    }
+    var src = kb || lead; // fonte preferida
+    var d = new Date(src._createdAt || lead._createdAt || Date.now());
     var dataFmt = d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
     var row = [
-      dataFmt,               // A: Data
-      lead.nome||'',         // B: Nome
-      lead.faturamento||'',  // C: Faturamento
-      (lead.telefone||'').replace(/\D/g,''), // D: Telefone
-      lead._source||'',      // E: Fonte
-      lead.campanha||'',     // F: Campanha
-      lead.conjunto||'',     // G: Posicionamento
-      lead.ad||''            // H: Ad
+      dataFmt,                                                   // A: Data
+      src.nome||lead.nome||'',                                   // B: Nome
+      src.faturamento||lead.faturamento||'',                     // C: Faturamento
+      (src.telefone||lead.telefone||'').replace(/\D/g,''),       // D: Telefone
+      src._source||lead._source||'',                             // E: Fonte
+      src.campanha||lead.campanha||'',                           // F: Campanha
+      src.conjunto||lead.conjunto||'',                           // G: Posicionamento
+      src.ad||lead.ad||''                                        // H: Ad
     ];
-    await appendSheetRow(SHEETS_IDS.leads, SHEETS_GIDS.leads, row, 'H');
-    // Marca sincronizado no Firebase para evitar duplicata em próximas sessões
-    if(kanbanKey && (fbDb || initFirebase())){
+    // Chamada silenciosa — sem toast de erro (background sync)
+    var ok = await appendSheetRowSilent(SHEETS_IDS.leads, SHEETS_GIDS.leads, row, 'H');
+    if(ok && kanbanKey && (fbDb || initFirebase())){
       fbDb.ref('kanban/'+kanbanKey).update({_sheetSynced: true});
+      if(kanbanData[kanbanKey]) kanbanData[kanbanKey]._sheetSynced = true;
     }
-    return true;
+    return !!ok;
   }catch(e){ console.error('appendLeadToSheets error', e); return false; }
+}
+
+// Versão silenciosa do appendSheetRow (sem showSheetToast, para background sync)
+async function appendSheetRowSilent(sheetId, gid, values, lastCol){
+  if(!isGcalConnected()) return false;
+  try{
+    var lc = lastCol || 'Z';
+    var cached = _sheetTabNameCache[String(gid)];
+    if(!cached){
+      var mr = await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'?fields=sheets.properties',
+        {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+      var mm = await mr.json();
+      if(mm.error) return false;
+      if(mm.sheets){
+        for(var i=0;i<mm.sheets.length;i++){
+          var sp=mm.sheets[i].properties;
+          if(sp.sheetId===gid||sp.sheetId===parseInt(gid)){cached=sp.title;break;}
+        }
+      }
+      if(!cached) return false;
+      _sheetTabNameCache[String(gid)] = cached;
+    }
+    var range = cached+'!A:'+lc;
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+    var resp = await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+gcalToken.access_token,'Content-Type':'application/json'},body:JSON.stringify({range:range,majorDimension:'ROWS',values:[values]})});
+    var result = await resp.json();
+    return !result.error;
+  }catch(e){ console.error('appendSheetRowSilent error',e); return false; }
 }
 
 // Ao abrir o CRM, tenta sincronizar leads do kanban que ainda não foram salvos na planilha
 var _syncLeadsSheetDone = false;
+var _LEADS_SHEET_MIGRATION_KEY = 'audens_leads_sheet_migrated_v1';
 async function syncPendingLeadsToSheets(){
   if(_syncLeadsSheetDone || !isGcalConnected()) return;
   _syncLeadsSheetDone = true;
+
+  // Migração única: na primeira vez que roda com esse código,
+  // marca TODOS os leads existentes como já sincronizados (evita duplicatas com Make.com)
+  var migrated = localStorage.getItem(_LEADS_SHEET_MIGRATION_KEY);
+  if(!migrated){
+    var batch = {};
+    Object.keys(kanbanData).forEach(function(k){
+      if(kanbanData[k].nome && !kanbanData[k]._sheetSynced){
+        batch[k+'/_sheetSynced'] = true;
+        kanbanData[k]._sheetSynced = true;
+      }
+    });
+    if(Object.keys(batch).length && (fbDb || initFirebase())){
+      fbDb.ref('kanban').update(batch);
+    }
+    localStorage.setItem(_LEADS_SHEET_MIGRATION_KEY, '1');
+    return; // Para aqui — novos leads a partir daqui serão sincronizados normalmente
+  }
+
+  // Sync normal: só leads novos sem _sheetSynced
   var entries = Object.entries(kanbanData);
   for(var i=0; i<entries.length; i++){
     var key = entries[i][0];
     var e   = entries[i][1];
-    // Só tenta se: tem nome/telefone, não foi sincronizado e a origem é tráfego/LP
     if(!e._sheetSynced && e.nome && e.telefone){
       await appendLeadToSheets(e, key);
     }
@@ -827,11 +902,20 @@ async function confirmarAgendamentoReuniao(key){
       email:kanbanData[key].email||''
     });
   }
+  // Detecta qual foi a ultima tarefa SDR concluida para este lead (tarefa responsavel pelo agendamento)
+  var ultimaTarefaSDR = null;
+  Object.values(sdrTarefas||{}).forEach(function(t){
+    if(t.leadKey===key && t.done && t.doneAt){
+      if(!ultimaTarefaSDR || t.doneAt > ultimaTarefaSDR.doneAt) ultimaTarefaSDR = t;
+    }
+  });
   // Cria a tarefa de follow-up pos-reuniao para o responsavel (Realizada / No-show / Venda / Retorno)
   var mid='km_'+key+'_'+Date.now();
   var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
     status:'pending',responsavel:responsavel,guestEmail:email||'',faturamentoLead:kanbanData[key].faturamento||'',
-    origem:'Kanban',kanbanKey:key};
+    origem:'Kanban',kanbanKey:key,
+    tarefaOrigem: ultimaTarefaSDR ? ultimaTarefaSDR.tipo : '',
+    tarefaOrigemDia: ultimaTarefaSDR ? 'Dia '+ultimaTarefaSDR.dia : ''};
   meetings[mid]=meetingObj;
   kanbanData[key].meetingId=mid;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -846,25 +930,25 @@ async function confirmarAgendamentoReuniao(key){
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
-  // Dispara a mensagem de confirmacao da reuniao por WhatsApp (nao bloqueia a UI)
-  enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay);
-  // Cria o evento no Google Agenda (com link do Meet, se a conta estiver conectada)
+  // Cria o evento no Google Agenda PRIMEIRO (precisamos do meetLink antes de enviar WA)
+  var meetLinkFinal = '';
   try{
     var gcalResult=await createGcalEvent({
       id:key, nome:kanbanData[key].nome, tel:kanbanData[key].telefone,
       dtISO:meetingISO, responsavel:responsavel||(CU&&CU.name)||'', guestEmail:email
     });
     if(gcalResult && gcalResult.success){
+      meetLinkFinal = gcalResult.meetLink||'';
       kanbanData[key].gcalEventId=gcalResult.eventId;
-      kanbanData[key].meetLink=gcalResult.meetLink||'';
+      kanbanData[key].meetLink=meetLinkFinal;
       kanbanData[key].gcalLink=gcalResult.htmlLink||'';
       localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
       if(fbDb || initFirebase()){
-        fbDb.ref('kanban/'+key).update({gcalEventId:gcalResult.eventId,meetLink:kanbanData[key].meetLink,gcalLink:kanbanData[key].gcalLink});
+        fbDb.ref('kanban/'+key).update({gcalEventId:gcalResult.eventId,meetLink:meetLinkFinal,gcalLink:kanbanData[key].gcalLink});
       }
       if(meetings[mid]){
         meetings[mid].gcalEventId=gcalResult.eventId;
-        meetings[mid].meetLink=gcalResult.meetLink||'';
+        meetings[mid].meetLink=meetLinkFinal;
         meetings[mid].gcalLink=gcalResult.htmlLink||'';
         saveAll();saveMeetingFB(mid,meetings[mid]);
       }
@@ -872,6 +956,8 @@ async function confirmarAgendamentoReuniao(key){
       if(area2 && area2.getAttribute('data-page')==='kanban') showPage('kanban');
     }
   }catch(e){console.error('createGcalEvent error',e);}
+  // Agora dispara WA com meetLink (e mensagem de escassez) — nao bloqueia a UI
+  enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay, responsavel, meetLinkFinal);
 }
 // ===== Editar lead (dados do card do Kanban) =====
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
@@ -1054,12 +1140,15 @@ async function enviarLinkAssinaturaWA(telefone, nome, link){
 }
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
-async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay){
+async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink){
   try{
+    var payload={telefone:telefone, nome:nome, meetingDisplay:meetingDisplay};
+    if(responsavel) payload.responsavel=responsavel;
+    if(meetLink) payload.meetLink=meetLink;
     await fetch(RECEBERLEAD_URL+'/agendar?secret='+WEBHOOK_SECRET,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({telefone:telefone, nome:nome, meetingDisplay:meetingDisplay})
+      body:JSON.stringify(payload)
     });
   }catch(e){console.error('enviarConfirmacaoReuniaoWA error',e);}
 }
@@ -6537,7 +6626,80 @@ async function loadFunilReunioes(){
     });
     html+='</div>';
 
+    // ---- Gráfico de barras ----
+    html+='<div style="margin-top:24px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;">'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:16px;">Resumo Visual — '+periodLabel+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:center;">'+
+        '<canvas id="funil-bar-chart" height="200"></canvas>'+
+        '<canvas id="funil-donut-chart" height="200"></canvas>'+
+      '</div>'+
+    '</div>';
+
     el.innerHTML = html;
+
+    // Carrega Chart.js e renderiza os gráficos
+    function renderFunilCharts(){
+      // Bar chart: Agendadas / Realizadas / No-Show / Vendas
+      var barCtx = document.getElementById('funil-bar-chart');
+      if(barCtx && window.Chart){
+        new Chart(barCtx, {
+          type: 'bar',
+          data: {
+            labels: ['Agendadas','Realizadas','No-Show','Vendas'],
+            datasets:[{
+              data:[total, realizadas, noshow, vendas],
+              backgroundColor:['rgba(139,92,246,0.8)','rgba(245,158,11,0.8)','rgba(239,68,68,0.8)','rgba(34,197,94,0.8)'],
+              borderColor:['rgb(139,92,246)','rgb(245,158,11)','rgb(239,68,68)','rgb(34,197,94)'],
+              borderWidth:2,
+              borderRadius:6,
+              borderSkipped:false
+            }]
+          },
+          options:{
+            responsive:true, maintainAspectRatio:true,
+            plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ' '+ctx.parsed.y;}}}},
+            scales:{
+              x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#888',font:{family:'Barlow Condensed',size:12,weight:'700'}}},
+              y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#888',font:{family:'Barlow Condensed',size:11},stepSize:1},beginAtZero:true}
+            }
+          }
+        });
+      }
+      // Donut chart: distribuição de resultados das realizadas
+      var donutCtx = document.getElementById('funil-donut-chart');
+      if(donutCtx && window.Chart){
+        var pendentes = total - realizadas - noshow;
+        new Chart(donutCtx, {
+          type: 'doughnut',
+          data: {
+            labels:['Realizadas','No-Show','Vendas','Pendentes'],
+            datasets:[{
+              data:[realizadas - vendas, noshow, vendas, Math.max(pendentes,0)],
+              backgroundColor:['rgba(245,158,11,0.85)','rgba(239,68,68,0.85)','rgba(34,197,94,0.85)','rgba(255,255,255,0.1)'],
+              borderColor:['rgb(245,158,11)','rgb(239,68,68)','rgb(34,197,94)','rgba(255,255,255,0.15)'],
+              borderWidth:2
+            }]
+          },
+          options:{
+            responsive:true, maintainAspectRatio:true,
+            cutout:'65%',
+            plugins:{
+              legend:{position:'bottom',labels:{color:'#888',font:{family:'Barlow Condensed',size:11},padding:12,boxWidth:12}},
+              tooltip:{callbacks:{label:function(ctx){return ' '+ctx.label+': '+ctx.parsed;}}}
+            }
+          }
+        });
+      }
+    }
+
+    if(window.Chart){
+      renderFunilCharts();
+    } else {
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+      s.onload=renderFunilCharts;
+      document.head.appendChild(s);
+    }
   }catch(e){
     el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar funil: '+e.message+'</div>';
   }
@@ -6595,11 +6757,16 @@ function renderReunioesPersonal(){
       var st=getMeetingStatus(m); // deriva de followups se status do Firebase estiver desatualizado
       var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
       var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
+      // Tarefa responsável pelo agendamento
+      var tarefaOrigemHtml = m.tarefaOrigem
+        ? '<span style="font-size:11px;color:var(--purple3);white-space:nowrap;" title="'+m.tarefaOrigemDia+'"><i class="ti ti-checks" style="margin-right:3px;"></i>'+m.tarefaOrigem+(m.tarefaOrigemDia?' · '+m.tarefaOrigemDia:'')+'</span>'
+        : '<span style="color:var(--muted);font-size:11px;">—</span>';
       return '<tr>'+
         '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
         '<td style="font-size:12px;">'+(normalizeDtDisplay(m.dtDisplay)||'—')+'</td>'+
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
         '<td>'+(m.responsavel||'—')+'</td>'+
+        '<td>'+tarefaOrigemHtml+'</td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
         '<td style="white-space:nowrap;"><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
           (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;" title="Lançar Resultado"><i class="ti ti-flag-check"></i> Resultado</button>':
@@ -6610,7 +6777,7 @@ function renderReunioesPersonal(){
       '</tr>';
     }).join('');
     fbHtml = '<div class="cb"><div class="cb-hd"><div class="cb-title">Reunioes Registradas ('+(isGestor?'todas':'minhas')+')</div></div>'+
-      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Data/Hora</th><th>Status</th><th>Responsavel</th><th>Meet</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Data/Hora</th><th>Status</th><th>Responsavel</th><th>Tarefa Origem</th><th>Meet</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
   }
 
   // Sheets reunioes general view
