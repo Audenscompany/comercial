@@ -6692,80 +6692,43 @@ async function loadFunilReunioes(){
     });
     html+='</div>';
 
-    // ---- Gráfico de barras ----
-    html+='<div style="margin-top:24px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;">'+
-      '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:16px;">Resumo Visual — '+periodLabel+'</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:center;">'+
-        '<canvas id="funil-bar-chart" height="200"></canvas>'+
-        '<canvas id="funil-donut-chart" height="200"></canvas>'+
-      '</div>'+
-    '</div>';
+    // ---- Ranking: qual tarefa SDR mais gerou reuniões ----
+    var tarefaCount = {};
+    Object.values(meetings||{}).forEach(function(m){
+      if(m.tarefaOrigem){
+        var label = m.tarefaOrigem + (m.tarefaOrigemDia ? ' · ' + m.tarefaOrigemDia : '');
+        tarefaCount[label] = (tarefaCount[label]||0) + 1;
+      }
+    });
+    var tarefaRanking = Object.keys(tarefaCount).map(function(k){return{label:k,v:tarefaCount[k]};})
+      .sort(function(a,b){return b.v-a.v;});
+    var maxTarefa = tarefaRanking.length ? tarefaRanking[0].v : 1;
+
+    html += '<div style="margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">';
+    html += '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;"><i class="ti ti-medal" style="color:var(--purple3);font-size:14px;"></i>Tarefas que mais agendaram reuniões</div>';
+    if(tarefaRanking.length === 0){
+      html += '<div style="color:var(--muted);font-size:13px;">Ainda sem dados — as próximas reuniões agendadas pelo CRM irão aparecer aqui.</div>';
+    } else {
+      var medalhas = ['🥇','🥈','🥉'];
+      tarefaRanking.slice(0,6).forEach(function(item,i){
+        var pct = Math.round(item.v / maxTarefa * 100);
+        html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'+
+          '<span style="font-size:16px;width:22px;text-align:center;">'+(medalhas[i]||'&nbsp;&nbsp;')+'</span>'+
+          '<div style="flex:1;">'+
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'+
+              '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--white);">'+item.label+'</span>'+
+              '<span style="font-family:var(--font-bn),sans-serif;font-size:16px;color:var(--purple3);margin-left:12px;">'+item.v+'</span>'+
+            '</div>'+
+            '<div style="height:6px;background:rgba(255,255,255,0.06);border-radius:99px;">'+
+              '<div style="height:6px;width:'+pct+'%;background:linear-gradient(90deg,var(--purple3),var(--cyan));border-radius:99px;transition:width .4s;"></div>'+
+            '</div>'+
+          '</div>'+
+        '</div>';
+      });
+    }
+    html += '</div>';
 
     el.innerHTML = html;
-
-    // Carrega Chart.js e renderiza os gráficos
-    function renderFunilCharts(){
-      // Bar chart: Agendadas / Realizadas / No-Show / Vendas
-      var barCtx = document.getElementById('funil-bar-chart');
-      if(barCtx && window.Chart){
-        new Chart(barCtx, {
-          type: 'bar',
-          data: {
-            labels: ['Agendadas','Realizadas','No-Show','Vendas'],
-            datasets:[{
-              data:[total, realizadas, noshow, vendas],
-              backgroundColor:['rgba(139,92,246,0.8)','rgba(245,158,11,0.8)','rgba(239,68,68,0.8)','rgba(34,197,94,0.8)'],
-              borderColor:['rgb(139,92,246)','rgb(245,158,11)','rgb(239,68,68)','rgb(34,197,94)'],
-              borderWidth:2,
-              borderRadius:6,
-              borderSkipped:false
-            }]
-          },
-          options:{
-            responsive:true, maintainAspectRatio:true,
-            plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ' '+ctx.parsed.y;}}}},
-            scales:{
-              x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#888',font:{family:'Barlow Condensed',size:12,weight:'700'}}},
-              y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#888',font:{family:'Barlow Condensed',size:11},stepSize:1},beginAtZero:true}
-            }
-          }
-        });
-      }
-      // Donut chart: distribuição de resultados das realizadas
-      var donutCtx = document.getElementById('funil-donut-chart');
-      if(donutCtx && window.Chart){
-        var pendentes = total - realizadas - noshow;
-        new Chart(donutCtx, {
-          type: 'doughnut',
-          data: {
-            labels:['Realizadas','No-Show','Vendas','Pendentes'],
-            datasets:[{
-              data:[realizadas - vendas, noshow, vendas, Math.max(pendentes,0)],
-              backgroundColor:['rgba(245,158,11,0.85)','rgba(239,68,68,0.85)','rgba(34,197,94,0.85)','rgba(255,255,255,0.1)'],
-              borderColor:['rgb(245,158,11)','rgb(239,68,68)','rgb(34,197,94)','rgba(255,255,255,0.15)'],
-              borderWidth:2
-            }]
-          },
-          options:{
-            responsive:true, maintainAspectRatio:true,
-            cutout:'65%',
-            plugins:{
-              legend:{position:'bottom',labels:{color:'#888',font:{family:'Barlow Condensed',size:11},padding:12,boxWidth:12}},
-              tooltip:{callbacks:{label:function(ctx){return ' '+ctx.label+': '+ctx.parsed;}}}
-            }
-          }
-        });
-      }
-    }
-
-    if(window.Chart){
-      renderFunilCharts();
-    } else {
-      var s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
-      s.onload=renderFunilCharts;
-      document.head.appendChild(s);
-    }
   }catch(e){
     el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar funil: '+e.message+'</div>';
   }
