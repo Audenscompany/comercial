@@ -467,6 +467,7 @@ function startRealtimeSync(){
   });
 
   // Sync kanban (Funil de Leads) em tempo real
+  var _kanbanFirstLoad = true;
   fbDb.ref('kanban').on('value', function(snap){
     var fbKanban = snap.val() || {};
     var prev = JSON.stringify(kanbanData);
@@ -476,6 +477,11 @@ function startRealtimeSync(){
       var area = document.getElementById('content');
       var pg = area ? area.getAttribute('data-page') : null;
       if(pg==='kanban') showPage('kanban');
+    }
+    // Na primeira carga, tenta sincronizar leads pendentes na planilha
+    if(_kanbanFirstLoad){
+      _kanbanFirstLoad = false;
+      setTimeout(syncPendingLeadsToSheets, 2000); // aguarda Google auth estar pronto
     }
   });
 
@@ -682,6 +688,8 @@ function ensureKanbanEntry(lead){
         cidade:lead.cidade||'',
         email:lead.email||'',
         ad:lead.ad||'',
+        campanha:lead.campanha||'',
+        conjunto:lead.conjunto||'',
         _source:lead._source||'',
         _createdAt:lead._createdAt||Date.now(),
         status:'novo',
@@ -690,8 +698,51 @@ function ensureKanbanEntry(lead){
       });
       // Lead qualificado (>= R$20 mil) -> gera cadencia de tarefas para o Joao
       generateCadenciaTasks(lead,key);
+      // Salvar na planilha de leads (substitui Make.com)
+      appendLeadToSheets(lead, key);
     }
   }).catch(function(e){console.error('ensureKanbanEntry error',e);});
+}
+
+// Appenda uma linha na planilha de leads (colunas A-H) e marca _sheetSynced no Firebase
+async function appendLeadToSheets(lead, kanbanKey){
+  if(!isGcalConnected()) return false;
+  try{
+    var d = new Date(lead._createdAt || Date.now());
+    var dataFmt = d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+    var row = [
+      dataFmt,               // A: Data
+      lead.nome||'',         // B: Nome
+      lead.faturamento||'',  // C: Faturamento
+      (lead.telefone||'').replace(/\D/g,''), // D: Telefone
+      lead._source||'',      // E: Fonte
+      lead.campanha||'',     // F: Campanha
+      lead.conjunto||'',     // G: Posicionamento
+      lead.ad||''            // H: Ad
+    ];
+    await appendSheetRow(SHEETS_IDS.leads, SHEETS_GIDS.leads, row, 'H');
+    // Marca sincronizado no Firebase para evitar duplicata em próximas sessões
+    if(kanbanKey && (fbDb || initFirebase())){
+      fbDb.ref('kanban/'+kanbanKey).update({_sheetSynced: true});
+    }
+    return true;
+  }catch(e){ console.error('appendLeadToSheets error', e); return false; }
+}
+
+// Ao abrir o CRM, tenta sincronizar leads do kanban que ainda não foram salvos na planilha
+var _syncLeadsSheetDone = false;
+async function syncPendingLeadsToSheets(){
+  if(_syncLeadsSheetDone || !isGcalConnected()) return;
+  _syncLeadsSheetDone = true;
+  var entries = Object.entries(kanbanData);
+  for(var i=0; i<entries.length; i++){
+    var key = entries[i][0];
+    var e   = entries[i][1];
+    // Só tenta se: tem nome/telefone, não foi sincronizado e a origem é tráfego/LP
+    if(!e._sheetSynced && e.nome && e.telefone){
+      await appendLeadToSheets(e, key);
+    }
+  }
 }
 // Move um card do kanban para outra coluna
 function moveKanbanCard(key,newStatus){
