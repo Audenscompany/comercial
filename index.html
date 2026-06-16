@@ -6851,15 +6851,21 @@ function renderReunioesPersonal(){
     reunHojeHtml = '<div class="cb" style="margin-bottom:16px;border-color:rgba(245,158,11,0.4);">'+
       '<div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-event" style="color:var(--amber);margin-right:6px;"></i>Reuniões de Hoje</div>'+
       '<span class="badge b-amber">'+reunHoje.length+'</span></div>'+
-      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
+      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
       reunHoje.map(function(m){
         var st=getMeetingStatus(m);
         var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
         var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
         var dtN=normalizeDtDisplay(m.dtDisplay||'');
         var hora=(dtN&&dtN.includes(' '))?dtN.split(' ')[1]:(m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'');
+        var tel=(m.tel||'').replace(/\D/g,'');
+        var telFmt=tel?tel.replace(/^55/,'').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3'):null;
+        var telHtml=telFmt
+          ?'<span onclick="(function(){navigator.clipboard.writeText(\''+tel+'\');var el=event.target;var orig=el.textContent;el.textContent=\'Copiado!\';setTimeout(function(){el.textContent=orig;},1200);})()" style="cursor:pointer;color:var(--muted);font-size:12px;font-family:monospace;user-select:none;" title="Clique para copiar">'+telFmt+'</span>'
+          :'<span style="color:var(--border2);">—</span>';
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
+          '<td>'+telHtml+'</td>'+
           '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
           '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
           '<td>'+(m.responsavel||'—')+'</td>'+
