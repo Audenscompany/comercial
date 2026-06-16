@@ -2205,7 +2205,10 @@ function showMain(){
     fbGet('leads').then(function(fbLeads){
       if(fbLeads){
         var arr = Array.isArray(fbLeads) ? fbLeads : Object.values(fbLeads);
-        if(arr.length > allLeads.length){
+        // Atendentes (Gustavo, João) sempre usam a base do Firebase como fonte de verdade.
+        // Gestor também atualiza se Firebase tiver mais leads (pode ter importado de outra máquina).
+        var isAtendente = CU && CU.role === 'atendente';
+        if(isAtendente || arr.length > allLeads.length){
           allLeads = arr;
           localStorage.setItem('audens_leads', JSON.stringify(allLeads));
         }
@@ -2704,6 +2707,8 @@ function mergeAndSave(allParsed,log){
     '<span style="color:var(--green);">+'+totalNew+' adicionados</span> · '+
     '<span style="color:var(--muted);">'+totalDups+' dupl.</span> · '+
     '<span style="color:var(--purple3);">Total: '+allLeads.length+'</span></div></div>';
+  // Auto-sync para Firebase: todos os outros usuários (ex: Gustavo) recebem a base atualizada
+  if(totalNew > 0){ syncLeadsToFB(); }
   setTimeout(function(){showPage('leads');},1800);
 }
 
@@ -3259,6 +3264,7 @@ function prefillFollowupEdit(fu){
   setVal('fu-vencimento', fu.vencimento||'');
   setVal('fu-motivo', fu.motivo||'');
   setVal('fu-retorno-date', fu.retornoData||'');
+  setVal('fu-retorno-time', fu.retornoTime||'09:00');
   updateBonusPreview();
   var btn=document.getElementById('fu-save-btn');
   if(btn) btn.textContent='Salvar alteracoes';
@@ -3314,19 +3320,22 @@ function renderFollowupBody(){
         '</div>'+
         '<div id="fu-bonus-preview" style="padding:10px 12px;background:rgba(253,224,71,0.08);border:1px solid rgba(253,224,71,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#fde047;margin-top:10px;"></div>'+
       '</div>'+
-      '<div id="fu-motivo-fields" style="display:none;margin-bottom:16px;">'+
-        '<div id="fu-retorno-date-wrap" style="display:none;">'+
-          '<label class="f-label">Quando sera o retorno?</label>'+
-          '<input class="f-input" type="date" id="fu-retorno-date" min="'+minDate+'" style="margin-bottom:10px;">'+
+      '<div id="fu-retorno-fields" style="display:none;margin-bottom:16px;">'+
+        '<label class="f-label">Quando sera o retorno?</label>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
+          '<input class="f-input" type="date" id="fu-retorno-date" min="'+minDate+'" style="margin-bottom:0;">'+
+          '<input class="f-input" type="time" id="fu-retorno-time" value="09:00" style="margin-bottom:0;">'+
         '</div>'+
-        '<label class="f-label">Motivo de nao ter fechado agora</label>'+
+        '<div style="padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">Lead volta para Recuperacao. No horario marcado voce recebera um lembrete para lancar o resultado (Venda ou Perdida).</div>'+
+      '</div>'+
+      '<div id="fu-perdida-fields" style="display:none;margin-bottom:16px;">'+
+        '<label class="f-label">Motivo de nao ter fechado</label>'+
         '<select class="f-select" id="fu-motivo" style="margin-bottom:10px;">'+
           '<option value="preco">Preco alto</option><option value="tempo">Sem tempo</option>'+
           '<option value="concorrente">Vai com concorrente</option><option value="nao_convenceu">Nao se convenceu</option>'+
           '<option value="socio">Precisa consultar socio</option><option value="outro">Outro</option>'+
         '</select>'+
-        '<div id="fu-retorno-note" style="display:none;padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">Lead volta para a coluna de Recuperacao e uma nova tarefa de follow-up sera criada automaticamente pro responsavel na data do retorno.</div>'+
-        '<div id="fu-perdida-note" style="display:none;padding:10px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">O lead sera movido para Arquivados no Funil de Leads.</div>'+
+        '<div style="padding:10px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--muted);">O lead sera movido para Arquivados no Funil de Leads.</div>'+
       '</div>'+
     '</div>'+
     '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">'+
@@ -3633,10 +3642,8 @@ function selectFU(val){
   document.getElementById('fu-perdida').style.background=isPerdida?'rgba(239,68,68,0.2)':'transparent';
   document.getElementById('fu-perdida').style.borderColor=isPerdida?'var(--red)':'var(--border)';
   document.getElementById('fu-venda-fields').style.display=isVenda?'block':'none';
-  document.getElementById('fu-motivo-fields').style.display=(isRetorno||isPerdida)?'block':'none';
-  document.getElementById('fu-retorno-date-wrap').style.display=isRetorno?'block':'none';
-  document.getElementById('fu-retorno-note').style.display=isRetorno?'block':'none';
-  document.getElementById('fu-perdida-note').style.display=isPerdida?'block':'none';
+  document.getElementById('fu-retorno-fields').style.display=isRetorno?'block':'none';
+  document.getElementById('fu-perdida-fields').style.display=isPerdida?'block':'none';
   document.getElementById('fu-save-btn').disabled=false;
   if(isVenda){
     var diEl=document.getElementById('fu-data-inicio');
@@ -3675,7 +3682,8 @@ function saveFollowup(){
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
   var retornoData='';
-  var motivo=(choice==='retorno'||choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
+  var motivo=(choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
+  var retornoTime='09:00';
   if(venda){
     if(!dataInicio){alert('Informe a data de inicio do contrato.');return;}
     if(!contrato){alert('Informe o valor do contrato.');return;}
@@ -3683,6 +3691,7 @@ function saveFollowup(){
   }
   if(choice==='retorno'){
     retornoData=document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:'';
+    retornoTime=(document.getElementById('fu-retorno-time')?document.getElementById('fu-retorno-time').value:'')||'09:00';
     if(!retornoData){alert('Informe a data do retorno.');return;}
   }
   followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
@@ -3692,7 +3701,7 @@ function saveFollowup(){
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
     bonusComp:BONUS_COMP,bonusVenda:venda?mensBase*BONUS_VENDA_PCT:0,
     motivo:motivo,
-    retornoData:retornoData,
+    retornoData:retornoData,retornoTime:retornoTime,
     dt:todayStr()};
   meetings[fid].status='done';
   saveMeetingFB(fid, meetings[fid]);
@@ -3713,12 +3722,19 @@ function saveFollowup(){
         fbDb.ref('kanban/'+kk).update({status:'recuperacao',statusAt:Date.now(),retornoData:retornoData,retornoDisplay:retornoDisplay});
       }
     }
+    // Avisa o lead via WhatsApp sobre o retorno agendado
+    (function(tel, nome, display){
+      fetch(RECEBERLEAD_URL+'/retorno?secret='+WEBHOOK_SECRET, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({telefone:tel, nome:nome, retornoDisplay:display})
+      }).catch(function(){});
+    })(_fuMeeting.tel, _fuMeeting.nome, retornoDisplay+' às '+retornoTime);
     // Cria automaticamente uma nova tarefa de follow-up pro mesmo responsavel,
-    // que vence na data do retorno e abre o mesmo modal (Venda/Retorno/Perdida)
+    // que vence na data/hora do retorno e abre o mesmo modal (Venda/Retorno/Perdida)
     var newMid='retorno_'+fid+'_'+Date.now();
-    var retornoDtISO=new Date(retornoData+'T09:00:00').toISOString();
+    var retornoDtISO=new Date(retornoData+'T'+retornoTime+':00').toISOString();
     var newMeeting={id:newMid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
-      dtISO:retornoDtISO,dtDisplay:retornoDisplay+' 09:00',
+      dtISO:retornoDtISO,dtDisplay:retornoDisplay+' '+retornoTime,
       status:'pending',responsavel:_fuMeeting.responsavel,
       meetLink:_fuMeeting.meetLink||'',gcalLink:_fuMeeting.gcalLink||'',
       kanbanKey:_fuMeeting.kanbanKey||'',origem:_fuMeeting.origem||'Retorno',
@@ -3808,7 +3824,8 @@ function saveFollowupEdit(){
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
   var retornoData=(choice==='retorno')?(document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:''):'';
-  var motivo=(choice==='retorno'||choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
+  var retornoTime=(choice==='retorno')?((document.getElementById('fu-retorno-time')?document.getElementById('fu-retorno-time').value:'')||'09:00'):'09:00';
+  var motivo=(choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
   if(venda){
     if(!dataInicio){alert('Informe a data de inicio do contrato.');return;}
     if(!contrato){alert('Informe o valor do contrato.');return;}
@@ -3821,7 +3838,7 @@ function saveFollowupEdit(){
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
     bonusComp:(old.bonusComp!=null?old.bonusComp:BONUS_COMP),bonusVenda:venda?mensBase*BONUS_VENDA_PCT:0,
-    motivo:motivo,retornoData:retornoData,
+    motivo:motivo,retornoData:retornoData,retornoTime:retornoTime,
     dt:old.dt||todayStr()};
   meetings[fid].status='done';
   saveMeetingFB(fid, meetings[fid]);
