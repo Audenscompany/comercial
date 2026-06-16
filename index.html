@@ -6600,7 +6600,9 @@ async function loadFunilReunioes(){
     var data = await loadAllSheets();
     var period = getCurrentPeriod();
     var isGestor = CU.role==='gestor';
-    var nome = (CU.name||'').toLowerCase();
+    // Usa CU.closer (ex: "Gustavo") para bater com o campo responsavel/closer da planilha
+    // que salva só o primeiro nome, não o nome completo
+    var nome = (CU.closer || (CU.name||'').split(' ')[0] || CU.name || '').toLowerCase();
 
     function isMine(r){
       if(isGestor) return true;
@@ -6736,7 +6738,9 @@ async function loadFunilReunioes(){
 
 // Update renderReunioes to filter by person
 function renderReunioesPersonal(){
-  var nome = CU.name||'';
+  // Usa CU.closer (ex: "Gustavo") em vez do nome completo (ex: "Gustavo Pimenta")
+  // pois os meetings salvam só o primeiro nome no campo responsavel/sdr
+  var nome = CU.closer || (CU.name||'').split(' ')[0] || CU.name || '';
   var isGestor = CU.role==='gestor';
   var rows = Object.values(meetings);
   if(!isGestor){
