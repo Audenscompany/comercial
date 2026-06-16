@@ -1577,6 +1577,7 @@ var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852
 // Cache: gid (string) -> nome da aba resolvido, para evitar re-buscar metadata em cada updateSheetCell
 var _sheetTabNameCache={};
 var _sheetsMeta={},_investidoMes={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
+var _contatosEquipe={lucas:'',gustavo:'',joao:''};
 
 function loadStorage(){
   try{
@@ -1594,6 +1595,7 @@ function loadStorage(){
     var sg=localStorage.getItem('audens_sheets_gids');if(sg)SHEETS_GIDS=JSON.parse(sg);
     var mai=localStorage.getItem('audens_meta_app');if(mai)metaAppId=mai;
     var mac=localStorage.getItem('audens_meta_acc');if(mac)metaAccountId=mac;
+    var ceq=localStorage.getItem('audens_contatos_equipe');if(ceq)_contatosEquipe=JSON.parse(ceq);
     var mt=localStorage.getItem('audens_meta_token');if(mt)metaToken=JSON.parse(mt);
     var kb=localStorage.getItem('audens_kanban');if(kb)kanbanData=JSON.parse(kb);
     var st=localStorage.getItem('audens_sdr_tarefas');if(st)sdrTarefas=JSON.parse(st);
@@ -2231,6 +2233,9 @@ function showMain(){
     }),
     fbGet('config/sheets_gids').then(function(fbSgids){
       if(fbSgids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,fbSgids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
+    }),
+    fbGet('config/contatos_equipe').then(function(fbCeq){
+      if(fbCeq){ _contatosEquipe=Object.assign(_contatosEquipe,fbCeq); localStorage.setItem('audens_contatos_equipe',JSON.stringify(_contatosEquipe)); }
     }),
     fbGet('gcal_token/'+gcalUserKey()).then(function(fbGcal){
       if(fbGcal && fbGcal.expires_at > Date.now()){
@@ -5796,9 +5801,31 @@ function renderConfig(){
     '</div>'+
   '</div></div>';
 
+  var contatosHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
+    '<div class="cb-title"><i class="ti ti-address-book" style="color:var(--amber);margin-right:6px;"></i>Contatos da Equipe</div>'+
+    '<div style="font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">Usado no lembrete de véspera (21h) para notificar a equipe via WhatsApp</div></div>'+
+    '<div style="padding:20px;">'+
+    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Lucas e Gustavo recebem apenas suas próprias reuniões. João recebe todas as reuniões agendadas para o dia seguinte.</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">'+
+      '<div>'+
+        '<label class="f-label"><i class="ti ti-user" style="margin-right:4px;color:var(--purple3);"></i>Lucas</label>'+
+        '<input class="f-input" id="contato-lucas" type="tel" placeholder="5592999999999" value="'+(_contatosEquipe.lucas||'')+'" style="margin-bottom:0;">'+
+      '</div>'+
+      '<div>'+
+        '<label class="f-label"><i class="ti ti-user" style="margin-right:4px;color:var(--cyan);"></i>Gustavo</label>'+
+        '<input class="f-input" id="contato-gustavo" type="tel" placeholder="5592999999999" value="'+(_contatosEquipe.gustavo||'')+'" style="margin-bottom:0;">'+
+      '</div>'+
+      '<div>'+
+        '<label class="f-label"><i class="ti ti-user" style="margin-right:4px;color:var(--green);"></i>João (SDR)</label>'+
+        '<input class="f-input" id="contato-joao" type="tel" placeholder="5592999999999" value="'+(_contatosEquipe.joao||'')+'" style="margin-bottom:0;">'+
+      '</div>'+
+    '</div>'+
+    '<button class="btn btn-primary" onclick="saveContatosEquipe()"><i class="ti ti-device-floppy"></i> Salvar Contatos</button>'+
+  '</div></div>';
+
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Configuracoes</div></div></div>'+
-  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml:'')+
+  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml+contatosHtml:'')+
   '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-brand-google" style="color:var(--cyan);margin-right:6px;"></i>Google Calendar + Sheets</div></div>'+
   '<div style="padding:20px;">'+
     '<div class="gcal-status '+(connected?'connected':'disconnected')+'">'+
@@ -7231,6 +7258,15 @@ function saveGcalId(){
   gcalClientId=document.getElementById('gcal-client-id').value.trim();
   saveAll();showPage('config');
   if(gcalClientId)alert('Client ID salvo! Clique em Conectar Google.');
+}
+
+function saveContatosEquipe(){
+  _contatosEquipe.lucas=(document.getElementById('contato-lucas').value||'').replace(/\D/g,'');
+  _contatosEquipe.gustavo=(document.getElementById('contato-gustavo').value||'').replace(/\D/g,'');
+  _contatosEquipe.joao=(document.getElementById('contato-joao').value||'').replace(/\D/g,'');
+  localStorage.setItem('audens_contatos_equipe',JSON.stringify(_contatosEquipe));
+  if(fbDb||initFirebase()) fbDb.ref('config/contatos_equipe').set(_contatosEquipe);
+  showSheetToast('✓ Contatos da equipe salvos!',false);
 }
 
 
