@@ -495,6 +495,7 @@ function startRealtimeSync(){
   });
 
   // Sync tarefas de cadencia (SDR - Joao) em tempo real
+  var _sdrFirstLoad = true;
   fbDb.ref('sdr_tarefas').on('value', function(snap){
     var fbTarefas = snap.val() || {};
     var prev = JSON.stringify(sdrTarefas);
@@ -511,7 +512,47 @@ function startRealtimeSync(){
         else if(ex)ex.remove();
       }
     }
+    // Na primeira carga: conclui tarefas de leads que ja estao em reuniao agendada
+    if(_sdrFirstLoad){
+      _sdrFirstLoad = false;
+      setTimeout(concluirTarefasLeadsEmReuniao, 1500);
+    }
   });
+
+  // Percorre kanban e conclui automaticamente tarefas pendentes de leads ja em status 'reuniao'
+  function concluirTarefasLeadsEmReuniao(){
+    if(!fbDb && !initFirebase()) return;
+    var batch = {};
+    var agora = Date.now();
+    // Coleta as keys de leads que ja estao com reuniao agendada
+    Object.keys(kanbanData).forEach(function(leadKey){
+      var k = kanbanData[leadKey];
+      if(k.status !== 'reuniao' && k.status !== 'proposta' && k.status !== 'fechado' &&
+         k.status !== 'contrato' && k.status !== 'venda') return;
+      // Marca como done todas as tarefas pendentes desse lead
+      Object.keys(sdrTarefas).forEach(function(tid){
+        var t = sdrTarefas[tid];
+        if(t.leadKey === leadKey && !t.done){
+          sdrTarefas[tid].done = true;
+          sdrTarefas[tid].doneAt = agora;
+          batch[tid+'/done'] = true;
+          batch[tid+'/doneAt'] = agora;
+        }
+      });
+    });
+    if(Object.keys(batch).length){
+      fbDb.ref('sdr_tarefas').update(batch);
+      localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+      // Atualiza badge
+      var tnav=document.getElementById('nav-minhas-tarefas');
+      if(tnav){var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+        if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+        else if(ex)ex.remove();}
+      // Rerenderiza se a pagina de tarefas estiver aberta
+      var area=document.getElementById('content');
+      if(area && area.getAttribute('data-page')==='minhas-tarefas') showPage('minhas-tarefas');
+    }
+  }
 
   // Sync followups in realtime
   fbDb.ref('followups').on('value', function(snap){
@@ -743,11 +784,12 @@ async function appendLeadToSheets(lead, kanbanKey){
       (src.telefone||lead.telefone||'').replace(/\D/g,''),       // D: Telefone
       src._source||lead._source||'',                             // E: Fonte
       src.campanha||lead.campanha||'',                           // F: Campanha
-      src.conjunto||lead.conjunto||'',                           // G: Posicionamento
-      src.ad||lead.ad||''                                        // H: Ad
+      '',                                                        // G: Posicionamento (não capturado via UTM)
+      src.conjunto||lead.conjunto||'',                           // H: Conjunto (adset)
+      src.ad||lead.ad||''                                        // I: Ad
     ];
     // Chamada silenciosa — sem toast de erro (background sync)
-    var ok = await appendSheetRowSilent(SHEETS_IDS.leads, SHEETS_GIDS.leads, row, 'H');
+    var ok = await appendSheetRowSilent(SHEETS_IDS.leads, SHEETS_GIDS.leads, row, 'I');
     if(ok && kanbanKey && (fbDb || initFirebase())){
       fbDb.ref('kanban/'+kanbanKey).update({_sheetSynced: true});
       if(kanbanData[kanbanKey]) kanbanData[kanbanKey]._sheetSynced = true;
@@ -904,11 +946,32 @@ async function confirmarAgendamentoReuniao(key){
   }
   // Detecta qual foi a ultima tarefa SDR concluida para este lead (tarefa responsavel pelo agendamento)
   var ultimaTarefaSDR = null;
-  Object.values(sdrTarefas||{}).forEach(function(t){
+  Object.keys(sdrTarefas||{}).forEach(function(tid){
+    var t = sdrTarefas[tid];
     if(t.leadKey===key && t.done && t.doneAt){
       if(!ultimaTarefaSDR || t.doneAt > ultimaTarefaSDR.doneAt) ultimaTarefaSDR = t;
     }
   });
+  // Marca todas as tarefas pendentes desse lead como concluidas (reuniao agendada = cadencia encerrada)
+  var batchDone = {};
+  Object.keys(sdrTarefas||{}).forEach(function(tid){
+    var t = sdrTarefas[tid];
+    if(t.leadKey===key && !t.done){
+      sdrTarefas[tid].done = true;
+      sdrTarefas[tid].doneAt = Date.now();
+      batchDone[tid+'/done'] = true;
+      batchDone[tid+'/doneAt'] = Date.now();
+    }
+  });
+  if(Object.keys(batchDone).length && (fbDb || initFirebase())){
+    fbDb.ref('sdr_tarefas').update(batchDone);
+    localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+    // Atualiza badge do menu
+    var tnav=document.getElementById('nav-minhas-tarefas');
+    if(tnav){var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+      if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+      else if(ex)ex.remove();}
+  }
   // Cria a tarefa de follow-up pos-reuniao para o responsavel (Realizada / No-show / Venda / Retorno)
   var mid='km_'+key+'_'+Date.now();
   var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
@@ -6531,6 +6594,9 @@ async function loadFunilReunioes(){
     return;
   }
   try{
+    var mlong=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    var pp=getCurrentPeriod().split('/');
+    var periodLabel=mlong[parseInt(pp[0])-1]+' '+pp[1];
     var data = await loadAllSheets();
     var period = getCurrentPeriod();
     var isGestor = CU.role==='gestor';
