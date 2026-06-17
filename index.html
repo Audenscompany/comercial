@@ -3492,7 +3492,10 @@ async function uploadContratoToDrive(blob, nomeArquivo){
       headers:{'Authorization':'Bearer '+gcalToken.access_token},
       body:formDoc
     });
-    if(!up1.ok) throw new Error('Upload Drive (doc) falhou: HTTP '+up1.status);
+    if(!up1.ok){
+      var errBody='';try{var j=await up1.json();errBody=j.error&&j.error.message?j.error.message:JSON.stringify(j);}catch(e){}
+      throw new Error('Drive HTTP '+up1.status+(errBody?' — '+errBody:''));
+    }
     var docId=(await up1.json()).id;
 
     // 2) Exporta o Google Doc como PDF
@@ -3533,7 +3536,7 @@ async function uploadContratoToDrive(blob, nomeArquivo){
     return 'https://drive.google.com/file/d/'+pdfId+'/preview';
   }catch(err){
     console.error('Erro ao enviar contrato para o Drive:',err);
-    return null;
+    throw err; // propaga para o caller mostrar o erro real ao usuario
   }
 }
 // Mostra um modal com o link de assinatura recem-criado, pronto para copiar
@@ -3669,23 +3672,19 @@ async function generateContratoDocx(dados){
     if(isGcalConnected()){
       try{
         var pdfUrl=await uploadContratoToDrive(out, nomeArquivo);
-        if(pdfUrl){
-          var ref=await fbPush('assinaturas',{
-            cliente:dados.nomeCliente||'',
-            contratoNome:nomeArquivo.replace(/\.docx$/i,''),
-            pdfUrl:pdfUrl,
-            telefone:dados.telefone||'',
-            status:'pendente',
-            createdAt:Date.now()
-          });
-          var signId=ref&&ref.key;
-          if(signId){
-            var signLink=signLinkFor(signId);
-            var waOk=await enviarLinkAssinaturaWA(dados.telefone, dados.nomeCliente, signLink);
-            mostrarModalLinkAssinatura(signLink, waOk);
-          }
-        }else{
-          showSheetToast('Contrato gerado, mas nao foi possivel enviar o PDF para o Drive.',true);
+        var ref=await fbPush('assinaturas',{
+          cliente:dados.nomeCliente||'',
+          contratoNome:nomeArquivo.replace(/\.docx$/i,''),
+          pdfUrl:pdfUrl,
+          telefone:dados.telefone||'',
+          status:'pendente',
+          createdAt:Date.now()
+        });
+        var signId=ref&&ref.key;
+        if(signId){
+          var signLink=signLinkFor(signId);
+          var waOk=await enviarLinkAssinaturaWA(dados.telefone, dados.nomeCliente, signLink);
+          mostrarModalLinkAssinatura(signLink, waOk);
         }
       }catch(e2){
         console.error('Erro ao criar link de assinatura:',e2);
