@@ -1919,26 +1919,58 @@ async function fetchMetaSpend(period){
     var lastDay=new Date(year,month,0).getDate();
     until=year+'-'+String(month).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
   }
-  var url='https://graph.facebook.com/v20.0/act_'+metaAccountId+'/insights'+
-    '?fields=spend'+
-    '&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')+''+
-    '&level=account'+
-    '&access_token='+metaToken.access_token;
-  try{
-    var resp=await fetch(url);
-    var data=await resp.json();
-    if(data.error){console.error('Meta API err',data.error);return null;}
-    if(data.data&&data.data.length>0)return parseFloat(data.data[0].spend)||0;
-    return 0;
-  }catch(e){console.error('fetchMetaSpend',e);return null;}
+  // Suporta múltiplas contas separadas por vírgula — soma o spend de todas
+  var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
+  var totalSpend=0;
+  var anyOk=false;
+  for(var i=0;i<ids.length;i++){
+    try{
+      var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights'+
+        '?fields=spend'+
+        '&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')+''+
+        '&level=account'+
+        '&access_token='+metaToken.access_token;
+      var resp=await fetch(url);
+      var data=await resp.json();
+      if(data.error){console.error('Meta API err acc '+ids[i],data.error);continue;}
+      var spend=(data.data&&data.data.length>0)?parseFloat(data.data[0].spend)||0:0;
+      totalSpend+=spend;
+      anyOk=true;
+    }catch(e){console.error('fetchMetaSpend acc '+ids[i],e);}
+  }
+  return anyOk?totalSpend:null;
 }
 function saveMetaConfig(){
   var appEl=document.getElementById('meta-app-id');
   var accEl=document.getElementById('meta-account-id');
   if(appEl)metaAppId=appEl.value.trim();
-  if(accEl)metaAccountId=accEl.value.trim().replace(/^act_/,'');
+  if(accEl)metaAccountId=accEl.value.trim().replace(/^act_/,'').replace(/,\s*act_/g,',');
   saveAll();showPage('config');
-  alert('Meta configurado!\nApp ID: '+metaAppId+'\nAccount ID: '+metaAccountId);
+  var ids=metaAccountId.split(',').filter(Boolean);
+  alert('Meta configurado!\nApp ID: '+metaAppId+'\n'+(ids.length>1?ids.length+' contas: '+ids.join(', '):'Account ID: '+metaAccountId));
+}
+async function fetchMetaAdAccounts(){
+  if(!isMetaConnected()){alert('Conecte o Meta Ads primeiro.');return;}
+  var btn=document.getElementById('btn-meta-buscar-contas');
+  if(btn){btn.disabled=true;btn.textContent='Buscando...';}
+  try{
+    var resp=await fetch('https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,account_status&limit=50&access_token='+metaToken.access_token);
+    var data=await resp.json();
+    if(data.error){alert('Erro: '+data.error.message);return;}
+    var accounts=(data.data||[]);
+    if(!accounts.length){alert('Nenhuma conta encontrada.');return;}
+    var lines=accounts.map(function(a){
+      var st=a.account_status===1?'Ativa':a.account_status===2?'Desativada':'Status '+a.account_status;
+      return (a.id||'')+'  →  '+(a.name||'')+'  ['+st+']';
+    });
+    var msg='Contas de Anúncio vinculadas ao token:\n\n'+lines.join('\n')+'\n\nCopie os IDs desejados para o campo Account ID (separe por vírgula para múltiplas contas).';
+    alert(msg);
+    // Preenche o campo com todos os IDs ativos automaticamente
+    var activeIds=accounts.filter(function(a){return a.account_status===1;}).map(function(a){return(a.id||'').replace(/^act_/,'');});
+    var accEl=document.getElementById('meta-account-id');
+    if(accEl&&activeIds.length){accEl.value=activeIds.join(', ');}
+  }catch(e){alert('Erro ao buscar contas: '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.textContent='Buscar Contas';}}
 }
 
 // ===== SHEETS API =====
@@ -5887,8 +5919,13 @@ function renderConfig(){
     '<div class="modal-grid2" style="margin-bottom:12px;">'+
       '<div><label class="f-label">Meta App ID</label>'+
         '<input class="f-input" id="meta-app-id" value="'+metaAppId+'" placeholder="000000000000000" style="margin-bottom:0;"></div>'+
-      '<div><label class="f-label">Ad Account ID</label>'+
-        '<input class="f-input" id="meta-account-id" value="'+metaAccountId+'" placeholder="act_000000000 ou so os numeros" style="margin-bottom:0;"></div>'+
+      '<div>'+
+        '<label class="f-label">Ad Account ID(s) <span style="font-weight:400;color:var(--muted);">(separe por vírgula para múltiplas contas)</span></label>'+
+        '<div style="display:flex;gap:8px;">'+
+          '<input class="f-input" id="meta-account-id" value="'+metaAccountId+'" placeholder="111111111, 222222222" style="margin-bottom:0;flex:1;">'+
+          '<button class="btn btn-outline" id="btn-meta-buscar-contas" onclick="fetchMetaAdAccounts()" style="white-space:nowrap;font-size:12px;" title="Buscar todas as contas vinculadas ao token"><i class="ti ti-search"></i> Buscar Contas</button>'+
+        '</div>'+
+      '</div>'+
     '</div>'+
     '<div style="margin-bottom:12px;">'+
       '<label class="f-label">Token Manual (Graph API Explorer)</label>'+
