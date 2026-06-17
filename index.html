@@ -1505,6 +1505,10 @@ function generateCadenciaTasks(lead,leadKey){
   var fatVal=parseFaturamentoValue(lead.faturamento);
   if(fatVal<KANBAN_TASK_FAT_MIN) return;
   var base=new Date();
+  // Se o lead chegou após as 17h (ou em fim de semana), tarefas começam no próximo dia útil
+  if(base.getHours()>=17 || !checkDay(base).ok){
+    base=nextBusinessDay(base);
+  }
   CADENCIA_SDR.forEach(function(item){
     var d=kanbanBusinessDay(base,item.dia);
     var iso=d.toISOString().split('T')[0];
