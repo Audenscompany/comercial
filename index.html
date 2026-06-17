@@ -226,16 +226,6 @@ tbody tr:hover td{background:var(--pglow2);}
     <div id="fu-body"></div>
   </div>
 </div>
-<!-- MODAL ASAAS -->
-<div class="modal-ov" id="modal-asaas">
-  <div class="modal-box" style="border-color:rgba(0,179,126,0.5);max-width:560px;">
-    <div class="modal-title" id="asaas-modal-title" style="color:#00b37e;">Asaas</div>
-    <div id="asaas-modal-body" style="margin-top:12px;"></div>
-    <div style="margin-top:16px;text-align:right;">
-      <button class="btn btn-outline" style="font-size:12px;" onclick="closeModal('modal-asaas')"><i class="ti ti-x"></i> Fechar</button>
-    </div>
-  </div>
-</div>
 <!-- MODAL METAS -->
 <div class="modal-ov" id="modal-metas">
   <div class="modal-box">
@@ -457,8 +447,6 @@ function startRealtimeSync(){
     if(cfg.sheets_ids){ SHEETS_IDS=Object.assign(SHEETS_IDS,cfg.sheets_ids); localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS)); }
     if(cfg.sheets_gids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,cfg.sheets_gids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
     if(cfg.gcalClientId){ gcalClientId=cfg.gcalClientId; localStorage.setItem('audens_gcal_id',gcalClientId); }
-    if(cfg.asaasApiKey){ asaasApiKey=cfg.asaasApiKey; localStorage.setItem('audens_asaas_key',asaasApiKey); }
-    if(cfg.asaasEnv){ asaasEnv=cfg.asaasEnv; localStorage.setItem('audens_asaas_env',asaasEnv); }
   });
 
   // Sync gcal_token in realtime (per usuario)
@@ -566,7 +554,6 @@ async function syncLeadsToFB(){
 var allLeads=[],calls={},meetings={},followups={},goals={metaDiaria:50,metaMensal:1000},_dailyMap={};
 var gcalToken=null,gcalClientId='';
 var metaToken=null,metaAppId='',metaAccountId='';
-var asaasApiKey='',asaasEnv='production';
 var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1xQVyaGDgghqHCY19nDCjQpgyQIEWJh4cOy-WGNCF37Q',clientes:'1UDRR1zwQEXnzJv8UBFujhnZzol75n6UNmUAjxGPLUjU',ligacoes:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk'};
 var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852137};
 var _sheetsMeta={},_investidoMes={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
@@ -588,8 +575,6 @@ function loadStorage(){
     var mai=localStorage.getItem('audens_meta_app');if(mai)metaAppId=mai;
     var mac=localStorage.getItem('audens_meta_acc');if(mac)metaAccountId=mac;
     var mt=localStorage.getItem('audens_meta_token');if(mt)metaToken=JSON.parse(mt);
-    var aak=localStorage.getItem('audens_asaas_key');if(aak)asaasApiKey=aak;
-    var aae=localStorage.getItem('audens_asaas_env');if(aae)asaasEnv=aae;
   }catch(e){}
 }
 function saveAll(){
@@ -609,8 +594,6 @@ function saveAll(){
     if(metaAppId)localStorage.setItem('audens_meta_app',metaAppId);
     if(metaAccountId)localStorage.setItem('audens_meta_acc',metaAccountId);
     if(metaToken)localStorage.setItem('audens_meta_token',JSON.stringify(metaToken));
-    if(asaasApiKey)localStorage.setItem('audens_asaas_key',asaasApiKey);
-    localStorage.setItem('audens_asaas_env',asaasEnv);
     // Sync to Firebase
     if(fbDb){
       try{
@@ -630,8 +613,6 @@ function saveAll(){
         fbDb.ref('config/sheets_ids').set(SHEETS_IDS);
         fbDb.ref('config/sheets_gids').set(SHEETS_GIDS);
         if(gcalClientId) fbDb.ref('config/gcalClientId').set(gcalClientId);
-        if(asaasApiKey) fbDb.ref('config/asaasApiKey').set(asaasApiKey);
-        fbDb.ref('config/asaasEnv').set(asaasEnv);
       }catch(e){}
     }
   }catch(e){}
@@ -897,183 +878,6 @@ function saveMetaConfig(){
   if(accEl)metaAccountId=accEl.value.trim().replace(/^act_/,'');
   saveAll();showPage('config');
   alert('Meta configurado!\nApp ID: '+metaAppId+'\nAccount ID: '+metaAccountId);
-}
-
-// ===== ASAAS API =====
-function isAsaasConnected(){ return !!asaasApiKey; }
-function asaasBase(){ return asaasEnv==='sandbox'?'https://sandbox.asaas.com/api/v3':'https://api.asaas.com/v3'; }
-async function asaasRequest(method,endpoint,body){
-  try{
-    var opts={method:method,headers:{'access_token':asaasApiKey,'Content-Type':'application/json','User-Agent':'AudensCRM/1.0'}};
-    if(body) opts.body=JSON.stringify(body);
-    var resp=await fetch(asaasBase()+endpoint,opts);
-    return await resp.json();
-  }catch(e){console.error('asaasRequest',e);return {error:e.message};}
-}
-async function asaasSearchCustomer(nome,cpfCnpj){
-  var q=cpfCnpj?'?cpfCnpj='+encodeURIComponent(cpfCnpj.replace(/\D/g,'')):'?name='+encodeURIComponent(nome);
-  var data=await asaasRequest('GET','/customers'+q);
-  if(data&&data.data&&data.data.length>0) return data.data[0];
-  return null;
-}
-async function asaasCreateCustomer(nome,cpfCnpj,phone){
-  var body={name:nome};
-  if(cpfCnpj) body.cpfCnpj=cpfCnpj.replace(/\D/g,'');
-  if(phone) body.mobilePhone=phone.replace(/\D/g,'');
-  return await asaasRequest('POST','/customers',body);
-}
-async function asaasGetOrCreateCustomer(nome,cpfCnpj,phone){
-  var cust=await asaasSearchCustomer(nome,cpfCnpj);
-  if(cust&&cust.id) return cust;
-  var created=await asaasCreateCustomer(nome,cpfCnpj,phone);
-  return (created&&created.id)?created:null;
-}
-async function asaasCreateCharge(customerId,valor,vencimento,descricao,tipo){
-  return await asaasRequest('POST','/payments',{
-    customer:customerId,
-    billingType:tipo||'UNDEFINED',
-    value:parseFloat(valor)||0,
-    dueDate:vencimento,
-    description:descricao||'Contrato Audens'
-  });
-}
-async function asaasGetCustomerCharges(customerId){
-  var data=await asaasRequest('GET','/payments?customer='+customerId+'&limit=20');
-  return (data&&data.data)?data.data:[];
-}
-async function asaasGetOverdue(){
-  var data=await asaasRequest('GET','/payments?status=OVERDUE&limit=100');
-  return (data&&data.data)?data.data:[];
-}
-function saveAsaasConfig(){
-  var keyEl=document.getElementById('asaas-api-key');
-  var envEl=document.getElementById('asaas-env');
-  if(keyEl) asaasApiKey=keyEl.value.trim();
-  if(envEl) asaasEnv=envEl.value;
-  saveAll();
-  showPage('config');
-  alert('Asaas configurado!');
-}
-function openAsaasOverdue(){
-  var box=document.getElementById('asaas-modal-body');
-  var ttl=document.getElementById('asaas-modal-title');
-  if(!box||!ttl) return;
-  ttl.textContent='Cobranças em Atraso';
-  box.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;"><i class="ti ti-loader-2" style="font-size:24px;animation:spin 1s linear infinite;"></i> Carregando...</div>';
-  document.getElementById('modal-asaas').classList.add('open');
-  asaasGetOverdue().then(function(charges){
-    if(!charges.length){box.innerHTML='<div class="empty-st"><i class="ti ti-circle-check" style="color:var(--green);"></i><p>Nenhuma cobrança atrasada</p></div>';return;}
-    box.innerHTML='<div class="t-scroll"><table><thead><tr><th>Cliente</th><th>Valor</th><th>Vencimento</th><th>Descrição</th></tr></thead><tbody>'+
-      charges.map(function(c){
-        return '<tr>'+
-          '<td style="font-weight:600;">'+(c.customer||'—')+'</td>'+
-          '<td style="color:var(--red);">R$ '+parseFloat(c.value||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</td>'+
-          '<td style="color:var(--muted);">'+(c.dueDate||'—')+'</td>'+
-          '<td style="color:var(--muted);font-size:12px;">'+(c.description||'—')+'</td>'+
-        '</tr>';
-      }).join('')+'</tbody></table></div>';
-  }).catch(function(e){box.innerHTML='<div style="color:var(--red);padding:16px;">Erro: '+e.message+'</div>';});
-}
-function openAsaasCharges(nomeCliente,telefone){
-  var box=document.getElementById('asaas-modal-body');
-  var ttl=document.getElementById('asaas-modal-title');
-  if(!box||!ttl) return;
-  ttl.textContent='Cobranças — '+nomeCliente;
-  box.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;"><i class="ti ti-loader-2" style="font-size:24px;animation:spin 1s linear infinite;"></i> Buscando cliente...</div>';
-  document.getElementById('modal-asaas').classList.add('open');
-  asaasSearchCustomer(nomeCliente,null).then(function(cust){
-    if(!cust){box.innerHTML='<div class="empty-st"><i class="ti ti-user-x"></i><p>Cliente não encontrado no Asaas</p><p style="font-size:12px;color:var(--muted);">Crie uma cobrança pelo Follow-up para vincular este cliente.</p></div>';return;}
-    return asaasGetCustomerCharges(cust.id).then(function(charges){
-      if(!charges.length){box.innerHTML='<div class="empty-st"><i class="ti ti-receipt-off"></i><p>Nenhuma cobrança para '+nomeCliente+'</p></div>';return;}
-      var totPend=charges.filter(function(c){return c.status==='PENDING';}).reduce(function(s,c){return s+parseFloat(c.value||0);},0);
-      var totReceb=charges.filter(function(c){return c.status==='RECEIVED'||c.status==='CONFIRMED';}).reduce(function(s,c){return s+parseFloat(c.value||0);},0);
-      var totAtras=charges.filter(function(c){return c.status==='OVERDUE';}).reduce(function(s,c){return s+parseFloat(c.value||0);},0);
-      var stLabel={'PENDING':'<span class="badge b-amber">Pendente</span>','RECEIVED':'<span class="badge b-green">Recebido</span>',
-        'CONFIRMED':'<span class="badge b-green">Confirmado</span>','OVERDUE':'<span class="badge b-red">Atrasado</span>',
-        'CANCELED':'<span class="badge b-muted">Cancelado</span>'};
-      box.innerHTML=
-        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'+
-          '<div style="background:var(--bg2);border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:12px;text-align:center;"><div class="m-lbl">Recebido</div><div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:var(--green);">R$ '+totReceb.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div></div>'+
-          '<div style="background:var(--bg2);border:1px solid rgba(251,191,36,0.3);border-radius:10px;padding:12px;text-align:center;"><div class="m-lbl">Pendente</div><div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:var(--amber);">R$ '+totPend.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div></div>'+
-          '<div style="background:var(--bg2);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:12px;text-align:center;"><div class="m-lbl">Atrasado</div><div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:var(--red);">R$ '+totAtras.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div></div>'+
-        '</div>'+
-        '<div class="t-scroll"><table><thead><tr><th>Descrição</th><th>Valor</th><th>Vencimento</th><th>Status</th></tr></thead><tbody>'+
-        charges.map(function(c){
-          return '<tr>'+
-            '<td style="font-size:12px;color:var(--muted);">'+(c.description||'—')+'</td>'+
-            '<td style="font-weight:600;">R$ '+parseFloat(c.value||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</td>'+
-            '<td style="color:var(--muted);font-size:12px;">'+(c.dueDate||'—')+'</td>'+
-            '<td>'+(stLabel[c.status]||c.status||'—')+'</td>'+
-          '</tr>';
-        }).join('')+'</tbody></table></div>';
-    });
-  }).catch(function(e){box.innerHTML='<div style="color:var(--red);padding:16px;">Erro ao buscar: '+e.message+'</div>';});
-}
-var _asaasCobrancaMeeting=null;
-function openAsaasCobranca(meeting,mensalidade,contrato){
-  _asaasCobrancaMeeting=meeting;
-  var venc=new Date();venc.setDate(venc.getDate()+5);
-  var vencStr=venc.getFullYear()+'-'+String(venc.getMonth()+1).padStart(2,'0')+'-'+String(venc.getDate()).padStart(2,'0');
-  var box=document.getElementById('asaas-modal-body');
-  var ttl=document.getElementById('asaas-modal-title');
-  if(!box||!ttl) return;
-  ttl.textContent='Criar Cobrança — '+meeting.nome;
-  box.innerHTML=
-    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Crie a cobrança no Asaas para este cliente. O cliente será buscado/criado automaticamente.</div>'+
-    '<div class="modal-grid2" style="margin-bottom:12px;">'+
-      '<div><label class="f-label">Tipo</label>'+
-        '<select id="ac-tipo" class="f-input" style="margin-bottom:0;">'+
-          '<option value="UNDEFINED">Indefinido (link de pagto)</option>'+
-          '<option value="BOLETO">Boleto</option>'+
-          '<option value="PIX">Pix</option>'+
-          '<option value="CREDIT_CARD">Cartão de Crédito</option>'+
-        '</select></div>'+
-      '<div><label class="f-label">Vencimento</label>'+
-        '<input type="date" id="ac-venc" class="f-input" value="'+vencStr+'" style="margin-bottom:0;"></div>'+
-    '</div>'+
-    '<div class="modal-grid2" style="margin-bottom:12px;">'+
-      '<div><label class="f-label">Valor (R$)</label>'+
-        '<input type="number" id="ac-valor" class="f-input" value="'+(mensalidade||contrato||'')+'" placeholder="0.00" step="0.01" style="margin-bottom:0;"></div>'+
-      '<div><label class="f-label">CPF/CNPJ do cliente (opcional)</label>'+
-        '<input id="ac-cpf" class="f-input" placeholder="000.000.000-00" style="margin-bottom:0;font-family:monospace;"></div>'+
-    '</div>'+
-    '<div style="margin-bottom:12px;"><label class="f-label">Descrição</label>'+
-      '<input id="ac-desc" class="f-input" value="Contrato Audens — '+(meeting.nome||'')+'" style="margin-bottom:0;"></div>'+
-    '<div style="display:flex;gap:10px;">'+
-      '<button class="btn btn-outline" onclick="closeModal(\'modal-asaas\')">Depois</button>'+
-      '<button class="btn btn-primary" id="ac-save-btn" onclick="salvarAsaasCobranca()" style="background:#00b37e;"><i class="ti ti-check"></i> Criar Cobrança</button>'+
-    '</div>';
-  document.getElementById('modal-asaas').classList.add('open');
-}
-async function salvarAsaasCobranca(){
-  if(!_asaasCobrancaMeeting) return;
-  var btn=document.getElementById('ac-save-btn');
-  if(btn){btn.textContent='Criando...';btn.disabled=true;}
-  var tipo=document.getElementById('ac-tipo').value;
-  var venc=document.getElementById('ac-venc').value;
-  var valor=document.getElementById('ac-valor').value;
-  var cpf=document.getElementById('ac-cpf').value.trim();
-  var desc=document.getElementById('ac-desc').value.trim();
-  var m=_asaasCobrancaMeeting;
-  try{
-    var cust=await asaasGetOrCreateCustomer(m.nome,cpf,m.tel);
-    if(!cust||!cust.id){
-      if(btn){btn.textContent='Criar Cobrança';btn.disabled=false;}
-      alert('Erro ao criar/encontrar cliente no Asaas.\nVerifique a API Key e tente novamente.');return;
-    }
-    var charge=await asaasCreateCharge(cust.id,valor,venc,desc,tipo);
-    if(charge&&charge.id){
-      closeModal('modal-asaas');
-      var link=charge.bankSlipUrl||charge.invoiceUrl||charge.transactionReceiptUrl||'';
-      alert('Cobrança criada com sucesso!\nID: '+charge.id+(link?'\nLink: '+link:''));
-    }else{
-      if(btn){btn.textContent='Criar Cobrança';btn.disabled=false;}
-      alert('Erro ao criar cobrança: '+(charge&&charge.errors?charge.errors.map(function(e){return e.description;}).join(', '):'Verifique a API Key'));
-    }
-  }catch(e){
-    if(btn){btn.textContent='Criar Cobrança';btn.disabled=false;}
-    alert('Erro: '+e.message);
-  }
 }
 
 // ===== SHEETS API =====
@@ -1354,25 +1158,10 @@ function showMain(){
       if(fbGcal && fbGcal.expires_at > Date.now()){
         gcalToken = fbGcal;
         localStorage.setItem('audens_gcal_token', JSON.stringify(gcalToken));
-      } else {
-        // Fallback/migracao: token antigo (compartilhado, pre-migracao para chave por usuario)
-        return fbGet('gcal_token').then(function(legacy){
-          if(legacy && legacy.access_token && legacy.expires_at > Date.now()){
-            gcalToken = {access_token:legacy.access_token, expires_at:legacy.expires_at};
-            localStorage.setItem('audens_gcal_token', JSON.stringify(gcalToken));
-            try{ if(fbDb) fbDb.ref('gcal_token/'+gcalUserKey()).set(gcalToken); }catch(e){}
-          }
-        });
       }
     }),
     fbGet('config/gcalClientId').then(function(fbCid){
       if(fbCid){ gcalClientId=fbCid; localStorage.setItem('audens_gcal_id',gcalClientId); }
-    }),
-    fbGet('config/asaasApiKey').then(function(fbAak){
-      if(fbAak){ asaasApiKey=fbAak; localStorage.setItem('audens_asaas_key',asaasApiKey); }
-    }),
-    fbGet('config/asaasEnv').then(function(fbAae){
-      if(fbAae){ asaasEnv=fbAae; localStorage.setItem('audens_asaas_env',asaasEnv); }
     })
   ]).then(function(){
     // Load meta token from Firebase
@@ -2166,10 +1955,6 @@ function saveFollowup(){
   if(!venda&&comp){var lead=allLeads.find(function(l){return l.telefone===_fuMeeting.tel;});if(lead)lead._requeue=true;}
   saveAll();closeModal('modal-followup');
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
-  // Se fechou venda e Asaas configurado, oferecer criação de cobrança
-  if(venda && isAsaasConnected() && _fuMeeting){
-    setTimeout(function(){openAsaasCobranca(_fuMeeting,mensalidade,contrato);},300);
-  }
 }
 
 // ===== TAREFAS =====
@@ -2217,20 +2002,17 @@ function renderReunioes(){
   var rows=Object.values(meetings).sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Reunioes</div></div><span class="badge b-amber">'+rows.length+' total</span></div>'+
-  (rows.length?'<div class="cb"><div class="t-scroll"><table><thead><tr><th>Lead</th><th>Data/Hora</th><th>Responsavel</th><th>Meet</th><th>Status</th><th>Resultado</th>'+(isAsaasConnected()?'<th style="color:#00b37e;">Asaas</th>':'')+'</tr></thead><tbody>'+
+  (rows.length?'<div class="cb"><div class="t-scroll"><table><thead><tr><th>Lead</th><th>Data/Hora</th><th>Responsavel</th><th>Meet</th><th>Status</th><th>Resultado</th></tr></thead><tbody>'+
     rows.map(function(m){
       var fu=followups[m.id];
       var st=fu?(fu.venda==='sim'?'<span class="badge b-green">Venda</span>':fu.comparecimento==='nao'?'<span class="badge b-red">Nao compareceu</span>':'<span class="badge b-muted">Sem venda</span>'):
         (Date.now()>new Date(m.dtISO).getTime()+24*3600*1000?'<span class="badge b-red">Vencida</span>':'<span class="badge b-amber">Pendente</span>');
-      var nomeSafe=m.nome.replace(/'/g,"\\'");
-      var asaasCell=isAsaasConnected()?'<td><button class="btn" style="font-size:11px;padding:4px 8px;background:rgba(0,179,126,0.12);color:#00b37e;border:1px solid rgba(0,179,126,0.3);" onclick="openAsaasCharges(\''+nomeSafe+'\',\''+m.tel+'\')"><i class="ti ti-building-bank"></i> Cobranças</button></td>':'';
       return '<tr><td style="font-weight:600;">'+m.nome+'</td>'+
         '<td style="color:var(--muted);">'+m.dtDisplay+'</td>'+
         '<td><span class="badge b-purple">'+m.responsavel+'</span></td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" class="btn btn-gcal" style="font-size:11px;"><i class="ti ti-video"></i> Meet</a>':'--')+'</td>'+
         '<td>'+st+'</td>'+
-        '<td>'+(fu&&fu.venda==='sim'?'<span style="color:var(--green);">R$'+fu.contrato+'/R$'+fu.mensalidade+'mes</span>':fu&&fu.motivo?fu.motivo:'--')+'</td>'+
-        asaasCell+'</tr>';
+        '<td>'+(fu&&fu.venda==='sim'?'<span style="color:var(--green);">R$'+fu.contrato+'/R$'+fu.mensalidade+'mes</span>':fu&&fu.motivo?fu.motivo:'--')+'</td></tr>';
     }).join('')+'</tbody></table></div></div>':
     '<div class="cb"><div class="empty-st"><i class="ti ti-calendar-check"></i><p>Nenhuma reuniao ainda</p></div></div>')+
   '</div>';
@@ -4113,29 +3895,6 @@ function renderConfig(){
       '<div>4. Origens JavaScript: <code style="color:var(--purple3);">'+window.location.origin+'</code></div>'+
       '<div>5. Cole o Client ID acima e clique Conectar</div>'+
     '</div>'+
-  '</div></div>'+
-  '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
-    '<div class="cb-title"><i class="ti ti-building-bank" style="color:#00b37e;margin-right:6px;"></i>Asaas — Cobrancas</div>'+
-    '<div class="gcal-status '+(isAsaasConnected()?'connected':'disconnected')+'" style="margin-bottom:0;padding:4px 10px;">'+
-      '<i class="ti '+(isAsaasConnected()?'ti-circle-check':'ti-circle-x')+'"></i>'+
-      (isAsaasConnected()?'Conectado':'Nao configurado')+
-    '</div>'+
-  '</div><div style="padding:20px;">'+
-    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Configure sua API Key do Asaas para criar cobrancas ao fechar contratos e ver inadimplentes diretamente no CRM.</div>'+
-    '<div class="modal-grid2" style="margin-bottom:12px;">'+
-      '<div><label class="f-label">API Key</label>'+
-        '<input class="f-input" id="asaas-api-key" type="password" value="'+asaasApiKey+'" placeholder="$aact_..." style="margin-bottom:0;font-family:monospace;"></div>'+
-      '<div><label class="f-label">Ambiente</label>'+
-        '<select id="asaas-env" class="f-input" style="margin-bottom:0;background:var(--bg2);border:1px solid var(--border);color:var(--white);">'+
-          '<option value="production"'+(asaasEnv==='production'?' selected':'')+'>Producao</option>'+
-          '<option value="sandbox"'+(asaasEnv==='sandbox'?' selected':'')+'>Sandbox (testes)</option>'+
-        '</select></div>'+
-    '</div>'+
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
-      '<button class="btn btn-primary" onclick="saveAsaasConfig()" style="background:#00b37e;"><i class="ti ti-device-floppy"></i> Salvar</button>'+
-      (isAsaasConnected()?'<button class="btn" onclick="openAsaasOverdue()" style="background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.3);"><i class="ti ti-alert-triangle"></i> Ver Inadimplentes</button>':'')+
-    '</div>'+
-    '<div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:Barlow Condensed,sans-serif;">Gere a chave em: app.asaas.com → Configuracoes → Integracoes → Chave API</div>'+
   '</div></div>'+
   '<div class="cb" style="margin-top:16px;"><div class="cb-hd"><div class="cb-title">Usuarios</div></div>'+
   '<div style="padding:20px;"><div style="background:var(--bg2);border-radius:8px;padding:16px 18px;font-family:monospace;font-size:13px;color:var(--muted);line-height:2.2;border:1px solid var(--border);">'+
