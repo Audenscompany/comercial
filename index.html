@@ -3319,7 +3319,7 @@ function renderFollowupBody(){
           '<div><label class="f-label">Valor Total do Contrato (R$)</label><input class="f-input" type="number" id="fu-contrato" placeholder="0" style="margin-bottom:0;" oninput="updateBonusPreview()"></div>'+
           '<div id="fu-mensalidade-wrap" style="display:none;"><label class="f-label">Valor da Mensalidade (R$)</label><input class="f-input" type="number" id="fu-mensalidade" placeholder="0" style="margin-bottom:0;" oninput="updateBonusPreview()"></div>'+
         '</div>'+
-        '<div class="modal-grid2" style="margin-top:12px;">'+
+        '<div id="fu-frequencia-wrap" class="modal-grid2" style="margin-top:12px;display:none;">'+
           '<div><label class="f-label">Frequencia de Pagamento</label><select class="f-input" id="fu-frequencia" style="margin-bottom:0;">'+
             '<option value="mensal">Mensal</option>'+
             '<option value="quinzenal">Quinzenal</option>'+
@@ -3360,6 +3360,8 @@ function toggleMensalidadeField(){
   if(!tipo)return;
   var isTCV=tipo.value==='tcv';
   if(wrap) wrap.style.display=isTCV?'none':'block';
+  var freqWrap=document.getElementById('fu-frequencia-wrap');
+  if(freqWrap) freqWrap.style.display=isTCV?'none':'grid';
   var duracaoWrap=document.getElementById('fu-duracao-wrap');
   if(duracaoWrap){
     var curVal=(document.getElementById('fu-duracao')||{}).value||'6';
