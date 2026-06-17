@@ -487,8 +487,13 @@ function startRealtimeSync(){
       // Kanban atualizou em tempo real: verifica se há entradas novas sem _sheetSynced
       Object.keys(fbKanban).forEach(function(key){
         var e = fbKanban[key];
-        if(!e._sheetSynced && e.nome && e.telefone){
-          appendLeadToSheets(e, key);
+        if(!e._sheetSynced && e.nome && e.telefone && !_syncingLeads[key]){
+          // Marca imediatamente em memória (update otimista) para evitar re-disparo
+          _syncingLeads[key] = true;
+          if(kanbanData[key]) kanbanData[key]._sheetSynced = true;
+          appendLeadToSheets(e, key).then(function(ok){
+            if(!ok) delete _syncingLeads[key]; // libera para retry futuro se falhou
+          });
         }
       });
     }
@@ -749,12 +754,25 @@ function ensureKanbanEntry(lead){
       // Lead qualificado (>= R$20 mil) -> gera cadencia de tarefas para o Joao
       generateCadenciaTasks(lead,key);
       // Salvar na planilha de leads (substitui Make.com)
-      // Tenta imediatamente; se Google não estiver pronto ainda, tenta de novo em 4s e 10s
+      // Marca imediatamente para evitar re-sync pelo listener enquanto a chamada está em andamento
+      _syncingLeads[key] = true;
       appendLeadToSheets(lead, key).then(function(ok){
-        if(!ok){
-          setTimeout(function(){ appendLeadToSheets(lead, key).then(function(ok2){
-            if(!ok2) setTimeout(function(){ appendLeadToSheets(lead, key); }, 10000);
-          }); }, 4000);
+        if(ok){
+          delete _syncingLeads[key];
+        } else {
+          // Retry: só se ainda não foi sincronizado por outro caminho
+          setTimeout(function(){
+            if(kanbanData[key]&&kanbanData[key]._sheetSynced){delete _syncingLeads[key];return;}
+            appendLeadToSheets(lead, key).then(function(ok2){
+              if(ok2){delete _syncingLeads[key];}
+              else{
+                setTimeout(function(){
+                  if(kanbanData[key]&&kanbanData[key]._sheetSynced){delete _syncingLeads[key];return;}
+                  appendLeadToSheets(lead, key).then(function(){delete _syncingLeads[key];});
+                }, 10000);
+              }
+            });
+          }, 4000);
         }
       });
     }
@@ -829,6 +847,7 @@ async function appendSheetRowSilent(sheetId, gid, values, lastCol){
 // Ao abrir o CRM, tenta sincronizar leads do kanban que ainda não foram salvos na planilha
 var _syncLeadsSheetDone = false;
 var _LEADS_SHEET_MIGRATION_KEY = 'audens_leads_sheet_migrated_v1';
+var _syncingLeads = {}; // guarda chaves de leads atualmente sendo sincronizados com a planilha
 async function syncPendingLeadsToSheets(){
   if(_syncLeadsSheetDone || !isGcalConnected()) return;
   _syncLeadsSheetDone = true;
@@ -851,13 +870,15 @@ async function syncPendingLeadsToSheets(){
     return; // Para aqui — novos leads a partir daqui serão sincronizados normalmente
   }
 
-  // Sync normal: só leads novos sem _sheetSynced
+  // Sync normal: só leads novos sem _sheetSynced e que não estejam sendo sincronizados
   var entries = Object.entries(kanbanData);
   for(var i=0; i<entries.length; i++){
     var key = entries[i][0];
     var e   = entries[i][1];
-    if(!e._sheetSynced && e.nome && e.telefone){
-      await appendLeadToSheets(e, key);
+    if(!e._sheetSynced && e.nome && e.telefone && !_syncingLeads[key]){
+      _syncingLeads[key] = true;
+      var ok = await appendLeadToSheets(e, key);
+      if(!ok) delete _syncingLeads[key];
     }
   }
 }
@@ -1888,8 +1909,16 @@ async function fetchMetaSpend(period){
   var pp=period.split('/');
   var month=parseInt(pp[0]),year=parseInt(pp[1]);
   var since=year+'-'+String(month).padStart(2,'0')+'-01';
-  var lastDay=new Date(year,month,0).getDate();
-  var until=year+'-'+String(month).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+  // Para o mês atual, usa hoje como until (igual ao Ads Manager "this month to date")
+  var now=new Date();
+  var isCurrent=(month===now.getMonth()+1&&year===now.getFullYear());
+  var until;
+  if(isCurrent){
+    until=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  }else{
+    var lastDay=new Date(year,month,0).getDate();
+    until=year+'-'+String(month).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+  }
   var url='https://graph.facebook.com/v20.0/act_'+metaAccountId+'/insights'+
     '?fields=spend'+
     '&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')+''+
@@ -2040,7 +2069,8 @@ async function appendSheetRow(sheetId, gid, values, lastCol){
     // Cacheia o nome da aba para uso posterior em updateSheetCell
     _sheetTabNameCache[String(gid)]=tabName;
     // Step 2: append row
-    var range=tabName+'!A:'+(lastCol||'I');
+    var range=tabName+'!A:'+(lastCol||'H');
+    console.log('[appendSheetRow] range=',range,' values=',JSON.stringify(values));
     var appendUrl='https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
     var resp=await fetch(appendUrl,{
       method:'POST',
@@ -2048,17 +2078,20 @@ async function appendSheetRow(sheetId, gid, values, lastCol){
       body:JSON.stringify({values:[values]})
     });
     var result=await resp.json();
+    console.log('[appendSheetRow] result=',JSON.stringify(result));
     if(result.error){
       showSheetToast('ERRO ao gravar: '+result.error.message+' | Status: '+resp.status,true);
       return false;
     }
     // Extrai o número da linha inserida do updatedRange (ex: "Reuniões!A11:H11" → 11)
     var rowNum=0;
+    var updInfo='';
     if(result.updates&&result.updates.updatedRange){
       var rm=result.updates.updatedRange.match(/(\d+)/);
       if(rm)rowNum=parseInt(rm[1]);
+      updInfo=' | '+result.updates.updatedRange+' ('+result.updates.updatedColumns+' cols)';
     }
-    showSheetToast('Gravado na planilha!',false);
+    showSheetToast('Gravado na planilha!'+updInfo,false);
     return rowNum||true; // rowNum (int > 0) se conseguiu extrair, true (fallback truthy) caso contrário
   }catch(e){
     showSheetToast('ERRO excecao: '+e.message,true);
@@ -2417,7 +2450,7 @@ function getPendingFollowups(){
 function calcStats(df){
   var rows=Object.values(calls);if(df)rows=rows.filter(function(r){return r.data===df;});
   var t=rows.length,at=rows.filter(function(r){return r.at==='sim';}).length;
-  var re=Object.values(meetings).filter(function(m){return df?calls[m.tel]&&calls[m.tel].data===df:true;}).length;
+  var re=Object.values(meetings).filter(function(m){return !m._retorno&&(df?calls[m.tel]&&calls[m.tel].data===df:true);}).length;
   var ve=Object.values(followups).filter(function(f){return f.venda==='sim';}).length;
   return{total:t,atendidas:at,reunioes:re,vendas:ve,
     pAt:t?Math.round(at/t*100):0,pRe:at?Math.round(re/at*100):0,pVe:re?Math.round(ve/re*100):0};
@@ -4898,6 +4931,12 @@ async function refreshAnaliseAds(){
   if(!loading||!cont) return;
   loading.style.display='block'; cont.style.display='none';
   try{
+    // Atualiza gasto do Meta antes de construir o HTML
+    if(isMetaConnected()&&metaAccountId){
+      var period=_adsPeriod||getCurrentPeriod();
+      var spend=await fetchMetaSpend(period);
+      if(spend!==null){_investidoMes[period]=spend;saveAll();}
+    }
     var data=await loadAllSheets();
     cont.innerHTML=buildAnaliseAdsHTML(data);
     cont.style.display='block'; loading.style.display='none';
