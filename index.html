@@ -3564,6 +3564,57 @@ function mostrarModalLinkAssinatura(link, waEnviado){
   '</div>';
   document.body.insertAdjacentHTML('beforeend', html);
 }
+function mostrarModalErroAssinatura(motivo){
+  var html='<div class="modal-ov active" id="modal-assin-erro" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-alert-triangle" style="color:var(--amber);"></i> Link de assinatura nao criado</div>'+
+        '<button class="modal-close" onclick="this.closest(\'.modal-ov\').remove()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px;margin-bottom:16px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--amber);">'+
+          '<b>O contrato foi gerado e baixado</b>, mas o link de assinatura nao foi criado.<br><br>'+
+          'Motivo: '+motivo+'<br><br>'+
+          'Reconecte o Google em <b>Configurações → Google Calendar</b> e depois clique em "Tentar novamente".'+
+        '</div>'+
+        '<div style="display:flex;gap:10px;">'+
+          '<button class="btn btn-outline" style="flex:1;" onclick="this.closest(\'.modal-ov\').remove();showPage(\'config\')"><i class="ti ti-brand-google"></i> Ir para Configurações</button>'+
+          '<button class="btn btn-primary" style="flex:1;" onclick="reenviarAssinaturaContrato(this)"><i class="ti ti-refresh"></i> Tentar novamente</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  var old=document.getElementById('modal-assin-erro');if(old)old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function reenviarAssinaturaContrato(btn){
+  if(!window._lastContratoDados){alert('Nenhum contrato em espera.');return;}
+  if(!isGcalConnected()){alert('Google ainda nao conectado. Reconecte em Configurações → Google Calendar.');return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Enviando...';}
+  var d=window._lastContratoDados;
+  try{
+    var pdfUrl=await uploadContratoToDrive(d.blob, d.nomeArquivo);
+    if(!pdfUrl){alert('Nao foi possivel enviar o PDF para o Drive.');if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Tentar novamente';}return;}
+    var ref=await fbPush('assinaturas',{
+      cliente:d.dados.nomeCliente||'',
+      contratoNome:d.nomeArquivo.replace(/\.docx$/i,''),
+      pdfUrl:pdfUrl,
+      telefone:d.dados.telefone||'',
+      status:'pendente',
+      createdAt:Date.now()
+    });
+    var signId=ref&&ref.key;
+    if(signId){
+      var signLink=signLinkFor(signId);
+      var waOk=await enviarLinkAssinaturaWA(d.dados.telefone, d.dados.nomeCliente, signLink);
+      var old=document.getElementById('modal-assin-erro');if(old)old.remove();
+      mostrarModalLinkAssinatura(signLink, waOk);
+      window._lastContratoDados=null;
+    }
+  }catch(e){
+    console.error('Retry assinatura erro:',e);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Tentar novamente';}
+    alert('Erro: '+e.message);
+  }
+}
 async function generateContratoDocx(dados){
   try{
     var url=CONTRATO_TEMPLATES[dados.plano];
@@ -3611,6 +3662,9 @@ async function generateContratoDocx(dados){
     link.download=nomeArquivo;
     document.body.appendChild(link);link.click();document.body.removeChild(link);
 
+    // Salva dados do contrato para retry caso Google nao esteja conectado
+    window._lastContratoDados={dados:dados, nomeArquivo:nomeArquivo, blob:out};
+
     // Envia o contrato para o Google Drive (PDF) e cria o link de assinatura eletronica
     if(isGcalConnected()){
       try{
@@ -3635,8 +3689,11 @@ async function generateContratoDocx(dados){
         }
       }catch(e2){
         console.error('Erro ao criar link de assinatura:',e2);
-        showSheetToast('Contrato gerado, mas houve erro ao criar o link de assinatura.',true);
+        mostrarModalErroAssinatura('Erro ao enviar para o Drive: '+e2.message);
       }
+    }else{
+      // Google nao conectado — avisa e oferece retry após reconectar
+      mostrarModalErroAssinatura('Token Google expirado ou nao conectado.');
     }
   }catch(err){
     console.error('Erro ao gerar contrato:',err);
