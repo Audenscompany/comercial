@@ -3306,7 +3306,7 @@ function renderFollowupBody(){
             '<option value="premium">Premium</option>'+
             '<option value="elite">Elite</option>'+
           '</select></div>'+
-          '<div><label class="f-label">Duracao (meses)</label><input class="f-input" type="number" id="fu-duracao" value="6" min="1" style="margin-bottom:12px;" oninput="updateBonusPreview()"></div>'+
+          '<div id="fu-duracao-wrap"><label class="f-label">Duracao (meses)</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()"><option value="3">3 meses</option><option value="6" selected>6 meses</option></select></div>'+
         '</div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Data de inicio do contrato</label><input class="f-input" type="date" id="fu-data-inicio" style="margin-bottom:12px;"></div>'+
@@ -3353,11 +3353,22 @@ function renderFollowupBody(){
     '</div>';
 }
 // Mostra/esconde o campo de mensalidade dependendo do tipo de valor (TCV x MMR)
+// TCV: duracao só 3 ou 6 meses (select). MMR: duracao livre (input numérico).
 function toggleMensalidadeField(){
   var tipo=document.getElementById('fu-tipo-valor');
   var wrap=document.getElementById('fu-mensalidade-wrap');
-  if(!tipo||!wrap)return;
-  wrap.style.display=(tipo.value==='mmr')?'block':'none';
+  if(!tipo)return;
+  var isTCV=tipo.value==='tcv';
+  if(wrap) wrap.style.display=isTCV?'none':'block';
+  var duracaoWrap=document.getElementById('fu-duracao-wrap');
+  if(duracaoWrap){
+    var curVal=(document.getElementById('fu-duracao')||{}).value||'6';
+    if(isTCV){
+      duracaoWrap.innerHTML='<label class="f-label">Duracao (meses)</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()"><option value="3"'+(curVal==='3'?' selected':'')+'>3 meses</option><option value="6"'+(curVal!=='3'?' selected':'')+'>6 meses</option></select>';
+    } else {
+      duracaoWrap.innerHTML='<label class="f-label">Duracao (meses)</label><input class="f-input" type="number" id="fu-duracao" value="'+curVal+'" min="1" style="margin-bottom:12px;" oninput="updateBonusPreview()">';
+    }
+  }
   updateBonusPreview();
 }
 function updateBonusPreview(){
