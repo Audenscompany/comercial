@@ -1919,25 +1919,19 @@ function asaasBase(){
     ?'https://sandbox.asaas.com/api/v3'
     :'https://api.asaas.com/v3';
 }
-async function asaasGet(endpoint){
+async function asaasRequest(endpoint,method,body){
   if(!asaasApiKey) return null;
   try{
-    var r=await fetch(asaasBase()+endpoint,{headers:{'access_token':asaasApiKey,'Content-Type':'application/json'}});
-    if(!r.ok){console.error('Asaas GET',endpoint,r.status);return null;}
+    var payload={endpoint:endpoint,method:method||'GET',apiKey:asaasApiKey,env:asaasEnv};
+    if(body) payload.body=body;
+    var r=await fetch(RECEBERLEAD_URL+'/asaas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){console.error('Asaas proxy',method,endpoint,r.status);return null;}
     return await r.json();
-  }catch(e){console.error('Asaas GET',endpoint,e);return null;}
+  }catch(e){console.error('Asaas proxy',method,endpoint,e);return null;}
 }
-async function asaasPost(endpoint,body){
-  if(!asaasApiKey) return null;
-  try{
-    var r=await fetch(asaasBase()+endpoint,{method:'POST',headers:{'access_token':asaasApiKey,'Content-Type':'application/json'},body:JSON.stringify(body)});
-    return await r.json();
-  }catch(e){console.error('Asaas POST',endpoint,e);return null;}
-}
-async function asaasDelete(endpoint){
-  if(!asaasApiKey) return;
-  try{await fetch(asaasBase()+endpoint,{method:'DELETE',headers:{'access_token':asaasApiKey}});}catch(e){}
-}
+async function asaasGet(endpoint){return asaasRequest(endpoint,'GET',null);}
+async function asaasPost(endpoint,body){return asaasRequest(endpoint,'POST',body);}
+async function asaasDelete(endpoint){return asaasRequest(endpoint,'DELETE',null);}
 function asaasStatusBadge(status){
   var map={
     PENDING:'<span class="badge b-amber">Pendente</span>',
