@@ -2644,7 +2644,7 @@ function kanbanToLeadsRows(){
 // Transforma meetings (Firebase) em linhas compatíveis com col()
 // Status derivado de meetings.status + followups[id].resultado
 function meetingsToReunioesRows(){
-  return Object.values(meetings).map(function(m){
+  return Object.values(meetings).filter(function(m){ return !m._hidden; }).map(function(m){
     var bookTs = m.scheduledAt || Date.now();
     var bd = new Date(bookTs);
     var bookDateStr = bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
