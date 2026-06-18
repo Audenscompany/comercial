@@ -4803,9 +4803,7 @@ function saveFollowupEdit(){
       frequencia:frequencia,
       vencimento:vencimento
     });
-    // Registra a venda na planilha de Clientes e cria no Asaas —
-    // só na primeira vez que esse follow-up se torna uma venda, pra não
-    // duplicar quando o resultado for apenas corrigido/editado depois.
+    // Registra na planilha só na primeira vez (evita duplicar linha)
     if(old.venda!=='sim'){
       appendClienteRow({
         nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
@@ -4819,7 +4817,10 @@ function saveFollowupEdit(){
         closer:_fuMeeting.responsavel||'',
         sdr:_fuMeeting.sdr||''
       });
-      // Cria cobrança no Asaas (mesmo fluxo do saveFollowup original)
+    }
+    // Cria no Asaas se ainda não foi criado (verifica pelo asaasChargeId no kanban)
+    var jaTemAsaas=kk2&&kanbanData[kk2]&&kanbanData[kk2].asaasChargeId;
+    if(!jaTemAsaas){
       (function(kk2,leadInfo,vd){
         setTimeout(function(){criarCobrancaAsaas(leadInfo||{nome:_fuMeeting.nome,telefone:_fuMeeting.tel,cnpj:cnpj},vd,kk2);},500);
       })(kk2,leadInfo,{plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,contrato:contrato,mensalidade:mensalidade,cnpj:cnpj});
