@@ -5980,9 +5980,17 @@ async function refreshAnaliseAds(){
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
-    // Ads: lê tudo do Firebase (kanbanData=leads com ad, meetings=reuniões com empresa)
-    // Após sync histórico, Firebase é fonte única — não lê planilhas de leads/reuniões
+    // Ads: lê leads e reuniões da planilha (histórico) + Firebase para novos leads
+    // Após rodar sync_historico_firebase.js, trocar para loadDataHybrid() apenas
     var dataAds=await loadDataHybrid();
+    try{
+      var [_lRaw,_rRaw]=await Promise.all([
+        fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads),
+        fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes)
+      ]);
+      if(_lRaw&&_lRaw.length>1) dataAds.leads=rawToObjs(_lRaw);
+      if(_rRaw&&_rRaw.length>1) dataAds.reunioes=rawToObjs(_rRaw);
+    }catch(_e2){ console.warn('[Ads] Planilha indisponível, usando Firebase',_e2); }
     cont.innerHTML=buildAnaliseAdsHTML(dataAds);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
