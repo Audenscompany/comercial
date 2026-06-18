@@ -970,14 +970,9 @@ async function confirmarAgendamentoReuniao(key){
       email:kanbanData[key].email||''
     });
   }
-  // Detecta qual foi a ultima tarefa SDR concluida para este lead (tarefa responsavel pelo agendamento)
-  var ultimaTarefaSDR = null;
-  Object.keys(sdrTarefas||{}).forEach(function(tid){
-    var t = sdrTarefas[tid];
-    if(t.leadKey===key && t.done && t.doneAt){
-      if(!ultimaTarefaSDR || t.doneAt > ultimaTarefaSDR.doneAt) ultimaTarefaSDR = t;
-    }
-  });
+  // Detecta a última tarefa SDR desse lead (a etapa mais avançada na cadência — done ou pending)
+  // Feito ANTES de marcar as pendentes como concluídas para capturar a tarefa em execução
+  var ultimaTarefaSDR = getUltimaTarefaSDR(key, kanbanData[key]&&kanbanData[key].telefone);
   // Marca todas as tarefas pendentes desse lead como concluidas (reuniao agendada = cadencia encerrada)
   var batchDone = {};
   Object.keys(sdrTarefas||{}).forEach(function(tid){
@@ -1580,6 +1575,33 @@ function getPendingSdrTarefas(){
   var hojeISO=new Date().toISOString().split('T')[0];
   return Object.keys(sdrTarefas||{}).map(function(k){return sdrTarefas[k];})
     .filter(function(t){return t && !t.done && t.dataISO<=hojeISO;});
+}
+// Retorna a tarefa da cadência SDR que originou o agendamento:
+// 1. Se há tarefas concluídas → retorna a última executada (doneAt mais recente)
+// 2. Se não há nenhuma concluída → retorna a próxima pendente (menor dia = 1ª a executar)
+// Usa leadKey se disponível, senão busca por telefone
+function getUltimaTarefaSDR(leadKey, telefone){
+  var tel = (telefone||'').replace(/\D/g,'');
+  var done = [], pending = [];
+  Object.keys(sdrTarefas||{}).forEach(function(tid){
+    var t = sdrTarefas[tid];
+    if(!t) return;
+    var matches = leadKey
+      ? (t.leadKey === leadKey)
+      : (tel && (t.telefone||'').replace(/\D/g,'') === tel);
+    if(!matches) return;
+    if(t.done && t.doneAt) done.push(t);
+    else pending.push(t);
+  });
+  if(done.length){
+    // Última tarefa concluída (doneAt mais recente)
+    return done.reduce(function(a,b){ return b.doneAt > a.doneAt ? b : a; });
+  }
+  if(pending.length){
+    // Próxima a ser executada (menor dia na cadência)
+    return pending.reduce(function(a,b){ return b.dia < a.dia ? b : a; });
+  }
+  return null;
 }
 // Extrai um valor numerico aproximado de strings de faturamento ("60 mil até 100 mil", "R$ 50.000", etc.)
 function parseFaturamentoValue(str){
@@ -4105,9 +4127,11 @@ async function saveCallFinalAsync(){
   var fromReativacao=_callLeadSource==='reativacao';
   calls[l.telefone]={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
   var mid='m_'+Date.now();
+  var _tuSDR=getUltimaTarefaSDR(null, l.telefone);
   var meeting={id:mid,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
     status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||'',
-    sdrName:((CU&&CU.closer)||'').toUpperCase(),scheduledAt:Date.now()};
+    sdrName:((CU&&CU.closer)||'').toUpperCase(),scheduledAt:Date.now(),
+    tarefaOrigem:_tuSDR?_tuSDR.tipo:'',tarefaOrigemDia:_tuSDR?'Dia '+_tuSDR.dia:''};
   if(fromReativacao){meeting.origem='Recuperacao';}else{meeting.origem='COLDCALL';}
   meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
   // Dispara confirmacao da reuniao + materiais de aquecimento por WhatsApp (nao bloqueia a UI)
@@ -4150,9 +4174,11 @@ async function saveCallFinal(){
   // Se agendou reunião, salva no Firebase também
   if(_callData.agendou){
     var mid2='m_'+Date.now();
+    var _tuSDR2=getUltimaTarefaSDR(null, l.telefone);
     var mtg2={id:mid2,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
       status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||'',
-      sdrName:((CU&&CU.closer)||'').toUpperCase(),scheduledAt:Date.now(),origem:'COLDCALL'};
+      sdrName:((CU&&CU.closer)||'').toUpperCase(),scheduledAt:Date.now(),origem:'COLDCALL',
+      tarefaOrigem:_tuSDR2?_tuSDR2.tipo:'',tarefaOrigemDia:_tuSDR2?'Dia '+_tuSDR2.dia:''};
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
     enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
