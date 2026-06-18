@@ -1002,7 +1002,9 @@ async function confirmarAgendamentoReuniao(key){
   var mid='km_'+key+'_'+Date.now();
   var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
     status:'pending',responsavel:responsavel,guestEmail:email||'',faturamentoLead:kanbanData[key].faturamento||'',
-    origem:'Kanban',kanbanKey:key,
+    origem:(kanbanData[key].origem||'Tráfego'),kanbanKey:key,
+    sdrName:((CU&&CU.closer)||'João').toUpperCase(),
+    scheduledAt:Date.now(),
     tarefaOrigem: ultimaTarefaSDR ? ultimaTarefaSDR.tipo : '',
     tarefaOrigemDia: ultimaTarefaSDR ? 'Dia '+ultimaTarefaSDR.dia : ''};
   meetings[mid]=meetingObj;
@@ -2584,6 +2586,80 @@ async function loadAllSheets(){
   ]);
   return{leads:rawToObjs(results[0]),reunioes:rawToObjs(results[1]),clientes:rawToObjs(results[2])};
 }
+
+// Transforma kanbanData (Firebase) em linhas compatíveis com col()
+function kanbanToLeadsRows(){
+  return Object.values(kanbanData).map(function(k){
+    var ts = k._createdAt || Date.now();
+    var bd = new Date(ts);
+    var dateStr = bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
+    var tel = (k.telefone||'').replace(/\D/g,'');
+    var fat = k.faturamento||'';
+    var ad = k.ad||'';
+    var camp = k.campanha||'';
+    var conj = k.conjunto||'';
+    var orig = k.origem||'';
+    return {
+      'Data':dateStr,'DATA':dateStr,'data':dateStr,
+      'Nome':k.nome||'','NOME':k.nome||'',
+      'Telefone':tel,'TELEFONE':tel,'telefone':tel,
+      'Faturamento':fat,'FATURAMENTO':fat,'faturamento':fat,
+      'Ad':ad,'AD':ad,'ad':ad,
+      'Campanha':camp,'CAMPANHA':camp,'campanha':camp,
+      'Conjunto':conj,'CONJUNTO':conj,'conjunto':conj,
+      'Origem':orig,'ORIGEM':orig,'origem':orig,
+      'Empresa':k.empresa||'','EMPRESA':k.empresa||'','empresa':k.empresa||''
+    };
+  });
+}
+
+// Transforma meetings (Firebase) em linhas compatíveis com col()
+// Status derivado de meetings.status + followups[id].resultado
+function meetingsToReunioesRows(){
+  return Object.values(meetings).map(function(m){
+    var bookTs = m.scheduledAt || Date.now();
+    var bd = new Date(bookTs);
+    var bookDateStr = bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
+    var tel = (m.tel||'').replace(/\D/g,'');
+    var fu = followups[m.id];
+    var statusStr;
+    if(m.status==='noshow'){statusStr='NO-SHOW';}
+    else if(m.status==='done'){
+      if(fu&&fu.resultado==='venda') statusStr='VENDA';
+      else statusStr='REALIZADA';
+    } else {statusStr='AGENDADA';}
+    var kanbanEntry = m.kanbanKey ? kanbanData[m.kanbanKey] : null;
+    var empresa = (kanbanEntry&&kanbanEntry.empresa)||m.empresa||'';
+    var cidade = (kanbanEntry&&kanbanEntry.cidade)||m.cidade||'';
+    var orig = m.origem||(kanbanEntry&&kanbanEntry.origem)||'Tráfego';
+    var sdr = m.sdrName||m.sdr||'';
+    return {
+      'DATA':bookDateStr,'Data':bookDateStr,'data':bookDateStr,
+      'DATA DE AGENDAMENTO':bookDateStr,'Data de Agendamento':bookDateStr,
+      'DataAgendamento':bookDateStr,'Data Agendamento':bookDateStr,
+      'CLIENTE':m.nome||'','Cliente':m.nome||'','cliente':m.nome||'',
+      'NOME':m.nome||'','Nome':m.nome||'',
+      'TELEFONE':tel,'Telefone':tel,'telefone':tel,
+      'STATUS REUNIÃO':statusStr,'STATUS REUNIAO':statusStr,
+      'Status Reuniao':statusStr,'STATUS':statusStr,'Status':statusStr,
+      'SDR':sdr,'SDR/BDR':sdr,'BDR':sdr,'Sdr':sdr,
+      'CLOSER':(m.responsavel||'').toUpperCase(),'Closer':(m.responsavel||'').toUpperCase(),'closer':(m.responsavel||'').toUpperCase(),
+      'ORIGEM':orig,'Origem':orig,'origem':orig,
+      'EMPRESA':empresa,'Empresa':empresa,'empresa':empresa,
+      'CIDADE':cidade,'Cidade':cidade,'cidade':cidade
+    };
+  });
+}
+
+// Híbrido: lê leads + reuniões do Firebase, apenas clientes vem da planilha
+async function loadDataHybrid(){
+  var clientesRaw = await fetchSheetVals(SHEETS_IDS.clientes, SHEETS_GIDS.clientes);
+  return {
+    leads: {rows: kanbanToLeadsRows()},
+    reunioes: {rows: meetingsToReunioesRows()},
+    clientes: rawToObjs(clientesRaw)
+  };
+}
 async function createGcalEvent(meeting){
   if(!isGcalConnected()){
     var start=new Date(meeting.dtISO);
@@ -4030,8 +4106,9 @@ async function saveCallFinalAsync(){
   calls[l.telefone]={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
   var mid='m_'+Date.now();
   var meeting={id:mid,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
-    status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||''};
-  if(fromReativacao){meeting.origem='Recuperacao';}
+    status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||'',
+    sdrName:((CU&&CU.closer)||'').toUpperCase(),scheduledAt:Date.now()};
+  if(fromReativacao){meeting.origem='Recuperacao';}else{meeting.origem='COLDCALL';}
   meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
   // Dispara confirmacao da reuniao + materiais de aquecimento por WhatsApp (nao bloqueia a UI)
   enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
@@ -4074,7 +4151,8 @@ async function saveCallFinal(){
   if(_callData.agendou){
     var mid2='m_'+Date.now();
     var mtg2={id:mid2,tel:l.telefone,nome:l.nome,dtISO:_callData.meetingISO,dtDisplay:_callData.meetingDisplay,
-      status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||''};
+      status:'pending',responsavel:_callData.responsavel,guestEmail:_callData.guestEmail||'',faturamentoLead:_callData.faturamento||'',
+      sdrName:((CU&&CU.closer)||'').toUpperCase(),scheduledAt:Date.now(),origem:'COLDCALL'};
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
     enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
@@ -5040,7 +5118,7 @@ async function refreshDashCom(){
   loading.innerHTML='<i class="ti ti-loader-2" style="font-size:40px;display:block;margin-bottom:16px;color:var(--purple2);animation:spin 1s linear infinite;"></i><span style="font-family:\'Barlow Condensed\',sans-serif;font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Carregando...</span>';
   content.style.display='none';
   try{
-    var data=await loadAllSheets();
+    var data=await loadDataHybrid();
     // Auto-fetch Meta Ads spend
     if(isMetaConnected()&&metaAccountId){
       var period=_dashPeriod||getCurrentPeriod();
@@ -5792,7 +5870,7 @@ async function refreshAnaliseAds(){
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
-    var data=await loadAllSheets();
+    var data=await loadDataHybrid();
     cont.innerHTML=buildAnaliseAdsHTML(data);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
@@ -7405,7 +7483,7 @@ async function loadReativacao(){
     elNS.innerHTML=msgg;elFR.innerHTML=msgg;if(elHist)elHist.innerHTML=msgg;return;
   }
   try{
-    var data=await loadAllSheets();
+    var data=await loadDataHybrid();
     var reativ=await fbGet('reativacoes')||{};
     var rows=(data.reunioes&&data.reunioes.rows)?data.reunioes.rows:[];
     var hoje=new Date();hoje.setHours(0,0,0,0);
@@ -7674,7 +7752,7 @@ async function loadFunilReunioes(){
     var mlong=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     var pp=getCurrentPeriod().split('/');
     var periodLabel=mlong[parseInt(pp[0])-1]+' '+pp[1];
-    var data = await loadAllSheets();
+    var data = await loadDataHybrid();
     var period = getCurrentPeriod();
     var isGestor = CU.role==='gestor';
     // Usa CU.closer (ex: "Gustavo") para bater com o campo responsavel/closer da planilha
@@ -8141,7 +8219,7 @@ function confirmarLancarResultadoManual(){
   if(!nomeC||!data){alert('Preencha o cliente e a data da reunião.');return;}
   var mid = 'manual_'+Date.now();
   function _fmtD(iso){if(!iso)return'';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
-  var meetingObj = {id:mid,tel:tel,nome:nomeC,dtISO:data+'T09:00:00',dtDisplay:_fmtD(data)+' 09:00',status:'pending',responsavel:closer,origem:'Manual',criador:CU.name};
+  var meetingObj = {id:mid,tel:tel,nome:nomeC,dtISO:data+'T09:00:00',dtDisplay:_fmtD(data)+' 09:00',status:'pending',responsavel:closer,sdrName:(CU&&CU.closer?CU.closer:'').toUpperCase(),origem:'Manual',criador:CU.name,scheduledAt:Date.now()};
   meetings[mid] = meetingObj;
   saveAll();
   saveMeetingFB(mid, meetingObj);
@@ -8180,7 +8258,7 @@ async function criarReuniaoCalendario(){
   // Cria a reunião no Firebase + Google Meet
   var dtISO = data+'T09:00:00';
   function _fmtD2(iso){if(!iso)return'';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
-  var meeting = {id:'m_'+Date.now(),tel:tel,nome:cliente,dtISO:dtISO,dtDisplay:_fmtD2(data)+' 09:00',status:'pending',responsavel:closer,sdr:sdr,origem:origem,criador:CU.name,guestEmail:''};
+  var meeting = {id:'m_'+Date.now(),tel:tel,nome:cliente,dtISO:dtISO,dtDisplay:_fmtD2(data)+' 09:00',status:'pending',responsavel:closer,sdr:sdr,sdrName:(sdr||'').toUpperCase(),origem:origem,criador:CU.name,guestEmail:'',scheduledAt:Date.now()};
   if(shRow) meeting.sheetRow=shRow; // vincula número da linha da planilha ao meeting
   meetings[meeting.id]=meeting;saveAll();saveMeetingFB(meeting.id,meeting);
   var result = await createGcalEvent(meeting);
