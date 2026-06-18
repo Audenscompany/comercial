@@ -6133,6 +6133,15 @@ function buildAnaliseAdsHTML(data){
     telAdMap[tel]={ad:ad,campanha:campanha,conjunto:conjunto};
   });
 
+  // Mapa phone → followup (para pegar vendas registradas no Firebase mesmo que planilha mostre REALIZADA)
+  var phoneFuMap={};
+  Object.values(followups).forEach(function(fu){
+    if(!fu||!fu.tel) return;
+    var fuTel=(fu.tel||'').replace(/\D/g,'');
+    if(fuTel.length>9) fuTel=fuTel.slice(-9);
+    if(fuTel) phoneFuMap[fuTel]=fu;
+  });
+
   // Step 3a: attribute sheet reuniões to ads via phone→telAdMap
   // Usa a planilha de reuniões (mesma fonte do Funil) para atribuição histórica
   var _step3Phones=new Set(); // controle de dupla contagem
@@ -6152,16 +6161,27 @@ function buildAnaliseAdsHTML(data){
     var entry=adData[adKey];
     entry.reunioes++;
     var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
+    // Verifica venda também via Firebase followup (planilha pode ainda estar como REALIZADA)
+    var fuMatch=rTel?phoneFuMap[rTel]:null;
+    var isVenda=status==='VENDA'||(fuMatch&&fuMatch.resultado==='venda');
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
-    if(status==='VENDA'){
+    if(isVenda){
       entry.fechamentos++;
-      var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
-      var cliMatch=cliNomeMap[nomeKey];
-      if(cliMatch){
-        var mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
-        if(!mrrVal) mrrVal=parseMoney(col(cliMatch,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
-        entry.mrr+=mrrVal||0;
+      // MRR: tenta followup Firebase primeiro, depois planilha clientes pelo nome da empresa
+      var mrrVal=0;
+      if(fuMatch){
+        var _rawMrr=fuMatch.mensalidade||fuMatch.mrr||0;
+        mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
       }
+      if(!mrrVal){
+        var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
+        var cliMatch=cliNomeMap[nomeKey];
+        if(cliMatch){
+          mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+          if(!mrrVal) mrrVal=parseMoney(col(cliMatch,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+        }
+      }
+      entry.mrr+=mrrVal||0;
     }
   });
 
