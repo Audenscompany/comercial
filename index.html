@@ -5980,8 +5980,18 @@ async function refreshAnaliseAds(){
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
-    var data=await loadDataHybrid();
-    cont.innerHTML=buildAnaliseAdsHTML(data);
+    // Ads: lê leads e reuniões da planilha (fonte de verdade para dados históricos)
+    // Novos leads já entram com ad/campanha/conjunto salvo no Firebase automaticamente
+    var dataAds=await loadDataHybrid();
+    try{
+      var [_lRaw,_rRaw]=await Promise.all([
+        fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads),
+        fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes)
+      ]);
+      if(_lRaw&&_lRaw.length>1) dataAds.leads=rawToObjs(_lRaw);
+      if(_rRaw&&_rRaw.length>1) dataAds.reunioes=rawToObjs(_rRaw);
+    }catch(_e2){ console.warn('[Ads] Planilha indisponível, usando Firebase',_e2); }
+    cont.innerHTML=buildAnaliseAdsHTML(dataAds);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
     loading.style.display='none';
@@ -6085,7 +6095,8 @@ function buildAnaliseAdsHTML(data){
     d.fats.push(fat);
   });
 
-  // Step 2: build phone→ad lookup from kanbanData (fallback when kanbanKey not stored)
+  // Step 2: build phone→ad lookup
+  // Fonte 1: kanbanData do Firebase (foi sincronizado via console com ad/campanha/conjunto)
   var telAdMap={};
   Object.values(kanbanData).forEach(function(k){
     if(!k.ad) return;
@@ -6093,50 +6104,49 @@ function buildAnaliseAdsHTML(data){
     if(tel.length>9) tel=tel.slice(-9);
     if(tel) telAdMap[tel]={ad:k.ad,campanha:k.campanha||'',conjunto:k.conjunto||''};
   });
+  // Fonte 2: planilha de leads (tem Telefone + Ad — complementa/sobrescreve Firebase se mais recente)
+  (data.leads&&data.leads.rows?data.leads.rows:[]).forEach(function(l){
+    var ad=(col(l,['Ad','AD','ad'])||'').trim();
+    if(!ad||ad==='-'||ad==='(sem ad)') return;
+    var tel=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    if(tel.length>9) tel=tel.slice(-9);
+    if(!tel) return;
+    var campanha=(col(l,['Campanha','CAMPANHA','campanha'])||'').trim();
+    var conjunto=(col(l,['Conjunto','CONJUNTO','conjunto'])||'').trim();
+    telAdMap[tel]={ad:ad,campanha:campanha,conjunto:conjunto};
+  });
 
-  // Step 3: attribute meetings to ads via kanbanKey→kanbanData.ad (most accurate path)
-  // Falls back to phone→telAdMap if kanbanKey not present
-  Object.values(meetings).forEach(function(m){
-    var bookTs=m.scheduledAt||0;
-    if(!bookTs) return;
-    var bd=new Date(bookTs);
-    if(!inAdsRange(bd)) return;
-    // Only tráfego-origin meetings (excludes COLDCALL, Recuperacao, Retorno)
-    // Usa mesmo default de meetingsToReunioesRows: sem origem explícita = Tráfego
-    var _kanbanEntry=m.kanbanKey?kanbanData[m.kanbanKey]:null;
-    var orig=(m.origem||(_kanbanEntry&&_kanbanEntry.origem)||'Tráfego').toLowerCase();
-    var isTrafego=orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego');
+  // Step 3: attribute sheet reuniões to ads via phone→telAdMap
+  // Usa a planilha de reuniões (mesma fonte do Funil) para atribuição por anúncio
+  // telAdMap foi construído do kanbanData (Firebase) que foi sincronizado com ad/campanha/conjunto
+  (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).forEach(function(r){
+    var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
+    if(!inAdsRange(d)) return;
+    // Só reuniões de tráfego pago
+    var ori=(col(r,['ORIGEM','Origem','origem'])||'').toLowerCase();
+    var isTrafego=ori.includes('tr')||ori.includes('traffic')||ori.includes('tráfego')||ori.includes('trafego');
     if(!isTrafego) return;
-    // Resolve ad
-    var adInfo=null;
-    if(m.kanbanKey && kanbanData[m.kanbanKey] && kanbanData[m.kanbanKey].ad){
-      var kb=kanbanData[m.kanbanKey];
-      adInfo={ad:(kb.ad||'').trim(),campanha:kb.campanha||'',conjunto:kb.conjunto||''};
-    }
-    if(!adInfo){
-      var mTel=(m.tel||'').replace(/\D/g,'');
-      if(mTel.length>9) mTel=mTel.slice(-9);
-      adInfo=mTel?telAdMap[mTel]:null;
-    }
-    if(!adInfo||!adInfo.ad) return; // unattributable
-    var ad=adInfo.ad;
-    if(!adData[ad]) adData[ad]={ad:ad,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
-    var d=adData[ad];
-    d.reunioes++;
-    var mst=(m.status||'').toLowerCase();
-    if(mst==='done'||mst==='noshow') d.realizadas++;
-    var fu=followups[m.id];
-    if(fu&&fu.resultado==='venda'){
-      d.fechamentos++;
-      // mensalidade stored as number; fall back to parseMoney for string formats
-      var _rawMrr=fu.mensalidade||fu.mrr||0;
-      var mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
-      if(!mrrVal){
-        var nomeKey=(m.nome||'').trim().toLowerCase();
-        var cliMatch=cliNomeMap[nomeKey];
-        if(cliMatch) mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    // Resolve ad via telefone → telAdMap
+    var rTel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+    if(rTel.length>9) rTel=rTel.slice(-9);
+    var adInfo=rTel?telAdMap[rTel]:null;
+    if(!adInfo||!adInfo.ad) return; // sem atribuição
+    var adKey=adInfo.ad;
+    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    var entry=adData[adKey];
+    entry.reunioes++;
+    var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
+    if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
+    if(status==='VENDA'){
+      entry.fechamentos++;
+      // Tenta pegar MRR do cliente pelo nome
+      var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
+      var cliMatch=cliNomeMap[nomeKey];
+      if(cliMatch){
+        var mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+        if(!mrrVal) mrrVal=parseMoney(col(cliMatch,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+        entry.mrr+=mrrVal||0;
       }
-      d.mrr+=mrrVal;
     }
   });
 
