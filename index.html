@@ -638,6 +638,8 @@ function startRealtimeSync(){
       gcalToken = fbGcal;
       localStorage.setItem('audens_gcal_token', JSON.stringify(gcalToken));
     }
+    // Google auth confirmado — tenta sync planilha→Firebase
+    setTimeout(syncReunioesFBFromSheet, 1000);
   });
 
   // Sync meta token — shared across devices (gestor only writes, all can read)
@@ -2955,58 +2957,74 @@ function normalizeDtDisplay(s){
 }
 
 /// Sync planilha Reuniões → Firebase: atualiza m.status para cada reunião com base
-// no STATUS da planilha. Roda uma única vez por sessão (após meetings carregarem).
+// no STATUS da planilha. Roda uma única vez por sessão.
+// Usa sheetRow para matching preciso; fallback por phone/nome.
 var _syncedReunioesFB = false;
+var _syncRetryCount = 0;
 async function syncReunioesFBFromSheet(){
   if(_syncedReunioesFB) return;
-  if(!Object.keys(meetings).length) return; // aguarda meetings carregarem
-  _syncedReunioesFB = true;
-  if(!SHEETS_IDS.reunioes) return;
-  if(!isGcalConnected()) return;
+  // Aguarda meetings e Google auth estarem prontos
+  if(!Object.keys(meetings).length || !isGcalConnected() || !SHEETS_IDS.reunioes){
+    if(_syncRetryCount < 10){
+      _syncRetryCount++;
+      setTimeout(syncReunioesFBFromSheet, 3000);
+    }
+    return;
+  }
+  _syncedReunioesFB = true; // flag somente após confirmar pré-requisitos
   try{
     var raw = await fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes);
-    if(!raw||raw.length<2) return;
-    // Detecta colunas por header (igual a loadSDRHoje)
+    if(!raw||raw.length<2){ console.warn('[CRM] Sync: planilha de reuniões vazia'); return; }
     var h = raw[0].map(function(x){return(x||'').trim().toUpperCase();});
     var iTel    = h.findIndex(function(x){return x.includes('TEL')||x.includes('FONE');});
     var iStatus = h.findIndex(function(x){return x.includes('STATUS');});
-    var iNome   = h.findIndex(function(x){return x==='CLIENTE'||x.includes('CLIENTE')||x==='NOME'||x.includes('NOME');});
-    if(iStatus<0) return; // sem coluna de status, nada a fazer
-    // Monta mapas telefone→meeting e nome→meeting do Firebase
-    var telMeetMap={}, nomeMeetMap={};
+    var iNome   = h.findIndex(function(x){return x.includes('CLIENTE')||x==='NOME'||x.includes('NOME');});
+    if(iStatus<0){ console.warn('[CRM] Sync: coluna STATUS não encontrada'); return; }
+
+    // Índice por sheetRow (mais preciso) + fallback por tel e nome
+    var rowMeetMap={}, telMeetMap={}, nomeMeetMap={};
     Object.values(meetings).forEach(function(m){
+      if(m.sheetRow) rowMeetMap[m.sheetRow]=m;
       var tel=(m.tel||'').replace(/\D/g,'');
-      if(tel.length>9) tel=tel.slice(-9);
-      if(tel) telMeetMap[tel]=m;
+      ['slice(-9)','slice(-8)','toString()'].forEach(function(_){
+        var k=tel.length>=9?tel.slice(-9):tel.length>=8?tel.slice(-8):tel;
+        if(k) telMeetMap[k]=m;
+      });
       var nome=(m.nome||'').trim().toLowerCase();
       if(nome) nomeMeetMap[nome]=m;
     });
-    var updated=0;
-    raw.slice(1).forEach(function(row){
+
+    var updated=0, skipped=0;
+    raw.slice(1).forEach(function(row, ri){
+      var sheetRowNum = ri+2; // row 1=header, data starts at 2
       var stSheet=(row[iStatus]||'').toUpperCase().trim();
-      if(!stSheet||stSheet==='AGENDADA'||stSheet==='PENDENTE'||stSheet==='') return;
-      // Tenta match por telefone, depois por nome
-      var m=null;
-      if(iTel>=0){
+      if(!stSheet) return;
+
+      // 1) Match por sheetRow (mais confiável)
+      var m = rowMeetMap[sheetRowNum];
+      // 2) Fallback: telefone (últimos 9 ou 8 dígitos)
+      if(!m && iTel>=0){
         var tel=(row[iTel]||'').replace(/\D/g,'');
-        if(tel.length>9) tel=tel.slice(-9);
-        if(tel) m=telMeetMap[tel]||null;
+        m = telMeetMap[tel.slice(-9)] || telMeetMap[tel.slice(-8)] || null;
       }
-      if(!m&&iNome>=0){
+      // 3) Fallback: nome
+      if(!m && iNome>=0){
         var nome=(row[iNome]||'').trim().toLowerCase();
-        if(nome) m=nomeMeetMap[nome]||null;
+        m = nomeMeetMap[nome] || null;
       }
-      if(!m) return;
-      var newSt=(stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW')?'noshow':'done';
-      if(m.status!==newSt){
-        meetings[m.id].status=newSt;
-        saveMeetingFB(m.id,meetings[m.id]);
+      if(!m){ skipped++; return; }
+
+      var newSt = (stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW') ? 'noshow'
+               : (stSheet==='AGENDADA'||stSheet==='PENDENTE') ? 'pending'
+               : 'done';
+      if(m.status !== newSt){
+        meetings[m.id].status = newSt;
+        saveMeetingFB(m.id, meetings[m.id]);
         updated++;
       }
     });
-    if(updated>0) console.log('[CRM] Sync planilha→Firebase: '+updated+' status de reuniões atualizados.');
-    else console.log('[CRM] Sync planilha→Firebase: nenhuma atualização necessária.');
-  }catch(e){ console.error('[CRM] syncReunioesFBFromSheet error',e); }
+    console.log('[CRM] Sync planilha→Firebase concluído: '+updated+' atualizados, '+skipped+' sem match.');
+  }catch(e){ console.error('[CRM] syncReunioesFBFromSheet error', e); _syncedReunioesFB=false; }
 }
 
 // Migração em background: corrige no Firebase meetings com status 'pending'
@@ -7916,14 +7934,7 @@ async function loadFunilReunioes(){
       return sdr.includes(nome)||closer.includes(nome);
     }
 
-    // Lê reuniões direto da planilha (fonte de verdade para status)
-    // e clientes da planilha também (para vendas/MRR)
-    var _rawReun = await fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes);
-    var _rawCli  = await fetchSheetVals(SHEETS_IDS.clientes, SHEETS_GIDS.clientes);
-    var data = {
-      reunioes: rawToObjs(_rawReun),
-      clientes: rawToObjs(_rawCli)
-    };
+    var data = await loadDataHybrid();
 
     var reunioesF = (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
       var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento','DATA','Data','data']));
