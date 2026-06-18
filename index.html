@@ -2787,7 +2787,8 @@ function showPage(id){
     if(id==='reativacao') setTimeout(loadReativacao,50);
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
-    if(id==='financeiro') setTimeout(loadFinanceiroData,50);
+    if(id==='financeiro') setTimeout(startFinanceiroListeners,50);
+    else stopFinanceiroListeners();
   }
   var tnav=document.getElementById('nav-tarefas');
   if(tnav){var p=getPendingFollowups().length;var ex=tnav.querySelector('.nav-badge');
@@ -3403,6 +3404,46 @@ function renderFinanceiro(){
     '</div>'+
   '</div>';
 }
+// ---- Realtime listeners for Financeiro (WhatsApp bot updates) ----
+var _finRealtimeRefs=[];
+function startFinanceiroListeners(){
+  loadFinanceiroData();
+  // Attach realtime listeners so WhatsApp-processed comprovantes appear instantly
+  if(_finRealtimeRefs.length) return; // already attached
+  var reload=function(){
+    // Only reload if user is still on the financeiro page
+    if(document.getElementById('content')&&document.getElementById('content').getAttribute('data-page')==='financeiro'){
+      loadFinanceiroData();
+    }
+  };
+  var refSaidas=fbDb.ref('financeiro/saidas');
+  var refEntradas=fbDb.ref('financeiro/entradas_manuais');
+  var refBot=fbDb.ref('financeiro/bot_state');
+  refSaidas.on('child_added',reload);
+  refSaidas.on('child_changed',reload);
+  refSaidas.on('child_removed',reload);
+  refEntradas.on('child_added',reload);
+  refEntradas.on('child_removed',reload);
+  // bot_state listener: show toast when a new pending entry arrives from WhatsApp
+  refBot.on('value',function(snap){
+    var val=snap.val();
+    if(val&&val.pendingKey){
+      showSheetToast('📱 Comprovante recebido via WhatsApp! Confirme no chat.');
+    }
+  });
+  _finRealtimeRefs=[
+    {ref:refSaidas,events:['child_added','child_changed','child_removed'],cb:reload},
+    {ref:refEntradas,events:['child_added','child_removed'],cb:reload}
+  ];
+}
+function stopFinanceiroListeners(){
+  _finRealtimeRefs.forEach(function(r){
+    r.events.forEach(function(ev){r.ref.off(ev,r.cb);});
+  });
+  fbDb.ref('financeiro/bot_state').off('value');
+  _finRealtimeRefs=[];
+}
+// ---- end realtime listeners ----
 async function loadFinanceiroData(){
   if(!_finPeriod) _finPeriod=getCurrentPeriod();
   var period=_finPeriod;
