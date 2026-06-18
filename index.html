@@ -5981,6 +5981,11 @@ async function refreshAnaliseAds(){
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
     var data=await loadDataHybrid();
+    // Para atribuição de anúncios, precisa dos leads da planilha (campo 'ad' não fica no Firebase)
+    try{
+      var leadsRaw=await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads);
+      if(leadsRaw&&leadsRaw.length>1) data.leads=rawToObjs(leadsRaw);
+    }catch(e2){ console.warn('[Ads] Não foi possível carregar leads da planilha, usando Firebase',e2); }
     cont.innerHTML=buildAnaliseAdsHTML(data);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
@@ -6139,6 +6144,12 @@ function buildAnaliseAdsHTML(data){
 
   var ads=Object.values(adData).sort(function(a,b){return b.leads-a.leads;});
   if(ads.length===0) return '<div class="empty-st"><i class="ti ti-ad-2"></i><p>Nenhum lead de anúncio encontrado no período</p></div>';
+
+  // Recalcula funilAgend/funilReal a partir dos dados atribuídos (consistente com Score Ranking)
+  var _adsAgend=ads.reduce(function(s,a){return s+a.reunioes;},0);
+  var _adsReal=ads.reduce(function(s,a){return s+a.realizadas;},0);
+  funilAgend=_adsAgend;
+  funilReal=_adsReal;
 
   // ===== SCORING =====
   // Dimensions (weights sum to 100):
