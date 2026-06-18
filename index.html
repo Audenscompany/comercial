@@ -2021,9 +2021,22 @@ async function loadAsaasPage(){
   var el=document.getElementById('asaas-body');
   if(!el||!asaasApiKey) return;
   el.innerHTML='<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;padding:40px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>';
-  var data=await asaasGet('/payments?limit=100&sort=dueDate&order=desc');
+  // Busca em paralelo: pendentes/vencidas (mais antigas) + recebidas (mais recentes)
+  var [dataRecebidas, dataPendentes, dataVencidas] = await Promise.all([
+    asaasGet('/payments?limit=100&status=RECEIVED&sort=paymentDate&order=desc'),
+    asaasGet('/payments?limit=100&status=PENDING&sort=dueDate&order=asc'),
+    asaasGet('/payments?limit=100&status=OVERDUE&sort=dueDate&order=desc')
+  ]);
+  // Mescla tudo (deduplicando por id)
+  var seen={};
+  var payments=[];
+  [(dataRecebidas&&dataRecebidas.data)||[],(dataPendentes&&dataPendentes.data)||[],(dataVencidas&&dataVencidas.data)||[]].forEach(function(arr){
+    arr.forEach(function(p){if(!seen[p.id]){seen[p.id]=true;payments.push(p);}});
+  });
+  var data={data:payments};
   if(!data||!data.data){
-    el.innerHTML='<div style="padding:40px;color:var(--red);font-size:13px;"><i class="ti ti-alert-circle"></i> Erro ao carregar cobranças. Verifique a API Key e o ambiente (sandbox/produção).</div>';
+    var detail=data&&data.errors?data.errors.map(function(e){return e.description||e.code;}).join(', '):(data&&data.error?data.error:'sem detalhes');
+    el.innerHTML='<div style="padding:40px;color:var(--red);font-size:13px;"><i class="ti ti-alert-circle"></i> Erro ao carregar cobranças.<br><span style="font-size:12px;color:var(--muted);">Detalhe: '+esc(String(detail))+'<br>Verifique se o <b>Ambiente</b> bate com a sua API Key (produção × sandbox têm chaves diferentes).</span></div>';
     return;
   }
   var payments=data.data;
