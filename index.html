@@ -3218,25 +3218,51 @@ async function loadFinanceiroData(){
   var lastISO=year+'-'+String(month).padStart(2,'0')+'-'+String(lastDayNum).padStart(2,'0');
   var firstDate=new Date(firstISO+'T00:00:00');
   var lastDate=new Date(lastISO+'T23:59:59');
-  var [clientesRaw,saidasRaw,entradasRaw]=await Promise.all([
+  // Busca Firebase + Asaas em paralelo
+  var asaasPromise=asaasApiKey
+    ? Promise.all([
+        asaasGet('/payments?limit=100&status=RECEIVED&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO),
+        asaasGet('/payments?limit=100&status=CONFIRMED&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO),
+        asaasGet('/payments?limit=100&status=RECEIVED_IN_CASH&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO)
+      ])
+    : Promise.resolve([null,null,null]);
+  var [clientesRaw,saidasRaw,entradasRaw,asaasResults]=await Promise.all([
     fbGet('clientes'),
     fbGet('financeiro/saidas'),
-    fbGet('financeiro/entradas_manuais')
+    fbGet('financeiro/entradas_manuais'),
+    asaasPromise
   ]);
+  // Processa pagamentos Asaas do mês
+  var asaasPagamentos=[];
+  if(asaasResults){
+    var seenAsaas={};
+    asaasResults.forEach(function(res){
+      ((res&&res.data)||[]).forEach(function(p){
+        if(!seenAsaas[p.id]){seenAsaas[p.id]=true;asaasPagamentos.push(p);}
+      });
+    });
+  }
   var clientes=Object.values(clientesRaw||{});
   var todasSaidas=Object.entries(saidasRaw||{}).map(function(e){return Object.assign({_id:e[0]},e[1]);});
   var todasEntradas=Object.entries(entradasRaw||{}).map(function(e){return Object.assign({_id:e[0]},e[1]);});
   // Contratos ativos no mês selecionado
+  // Usa dataInicio se preenchido; senão usa createdAt como data de início
+  function finInicioDate(c){
+    if(c.dataInicio){return new Date(c.dataInicio+'T00:00:00');}
+    if(c.createdAt){var d=new Date(c.createdAt);return new Date(d.getFullYear(),d.getMonth(),d.getDate());}
+    return null;
+  }
   var ativos=clientes.filter(function(c){
-    if(!c.dataInicio) return false;
-    var inicio=new Date(c.dataInicio+'T00:00:00');
+    var inicio=finInicioDate(c);
+    if(!inicio) return false;
     var meses=c.duracaoMeses||12;
     var fim=new Date(inicio.getFullYear(),inicio.getMonth()+meses,inicio.getDate());
     return inicio<=lastDate && fim>firstDate;
   });
   var mrr=ativos.reduce(function(s,c){
+    var meses=c.duracaoMeses||12;
     var v=c.tipoValor==='tcv'
-      ? (c.valorContrato/(c.duracaoMeses||1))
+      ? (c.valorContrato/(meses||1))
       : (c.valorMensalidade||0);
     return s+v;
   },0);
@@ -3252,16 +3278,18 @@ async function loadFinanceiroData(){
   var totalEntradasAllTime=todasEntradas.reduce(function(s,e){return s+(parseFloat(e.valor)||0);},0);
   var totalSaidasAllTime=todasSaidas.filter(function(s){return s.status==='confirmado';}).reduce(function(s,e){return s+(parseFloat(e.valor)||0);},0);
   var caixaTotal=totalEntradasAllTime-totalSaidasAllTime;
-  var totalReceita=mrr+totalEntradas;
+  var totalAsaas=asaasPagamentos.reduce(function(s,p){return s+(parseFloat(p.value)||0);},0);
+  var totalReceita=mrr+totalEntradas+totalAsaas;
   var lucro=totalReceita-totalDespesas;
   // Atualiza KPIs
   var kpis=document.getElementById('fin-kpis');
   if(kpis){
+    var mrrSub=ativos.length+' contrato(s)'+(totalAsaas?' · Asaas R$ '+fmtMoeda(totalAsaas):'');
     kpis.innerHTML=
-      finKpiCard('MRR do Mês','R$ '+fmtMoeda(mrr),'var(--green)',ativos.length+' contrato(s) ativo(s)','ti-trending-up')+
+      finKpiCard('Receita do Mês','R$ '+fmtMoeda(totalReceita),'var(--green)','MRR R$ '+fmtMoeda(mrr)+(totalAsaas?' · Asaas R$ '+fmtMoeda(totalAsaas):'')+(totalEntradas?' · Manual R$ '+fmtMoeda(totalEntradas):''),'ti-trending-up')+
+      finKpiCard('Recebido Asaas','R$ '+fmtMoeda(totalAsaas),asaasApiKey?'var(--cyan)':'var(--muted)',asaasPagamentos.length+' pagamento(s) confirmado(s)','ti-cash')+
       finKpiCard('Despesas','R$ '+fmtMoeda(totalDespesas),'var(--red)',saidasMes.length+' confirmada(s)'+(saidasPend.length?' · '+saidasPend.length+' pendente(s)':''),'ti-trending-down')+
-      finKpiCard('Lucro Estimado','R$ '+fmtMoeda(lucro),lucro>=0?'var(--purple3)':'var(--red)','Receita R$ '+fmtMoeda(totalReceita),'ti-report-money')+
-      finKpiCard('Caixa Acumulado','R$ '+fmtMoeda(caixaTotal),caixaTotal>=0?'var(--cyan)':'var(--red)','Entradas manuais all-time','ti-safe');
+      finKpiCard('Lucro Estimado','R$ '+fmtMoeda(lucro),lucro>=0?'var(--purple3)':'var(--red)','Receita R$ '+fmtMoeda(totalReceita)+' − Despesas R$ '+fmtMoeda(totalDespesas),'ti-report-money');
   }
   // Despesas por categoria
   var catTotals={};
@@ -3291,11 +3319,18 @@ async function loadFinanceiroData(){
   // Monta tabela de lançamentos
   var allTx=[];
   ativos.forEach(function(c){
-    var v=c.tipoValor==='tcv'?(c.valorContrato/(c.duracaoMeses||1)):(c.valorMensalidade||0);
-    allTx.push({data:firstISO,tipo:'entrada',valor:v,descricao:'MRR — '+(c.nomeCliente||'Cliente'),cat:'Contrato Recorrente',status:'mrr',_src:'contrato'});
+    var meses=c.duracaoMeses||12;
+    var v=c.tipoValor==='tcv'?(c.valorContrato/(meses||1)):(c.valorMensalidade||0);
+    var ini=finInicioDate(c);
+    var dataStr=ini?(ini.getFullYear()+'-'+String(ini.getMonth()+1).padStart(2,'0')+'-'+String(ini.getDate()).padStart(2,'0')):firstISO;
+    allTx.push({data:dataStr,tipo:'entrada',valor:v,descricao:'MRR — '+(c.nomeCliente||'Cliente'),cat:'Contrato Recorrente',status:'mrr',_src:'contrato'});
   });
   entradasMes.forEach(function(e){
     allTx.push({data:e.data,tipo:'entrada',valor:parseFloat(e.valor)||0,descricao:e.descricao||'Entrada manual',cat:e.categoria||'Manual',status:'confirmado',_id:e._id,_src:'entrada'});
+  });
+  asaasPagamentos.forEach(function(p){
+    var dt=p.paymentDate||p.dueDate||firstISO;
+    allTx.push({data:dt,tipo:'entrada',valor:parseFloat(p.value)||0,descricao:(p.description||p.customer||'Pagamento Asaas'),cat:'Asaas',status:'asaas',_src:'asaas'});
   });
   saidasMes.forEach(function(s){
     allTx.push({data:s.data,tipo:'saida',valor:parseFloat(s.valor)||0,descricao:s.descricao||'Despesa',cat:s.categoria||'Outros',status:'confirmado',_id:s._id,_src:'saida'});
@@ -3310,9 +3345,11 @@ async function loadFinanceiroData(){
       :'<span style="color:var(--red);font-weight:700;font-family:Barlow Condensed,sans-serif;">− R$ '+fmtMoeda(t.valor)+'</span>';
     var badge=t.status==='mrr'
       ?'<span class="badge" style="background:rgba(34,197,94,0.15);color:var(--green);border:1px solid rgba(34,197,94,0.3);">Recorrente</span>'
-      :t.status==='confirmado'
-        ?'<span class="badge b-green">Confirmado</span>'
-        :'<span class="badge b-amber">Pendente</span>';
+      :t.status==='asaas'
+        ?'<span class="badge" style="background:rgba(6,182,212,0.15);color:var(--cyan);border:1px solid rgba(6,182,212,0.3);">Asaas</span>'
+        :t.status==='confirmado'
+          ?'<span class="badge b-green">Confirmado</span>'
+          :'<span class="badge b-amber">Pendente</span>';
     var actions='';
     if(t._src==='saida'&&t._id){
       if(t.status==='pendente') actions='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finConfirmarSaida(\''+t._id+'\',this)" title="Confirmar"><i class="ti ti-check"></i></button>';
