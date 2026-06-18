@@ -6042,7 +6042,8 @@ function buildAnaliseAdsHTML(data){
     if(!bookTs) return false;
     var bd=new Date(bookTs);
     if(!inAdsRange(bd)) return false;
-    var orig=(m.origem||'').toLowerCase();
+    var _kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var orig=(m.origem||(_kb&&_kb.origem)||'Tráfego').toLowerCase();
     if(!orig.includes('tr')&&!orig.includes('traffic')&&!orig.includes('tráfego')&&!orig.includes('trafego')) return false;
     return m.status==='done'||m.status==='noshow';
   }).length;
@@ -6101,7 +6102,9 @@ function buildAnaliseAdsHTML(data){
     var bd=new Date(bookTs);
     if(!inAdsRange(bd)) return;
     // Only tráfego-origin meetings (excludes COLDCALL, Recuperacao, Retorno)
-    var orig=(m.origem||'').toLowerCase();
+    // Usa mesmo default de meetingsToReunioesRows: sem origem explícita = Tráfego
+    var _kanbanEntry=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var orig=(m.origem||(_kanbanEntry&&_kanbanEntry.origem)||'Tráfego').toLowerCase();
     var isTrafego=orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego');
     if(!isTrafego) return;
     // Resolve ad
