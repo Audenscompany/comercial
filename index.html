@@ -5980,13 +5980,17 @@ async function refreshAnaliseAds(){
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
-    var data=await loadDataHybrid();
-    // Para atribuição de anúncios, precisa dos leads da planilha (campo 'ad' não fica no Firebase)
+    // Análise de Ads usa planilha para leads E reuniões (campo 'ad' e dados completos)
+    var dataAds=await loadDataHybrid();
     try{
-      var leadsRaw=await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads);
-      if(leadsRaw&&leadsRaw.length>1) data.leads=rawToObjs(leadsRaw);
-    }catch(e2){ console.warn('[Ads] Não foi possível carregar leads da planilha, usando Firebase',e2); }
-    cont.innerHTML=buildAnaliseAdsHTML(data);
+      var [leadsRaw2,reunRaw2]=await Promise.all([
+        fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads),
+        fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes)
+      ]);
+      if(leadsRaw2&&leadsRaw2.length>1) dataAds.leads=rawToObjs(leadsRaw2);
+      if(reunRaw2&&reunRaw2.length>1) dataAds.reunioes=rawToObjs(reunRaw2);
+    }catch(e2){ console.warn('[Ads] Planilha indisponível, usando Firebase',e2); }
+    cont.innerHTML=buildAnaliseAdsHTML(dataAds);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
     loading.style.display='none';
@@ -6145,11 +6149,6 @@ function buildAnaliseAdsHTML(data){
   var ads=Object.values(adData).sort(function(a,b){return b.leads-a.leads;});
   if(ads.length===0) return '<div class="empty-st"><i class="ti ti-ad-2"></i><p>Nenhum lead de anúncio encontrado no período</p></div>';
 
-  // Recalcula funilAgend/funilReal a partir dos dados atribuídos (consistente com Score Ranking)
-  var _adsAgend=ads.reduce(function(s,a){return s+a.reunioes;},0);
-  var _adsReal=ads.reduce(function(s,a){return s+a.realizadas;},0);
-  funilAgend=_adsAgend;
-  funilReal=_adsReal;
 
   // ===== SCORING =====
   // Dimensions (weights sum to 100):
