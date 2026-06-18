@@ -442,6 +442,8 @@ function startRealtimeSync(){
       var pg = area ? area.getAttribute('data-page') : null;
       if(pg==='reunioes'||pg==='dashboard'||pg==='dash-comercial') showPage(pg);
     }
+    // Sync planilha→Firebase uma vez por sessão após meetings carregarem
+    setTimeout(syncReunioesFBFromSheet, 2000);
   });
 
   // Sync leads (Módulo 1 — webhook LP -> /leads grava aqui em tempo real)
@@ -2953,30 +2955,47 @@ function normalizeDtDisplay(s){
 }
 
 /// Sync planilha Reuniões → Firebase: atualiza m.status para cada reunião com base
-// no STATUS da planilha. Roda uma única vez por sessão (após followups carregarem).
+// no STATUS da planilha. Roda uma única vez por sessão (após meetings carregarem).
 var _syncedReunioesFB = false;
 async function syncReunioesFBFromSheet(){
   if(_syncedReunioesFB) return;
+  if(!Object.keys(meetings).length) return; // aguarda meetings carregarem
   _syncedReunioesFB = true;
   if(!SHEETS_IDS.reunioes) return;
+  if(!isGcalConnected()) return;
   try{
     var raw = await fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes);
-    var rows = rawToObjs(raw);
-    // Monta mapa telefone → meeting do Firebase
-    var telMeetMap = {};
+    if(!raw||raw.length<2) return;
+    // Detecta colunas por header (igual a loadSDRHoje)
+    var h = raw[0].map(function(x){return(x||'').trim().toUpperCase();});
+    var iTel    = h.findIndex(function(x){return x.includes('TEL')||x.includes('FONE');});
+    var iStatus = h.findIndex(function(x){return x.includes('STATUS');});
+    var iNome   = h.findIndex(function(x){return x==='CLIENTE'||x.includes('CLIENTE')||x==='NOME'||x.includes('NOME');});
+    if(iStatus<0) return; // sem coluna de status, nada a fazer
+    // Monta mapas telefone→meeting e nome→meeting do Firebase
+    var telMeetMap={}, nomeMeetMap={};
     Object.values(meetings).forEach(function(m){
       var tel=(m.tel||'').replace(/\D/g,'');
       if(tel.length>9) tel=tel.slice(-9);
       if(tel) telMeetMap[tel]=m;
+      var nome=(m.nome||'').trim().toLowerCase();
+      if(nome) nomeMeetMap[nome]=m;
     });
     var updated=0;
-    rows.forEach(function(r){
-      var stSheet=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
-      if(!stSheet||stSheet==='AGENDADA'||stSheet==='PENDENTE') return;
-      var tel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
-      if(tel.length>9) tel=tel.slice(-9);
-      if(!tel) return;
-      var m=telMeetMap[tel];
+    raw.slice(1).forEach(function(row){
+      var stSheet=(row[iStatus]||'').toUpperCase().trim();
+      if(!stSheet||stSheet==='AGENDADA'||stSheet==='PENDENTE'||stSheet==='') return;
+      // Tenta match por telefone, depois por nome
+      var m=null;
+      if(iTel>=0){
+        var tel=(row[iTel]||'').replace(/\D/g,'');
+        if(tel.length>9) tel=tel.slice(-9);
+        if(tel) m=telMeetMap[tel]||null;
+      }
+      if(!m&&iNome>=0){
+        var nome=(row[iNome]||'').trim().toLowerCase();
+        if(nome) m=nomeMeetMap[nome]||null;
+      }
       if(!m) return;
       var newSt=(stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW')?'noshow':'done';
       if(m.status!==newSt){
@@ -2986,6 +3005,7 @@ async function syncReunioesFBFromSheet(){
       }
     });
     if(updated>0) console.log('[CRM] Sync planilha→Firebase: '+updated+' status de reuniões atualizados.');
+    else console.log('[CRM] Sync planilha→Firebase: nenhuma atualização necessária.');
   }catch(e){ console.error('[CRM] syncReunioesFBFromSheet error',e); }
 }
 
