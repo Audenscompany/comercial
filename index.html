@@ -6161,25 +6161,33 @@ function buildAnaliseAdsHTML(data){
     var entry=adData[adKey];
     entry.reunioes++;
     var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
-    // Verifica venda também via Firebase followup (planilha pode ainda estar como REALIZADA)
-    var fuMatch=rTel?phoneFuMap[rTel]:null;
-    var isVenda=status==='VENDA'||(fuMatch&&fuMatch.resultado==='venda');
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
+    // Verifica fechamento por 3 caminhos (do mais confiável ao menos):
+    // 1. STATUS=VENDA na planilha de reuniões
+    // 2. Firebase followup resultado=venda (cruzamento por telefone)
+    // 3. Nome da empresa da reunião aparece na planilha de clientes (operacional)
+    var fuMatch=rTel?phoneFuMap[rTel]:null;
+    var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
+    var cliMatch=nomeKey?cliNomeMap[nomeKey]:null;
+    // cliMatch conta se o cliente assinou APÓS a reunião (negociações podem demorar meses)
+    var cliMatchInPeriod=false;
+    if(cliMatch){
+      var cliD=parseBRDate(col(cliMatch,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio']));
+      // Aceita até 7 dias antes (cadastro retroativo) e sem limite superior
+      var diffMs=cliD&&d?cliD.getTime()-d.getTime():-Infinity;
+      cliMatchInPeriod=cliD&&diffMs>=-(7*24*60*60*1000);
+    }
+    var isVenda=status==='VENDA'
+      ||(fuMatch&&fuMatch.resultado==='venda')
+      ||cliMatchInPeriod;
     if(isVenda){
       entry.fechamentos++;
-      // MRR: tenta followup Firebase primeiro, depois planilha clientes pelo nome da empresa
       var mrrVal=0;
-      if(fuMatch){
-        var _rawMrr=fuMatch.mensalidade||fuMatch.mrr||0;
-        mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
-      }
-      if(!mrrVal){
-        var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
-        var cliMatch=cliNomeMap[nomeKey];
-        if(cliMatch){
-          mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
-          if(!mrrVal) mrrVal=parseMoney(col(cliMatch,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
-        }
+      // MRR: followup Firebase > planilha clientes
+      if(fuMatch){var _rawMrr=fuMatch.mensalidade||fuMatch.mrr||0;mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));}
+      if(!mrrVal&&cliMatch){
+        mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+        if(!mrrVal) mrrVal=parseMoney(col(cliMatch,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
       }
       entry.mrr+=mrrVal||0;
     }
