@@ -1966,31 +1966,46 @@ async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey){
     if(newCust&&newCust.id) customerId=newCust.id;
     else{console.error('Asaas: falha ao criar cliente',newCust);showSheetToast('Asaas: erro ao criar cliente');return;}
   }
-  // 2. Criar cobrança
-  var dueDate=vendaData.dataInicio||new Date().toISOString().split('T')[0];
-  var valor=vendaData.tipoValor==='tcv'?(vendaData.contrato||0):(vendaData.mensalidade||0);
-  var charge=await asaasPost('/payments',{
-    customer:customerId,
-    billingType:asaasBillingType,
-    value:parseFloat(valor)||0,
-    dueDate:dueDate,
-    description:'Contrato '+(vendaData.plano||'')+(vendaData.duracao?' ('+vendaData.duracao+'m)':'')+' — '+(leadInfo.empresa||leadInfo.nome||'')
-  });
-  if(charge&&charge.id){
-    // Salva IDs no Firebase
+  // 2. Criar assinatura recorrente (ou cobrança avulsa se TCV)
+  var nextDueDate=vendaData.dataInicio||new Date().toISOString().split('T')[0];
+  var desc='Contrato '+(vendaData.plano||'')+(vendaData.duracao?' ('+vendaData.duracao+'m)':'')+' — '+(leadInfo.empresa||leadInfo.nome||'');
+  var result=null;
+  if(vendaData.tipoValor==='tcv'){
+    // Valor total: cobrança única
+    result=await asaasPost('/payments',{
+      customer:customerId,
+      billingType:asaasBillingType,
+      value:parseFloat(vendaData.contrato)||0,
+      dueDate:nextDueDate,
+      description:desc
+    });
+  } else {
+    // Mensalidade: assinatura recorrente mensal
+    var freqMap={'mensal':'MONTHLY','bimestral':'BIMONTHLY','trimestral':'QUARTERLY','semestral':'SEMIANNUALLY','anual':'YEARLY'};
+    var cycle=freqMap[(vendaData.frequencia||'mensal').toLowerCase()]||'MONTHLY';
+    result=await asaasPost('/subscriptions',{
+      customer:customerId,
+      billingType:asaasBillingType,
+      value:parseFloat(vendaData.mensalidade)||0,
+      nextDueDate:nextDueDate,
+      cycle:cycle,
+      description:desc
+    });
+  }
+  if(result&&result.id){
+    var isSub=!!result.cycle; // subscriptions têm cycle, payments não
     if(kanbanKey&&(fbDb||initFirebase())){
-      fbDb.ref('kanban/'+kanbanKey).update({asaasCustomerId:customerId,asaasChargeId:charge.id,asaasStatus:'PENDING'});
+      fbDb.ref('kanban/'+kanbanKey).update({asaasCustomerId:customerId,asaasChargeId:result.id,asaasStatus:'ACTIVE'});
     }
     if(kanbanKey&&kanbanData[kanbanKey]){
       kanbanData[kanbanKey].asaasCustomerId=customerId;
-      kanbanData[kanbanKey].asaasChargeId=charge.id;
-      kanbanData[kanbanKey].asaasStatus='PENDING';
+      kanbanData[kanbanKey].asaasChargeId=result.id;
+      kanbanData[kanbanKey].asaasStatus='ACTIVE';
       localStorage.setItem('audens_kanban',JSON.stringify(kanbanData));
     }
-    var link=charge.invoiceUrl||charge.bankSlipUrl||'';
-    showSheetToast('Cobrança criada no Asaas'+(link?' — <a href="'+link+'" target="_blank" style="color:var(--cyan);">Ver boleto/PIX</a>':''));
+    showSheetToast(isSub?'✅ Assinatura criada no Asaas':'✅ Cobrança criada no Asaas');
   }else{
-    console.error('Asaas: falha ao criar cobrança',charge);
+    console.error('Asaas: falha ao criar',result);
     showSheetToast('Asaas: erro ao criar cobrança — verifique o console');
   }
 }
@@ -4429,6 +4444,16 @@ async function reenviarAssinaturaContrato(btn){
   try{
     var pdfUrl=await uploadContratoToDrive(d.blob, d.nomeArquivo);
     if(!pdfUrl){alert('Nao foi possivel enviar o PDF para o Drive.');if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Tentar novamente';}return;}
+    // Cria no Asaas e registra cliente se ainda não foi feito
+    if(!d._asaasFeito){
+      var dd=d.dados||{};
+      var vd={plano:dd.plano,duracao:dd.duracaoMeses,dataInicio:dd.dataInicio,
+        tipoValor:dd.tipoValor,contrato:dd.valorTotal,mensalidade:dd.valorParcela,cnpj:dd.cnpjCliente||''};
+      setTimeout(function(){criarCobrancaAsaas({nome:dd.nomeCliente,telefone:dd.telefone,cnpj:dd.cnpjCliente||''},vd,null);},300);
+      appendClienteRow({nomeCliente:dd.nomeCliente,plano:dd.plano,duracao:dd.duracaoMeses,
+        dataInicio:dd.dataInicio,tipoValor:dd.tipoValor,contrato:dd.valorTotal,mensalidade:dd.valorParcela});
+      d._asaasFeito=true;
+    }
     var ref=await fbPush('assinaturas',{
       cliente:d.dados.nomeCliente||'',
       contratoNome:d.nomeArquivo.replace(/\.docx$/i,''),
@@ -4499,7 +4524,9 @@ async function generateContratoDocx(dados){
     document.body.appendChild(link);link.click();document.body.removeChild(link);
 
     // Salva dados do contrato para retry caso Google nao esteja conectado
-    window._lastContratoDados={dados:dados, nomeArquivo:nomeArquivo, blob:out};
+    window._lastContratoDados={dados:dados, nomeArquivo:nomeArquivo, blob:out,
+      _asaasFeito:false // flag para evitar duplicar cobrança no Asaas no retry
+    };
 
     // Envia o contrato para o Google Drive (PDF) e cria o link de assinatura eletronica
     if(isGcalConnected()){
@@ -4776,9 +4803,9 @@ function saveFollowupEdit(){
       frequencia:frequencia,
       vencimento:vencimento
     });
-    // Registra a venda na planilha de Clientes (computa em todo o sistema) -
-    // so na primeira vez que esse follow-up se torna uma venda, pra nao
-    // duplicar linha quando o resultado for apenas corrigido/editado depois.
+    // Registra a venda na planilha de Clientes e cria no Asaas —
+    // só na primeira vez que esse follow-up se torna uma venda, pra não
+    // duplicar quando o resultado for apenas corrigido/editado depois.
     if(old.venda!=='sim'){
       appendClienteRow({
         nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
@@ -4792,6 +4819,10 @@ function saveFollowupEdit(){
         closer:_fuMeeting.responsavel||'',
         sdr:_fuMeeting.sdr||''
       });
+      // Cria cobrança no Asaas (mesmo fluxo do saveFollowup original)
+      (function(kk2,leadInfo,vd){
+        setTimeout(function(){criarCobrancaAsaas(leadInfo||{nome:_fuMeeting.nome,telefone:_fuMeeting.tel,cnpj:cnpj},vd,kk2);},500);
+      })(kk2,leadInfo,{plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,contrato:contrato,mensalidade:mensalidade,cnpj:cnpj});
     }
   }
   showSheetToast('Resultado atualizado.', false);
