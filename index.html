@@ -5938,13 +5938,31 @@ function buildAnaliseAdsHTML(data){
     var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
     return st==='VENDA';
   }).length;
-  // Também conta como fechamentos os clientes (planilha clientes) originados de tráfego no período
-  var funilFechCli=(data.clientes&&data.clientes.rows?data.clientes.rows:[]).filter(function(c){
+  // Fechamentos e MRR direto da aba clientes (fonte de verdade — mais completa que cadeia lead→ad→reunião)
+  var _clientesTrafegoPeriodo=(data.clientes&&data.clientes.rows?data.clientes.rows:[]).filter(function(c){
     var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio']));
     if(!inAdsRange(d)) return false;
     return categorizeOrigem(col(c,['ORIGEM','Origem','origem']))==='Trafego Pago';
-  }).length;
+  });
+  var funilFechCli=_clientesTrafegoPeriodo.length;
+  // MRR calculado na mesma fonte dos fechamentos (aba clientes filtrada)
+  var funilMrr=_clientesTrafegoPeriodo.reduce(function(s,c){
+    var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    return s+mrr;
+  },0);
   if(funilFechCli>funilFech) funilFech=funilFechCli;
+  // Realizadas: considera também meetings com followup concluído (venda/retorno/perdida = reunião aconteceu)
+  var funilRealFB=Object.values(meetings).filter(function(m){
+    var bookTs=m.scheduledAt||0;
+    if(!bookTs) return false;
+    var bd=new Date(bookTs);
+    if(!inAdsRange(bd)) return false;
+    var orig=(m.origem||'').toLowerCase();
+    if(!orig.includes('tr')&&!orig.includes('traffic')&&!orig.includes('tráfego')&&!orig.includes('trafego')) return false;
+    return m.status==='done'||m.status==='noshow';
+  }).length;
+  if(funilRealFB>funilReal) funilReal=funilRealFB;
 
   // Build phone→reuniao map (normalize phone: digits only, last 9 digits)
   var reunMap={};
@@ -5967,37 +5985,71 @@ function buildAnaliseAdsHTML(data){
 
   // Aggregate by ad
   var adData={};
+
+  // Step 1: seed ads from leads with 'ad' field (for leads/qualif count)
   leadsTrafego.forEach(function(l){
     var ad=(col(l,['Ad','AD','ad'])||'').trim();
     var campanha=(col(l,['Campanha','CAMPANHA','campanha'])||'').trim();
     var conjunto=(col(l,['Conjunto','CONJUNTO','conjunto'])||'').trim();
     var fat=parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']));
-    var telRaw=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
-    var tel=telRaw.length>9?telRaw.slice(-9):telRaw;
     if(!ad||ad==='-') ad='(sem ad)';
     if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
     if(fat>=40000) d.qualif++;
     d.fats.push(fat);
-    // Lead → Reunião por telefone
-    var reun=tel?reunMap[tel]:null;
-    if(reun){
-      d.reunioes++;
-      var st=(col(reun,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
-      if(isRealizada(st)) d.realizadas++;
-      // Reunião → Cliente: tenta EMPRESA primeiro, depois CLIENTE como fallback
-      var empresaReun=(col(reun,['EMPRESA','Empresa','empresa'])||'').trim().toLowerCase();
-      var nomeReun=(col(reun,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
-      var cli=cliNomeMap[empresaReun]||cliNomeMap[nomeReun];
-      // Conta como fechamento se achou na aba clientes OU se status = VENDA (reunião convertida)
-      if(cli||st==='VENDA'){
-        d.fechamentos++;
-        if(cli){
-          var mrr=parseMoney(col(cli,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês']));
-          d.mrr+=mrr;
-        }
+  });
+
+  // Step 2: build phone→ad lookup from kanbanData (fallback when kanbanKey not stored)
+  var telAdMap={};
+  Object.values(kanbanData).forEach(function(k){
+    if(!k.ad) return;
+    var tel=(k.telefone||'').replace(/\D/g,'');
+    if(tel.length>9) tel=tel.slice(-9);
+    if(tel) telAdMap[tel]={ad:k.ad,campanha:k.campanha||'',conjunto:k.conjunto||''};
+  });
+
+  // Step 3: attribute meetings to ads via kanbanKey→kanbanData.ad (most accurate path)
+  // Falls back to phone→telAdMap if kanbanKey not present
+  Object.values(meetings).forEach(function(m){
+    var bookTs=m.scheduledAt||0;
+    if(!bookTs) return;
+    var bd=new Date(bookTs);
+    if(!inAdsRange(bd)) return;
+    // Only tráfego-origin meetings (excludes COLDCALL, Recuperacao, Retorno)
+    var orig=(m.origem||'').toLowerCase();
+    var isTrafego=orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego');
+    if(!isTrafego) return;
+    // Resolve ad
+    var adInfo=null;
+    if(m.kanbanKey && kanbanData[m.kanbanKey] && kanbanData[m.kanbanKey].ad){
+      var kb=kanbanData[m.kanbanKey];
+      adInfo={ad:(kb.ad||'').trim(),campanha:kb.campanha||'',conjunto:kb.conjunto||''};
+    }
+    if(!adInfo){
+      var mTel=(m.tel||'').replace(/\D/g,'');
+      if(mTel.length>9) mTel=mTel.slice(-9);
+      adInfo=mTel?telAdMap[mTel]:null;
+    }
+    if(!adInfo||!adInfo.ad) return; // unattributable
+    var ad=adInfo.ad;
+    if(!adData[ad]) adData[ad]={ad:ad,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    var d=adData[ad];
+    d.reunioes++;
+    var mst=(m.status||'').toLowerCase();
+    if(mst==='done'||mst==='noshow') d.realizadas++;
+    var fu=followups[m.id];
+    if(fu&&fu.resultado==='venda'){
+      d.fechamentos++;
+      // mensalidade stored as number; fall back to parseMoney for string formats
+      var _rawMrr=fu.mensalidade||fu.mrr||0;
+      var mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
+      if(!mrrVal){
+        var nomeKey=(m.nome||'').trim().toLowerCase();
+        var cliMatch=cliNomeMap[nomeKey];
+        if(cliMatch) mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
       }
+      d.mrr+=mrrVal;
     }
   });
 
@@ -6027,12 +6079,17 @@ function buildAnaliseAdsHTML(data){
   var adsSorted=[].concat(ads).sort(function(a,b){return b.score-a.score;});
 
   // ===== SUMMARY CARDS =====
-  var totLeads=ads.reduce(function(s,a){return s+a.leads;},0);
-  var totQualif=ads.reduce(function(s,a){return s+a.qualif;},0);
-  var totReun=ads.reduce(function(s,a){return s+a.reunioes;},0);
-  var totReal=ads.reduce(function(s,a){return s+a.realizadas;},0);
-  var totFech=ads.reduce(function(s,a){return s+a.fechamentos;},0);
-  var totMrr=ads.reduce(function(s,a){return s+a.mrr;},0);
+  // Leads e qualificados: conta todos os leads de tráfego do período (não só os que têm campo 'ad')
+  var _allLeadsTrafego=data.leads.rows.filter(function(r){
+    var d=parseBRDate(col(r,['Data','DATA','data']));
+    if(!inAdsRange(d)) return false;
+    var orig=(col(r,['Origem','ORIGEM','origem'])||'').toLowerCase();
+    return orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego');
+  });
+  var totLeads=_allLeadsTrafego.length;
+  var totQualif=_allLeadsTrafego.filter(function(r){
+    return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000;
+  }).length;
 
   var html='';
 
@@ -6044,7 +6101,7 @@ function buildAnaliseAdsHTML(data){
     {l:'Reuniões Agend.',v:funilAgend,c:'var(--amber)'},
     {l:'Reuniões Reais',v:funilReal,c:'var(--green)'},
     {l:'Fechamentos',v:funilFech,c:'var(--green)'},
-    {l:'MRR Gerado',v:'R$'+totMrr.toLocaleString('pt-BR',{maximumFractionDigits:0}),c:'var(--green)'}
+    {l:'MRR Gerado',v:'R$'+(funilMrr||0).toLocaleString('pt-BR',{maximumFractionDigits:0}),c:'var(--green)'}
   ];
   sumCards.forEach(function(c){
     html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;">'+
