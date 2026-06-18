@@ -2645,11 +2645,18 @@ function meetingsToReunioesRows(){
     var tel = (m.tel||'').replace(/\D/g,'');
     var fu = followups[m.id];
     var statusStr;
-    if(m.status==='noshow'){statusStr='NO-SHOW';}
-    else if(m.status==='done'){
-      if(fu&&fu.resultado==='venda') statusStr='VENDA';
-      else statusStr='REALIZADA';
-    } else {statusStr='AGENDADA';}
+    // Prioriza followup (fonte de verdade) sobre m.status que pode estar desatualizado
+    if(fu){
+      if(fu.resultado==='noshow'||fu.comparecimento==='nao') statusStr='NO-SHOW';
+      else if(fu.resultado==='venda') statusStr='VENDA';
+      else statusStr='REALIZADA'; // retorno, perdida, sim = reunião aconteceu
+    } else if(m.status==='noshow'){
+      statusStr='NO-SHOW';
+    } else if(m.status==='done'){
+      statusStr='REALIZADA';
+    } else {
+      statusStr='AGENDADA';
+    }
     var kanbanEntry = m.kanbanKey ? kanbanData[m.kanbanKey] : null;
     var empresa = (kanbanEntry&&kanbanEntry.empresa)||m.empresa||'';
     var cidade = (kanbanEntry&&kanbanEntry.cidade)||m.cidade||'';
