@@ -6089,11 +6089,33 @@ function buildAnaliseAdsHTML(data){
   });
 
   // Build nome→cliente map (reuniao.CLIENTE → clientes.CLIENTE)
+  // Normaliza: remove espaços extras, acentos, caracteres especiais para matching robusto
+  function normNome(s){return(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
   var cliNomeMap={};
+  var cliNomeList=[]; // para fuzzy matching
   data.clientes.rows.forEach(function(c){
     var nome=(col(c,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
-    if(nome) cliNomeMap[nome]=c;
+    var nomeNorm=normNome(nome);
+    if(nome){cliNomeMap[nome]=c;}
+    if(nomeNorm&&nomeNorm!==nome){cliNomeMap[nomeNorm]=c;}
+    if(nomeNorm) cliNomeList.push({norm:nomeNorm,c:c});
   });
+  // Fuzzy lookup: tenta exact, depois normalized, depois containment
+  function cliLookup(rawNome){
+    if(!rawNome) return null;
+    var lo=rawNome.trim().toLowerCase();
+    var norm=normNome(rawNome);
+    if(cliNomeMap[lo]) return cliNomeMap[lo];
+    if(cliNomeMap[norm]) return cliNomeMap[norm];
+    // Containment: verifica se um contém o outro (mínimo 5 chars)
+    if(norm.length>=5){
+      for(var _i=0;_i<cliNomeList.length;_i++){
+        var cn=cliNomeList[_i].norm;
+        if(cn.length>=5&&(cn.includes(norm)||norm.includes(cn))) return cliNomeList[_i].c;
+      }
+    }
+    return null;
+  }
 
   // Aggregate by ad
   var adData={};
@@ -6168,7 +6190,7 @@ function buildAnaliseAdsHTML(data){
     // 3. Nome da empresa da reunião aparece na planilha de clientes (operacional)
     var fuMatch=rTel?phoneFuMap[rTel]:null;
     var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
-    var cliMatch=nomeKey?cliNomeMap[nomeKey]:null;
+    var cliMatch=nomeKey?cliLookup(nomeKey):null;
     // cliMatch conta se o cliente assinou APÓS a reunião (negociações podem demorar meses)
     var cliMatchInPeriod=false;
     if(cliMatch){
@@ -6226,7 +6248,7 @@ function buildAnaliseAdsHTML(data){
       var mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
       if(!mrrVal){
         var nomeKey2=(m.nome||'').trim().toLowerCase();
-        var cliMatch2=cliNomeMap[nomeKey2];
+        var cliMatch2=cliLookup(nomeKey2);
         if(cliMatch2) mrrVal=parseMoney(col(cliMatch2,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
       }
       entry.mrr+=mrrVal||0;
