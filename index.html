@@ -937,16 +937,20 @@ function cancelarAgendamentoReuniao(){
   var el=document.getElementById('modal-agendar-reuniao');
   if(el) el.remove();
 }
+var _confirmarAgendamentoBusy=false;
 async function confirmarAgendamentoReuniao(key){
+  if(_confirmarAgendamentoBusy) return;
+  _confirmarAgendamentoBusy=true;
+  try{
   var dt=document.getElementById('ar-date').value, hr=document.getElementById('ar-time').value;
   var email=document.getElementById('ar-email').value.trim();
   var respEl=document.getElementById('ar-resp');
   var responsavel=respEl?respEl.value:(CLOSERS&&CLOSERS[0])||'';
-  if(!dt||!hr){alert('Preencha a data e o horario da reuniao.');return;}
+  if(!dt||!hr){alert('Preencha a data e o horario da reuniao.');_confirmarAgendamentoBusy=false;return;}
   var dtObj=new Date(dt+'T'+hr+':00');
   var meetingISO=dtObj.toISOString();
   var meetingDisplay=dtObj.toLocaleDateString('pt-BR')+' '+hr;
-  if(!kanbanData[key]) return;
+  if(!kanbanData[key]){_confirmarAgendamentoBusy=false;return;}
   kanbanData[key].status='reuniao';
   kanbanData[key].statusAt=Date.now();
   kanbanData[key].meetingISO=meetingISO;
@@ -1007,11 +1011,14 @@ async function confirmarAgendamentoReuniao(key){
   saveAll();saveMeetingFB(mid,meetingObj);
   if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
   // Preenche a planilha de reunioes e salva o número da linha no meeting para updates futuros
-  try{
-    var _shRow=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
-      [todayStr(), kanbanData[key].nome, kanbanData[key].telefone, meetingDisplay, 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (responsavel||'').toUpperCase(), (kanbanData[key].origem||'Tráfego').toUpperCase()]);
-    if(_shRow&&typeof _shRow==='number'){meetings[mid].sheetRow=_shRow;saveMeetingFB(mid,meetings[mid]);}
-  }catch(e){}
+  // Só grava se tiver dados mínimos (evita linhas em branco por double-click ou corrida)
+  if(kanbanData[key]&&kanbanData[key].nome&&meetingDisplay){
+    try{
+      var _shRow=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
+        [todayStr(), kanbanData[key].nome, kanbanData[key].telefone||'', meetingDisplay, 'AGENDADA', ((CU&&CU.closer)||'João').toUpperCase(), (responsavel||'').toUpperCase(), (kanbanData[key].origem||'Tráfego').toUpperCase()]);
+      if(_shRow&&typeof _shRow==='number'){meetings[mid].sheetRow=_shRow;saveMeetingFB(mid,meetings[mid]);}
+    }catch(e){}
+  }
   cancelarAgendamentoReuniao();
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
@@ -1043,6 +1050,7 @@ async function confirmarAgendamentoReuniao(key){
   }catch(e){console.error('createGcalEvent error',e);}
   // Agora dispara WA com meetLink (e mensagem de escassez) — nao bloqueia a UI
   enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay, responsavel, meetLinkFinal);
+  }finally{_confirmarAgendamentoBusy=false;}
 }
 // ===== Editar lead (dados do card do Kanban) =====
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
@@ -5810,6 +5818,30 @@ function buildAnaliseAdsHTML(data){
     return ad && ad!=='-' && ad!=='(sem ad)';
   });
 
+  // ===== FUNIL DIRETO: conta da planilha de reuniões por ORIGEM = TRÁFEGO no período =====
+  // Mais preciso que agregar via leads, pois não depende do campo Ad estar preenchido
+  var funilReunTrafego=(data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
+    var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
+    if(!inAdsRange(d)) return false;
+    var ori=(col(r,['ORIGEM','Origem','origem'])||'').toLowerCase();
+    return ori.includes('tr') || ori.includes('traffic') || ori.includes('tráfego') || ori.includes('trafego');
+  });
+  var funilAgend=funilReunTrafego.length;
+  var funilReal=funilReunTrafego.filter(function(r){
+    return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
+  }).length;
+  var funilFech=funilReunTrafego.filter(function(r){
+    var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
+    return st==='VENDA';
+  }).length;
+  // Também conta como fechamentos os clientes (planilha clientes) originados de tráfego no período
+  var funilFechCli=(data.clientes&&data.clientes.rows?data.clientes.rows:[]).filter(function(c){
+    var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio']));
+    if(!inAdsRange(d)) return false;
+    return categorizeOrigem(col(c,['ORIGEM','Origem','origem']))==='Trafego Pago';
+  }).length;
+  if(funilFechCli>funilFech) funilFech=funilFechCli;
+
   // Build phone→reuniao map (normalize phone: digits only, last 9 digits)
   var reunMap={};
   var reunNomeMap={};
@@ -5905,9 +5937,9 @@ function buildAnaliseAdsHTML(data){
   var sumCards=[
     {l:'Leads Tráfego',v:totLeads,c:'var(--purple3)'},
     {l:'Qualificados 40k+',v:totQualif,c:'var(--cyan)'},
-    {l:'Reuniões Agend.',v:totReun,c:'var(--amber)'},
-    {l:'Reuniões Reais',v:totReal,c:'var(--green)'},
-    {l:'Fechamentos',v:totFech,c:'var(--green)'},
+    {l:'Reuniões Agend.',v:funilAgend,c:'var(--amber)'},
+    {l:'Reuniões Reais',v:funilReal,c:'var(--green)'},
+    {l:'Fechamentos',v:funilFech,c:'var(--green)'},
     {l:'MRR Gerado',v:'R$'+totMrr.toLocaleString('pt-BR',{maximumFractionDigits:0}),c:'var(--green)'}
   ];
   sumCards.forEach(function(c){
@@ -5926,9 +5958,9 @@ function buildAnaliseAdsHTML(data){
       '<div style="padding:20px 24px;">';
     var etapas=[
       {label:'Leads Tráfego',val:totLeads,cor:'var(--purple3)',icon:'ti-users'},
-      {label:'Reuniões Agend.',val:totReun,cor:'var(--amber)',icon:'ti-calendar'},
-      {label:'Reuniões Reais',val:totReal,cor:'var(--cyan)',icon:'ti-calendar-check'},
-      {label:'Fechamentos',val:totFech,cor:'var(--green)',icon:'ti-trophy'}
+      {label:'Reuniões Agend.',val:funilAgend,cor:'var(--amber)',icon:'ti-calendar'},
+      {label:'Reuniões Reais',val:funilReal,cor:'var(--cyan)',icon:'ti-calendar-check'},
+      {label:'Fechamentos',val:funilFech,cor:'var(--green)',icon:'ti-trophy'}
     ];
     var maxVal2=totLeads||1;
     html+='<div style="display:flex;flex-direction:column;gap:8px;max-width:600px;margin:0 auto;">';
@@ -7657,7 +7689,7 @@ async function loadFunilReunioes(){
     }
 
     var reunioesF = (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
-      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento','DATA','Data','data']));
       if(periodStr(d)!==period) return false;
       return isMine(r);
     });
