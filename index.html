@@ -7916,7 +7916,14 @@ async function loadFunilReunioes(){
       return sdr.includes(nome)||closer.includes(nome);
     }
 
-    var data = await loadDataHybrid();
+    // Lê reuniões direto da planilha (fonte de verdade para status)
+    // e clientes da planilha também (para vendas/MRR)
+    var _rawReun = await fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes);
+    var _rawCli  = await fetchSheetVals(SHEETS_IDS.clientes, SHEETS_GIDS.clientes);
+    var data = {
+      reunioes: rawToObjs(_rawReun),
+      clientes: rawToObjs(_rawCli)
+    };
 
     var reunioesF = (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
       var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento','DATA','Data','data']));
