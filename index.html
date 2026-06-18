@@ -1775,7 +1775,7 @@ function parseFaturamento(s){
 function isRealizada(s){
   if(!s)return false;
   var l=s.toLowerCase();
-  return l.includes('realiz')||l.includes('comparec')||l.includes('feita')||l.includes('ok')||l.includes('conclu');
+  return l.includes('realiz')||l.includes('comparec')||l.includes('feita')||l.includes('ok')||l.includes('conclu')||l.includes('venda');
 }
 function normalizeStr(s){
   return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -5854,10 +5854,13 @@ function buildAnaliseAdsHTML(data){
       var empresaReun=(col(reun,['EMPRESA','Empresa','empresa'])||'').trim().toLowerCase();
       var nomeReun=(col(reun,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
       var cli=cliNomeMap[empresaReun]||cliNomeMap[nomeReun];
-      if(cli){
+      // Conta como fechamento se achou na aba clientes OU se status = VENDA (reunião convertida)
+      if(cli||st==='VENDA'){
         d.fechamentos++;
-        var mrr=parseMoney(col(cli,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês']));
-        d.mrr+=mrr;
+        if(cli){
+          var mrr=parseMoney(col(cli,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês']));
+          d.mrr+=mrr;
+        }
       }
     }
   });
