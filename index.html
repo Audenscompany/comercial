@@ -6184,20 +6184,19 @@ function buildAnaliseAdsHTML(data){
     entry.reunioes++;
     var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
-    // Verifica fechamento por 3 caminhos (do mais confiável ao menos):
-    // 1. STATUS=VENDA na planilha de reuniões
-    // 2. Firebase followup resultado=venda (cruzamento por telefone)
-    // 3. Nome da empresa da reunião aparece na planilha de clientes (operacional)
+    // Verifica fechamento cruzando reuniões.EMPRESA → clientes (planilha operacional)
+    // Prioridade: coluna EMPRESA da reunião (empresa que fechou), depois CLIENTE (nome da pessoa)
     var fuMatch=rTel?phoneFuMap[rTel]:null;
-    var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
-    var cliMatch=nomeKey?cliLookup(nomeKey):null;
-    // cliMatch conta se o cliente assinou APÓS a reunião (negociações podem demorar meses)
+    var empresaRaw=col(r,['EMPRESA','Empresa','empresa','NOME DA EMPRESA','Nome da Empresa'])||'';
+    var nomeRaw=col(r,['CLIENTE','Cliente','cliente'])||'';
+    // Tenta empresa primeiro (mais preciso), depois nome da pessoa
+    var cliMatch=empresaRaw?cliLookup(empresaRaw):(nomeRaw?cliLookup(nomeRaw):null);
+    // cliMatch: verifica se assinou após a reunião (aceita até 7 dias antes para cadastros retroativos)
     var cliMatchInPeriod=false;
     if(cliMatch){
       var cliD=parseBRDate(col(cliMatch,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio']));
-      // Aceita até 7 dias antes (cadastro retroativo) e sem limite superior
       var diffMs=cliD&&d?cliD.getTime()-d.getTime():-Infinity;
-      cliMatchInPeriod=cliD&&diffMs>=-(7*24*60*60*1000);
+      cliMatchInPeriod=!!cliD&&diffMs>=-(7*24*60*60*1000);
     }
     var isVenda=status==='VENDA'
       ||(fuMatch&&fuMatch.resultado==='venda')
@@ -6205,7 +6204,6 @@ function buildAnaliseAdsHTML(data){
     if(isVenda){
       entry.fechamentos++;
       var mrrVal=0;
-      // MRR: followup Firebase > planilha clientes
       if(fuMatch){var _rawMrr=fuMatch.mensalidade||fuMatch.mrr||0;mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));}
       if(!mrrVal&&cliMatch){
         mrrVal=parseMoney(col(cliMatch,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
