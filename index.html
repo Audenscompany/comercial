@@ -6046,18 +6046,35 @@ function buildAnaliseAdsHTML(data){
     return s+mrr;
   },0);
   if(funilFechCli>funilFech) funilFech=funilFechCli;
-  // Realizadas: considera também meetings com followup concluído (venda/retorno/perdida = reunião aconteceu)
-  var funilRealFB=Object.values(meetings).filter(function(m){
+  // Realizadas novas (Firebase) que ainda não estão na planilha — adiciona ao funil
+  // Só conta meetings que TÊM ad atribuído no kanbanData (= leads novos via kanban)
+  // para não inflar com meetings antigas que foram importadas via console
+  var _sheetPhones=new Set();
+  funilReunTrafego.forEach(function(r){
+    var t=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+    if(t.length>9) t=t.slice(-9);
+    if(t) _sheetPhones.add(t);
+  });
+  var funilRealFB=0;
+  Object.values(meetings).forEach(function(m){
+    if(m._hidden) return;
     var bookTs=m.scheduledAt||0;
-    if(!bookTs) return false;
+    if(!bookTs) return;
     var bd=new Date(bookTs);
-    if(!inAdsRange(bd)) return false;
-    var _kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;
-    var orig=(m.origem||(_kb&&_kb.origem)||'Tráfego').toLowerCase();
-    if(!orig.includes('tr')&&!orig.includes('traffic')&&!orig.includes('tráfego')&&!orig.includes('trafego')) return false;
-    return m.status==='done'||m.status==='noshow';
-  }).length;
-  if(funilRealFB>funilReal) funilReal=funilRealFB;
+    if(!inAdsRange(bd)) return;
+    if(m.status!=='done'&&m.status!=='noshow') return;
+    // Só meetings com ad vinculado (lead novo que entrou pelo kanban)
+    var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    if(!kb||!kb.ad) return;
+    var orig=(m.origem||(kb&&kb.origem)||'Tráfego').toLowerCase();
+    if(!orig.includes('tr')&&!orig.includes('traffic')&&!orig.includes('tráfego')&&!orig.includes('trafego')) return;
+    // Ignora se já está na planilha (evita dupla contagem)
+    var mTel=(m.tel||'').replace(/\D/g,'');
+    if(mTel.length>9) mTel=mTel.slice(-9);
+    if(_sheetPhones.has(mTel)) return;
+    funilRealFB++;
+  });
+  funilReal+=funilRealFB;
 
   // Build phone→reuniao map (normalize phone: digits only, last 9 digits)
   var reunMap={};
@@ -6116,21 +6133,20 @@ function buildAnaliseAdsHTML(data){
     telAdMap[tel]={ad:ad,campanha:campanha,conjunto:conjunto};
   });
 
-  // Step 3: attribute sheet reuniões to ads via phone→telAdMap
-  // Usa a planilha de reuniões (mesma fonte do Funil) para atribuição por anúncio
-  // telAdMap foi construído do kanbanData (Firebase) que foi sincronizado com ad/campanha/conjunto
+  // Step 3a: attribute sheet reuniões to ads via phone→telAdMap
+  // Usa a planilha de reuniões (mesma fonte do Funil) para atribuição histórica
+  var _step3Phones=new Set(); // controle de dupla contagem
   (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).forEach(function(r){
     var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
     if(!inAdsRange(d)) return;
-    // Só reuniões de tráfego pago
     var ori=(col(r,['ORIGEM','Origem','origem'])||'').toLowerCase();
     var isTrafego=ori.includes('tr')||ori.includes('traffic')||ori.includes('tráfego')||ori.includes('trafego');
     if(!isTrafego) return;
-    // Resolve ad via telefone → telAdMap
     var rTel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
     if(rTel.length>9) rTel=rTel.slice(-9);
     var adInfo=rTel?telAdMap[rTel]:null;
-    if(!adInfo||!adInfo.ad) return; // sem atribuição
+    if(!adInfo||!adInfo.ad) return;
+    _step3Phones.add(rTel);
     var adKey=adInfo.ad;
     if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
@@ -6139,7 +6155,6 @@ function buildAnaliseAdsHTML(data){
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
     if(status==='VENDA'){
       entry.fechamentos++;
-      // Tenta pegar MRR do cliente pelo nome
       var nomeKey=(col(r,['CLIENTE','Cliente','cliente'])||'').trim().toLowerCase();
       var cliMatch=cliNomeMap[nomeKey];
       if(cliMatch){
@@ -6147,6 +6162,46 @@ function buildAnaliseAdsHTML(data){
         if(!mrrVal) mrrVal=parseMoney(col(cliMatch,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
         entry.mrr+=mrrVal||0;
       }
+    }
+  });
+
+  // Step 3b: Firebase meetings novos (com ad no kanban) que ainda não estão na planilha
+  // Ex: lead que entrou hoje pelo kanban → kanbanData.ad preenchido → reunião só em Firebase
+  Object.values(meetings).forEach(function(m){
+    if(m._hidden) return;
+    var bookTs=m.scheduledAt||0;
+    if(!bookTs) return;
+    var bd=new Date(bookTs);
+    if(!inAdsRange(bd)) return;
+    // Só meetings com ad vinculado ao kanbanData (lead novo)
+    var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    if(!kb||!kb.ad) return;
+    var orig=(m.origem||(kb&&kb.origem)||'Tráfego').toLowerCase();
+    if(!orig.includes('tr')&&!orig.includes('traffic')&&!orig.includes('tráfego')&&!orig.includes('trafego')) return;
+    // Evita dupla contagem com planilha
+    var mTel=(m.tel||'').replace(/\D/g,'');
+    if(mTel.length>9) mTel=mTel.slice(-9);
+    if(_step3Phones.has(mTel)) return;
+    _step3Phones.add(mTel);
+    var adKey=(kb.ad||'').trim();
+    if(!adKey) return;
+    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:kb.campanha||'',conjunto:kb.conjunto||'',leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    var entry=adData[adKey];
+    entry.reunioes++;
+    var mst=(m.status||'').toLowerCase();
+    if(mst==='done'||mst==='noshow') entry.realizadas++;
+    // Verifica fechamento via followup
+    var fu=followups[m.id];
+    if(fu&&fu.resultado==='venda'){
+      entry.fechamentos++;
+      var _rawMrr=fu.mensalidade||fu.mrr||0;
+      var mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
+      if(!mrrVal){
+        var nomeKey2=(m.nome||'').trim().toLowerCase();
+        var cliMatch2=cliNomeMap[nomeKey2];
+        if(cliMatch2) mrrVal=parseMoney(col(cliMatch2,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+      }
+      entry.mrr+=mrrVal||0;
     }
   });
 
