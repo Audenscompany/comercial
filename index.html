@@ -574,6 +574,8 @@ function startRealtimeSync(){
     }
     // Corrige em background os meetings com status desatualizado no Firebase
     setTimeout(migrateStaleStatuses, 500);
+    // Sincroniza status da planilha Reuniões → Firebase (roda uma vez por sessão)
+    setTimeout(syncReunioesFBFromSheet, 1500);
   });
 
   // Sync tarefas_dia in realtime
@@ -2948,6 +2950,43 @@ function normalizeDtDisplay(s){
   var m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(m2) return m2[3]+'/'+m2[2]+'/'+m2[1];
   return s;
+}
+
+/// Sync planilha Reuniões → Firebase: atualiza m.status para cada reunião com base
+// no STATUS da planilha. Roda uma única vez por sessão (após followups carregarem).
+var _syncedReunioesFB = false;
+async function syncReunioesFBFromSheet(){
+  if(_syncedReunioesFB) return;
+  _syncedReunioesFB = true;
+  if(!SHEETS_IDS.reunioes) return;
+  try{
+    var raw = await fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes);
+    var rows = rawToObjs(raw);
+    // Monta mapa telefone → meeting do Firebase
+    var telMeetMap = {};
+    Object.values(meetings).forEach(function(m){
+      var tel=(m.tel||'').replace(/\D/g,'');
+      if(tel.length>9) tel=tel.slice(-9);
+      if(tel) telMeetMap[tel]=m;
+    });
+    var updated=0;
+    rows.forEach(function(r){
+      var stSheet=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
+      if(!stSheet||stSheet==='AGENDADA'||stSheet==='PENDENTE') return;
+      var tel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+      if(tel.length>9) tel=tel.slice(-9);
+      if(!tel) return;
+      var m=telMeetMap[tel];
+      if(!m) return;
+      var newSt=(stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW')?'noshow':'done';
+      if(m.status!==newSt){
+        meetings[m.id].status=newSt;
+        saveMeetingFB(m.id,meetings[m.id]);
+        updated++;
+      }
+    });
+    if(updated>0) console.log('[CRM] Sync planilha→Firebase: '+updated+' status de reuniões atualizados.');
+  }catch(e){ console.error('[CRM] syncReunioesFBFromSheet error',e); }
 }
 
 // Migração em background: corrige no Firebase meetings com status 'pending'
@@ -6094,6 +6133,10 @@ function buildAnaliseAdsHTML(data){
     return orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego');
   });
   var totLeads=_allLeadsTrafego.length;
+  // Aliases usados nas taxas de conversão abaixo
+  var totReun=funilAgend;
+  var totReal=funilReal;
+  var totFech=funilFech;
   var totQualif=_allLeadsTrafego.filter(function(r){
     return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000;
   }).length;
@@ -7842,11 +7885,8 @@ async function loadFunilReunioes(){
     var mlong=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     var pp=getCurrentPeriod().split('/');
     var periodLabel=mlong[parseInt(pp[0])-1]+' '+pp[1];
-    var data = await loadDataHybrid();
     var period = getCurrentPeriod();
     var isGestor = CU.role==='gestor';
-    // Usa CU.closer (ex: "Gustavo") para bater com o campo responsavel/closer da planilha
-    // que salva só o primeiro nome, não o nome completo
     var nome = (CU.closer || (CU.name||'').split(' ')[0] || CU.name || '').toLowerCase();
 
     function isMine(r){
@@ -7856,9 +7896,13 @@ async function loadFunilReunioes(){
       return sdr.includes(nome)||closer.includes(nome);
     }
 
+    var data = await loadDataHybrid();
+
     var reunioesF = (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
       var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento','DATA','Data','data']));
       if(periodStr(d)!==period) return false;
+      var nome2=(col(r,['CLIENTE','Cliente','NOME','Nome','cliente','nome'])||'').trim();
+      if(!nome2) return false;
       return isMine(r);
     });
     var clientesF = (data.clientes&&data.clientes.rows?data.clientes.rows:[]).filter(function(c){
