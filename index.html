@@ -1600,6 +1600,7 @@ var gcalToken=null,gcalClientId='';
 var metaToken=null,metaAppId='',metaAccountId='';
 var asaasApiKey='',asaasEnv='production',asaasBillingType='PIX';
 var _finPeriod=null;
+var _asaasPeriod=null,_asaasTab='recebidas',_asaasCustomerMap={};
 var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1xQVyaGDgghqHCY19nDCjQpgyQIEWJh4cOy-WGNCF37Q',clientes:'1UDRR1zwQEXnzJv8UBFujhnZzol75n6UNmUAjxGPLUjU',ligacoes:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk'};
 var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852137};
 // Cache: gid (string) -> nome da aba resolvido, para evitar re-buscar metadata em cada updateSheetCell
@@ -1963,7 +1964,7 @@ async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey){
       mobilePhone:(leadInfo.telefone||'').replace(/\D/g,'')
     });
     if(newCust&&newCust.id) customerId=newCust.id;
-    else{console.error('Asaas: falha ao criar cliente',newCust);showToast('Asaas: erro ao criar cliente');return;}
+    else{console.error('Asaas: falha ao criar cliente',newCust);showSheetToast('Asaas: erro ao criar cliente');return;}
   }
   // 2. Criar cobrança
   var dueDate=vendaData.dataInicio||new Date().toISOString().split('T')[0];
@@ -1987,10 +1988,10 @@ async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey){
       localStorage.setItem('audens_kanban',JSON.stringify(kanbanData));
     }
     var link=charge.invoiceUrl||charge.bankSlipUrl||'';
-    showToast('Cobrança criada no Asaas'+(link?' — <a href="'+link+'" target="_blank" style="color:var(--cyan);">Ver boleto/PIX</a>':''));
+    showSheetToast('Cobrança criada no Asaas'+(link?' — <a href="'+link+'" target="_blank" style="color:var(--cyan);">Ver boleto/PIX</a>':''));
   }else{
     console.error('Asaas: falha ao criar cobrança',charge);
-    showToast('Asaas: erro ao criar cobrança — verifique o console');
+    showSheetToast('Asaas: erro ao criar cobrança — verifique o console');
   }
 }
 function saveAsaasConfig(){
@@ -2004,74 +2005,269 @@ function saveAsaasConfig(){
   saveAll();
   showToast('Configuração Asaas salva!');
 }
+function asaasPeriodOptions(){
+  if(!_asaasPeriod) _asaasPeriod=getCurrentPeriod();
+  var now=new Date();var opts='';
+  for(var i=-12;i<=2;i++){
+    var d=new Date(now.getFullYear(),now.getMonth()+i,1);
+    var mm=String(d.getMonth()+1).padStart(2,'0');
+    var val=mm+'/'+d.getFullYear();
+    opts+='<option value="'+val+'"'+(val===_asaasPeriod?' selected':'')+'>'+finMesLabel(val)+'</option>';
+  }
+  return opts;
+}
+function asaasTabBtn(id,label,active){
+  return '<button onclick="asaasChangeTab(\''+id+'\')" style="padding:7px 16px;border-radius:8px;border:1px solid var(--border);background:'+(active?'var(--purple3)':'transparent')+';color:'+(active?'#fff':'var(--muted)')+';font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;cursor:pointer;white-space:nowrap;">'+label+'</button>';
+}
 function renderAsaas(){
+  if(!_asaasPeriod) _asaasPeriod=getCurrentPeriod();
   return '<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Cobranças Asaas</div><div class="page-sub">Gestão de pagamentos dos clientes</div></div>'+
-    '<button class="btn btn-primary" onclick="loadAsaasPage()"><i class="ti ti-refresh"></i> Atualizar</button>'+
+    '<div class="page-header">'+
+      '<div><div class="page-title">Cobranças Asaas</div><div class="page-sub">Gestão de pagamentos dos clientes</div></div>'+
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
+        '<select class="f-input" id="asaas-period-sel" onchange="_asaasPeriod=this.value;loadAsaasPage();" style="width:165px;margin-bottom:0;">'+asaasPeriodOptions()+'</select>'+
+        '<button class="btn" onclick="openModalCriarCobranca()" style="white-space:nowrap;"><i class="ti ti-plus"></i> Cobrança</button>'+
+        '<button class="btn btn-primary" onclick="openModalCriarAssinatura()" style="white-space:nowrap;"><i class="ti ti-repeat"></i> Assinatura</button>'+
+      '</div>'+
     '</div>'+
-    (!asaasApiKey?
-      '<div class="info-note"><i class="ti ti-info-circle"></i> Configure a API Key do Asaas em <a href="#" onclick="showPage(\'config\')" style="color:var(--cyan);">Configurações</a> para usar esta página.</div>'
-    :
-      '<div id="asaas-body" style="padding:0;">'+
-        '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;padding:40px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando cobranças...</div>'+
-      '</div>'
+    (!asaasApiKey
+      ?'<div class="info-note"><i class="ti ti-info-circle"></i> Configure a API Key do Asaas em <a href="#" onclick="showPage(\'config\')" style="color:var(--cyan);">Configurações</a> para usar esta página.</div>'
+      :'<div id="asaas-kpis" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;">'+
+          Array(3).fill('<div class="m-card" style="min-height:80px;"><div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px;"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Carregando...</div></div>').join('')+
+        '</div>'+
+        '<div id="asaas-tabs" style="display:flex;gap:8px;margin-bottom:14px;">'+
+          asaasTabBtn('recebidas','✓ Recebidas',_asaasTab==='recebidas')+
+          asaasTabBtn('aguardando','⏳ Aguardando',_asaasTab==='aguardando')+
+          asaasTabBtn('vencidas','✕ Vencidas',_asaasTab==='vencidas')+
+        '</div>'+
+        '<div id="asaas-body" style="padding:0;">'+
+          '<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;padding:40px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>'+
+        '</div>'
     )+
   '</div>';
 }
-async function loadAsaasPage(){
+function asaasChangeTab(tab){
+  _asaasTab=tab;
+  var tabs=document.getElementById('asaas-tabs');
+  if(tabs) tabs.innerHTML=asaasTabBtn('recebidas','✓ Recebidas',tab==='recebidas')+asaasTabBtn('aguardando','⏳ Aguardando',tab==='aguardando')+asaasTabBtn('vencidas','✕ Vencidas',tab==='vencidas');
+  renderAsaasTable();
+}
+var _asaasPayments={recebidas:[],aguardando:[],vencidas:[]};
+function asaasNomeCliente(p){
+  return _asaasCustomerMap[p.customer]||(p.customerName)||'';
+}
+function renderAsaasTable(){
   var el=document.getElementById('asaas-body');
-  if(!el||!asaasApiKey) return;
-  el.innerHTML='<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;padding:40px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>';
-  // Busca em paralelo: pendentes/vencidas (mais antigas) + recebidas (mais recentes)
-  var [dataRecebidas, dataPendentes, dataVencidas] = await Promise.all([
-    asaasGet('/payments?limit=100&status=RECEIVED&sort=paymentDate&order=desc'),
-    asaasGet('/payments?limit=100&status=PENDING&sort=dueDate&order=asc'),
-    asaasGet('/payments?limit=100&status=OVERDUE&sort=dueDate&order=desc')
-  ]);
-  // Mescla tudo (deduplicando por id)
-  var seen={};
-  var payments=[];
-  [(dataRecebidas&&dataRecebidas.data)||[],(dataPendentes&&dataPendentes.data)||[],(dataVencidas&&dataVencidas.data)||[]].forEach(function(arr){
-    arr.forEach(function(p){if(!seen[p.id]){seen[p.id]=true;payments.push(p);}});
-  });
-  var data={data:payments};
-  if(!data||!data.data){
-    var detail=data&&data.errors?data.errors.map(function(e){return e.description||e.code;}).join(', '):(data&&data.error?data.error:'sem detalhes');
-    el.innerHTML='<div style="padding:40px;color:var(--red);font-size:13px;"><i class="ti ti-alert-circle"></i> Erro ao carregar cobranças.<br><span style="font-size:12px;color:var(--muted);">Detalhe: '+esc(String(detail))+'<br>Verifique se o <b>Ambiente</b> bate com a sua API Key (produção × sandbox têm chaves diferentes).</span></div>';
+  if(!el) return;
+  var list=_asaasPayments[_asaasTab]||[];
+  if(!list.length){
+    el.innerHTML='<div class="cb"><div style="padding:48px;text-align:center;color:var(--muted);"><i class="ti ti-inbox" style="font-size:32px;display:block;margin-bottom:8px;"></i>Nenhuma cobrança para '+finMesLabel(_asaasPeriod||getCurrentPeriod())+'.</div></div>';
     return;
   }
-  var payments=data.data;
-  // Resumo por status
-  var counts={PENDING:0,RECEIVED:0,OVERDUE:0,CONFIRMED:0};
-  payments.forEach(function(p){var s=p.status||'';if(counts[s]!==undefined)counts[s]++;else counts['PENDING']++;});
-  var totalRecebido=payments.filter(function(p){return p.status==='RECEIVED'||p.status==='CONFIRMED'||p.status==='RECEIVED_IN_CASH';}).reduce(function(s,p){return s+(p.value||0);},0);
-  var totalPendente=payments.filter(function(p){return p.status==='PENDING';}).reduce(function(s,p){return s+(p.value||0);},0);
-  var totalVencido=payments.filter(function(p){return p.status==='OVERDUE';}).reduce(function(s,p){return s+(p.value||0);},0);
-  var statsHtml='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">'+
-    '<div class="m-card"><div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Recebido</div><div style="font-size:28px;font-family:Barlow Condensed,sans-serif;font-weight:700;color:var(--green);">R$ '+fmtMoeda(totalRecebido)+'</div></div>'+
-    '<div class="m-card"><div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Pendente</div><div style="font-size:28px;font-family:Barlow Condensed,sans-serif;font-weight:700;color:var(--amber);">R$ '+fmtMoeda(totalPendente)+'</div></div>'+
-    '<div class="m-card"><div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Vencido</div><div style="font-size:28px;font-family:Barlow Condensed,sans-serif;font-weight:700;color:var(--red);">R$ '+fmtMoeda(totalVencido)+'</div></div>'+
-    '<div class="m-card"><div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Total cobranças</div><div style="font-size:28px;font-family:Barlow Condensed,sans-serif;font-weight:700;color:var(--white);">'+payments.length+'</div></div>'+
-  '</div>';
-  var rows=payments.map(function(p){
+  var isRec=_asaasTab==='recebidas';
+  var rows=list.map(function(p){
+    var nome=asaasNomeCliente(p);
     var venc=p.dueDate?new Date(p.dueDate+'T00:00:00').toLocaleDateString('pt-BR'):'-';
     var pago=p.paymentDate?new Date(p.paymentDate+'T00:00:00').toLocaleDateString('pt-BR'):'-';
     var link=p.invoiceUrl||p.bankSlipUrl||'';
+    var desc=p.description||'';
     return '<tr>'+
-      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(p.description||'-')+'</td>'+
+      '<td style="font-weight:600;color:var(--white);">'+esc(nome||'-')+'</td>'+
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;" title="'+esc(desc)+'">'+esc(desc||'-')+'</td>'+
       '<td style="font-family:Barlow Condensed,sans-serif;font-weight:700;color:var(--white);">R$ '+fmtMoeda(p.value||0)+'</td>'+
       '<td>'+venc+'</td>'+
-      '<td>'+pago+'</td>'+
+      (isRec?'<td>'+pago+'</td>':'')+
       '<td>'+asaasStatusBadge(p.status)+'</td>'+
       '<td>'+(link?'<a href="'+link+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-external-link"></i></a>':'-')+'</td>'+
     '</tr>';
   }).join('');
-  var tableHtml=!rows?'<div style="padding:40px;text-align:center;color:var(--muted);">Nenhuma cobrança encontrada.</div>':
-    '<div class="t-scroll"><table><thead><tr><th>Descrição</th><th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Status</th><th>Link</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-  el.innerHTML=statsHtml+'<div class="cb">'+
-    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-cash" style="color:var(--green);margin-right:6px;"></i>Cobranças</div></div>'+
-    tableHtml+
+  var hdrPago=isRec?'<th>Pago em</th>':'';
+  el.innerHTML='<div class="cb"><div class="t-scroll"><table><thead><tr><th>Cliente</th><th>Descrição</th><th>Valor</th><th>Vencimento</th>'+hdrPago+'<th>Status</th><th>Link</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+async function loadAsaasPage(){
+  if(!asaasApiKey) return;
+  if(!_asaasPeriod) _asaasPeriod=getCurrentPeriod();
+  var pp=_asaasPeriod.split('/');
+  var month=parseInt(pp[0]),year=parseInt(pp[1]);
+  var firstISO=year+'-'+String(month).padStart(2,'0')+'-01';
+  var lastISO=year+'-'+String(month).padStart(2,'0')+'-'+String(new Date(year,month,0).getDate()).padStart(2,'0');
+  var kpis=document.getElementById('asaas-kpis');
+  var el=document.getElementById('asaas-body');
+  if(el) el.innerHTML='<div style="color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;padding:40px;"><i class="ti ti-loader-2" style="font-size:18px;animation:spin 1s linear infinite;"></i> Carregando...</div>';
+  // Busca pagamentos e clientes em paralelo
+  var [dataRec1,dataRec2,dataRec3,dataPend,dataVenc,dataCusts]=await Promise.all([
+    asaasGet('/payments?limit=100&status=RECEIVED&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO+'&sort=paymentDate&order=desc'),
+    asaasGet('/payments?limit=100&status=CONFIRMED&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO),
+    asaasGet('/payments?limit=100&status=RECEIVED_IN_CASH&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO),
+    asaasGet('/payments?limit=100&status=PENDING&dueDate[ge]='+firstISO+'&dueDate[le]='+lastISO+'&sort=dueDate&order=asc'),
+    asaasGet('/payments?limit=100&status=OVERDUE&dueDate[ge]='+firstISO+'&dueDate[le]='+lastISO+'&sort=dueDate&order=desc'),
+    asaasGet('/customers?limit=100')
+  ]);
+  // Monta mapa de clientes
+  if(dataCusts&&dataCusts.data){
+    dataCusts.data.forEach(function(c){if(c.id&&c.name) _asaasCustomerMap[c.id]=c.name;});
+  }
+  // Mescla recebidas deduplicando
+  var seenR={};
+  var recebidas=[];
+  [(dataRec1&&dataRec1.data)||[],(dataRec2&&dataRec2.data)||[],(dataRec3&&dataRec3.data)||[]].forEach(function(arr){
+    arr.forEach(function(p){if(!seenR[p.id]){seenR[p.id]=true;recebidas.push(p);}});
+  });
+  var aguardando=(dataPend&&dataPend.data)||[];
+  var vencidas=(dataVenc&&dataVenc.data)||[];
+  _asaasPayments={recebidas:recebidas,aguardando:aguardando,vencidas:vencidas};
+  // KPI cards
+  var totalRec=recebidas.reduce(function(s,p){return s+(p.value||0);},0);
+  var totalAg=aguardando.reduce(function(s,p){return s+(p.value||0);},0);
+  var totalVenc=vencidas.reduce(function(s,p){return s+(p.value||0);},0);
+  if(kpis){
+    kpis.innerHTML=
+      finKpiCard('Recebidas','R$ '+fmtMoeda(totalRec),'var(--green)',recebidas.length+' cobrança(s) — '+finMesLabelCurto(_asaasPeriod),'ti-check')+
+      finKpiCard('Aguardando','R$ '+fmtMoeda(totalAg),'var(--amber)',aguardando.length+' cobrança(s)','ti-clock')+
+      finKpiCard('Vencidas','R$ '+fmtMoeda(totalVenc),'var(--red)',vencidas.length+' cobrança(s)','ti-alert-circle');
+  }
+  renderAsaasTable();
+}
+// ===== MODAL CRIAR COBRANÇA ASAAS =====
+function openModalCriarCobranca(){
+  if(!asaasApiKey){alert('Configure a API Key do Asaas primeiro nas Configurações.');return;}
+  var today=new Date().toISOString().split('T')[0];
+  var bts=['PIX','BOLETO','CREDIT_CARD','UNDEFINED'];
+  var html='<div class="modal-ov" id="modal-asaas-cob" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-asaas-cob\')">'+
+    '<div class="modal-box" style="max-width:480px;width:100%;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
+        '<span class="modal-title" style="margin:0;"><i class="ti ti-plus" style="margin-right:8px;color:var(--cyan);"></i>Nova Cobrança Asaas</span>'+
+        '<button onclick="closeModal(\'modal-asaas-cob\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">Nome do cliente</label>'+
+        '<input class="f-input" id="cob-nome" placeholder="Nome ou razão social" style="margin-bottom:0;"></div>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">CPF / CNPJ (opcional)</label>'+
+        '<input class="f-input" id="cob-cnpj" placeholder="Apenas números" style="margin-bottom:0;"></div>'+
+      '<div class="modal-grid2" style="margin-bottom:12px;">'+
+        '<div><label class="f-label">Valor (R$)</label>'+
+          '<input class="f-input" id="cob-valor" type="number" step="0.01" placeholder="0,00" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Vencimento</label>'+
+          '<input class="f-input" id="cob-vencimento" type="date" value="'+today+'" style="margin-bottom:0;"></div>'+
+      '</div>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">Tipo de cobrança</label>'+
+        '<select class="f-input" id="cob-tipo" style="margin-bottom:0;">'+bts.map(function(b){return '<option value="'+b+'"'+(b===asaasBillingType?' selected':'')+'>'+b+'</option>';}).join('')+'</select></div>'+
+      '<div style="margin-bottom:18px;"><label class="f-label">Descrição</label>'+
+        '<input class="f-input" id="cob-desc" placeholder="Ex: Mensalidade Marketing Digital — Junho" style="margin-bottom:0;"></div>'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button class="btn" onclick="closeModal(\'modal-asaas-cob\')" style="flex:1;">Cancelar</button>'+
+        '<button class="btn btn-primary" onclick="salvarCriarCobranca()" id="btn-salvar-cob" style="flex:2;">Criar Cobrança</button>'+
+      '</div>'+
+    '</div>'+
   '</div>';
+  var ex=document.getElementById('modal-asaas-cob');if(ex)ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(function(){var v=document.getElementById('cob-nome');if(v)v.focus();},100);
+}
+async function salvarCriarCobranca(){
+  var nome=(document.getElementById('cob-nome').value||'').trim();
+  var cnpj=(document.getElementById('cob-cnpj').value||'').replace(/\D/g,'');
+  var valor=parseFloat(document.getElementById('cob-valor').value)||0;
+  var venc=document.getElementById('cob-vencimento').value;
+  var tipo=document.getElementById('cob-tipo').value;
+  var desc=(document.getElementById('cob-desc').value||'').trim();
+  if(!nome){alert('Informe o nome do cliente.');return;}
+  if(!valor||valor<=0){alert('Informe um valor válido.');return;}
+  if(!venc){alert('Informe a data de vencimento.');return;}
+  var btn=document.getElementById('btn-salvar-cob');
+  if(btn){btn.disabled=true;btn.textContent='Criando...';}
+  // Busca ou cria cliente
+  var customerId=null;
+  if(cnpj){var fc=await asaasGet('/customers?cpfCnpj='+cnpj+'&limit=1');if(fc&&fc.data&&fc.data.length>0)customerId=fc.data[0].id;}
+  if(!customerId){
+    var nc=await asaasPost('/customers',{name:nome,cpfCnpj:cnpj||undefined});
+    if(nc&&nc.id){customerId=nc.id;_asaasCustomerMap[nc.id]=nome;}
+    else{alert('Erro ao criar cliente no Asaas.');if(btn){btn.disabled=false;btn.textContent='Criar Cobrança';}return;}
+  }
+  var charge=await asaasPost('/payments',{customer:customerId,billingType:tipo,value:valor,dueDate:venc,description:desc||undefined});
+  if(charge&&charge.id){
+    closeModal('modal-asaas-cob');
+    showSheetToast('Cobrança criada!');
+    loadAsaasPage();
+    var link=charge.invoiceUrl||charge.bankSlipUrl||'';
+    if(link) setTimeout(function(){if(confirm('Cobrança criada! Abrir link de pagamento?'))window.open(link,'_blank');},300);
+  }else{
+    alert('Erro ao criar cobrança: '+(charge&&charge.errors?charge.errors.map(function(e){return e.description;}).join(', '):'verifique o console'));
+    if(btn){btn.disabled=false;btn.textContent='Criar Cobrança';}
+  }
+}
+// ===== MODAL CRIAR ASSINATURA ASAAS =====
+function openModalCriarAssinatura(){
+  if(!asaasApiKey){alert('Configure a API Key do Asaas primeiro nas Configurações.');return;}
+  var today=new Date().toISOString().split('T')[0];
+  var html='<div class="modal-ov" id="modal-asaas-ass" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-asaas-ass\')">'+
+    '<div class="modal-box" style="max-width:480px;width:100%;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
+        '<span class="modal-title" style="margin:0;"><i class="ti ti-repeat" style="margin-right:8px;color:var(--purple3);"></i>Nova Assinatura Asaas</span>'+
+        '<button onclick="closeModal(\'modal-asaas-ass\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">Nome do cliente</label>'+
+        '<input class="f-input" id="ass-nome" placeholder="Nome ou razão social" style="margin-bottom:0;"></div>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">CPF / CNPJ (opcional)</label>'+
+        '<input class="f-input" id="ass-cnpj" placeholder="Apenas números" style="margin-bottom:0;"></div>'+
+      '<div class="modal-grid2" style="margin-bottom:12px;">'+
+        '<div><label class="f-label">Valor mensal (R$)</label>'+
+          '<input class="f-input" id="ass-valor" type="number" step="0.01" placeholder="0,00" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Próximo vencimento</label>'+
+          '<input class="f-input" id="ass-vencimento" type="date" value="'+today+'" style="margin-bottom:0;"></div>'+
+      '</div>'+
+      '<div class="modal-grid2" style="margin-bottom:12px;">'+
+        '<div><label class="f-label">Ciclo</label>'+
+          '<select class="f-input" id="ass-ciclo" style="margin-bottom:0;">'+
+            '<option value="MONTHLY">Mensal</option>'+
+            '<option value="YEARLY">Anual</option>'+
+            '<option value="WEEKLY">Semanal</option>'+
+          '</select></div>'+
+        '<div><label class="f-label">Tipo de cobrança</label>'+
+          '<select class="f-input" id="ass-tipo" style="margin-bottom:0;">'+
+            ['PIX','BOLETO','CREDIT_CARD','UNDEFINED'].map(function(b){return '<option value="'+b+'"'+(b===asaasBillingType?' selected':'')+'>'+b+'</option>';}).join('')+
+          '</select></div>'+
+      '</div>'+
+      '<div style="margin-bottom:18px;"><label class="f-label">Descrição</label>'+
+        '<input class="f-input" id="ass-desc" placeholder="Ex: Plano Marketing Digital Mensal" style="margin-bottom:0;"></div>'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button class="btn" onclick="closeModal(\'modal-asaas-ass\')" style="flex:1;">Cancelar</button>'+
+        '<button class="btn btn-primary" onclick="salvarCriarAssinatura()" id="btn-salvar-ass" style="flex:2;">Criar Assinatura</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  var ex=document.getElementById('modal-asaas-ass');if(ex)ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(function(){var v=document.getElementById('ass-nome');if(v)v.focus();},100);
+}
+async function salvarCriarAssinatura(){
+  var nome=(document.getElementById('ass-nome').value||'').trim();
+  var cnpj=(document.getElementById('ass-cnpj').value||'').replace(/\D/g,'');
+  var valor=parseFloat(document.getElementById('ass-valor').value)||0;
+  var venc=document.getElementById('ass-vencimento').value;
+  var ciclo=document.getElementById('ass-ciclo').value;
+  var tipo=document.getElementById('ass-tipo').value;
+  var desc=(document.getElementById('ass-desc').value||'').trim();
+  if(!nome){alert('Informe o nome do cliente.');return;}
+  if(!valor||valor<=0){alert('Informe um valor válido.');return;}
+  if(!venc){alert('Informe a data do próximo vencimento.');return;}
+  var btn=document.getElementById('btn-salvar-ass');
+  if(btn){btn.disabled=true;btn.textContent='Criando...';}
+  var customerId=null;
+  if(cnpj){var fc=await asaasGet('/customers?cpfCnpj='+cnpj+'&limit=1');if(fc&&fc.data&&fc.data.length>0)customerId=fc.data[0].id;}
+  if(!customerId){
+    var nc=await asaasPost('/customers',{name:nome,cpfCnpj:cnpj||undefined});
+    if(nc&&nc.id){customerId=nc.id;_asaasCustomerMap[nc.id]=nome;}
+    else{alert('Erro ao criar cliente no Asaas.');if(btn){btn.disabled=false;btn.textContent='Criar Assinatura';}return;}
+  }
+  var sub=await asaasPost('/subscriptions',{customer:customerId,billingType:tipo,value:valor,nextDueDate:venc,cycle:ciclo,description:desc||undefined});
+  if(sub&&sub.id){
+    closeModal('modal-asaas-ass');
+    showSheetToast('Assinatura criada!');
+    loadAsaasPage();
+  }else{
+    alert('Erro ao criar assinatura: '+(sub&&sub.errors?sub.errors.map(function(e){return e.description;}).join(', '):'verifique o console'));
+    if(btn){btn.disabled=false;btn.textContent='Criar Assinatura';}
+  }
 }
 async function fetchMetaSpend(period){
   if(!isMetaConnected()||!metaAccountId)return null;
@@ -3242,6 +3438,11 @@ async function loadFinanceiroData(){
       });
     });
   }
+  // Garante mapa de clientes para descrição
+  if(asaasApiKey&&Object.keys(_asaasCustomerMap).length===0){
+    var custs=await asaasGet('/customers?limit=100');
+    if(custs&&custs.data) custs.data.forEach(function(c){if(c.id&&c.name)_asaasCustomerMap[c.id]=c.name;});
+  }
   var clientes=Object.values(clientesRaw||{});
   var todasSaidas=Object.entries(saidasRaw||{}).map(function(e){return Object.assign({_id:e[0]},e[1]);});
   var todasEntradas=Object.entries(entradasRaw||{}).map(function(e){return Object.assign({_id:e[0]},e[1]);});
@@ -3330,7 +3531,9 @@ async function loadFinanceiroData(){
   });
   asaasPagamentos.forEach(function(p){
     var dt=p.paymentDate||p.dueDate||firstISO;
-    allTx.push({data:dt,tipo:'entrada',valor:parseFloat(p.value)||0,descricao:(p.description||p.customer||'Pagamento Asaas'),cat:'Asaas',status:'asaas',_src:'asaas'});
+    var nomeCli=_asaasCustomerMap[p.customer]||p.customerName||'';
+    var desc=nomeCli?(nomeCli+(p.description?' — '+p.description:'')):( p.description||'Pagamento Asaas');
+    allTx.push({data:dt,tipo:'entrada',valor:parseFloat(p.value)||0,descricao:desc,cat:'Asaas',status:'asaas',_src:'asaas'});
   });
   saidasMes.forEach(function(s){
     allTx.push({data:s.data,tipo:'saida',valor:parseFloat(s.valor)||0,descricao:s.descricao||'Despesa',cat:s.categoria||'Outros',status:'confirmado',_id:s._id,_src:'saida'});
