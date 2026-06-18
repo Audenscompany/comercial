@@ -3769,19 +3769,35 @@ function copiarLinkAssinatura(id,btn){
   }
 }
 function abrirModalNovaAssinatura(){
+  var today=new Date().toISOString().split('T')[0];
+  var planos=['Essencial','Avançado','Premium'];
   var html='<div class="modal-ov active" id="modal-nova-assinatura" onclick="if(event.target===this)cancelarNovaAssinatura()">'+
-    '<div class="modal-box" style="max-width:460px;">'+
+    '<div class="modal-box" style="max-width:500px;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-signature"></i> Novo Link de Assinatura</div>'+
         '<button class="modal-close" onclick="cancelarNovaAssinatura()">×</button></div>'+
       '<div style="padding:20px;">'+
-        '<label class="f-label">Cliente</label><input class="f-input" id="na-cliente" placeholder="Nome do cliente/empresa" style="margin-bottom:12px;">'+
-        '<label class="f-label">Telefone (WhatsApp)</label><input class="f-input" id="na-telefone" placeholder="DDD + numero" style="margin-bottom:12px;">'+
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase;">Dados do cliente</div>'+
+        '<label class="f-label">Cliente / Empresa</label><input class="f-input" id="na-cliente" placeholder="Nome do cliente/empresa" style="margin-bottom:12px;">'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Telefone (WhatsApp)</label><input class="f-input" id="na-telefone" placeholder="DDD + numero" style="margin-bottom:12px;"></div>'+
+          '<div><label class="f-label">CNPJ (opcional)</label><input class="f-input" id="na-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:12px;"></div>'+
+        '</div>'+
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase;">Dados comerciais (Asaas)</div>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Plano</label><select class="f-input" id="na-plano" style="margin-bottom:12px;">'+planos.map(function(p){return'<option>'+p+'</option>';}).join('')+'</select></div>'+
+          '<div><label class="f-label">Duração (meses)</label><input class="f-input" type="number" id="na-duracao" min="1" value="12" style="margin-bottom:12px;"></div>'+
+        '</div>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Valor (R$)</label><input class="f-input" type="number" id="na-valor" placeholder="0.00" style="margin-bottom:12px;"></div>'+
+          '<div><label class="f-label">Vencimento</label><input class="f-input" type="date" id="na-vencimento" value="'+today+'" style="margin-bottom:12px;"></div>'+
+        '</div>'+
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase;">Contrato</div>'+
         '<label class="f-label">Nome do documento</label><input class="f-input" id="na-contrato" placeholder="Ex: Contrato Audens - Plano Premium" style="margin-bottom:12px;">'+
         '<label class="f-label">Link do PDF (Google Drive, etc.)</label><input class="f-input" id="na-pdf" placeholder="https://..." style="margin-bottom:0;">'+
         '<div class="login-err" id="na-err"></div>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
-        '<button class="btn btn-primary" onclick="salvarNovaAssinatura()"><i class="ti ti-check"></i> Criar link</button>'+
+        '<button class="btn btn-primary" id="na-save-btn" onclick="salvarNovaAssinatura()"><i class="ti ti-check"></i> Criar link e lançar no Asaas</button>'+
         '<button class="btn btn-outline" onclick="cancelarNovaAssinatura()">Cancelar</button>'+
       '</div>'+
     '</div>'+
@@ -3795,14 +3811,33 @@ function cancelarNovaAssinatura(){
 async function salvarNovaAssinatura(){
   var cliente=document.getElementById('na-cliente').value.trim();
   var telefone=document.getElementById('na-telefone').value.replace(/\D/g,'');
+  var cnpj=(document.getElementById('na-cnpj').value||'').replace(/\D/g,'');
+  var plano=document.getElementById('na-plano').value;
+  var duracao=parseInt(document.getElementById('na-duracao').value)||12;
+  var valor=parseFloat(document.getElementById('na-valor').value)||0;
+  var vencimento=document.getElementById('na-vencimento').value;
   var contratoNome=document.getElementById('na-contrato').value.trim();
   var pdfUrl=document.getElementById('na-pdf').value.trim();
   var errEl=document.getElementById('na-err');
+  var btn=document.getElementById('na-save-btn');
   errEl.textContent='';
   if(!cliente){errEl.textContent='Informe o nome do cliente.';return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Criando...';}
   try{
-    var ref=await fbPush('assinaturas',{cliente:cliente,contratoNome:contratoNome,pdfUrl:pdfUrl,telefone:telefone,status:'pendente',createdAt:Date.now()});
+    var vendaData={plano:plano,duracao:duracao,dataInicio:vencimento,tipoValor:'mensalidade',mensalidade:valor,contrato:valor*duracao,cnpj:cnpj};
+    var ref=await fbPush('assinaturas',{
+      cliente:cliente,contratoNome:contratoNome,pdfUrl:pdfUrl,telefone:telefone,
+      cnpj:cnpj,vendaData:vendaData,status:'pendente',createdAt:Date.now()
+    });
     var id=ref&&ref.key;
+    // Cria no Asaas (mesmo fluxo do Kanban Venda)
+    await criarCobrancaAsaas({nome:cliente,telefone:telefone,cnpj:cnpj},vendaData,null);
+    // Registra como cliente no sistema
+    appendClienteRow({
+      nomeCliente:cliente,plano:plano,duracaoMeses:duracao,
+      mensalidade:valor,contrato:valor*duracao,
+      telefone:telefone,cnpj:cnpj,dataInicio:vencimento
+    });
     cancelarNovaAssinatura();
     var area=document.getElementById('content');
     if(area && area.getAttribute('data-page')==='assinaturas') loadAssinaturas();
@@ -3813,6 +3848,7 @@ async function salvarNovaAssinatura(){
     }
   }catch(e){
     errEl.textContent='Erro ao criar link: '+e.message;
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Criar link e lançar no Asaas';}
   }
 }
 
