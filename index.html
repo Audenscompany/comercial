@@ -5980,17 +5980,8 @@ async function refreshAnaliseAds(){
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
-    // Análise de Ads usa planilha para leads E reuniões (campo 'ad' e dados completos)
-    var dataAds=await loadDataHybrid();
-    try{
-      var [leadsRaw2,reunRaw2]=await Promise.all([
-        fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads),
-        fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes)
-      ]);
-      if(leadsRaw2&&leadsRaw2.length>1) dataAds.leads=rawToObjs(leadsRaw2);
-      if(reunRaw2&&reunRaw2.length>1) dataAds.reunioes=rawToObjs(reunRaw2);
-    }catch(e2){ console.warn('[Ads] Planilha indisponível, usando Firebase',e2); }
-    cont.innerHTML=buildAnaliseAdsHTML(dataAds);
+    var data=await loadDataHybrid();
+    cont.innerHTML=buildAnaliseAdsHTML(data);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
     loading.style.display='none';
@@ -6178,7 +6169,9 @@ function buildAnaliseAdsHTML(data){
     var d=parseBRDate(col(r,['Data','DATA','data']));
     if(!inAdsRange(d)) return false;
     var orig=(col(r,['Origem','ORIGEM','origem'])||'').toLowerCase();
-    return orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego');
+    var ad=(col(r,['Ad','AD','ad'])||'').trim();
+    // Conta como tráfego se tem origem explícita OU se tem campo 'ad' preenchido (vem de anúncio)
+    return orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego')||(ad&&ad!=='-'&&ad!=='(sem ad)');
   });
   var totLeads=_allLeadsTrafego.length;
   // Aliases usados nas taxas de conversão abaixo
