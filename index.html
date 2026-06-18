@@ -3760,12 +3760,23 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td><button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button></td>'+
+        '<td style="display:flex;gap:6px;"><button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
     el.innerHTML='<div class="t-scroll"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Documento</th><th>Assinatura</th><th>Pagamento</th><th>Criado em</th><th>PDF</th><th>Link</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   }catch(e){
     el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar: '+e.message+'</div>';
+  }
+}
+async function apagarAssinatura(id, nomeCliente){
+  if(!confirm('Apagar contrato de "'+nomeCliente+'"? Esta ação não pode ser desfeita.')) return;
+  try{
+    await fbDb.ref('assinaturas/'+id).remove();
+    loadAssinaturas();
+    showSheetToast('Contrato apagado.');
+  }catch(e){
+    alert('Erro ao apagar: '+e.message);
   }
 }
 function copiarLinkAssinatura(id,btn){
