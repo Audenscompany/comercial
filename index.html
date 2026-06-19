@@ -7676,7 +7676,12 @@ function concluirTarefa(id){
     if(t.id===id){
       if(t.recorrente){
         t.ultimaConclusao = todayStr();
-        t.proximaData = nextRecurrenceAfter(t.diasSemana||[], todayStr()) || todayStr();
+        // Advance from tomorrow so task doesn't stay stuck on today
+        var hp2 = todayStr().split('/');
+        var dTom = new Date(parseInt(hp2[2]), parseInt(hp2[1])-1, parseInt(hp2[0]));
+        dTom.setDate(dTom.getDate()+1);
+        var tomorrowStr = dTom.toLocaleDateString('pt-BR');
+        t.proximaData = nextRecurrenceAfter(t.diasSemana||[], tomorrowStr) || tomorrowStr;
       } else {
         t.done = true;
         t.doneDate = todayStr();
