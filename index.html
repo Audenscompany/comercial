@@ -3655,6 +3655,7 @@ function renderFinanceiro(){
       '<div><div class="page-title">Financeiro</div><div class="page-sub">Controle de caixa da Audens Company</div></div>'+
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
         '<select class="f-input" id="fin-period-sel" onchange="_finPeriod=this.value;loadFinanceiroData();" style="width:170px;margin-bottom:0;">'+finPeriodOptions()+'</select>'+
+        '<button class="btn btn-outline" style="white-space:nowrap;" onclick="openModalExtrato()"><i class="ti ti-file-import"></i> Importar Extrato</button>'+
         '<button class="btn" onclick="openModalLancamento(\'saida\')" style="background:rgba(239,68,68,0.1);color:var(--red);border-color:rgba(239,68,68,0.25);white-space:nowrap;"><i class="ti ti-arrow-up-right"></i> Despesa</button>'+
         '<button class="btn btn-primary" style="white-space:nowrap;" onclick="openModalLancamento(\'entrada\')"><i class="ti ti-arrow-down-left"></i> Entrada Manual</button>'+
       '</div>'+
@@ -3784,14 +3785,14 @@ async function loadFinanceiroData(){
   var totalSaidasAllTime=todasSaidas.filter(function(s){return s.status==='confirmado';}).reduce(function(s,e){return s+(parseFloat(e.valor)||0);},0);
   var caixaTotal=totalEntradasAllTime-totalSaidasAllTime;
   var totalAsaas=asaasPagamentos.reduce(function(s,p){return s+(parseFloat(p.value)||0);},0);
-  var totalReceita=mrr+totalEntradas+totalAsaas;
+  // Receita = apenas Asaas recebido + entradas manuais (MRR/contratos excluídos do caixa)
+  var totalReceita=totalAsaas+totalEntradas;
   var lucro=totalReceita-totalDespesas;
   // Atualiza KPIs
   var kpis=document.getElementById('fin-kpis');
   if(kpis){
-    var mrrSub=ativos.length+' contrato(s)'+(totalAsaas?' · Asaas R$ '+fmtMoeda(totalAsaas):'');
     kpis.innerHTML=
-      finKpiCard('Receita do Mês','R$ '+fmtMoeda(totalReceita),'var(--green)','MRR R$ '+fmtMoeda(mrr)+(totalAsaas?' · Asaas R$ '+fmtMoeda(totalAsaas):'')+(totalEntradas?' · Manual R$ '+fmtMoeda(totalEntradas):''),'ti-trending-up')+
+      finKpiCard('Receita do Mês','R$ '+fmtMoeda(totalReceita),'var(--green)',(totalAsaas?'Asaas R$ '+fmtMoeda(totalAsaas):'')+(totalEntradas?(totalAsaas?' · ':'')+'Manual R$ '+fmtMoeda(totalEntradas):'')+((!totalAsaas&&!totalEntradas)?'Nenhum recebimento registrado':''),'ti-trending-up')+
       finKpiCard('Recebido Asaas','R$ '+fmtMoeda(totalAsaas),asaasApiKey?'var(--cyan)':'var(--muted)',asaasPagamentos.length+' pagamento(s) confirmado(s)','ti-cash')+
       finKpiCard('Despesas','R$ '+fmtMoeda(totalDespesas),'var(--red)',saidasMes.length+' confirmada(s)'+(saidasPend.length?' · '+saidasPend.length+' pendente(s)':''),'ti-trending-down')+
       finKpiCard('Lucro Estimado','R$ '+fmtMoeda(lucro),lucro>=0?'var(--purple3)':'var(--red)','Receita R$ '+fmtMoeda(totalReceita)+' − Despesas R$ '+fmtMoeda(totalDespesas),'ti-report-money');
@@ -3821,15 +3822,8 @@ async function loadFinanceiroData(){
       '</div>'+
     '</div>';
   }
-  // Monta tabela de lançamentos
+  // Monta tabela de lançamentos (MRR/contratos excluídos — apenas Asaas e manuais)
   var allTx=[];
-  ativos.forEach(function(c){
-    var meses=c.duracaoMeses||12;
-    var v=c.tipoValor==='tcv'?(c.valorContrato/(meses||1)):(c.valorMensalidade||0);
-    var ini=finInicioDate(c);
-    var dataStr=ini?(ini.getFullYear()+'-'+String(ini.getMonth()+1).padStart(2,'0')+'-'+String(ini.getDate()).padStart(2,'0')):firstISO;
-    allTx.push({data:dataStr,tipo:'entrada',valor:v,descricao:'MRR — '+(c.nomeCliente||'Cliente'),cat:'Contrato Recorrente',status:'mrr',_src:'contrato'});
-  });
   entradasMes.forEach(function(e){
     allTx.push({data:e.data,tipo:'entrada',valor:parseFloat(e.valor)||0,descricao:e.descricao||'Entrada manual',cat:e.categoria||'Manual',status:'confirmado',_id:e._id,_src:'entrada'});
   });
@@ -3952,6 +3946,177 @@ async function finSalvarLancamento(){
   showSheetToast(tipo==='saida'?'Despesa lançada!':'Entrada lançada!');
   loadFinanceiroData();
 }
+// ===== IMPORTAR EXTRATO BANCÁRIO =====
+var FIN_CATS=['Infraestrutura','Marketing','Equipe','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Outros'];
+var _extratoRows=[];
+
+function openModalExtrato(){
+  var html='<div class="modal-ov" id="modal-extrato" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-extrato\')">'+
+    '<div class="modal-box" style="max-width:700px;width:100%;max-height:90vh;display:flex;flex-direction:column;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
+        '<span class="modal-title" style="margin:0;"><i class="ti ti-file-import" style="margin-right:8px;color:var(--cyan);"></i>Importar Extrato Bancário</span>'+
+        '<button onclick="closeModal(\'modal-extrato\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<div id="extrato-step1">'+
+        '<div class="info-note" style="margin-bottom:14px;"><i class="ti ti-info-circle"></i> Suporte a CSV com colunas: <b>Data ; Descrição ; Valor</b>. Valores negativos = saídas. Separe por <b>;</b> ou <b>,</b>.</div>'+
+        '<label class="f-label">Colar ou digitar o extrato (CSV)</label>'+
+        '<textarea id="extrato-csv" style="width:100%;height:200px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--white);font-family:monospace;font-size:12px;resize:vertical;outline:none;" placeholder="Exemplo:\n19/06/2026;Transferência Pix para Mercado Pago;-250,00\n18/06/2026;Pagamento Fornecedor XYZ;-1500,00\n17/06/2026;Recebimento Cliente ABC;+3000,00"></textarea>'+
+        '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;">'+
+          '<label style="cursor:pointer;color:var(--cyan);font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;">'+
+            '<i class="ti ti-upload"></i> Ou fazer upload de arquivo CSV'+
+            '<input type="file" accept=".csv,.txt,.ofx" onchange="extratoFileLoad(this)" style="display:none;">'+
+          '</label>'+
+        '</div>'+
+        '<div style="display:flex;gap:10px;margin-top:16px;">'+
+          '<button class="btn" onclick="closeModal(\'modal-extrato\')" style="flex:1;">Cancelar</button>'+
+          '<button class="btn btn-primary" onclick="processarExtrato()" style="flex:2;"><i class="ti ti-table"></i> Processar Extrato</button>'+
+        '</div>'+
+      '</div>'+
+      '<div id="extrato-step2" style="display:none;flex:1;overflow:hidden;display:none;flex-direction:column;">'+
+        '<div id="extrato-table-wrap" style="overflow-y:auto;flex:1;"></div>'+
+        '<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'+
+          '<span id="extrato-count" style="font-family:Barlow Condensed,sans-serif;font-size:13px;color:var(--muted);flex:1;"></span>'+
+          '<button class="btn" onclick="document.getElementById(\'extrato-step1\').style.display=\'\';document.getElementById(\'extrato-step2\').style.display=\'none\';">Voltar</button>'+
+          '<button class="btn btn-primary" onclick="salvarExtrato()"><i class="ti ti-check"></i> Importar Selecionadas</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  var ex=document.getElementById('modal-extrato');
+  if(ex) ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+function extratoFileLoad(input){
+  var f=input.files[0];
+  if(!f) return;
+  var reader=new FileReader();
+  reader.onload=function(e){ var ta=document.getElementById('extrato-csv'); if(ta) ta.value=e.target.result; };
+  reader.readAsText(f,'UTF-8');
+}
+
+function parseExtratoValor(s){
+  if(!s) return null;
+  // Remove currency symbols, spaces; handle Brazilian format (1.234,56) and US (1,234.56)
+  s=s.trim().replace(/[R$\s]/g,'');
+  var neg=s.startsWith('-');
+  s=s.replace(/^[+-]/,'');
+  // Brazilian: dots as thousands, comma as decimal
+  if(s.indexOf(',')>s.indexOf('.') && s.indexOf(',')!==-1){
+    s=s.replace(/\./g,'').replace(',','.');
+  } else {
+    s=s.replace(/,/g,'');
+  }
+  var v=parseFloat(s);
+  return isNaN(v)?null:(neg?-v:v);
+}
+
+function parseExtratoData(s){
+  if(!s) return '';
+  s=s.trim();
+  // DD/MM/YYYY or DD-MM-YYYY → YYYY-MM-DD
+  var m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if(m){
+    var d=m[1].padStart(2,'0'),mo=m[2].padStart(2,'0'),y=m[3].length===2?'20'+m[3]:m[3];
+    return y+'-'+mo+'-'+d;
+  }
+  // Already YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return '';
+}
+
+function processarExtrato(){
+  var raw=(document.getElementById('extrato-csv').value||'').trim();
+  if(!raw){ alert('Cole o extrato antes de processar.'); return; }
+  var lines=raw.split(/\r?\n/).filter(function(l){return l.trim();});
+  var sep=raw.indexOf(';')!==-1?';':',';
+  _extratoRows=[];
+  lines.forEach(function(line,idx){
+    var cols=line.split(sep).map(function(c){return c.trim().replace(/^"+|"+$/g,'');});
+    if(cols.length<2) return;
+    // Try to detect which column is data, description, value
+    // Heuristic: first col that looks like a date, then description, then value
+    var dataStr='',desc='',valorStr='';
+    // Try: col0=date, col1=desc, col2=value
+    var d0=parseExtratoData(cols[0]);
+    var d1=cols.length>2?parseExtratoData(cols[1]):'';
+    if(d0){ dataStr=d0; desc=cols[1]||''; valorStr=cols[2]||''; }
+    else if(d1){ dataStr=d1; desc=cols[0]||''; valorStr=cols[2]||''; }
+    else { dataStr=''; desc=cols[0]||''; valorStr=cols[cols.length-1]||''; }
+    var valor=parseExtratoValor(valorStr);
+    if(valor===null) return; // can't parse value, skip
+    _extratoRows.push({ idx:idx, data:dataStr, descricao:desc, valor:valor, sel:true, categoria:valor<0?'Outros':'Manual' });
+  });
+  if(!_extratoRows.length){ alert('Nenhuma linha válida encontrada. Verifique o formato (Data ; Descrição ; Valor).'); return; }
+  renderExtratoTable();
+  document.getElementById('extrato-step1').style.display='none';
+  var s2=document.getElementById('extrato-step2');
+  s2.style.display='flex';
+  s2.style.flexDirection='column';
+}
+
+function renderExtratoTable(){
+  var catOpts=FIN_CATS.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
+  var entradaOpts='<option value="Manual">Entrada (Manual)</option><option value="Asaas">Entrada (Asaas)</option>';
+  var rows=_extratoRows.map(function(r,i){
+    var isSaida=r.valor<0;
+    var valFmt=(isSaida?'− ':'+ ')+'R$ '+fmtMoeda(Math.abs(r.valor));
+    var valColor=isSaida?'var(--red)':'var(--green)';
+    var catSel=isSaida
+      ?'<select onchange="_extratoRows['+i+'].categoria=this.value" style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;">'+catOpts+'</select>'
+      :'<select onchange="_extratoRows['+i+'].categoria=this.value" style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;">'+entradaOpts+'</select>';
+    var dataFmt=r.data?r.data.split('-').reverse().join('/'):'—';
+    return '<tr style="opacity:'+(r.sel?'1':'0.4')+';">'+
+      '<td style="width:36px;text-align:center;"><input type="checkbox" '+(r.sel?'checked':'')+' onchange="_extratoRows['+i+'].sel=this.checked;renderExtratoTable();" style="accent-color:var(--purple);"></td>'+
+      '<td style="color:var(--muted);font-size:12px;white-space:nowrap;">'+dataFmt+'</td>'+
+      '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;" title="'+esc(r.descricao)+'">'+esc(r.descricao)+'</td>'+
+      '<td style="font-weight:700;color:'+valColor+';font-family:Barlow Condensed,sans-serif;white-space:nowrap;">'+valFmt+'</td>'+
+      '<td>'+catSel+'</td>'+
+    '</tr>';
+  }).join('');
+  var selecionadas=_extratoRows.filter(function(r){return r.sel;}).length;
+  var wrap=document.getElementById('extrato-table-wrap');
+  if(wrap) wrap.innerHTML='<div class="t-scroll"><table><thead><tr>'+
+    '<th style="width:36px;"></th><th>Data</th><th>Descrição</th><th>Valor</th><th>Segmento/Categoria</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+  var cnt=document.getElementById('extrato-count');
+  if(cnt) cnt.textContent=selecionadas+' de '+_extratoRows.length+' linhas selecionadas';
+}
+
+async function salvarExtrato(){
+  var selecionadas=_extratoRows.filter(function(r){return r.sel;});
+  if(!selecionadas.length){ alert('Selecione ao menos uma linha.'); return; }
+  var btn=document.querySelector('#modal-extrato .btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Salvando...';}
+  var saidas=selecionadas.filter(function(r){return r.valor<0;});
+  var entradas=selecionadas.filter(function(r){return r.valor>=0;});
+  var today=new Date().toISOString().split('T')[0];
+  var erros=0;
+  for(var i=0;i<saidas.length;i++){
+    var s=saidas[i];
+    try{
+      await fbPush('financeiro/saidas',{
+        data:s.data||today, valor:Math.abs(s.valor), descricao:s.descricao||'Importado extrato',
+        categoria:s.categoria||'Outros', status:'confirmado',
+        criadoPor:(CU&&CU.name)||'gestor', createdAt:Date.now(), _importado:true
+      });
+    }catch(e){erros++;}
+  }
+  for(var j=0;j<entradas.length;j++){
+    var en=entradas[j];
+    try{
+      await fbPush('financeiro/entradas_manuais',{
+        data:en.data||today, valor:en.valor, descricao:en.descricao||'Importado extrato',
+        categoria:en.categoria||'Manual',
+        criadoPor:(CU&&CU.name)||'gestor', createdAt:Date.now(), _importado:true
+      });
+    }catch(e){erros++;}
+  }
+  closeModal('modal-extrato');
+  showSheetToast(selecionadas.length+' lançamento(s) importado(s)'+(erros?' ('+erros+' erros)':'')+'!',erros>0);
+  loadFinanceiroData();
+}
+
 async function finConfirmarSaida(id,btn){
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';}
   await fbDb.ref('financeiro/saidas/'+id).update({status:'confirmado'});
