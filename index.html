@@ -179,7 +179,8 @@ tbody tr:hover td{background:var(--pglow2);}
 .kanban-board::-webkit-scrollbar{display:none;}
 .kanban-col{flex:0 0 270px;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:75vh;}
 .kanban-col-hd{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg2);font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--white);border-radius:12px 12px 0 0;}
-.kanban-col-body{padding:10px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;min-height:120px;transition:background .15s;}
+.kanban-col-body{padding:10px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;min-height:120px;transition:background .15s;scrollbar-width:none;-ms-overflow-style:none;}
+.kanban-col-body::-webkit-scrollbar{display:none;}
 .kanban-col-body.drag-over{background:var(--pglow2);border-radius:0 0 12px 12px;}
 .kanban-card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;cursor:grab;transition:border-color .15s,opacity .15s;}
 .kanban-card:hover{border-color:var(--border2);}
@@ -2077,7 +2078,7 @@ async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey,assinaturaId){
     });
   } else {
     // Mensalidade: assinatura recorrente mensal
-    var freqMap={'mensal':'MONTHLY','bimestral':'BIMONTHLY','trimestral':'QUARTERLY','semestral':'SEMIANNUALLY','anual':'YEARLY'};
+    var freqMap={'semanal':'WEEKLY','mensal':'MONTHLY','bimestral':'BIMONTHLY','trimestral':'QUARTERLY','semestral':'SEMIANNUALLY','anual':'YEARLY'};
     var cycle=freqMap[(vendaData.frequencia||'mensal').toLowerCase()]||'MONTHLY';
     result=await asaasPost('/subscriptions',{
       customer:customerId,
@@ -4012,18 +4013,60 @@ function extratoFileLoad(input){
 function autoGuessExtratoCategoria(desc, valor){
   var cat=valor<0?'Outros':'Manual';
   var dl=(desc||'').toLowerCase();
-  if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('meta ')) cat='Marketing';
-  if(dl.includes('anthropic')||dl.includes('google')||dl.includes('aws')||dl.includes('digitalocean')||dl.includes('servidor')) cat='Infraestrutura';
-  if(dl.includes('uber')) cat='Uber';
-  if(dl.includes('padaria')) cat='Padaria';
-  if(dl.includes('supermercado')||dl.includes('mercado')||dl.includes('atacado')) cat='Supermercado';
+  if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('meta ')||dl.includes('fb ')) cat='Marketing';
+  if(dl.includes('google ads')||dl.includes('dl *google')) cat='Marketing';
+  if(dl.includes('anthropic')||dl.includes('openai')||dl.includes('chatgpt')||dl.includes('claude sub')) cat='Infraestrutura';
+  if(dl.includes('z-api')||dl.includes('sellflux')||dl.includes('clicksign')||dl.includes('criativivo')) cat='Infraestrutura';
+  if(dl.includes('aws')||dl.includes('digitalocean')||dl.includes('servidor')||dl.includes('google cloud')) cat='Infraestrutura';
+  if(dl.includes('uber')||dl.includes('uber do brasil')) cat='Uber';
+  if(dl.includes('99 tecnologia')||dl.includes('99tec')) cat='Uber';
+  if(dl.includes('padaria')||dl.includes('lanchonete')) cat='Padaria';
+  if(dl.includes('supermercado')||dl.includes('atacado')||dl.includes('bh comercio')) cat='Supermercado';
   if(dl.includes('limpeza')||dl.includes('faxina')) cat='Limpeza';
-  if(dl.includes('aluguel')||dl.includes('locação')||dl.includes('locacao')) cat='Aluguel';
-  if(dl.includes('salário')||dl.includes('salario')||dl.includes('pagamento')) cat=valor<0?'Equipe':'Manual';
+  if(dl.includes('aluguel')||dl.includes('locação')||dl.includes('locacao')||dl.includes('imobiliaria')) cat='Aluguel';
+  if(dl.includes('salário')||dl.includes('salario')) cat=valor<0?'Equipe':'Manual';
   if(dl.includes('pró-labore')||dl.includes('pro labore')||dl.includes('prolabore')) cat='Pró-Labore';
-  if(dl.includes('imposto')||dl.includes('iof')||dl.includes('taxa')) cat='Taxas Bancárias';
+  if(dl.includes('iof')||dl.includes('taxa')||dl.includes('tarifa bancaria')) cat='Taxas Bancárias';
+  if(dl.includes('imposto')||dl.includes('simples nacional')||dl.includes('dasn')) cat='Impostos';
   if(dl.includes('fornecedor')) cat='Fornecedores';
+  if(dl.includes('cemig')||dl.includes('sabesp')||dl.includes('copasa')||dl.includes('light ')) cat='Infraestrutura';
   return cat;
+}
+
+// Parser específico para extrato InfinitePay / CloudWalk (formato tabela com Data por seção)
+function parseInfinitePayPDF(allLines){
+  var ptMonths={jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:11,dez:12};
+  function parsePtDate(s){
+    var m=(s||'').match(/(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?,?\s+(\d{4})/i);
+    if(!m) return '';
+    var mon=ptMonths[m[2].toLowerCase().substring(0,3)];
+    return mon?(m[3]+'-'+String(mon).padStart(2,'0')+'-'+m[1].padStart(2,'0')):'';
+  }
+  // Matches: [optional date prefix] HH:MM Type Name&Detail -Value
+  var TX_RE=/(\d{2}:\d{2})\s+(Cartão|Pix|Boleto|TED|DOC|Transferência)\s+(.*?)\s+(-\d{1,3}(?:\.\d{3})*,\d{2}|-\d+,\d{2})$/i;
+  var PT_DATE_RE=/\d{1,2}\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?,?\s+\d{4}/i;
+  var rows=[];
+  var currentDate='';
+  allLines.forEach(function(line){
+    var l=line.trim();
+    if(!l) return;
+    // Update current date whenever a date is found in the line
+    var dm=l.match(PT_DATE_RE);
+    if(dm){var pd=parsePtDate(l);if(pd) currentDate=pd;}
+    // Try to match as transaction line
+    var tm=l.match(TX_RE);
+    if(!tm) return;
+    var valor=parseExtratoValor(tm[4]);
+    if(valor===null) return;
+    var desc=tm[3].trim();
+    // Pix transactions: Nome column also starts with "Pix " — remove duplicate
+    desc=desc.replace(/^Pix\s+/i,'');
+    // Remove known detail suffixes at end
+    desc=desc.replace(/\s+(Enviado|Recebido|audenscompany|Pagamento efetuado|Pagamento)\s*$/i,'').trim();
+    if(!desc) desc='Transação';
+    rows.push({data:currentDate,descricao:desc,valor:valor,sel:true,categoria:autoGuessExtratoCategoria(desc,valor)});
+  });
+  return rows;
 }
 
 async function extratoPDFLoad(input){
@@ -4084,6 +4127,27 @@ async function extratoPDFLoad(input){
       if(!desc) desc='Transação PDF';
       _extratoRows.push({idx:idx,data:dataStr,descricao:desc,valor:valor,sel:true,categoria:autoGuessExtratoCategoria(desc,valor)});
     });
+    // Detect format and parse
+    var fullText=allLines.join(' ');
+    if(fullText.includes('Tipo de transação')||fullText.includes('tipo de transação')||fullText.includes('InfinitePay')||fullText.includes('infinitepay')){
+      _extratoRows=parseInfinitePayPDF(allLines);
+    } else {
+      // Generic: look for lines with DD/MM/YYYY date + value
+      var dateRe2=/\b(\d{2}\/\d{2}\/\d{4})\b/;
+      var valorRe2=/([-+]?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[-+]?\s*\d{1,3}(?:\.\d{3})*,\d{2})/;
+      _extratoRows=[];
+      allLines.forEach(function(line,idx){
+        var dm2=line.match(dateRe2);
+        var vm2=line.match(valorRe2);
+        if(!dm2||!vm2) return;
+        var dataStr=parseExtratoData(dm2[1]);
+        var valor=parseExtratoValor(vm2[1]);
+        if(valor===null||valor===0) return;
+        var desc=line.replace(dm2[0],'').replace(vm2[1],'').replace(/\s{2,}/g,' ').trim();
+        if(!desc) desc='Transação PDF';
+        _extratoRows.push({idx:idx,data:dataStr,descricao:desc,valor:valor,sel:true,categoria:autoGuessExtratoCategoria(desc,valor)});
+      });
+    }
     hideStatus();
     if(!_extratoRows.length){
       alert('Não foi possível extrair transações deste PDF.\n\nDica: tente exportar o extrato como CSV no seu banco e usar a opção de upload CSV.');
@@ -4366,8 +4430,8 @@ async function apagarAssinatura(id, nomeCliente){
 async function abrirModalAsaasAssinatura(id){
   var data=(await fbGet('assinaturas/'+id))||{};
   var vd=data.vendaData||{};
-  var planos=['Essencial','Avançado','Premium','Custom'];
-  var freqs=['mensal','bimestral','trimestral','semestral','anual'];
+  var planos=['Marketplaces','Premium','Elite'];
+  var freqs=['semanal','mensal','trimestral','semestral','anual'];
   var today=new Date().toISOString().split('T')[0];
   var html='<div class="modal-ov active" id="modal-asaas-assinatura" onclick="if(event.target===this)this.remove()">'+
     '<div class="modal-box" style="max-width:500px;">'+
@@ -4457,7 +4521,7 @@ function copiarLinkAssinatura(id,btn){
 }
 function abrirModalNovaAssinatura(){
   var today=new Date().toISOString().split('T')[0];
-  var planos=['Essencial','Avançado','Premium'];
+  var planos=['Marketplaces','Premium','Elite'];
   var html='<div class="modal-ov active" id="modal-nova-assinatura" onclick="if(event.target===this)cancelarNovaAssinatura()">'+
     '<div class="modal-box" style="max-width:500px;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-signature"></i> Novo Link de Assinatura</div>'+
