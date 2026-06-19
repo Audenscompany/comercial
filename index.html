@@ -7421,9 +7421,17 @@ function renderTarefasDia(){
     return t.atribuido===userName || (!t.atribuido&&t.criador===userName) || (CU&&CU.role==='gestor'&&!t.atribuido);
   });
 
+  var amanhaWeekday = dAmanha.getDay(); // 0=Dom ... 6=Sab
+
   var atrasadas = minhas.filter(function(t){ return getDateSort(t)<hojeSort; }).sort(urgSort);
   var hojeT    = minhas.filter(function(t){ return getDateSort(t)===hojeSort; }).sort(urgSort);
-  var amanhaT  = minhas.filter(function(t){ return getDateSort(t)===amanhaSort; }).sort(urgSort);
+  var amanhaT  = minhas.filter(function(t){
+    if(t.recorrente && t.diasSemana && t.diasSemana.length){
+      // Recurring: show in Amanhã if tomorrow's weekday is in the schedule
+      return t.diasSemana.indexOf(amanhaWeekday) !== -1;
+    }
+    return getDateSort(t) === amanhaSort;
+  }).sort(urgSort);
   var concluidasAll = all.filter(function(t){ return t.done; }).slice(-30);
 
   function tarefaDiaRowHtml(t){
