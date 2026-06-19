@@ -7394,88 +7394,70 @@ function diasSemanaLabel(dias){
 }
 
 function renderTarefasDia(){
-  var hoje = todayStr();
-  var visiveis = getTarefasVisiveis();
-  var pendentes = visiveis.filter(function(t){return !t.done;});
-  var concluidasHoje = visiveis.filter(function(t){return t.done;});
+  var hoje = todayStr(); // dd/mm/yyyy
+  var hojeSort = dateToSort(hoje);
 
-  // Sort pendentes: critico first, then urgente, then normal; overdue first within group
-  var urgOrder = {critico:0, urgente:1, normal:2};
-  pendentes.sort(function(a,b){
-    var ua = urgOrder[a.urgencia||'normal']||2, ub = urgOrder[b.urgencia||'normal']||2;
+  // Calculate tomorrow
+  var hp = hoje.split('/');
+  var dAmanha = new Date(parseInt(hp[2]), parseInt(hp[1])-1, parseInt(hp[0]));
+  dAmanha.setDate(dAmanha.getDate()+1);
+  var amanha = dAmanha.toLocaleDateString('pt-BR');
+  var amanhaSort = dateToSort(amanha);
+
+  var all = JSON.parse(localStorage.getItem('tarefas_dia')||'[]');
+  var userName = CU ? CU.name : '';
+  var urgOrd = {critico:0, urgente:1, normal:2};
+
+  function getDataRef(t){ return t.recorrente ? (t.proximaData||hoje) : (t.date||hoje); }
+  function getDateSort(t){ return dateToSort(getDataRef(t)); }
+  function urgSort(a,b){
+    var ua=urgOrd[a.urgencia||'normal']||0, ub=urgOrd[b.urgencia||'normal']||0;
     if(ua!==ub) return ua-ub;
-    return dateToSort(a.date||a.proximaData||hoje) < dateToSort(b.date||b.proximaData||hoje) ? -1 : 1;
-  });
-
-  var listHtml = '';
-  if(pendentes.length===0 && concluidasHoje.length===0){
-    listHtml = '<div class="empty-st"><i class="ti ti-checkbox"></i><p>Nenhuma tarefa para hoje</p></div>';
+    return getDateSort(a)<getDateSort(b)?-1:1;
   }
 
-  pendentes.forEach(function(t){
-    var dataRef = t.recorrente ? t.proximaData : t.date;
-    var atrasada = dataRef && dateToSort(dataRef) < dateToSort(hoje);
+  var minhas = all.filter(function(t){
+    if(t.done) return false;
+    return t.atribuido===userName || (!t.atribuido&&t.criador===userName) || (CU&&CU.role==='gestor'&&!t.atribuido);
+  });
+
+  var atrasadas = minhas.filter(function(t){ return getDateSort(t)<hojeSort; }).sort(urgSort);
+  var hojeT    = minhas.filter(function(t){ return getDateSort(t)===hojeSort; }).sort(urgSort);
+  var amanhaT  = minhas.filter(function(t){ return getDateSort(t)===amanhaSort; }).sort(urgSort);
+  var concluidasAll = all.filter(function(t){ return t.done; }).slice(-30);
+
+  function tarefaDiaRowHtml(t){
+    var dataRef = getDataRef(t);
+    var atrasada = getDateSort(t) < hojeSort;
     var bordaCor = urgenciaCor(t.urgencia||'normal');
     var recTag = t.recorrente ? '<span class="badge b-cyan" style="font-size:10px;"><i class="ti ti-repeat"></i> '+diasSemanaLabel(t.diasSemana||[])+'</span>' : '';
-    var atribTag = t.atribuido ? '<span class="badge b-purple" style="font-size:10px;"><i class="ti ti-user"></i> '+t.atribuido+'</span>' : '';
-    var criadorTag = (t.criador && t.criador !== (CU?CU.name:'')) ? '<span style="font-size:11px;color:var(--muted);">de '+t.criador+'</span>' : '';
-    var dataTag = atrasada ? '<span style="font-size:11px;color:var(--red);">Atrasada · '+dataRef+'</span>' :
-                  (dataRef&&dataRef!==hoje ? '<span style="font-size:11px;color:var(--muted);">'+dataRef+'</span>' : '');
-    listHtml += '<div style="display:flex;align-items:flex-start;gap:12px;padding:13px 16px;background:var(--bg2);border:1px solid '+bordaCor+';border-radius:10px;margin-bottom:8px;">'+
-      '<button type="button" onclick="concluirTarefa(\''+t.id+'\')" style="width:22px;height:22px;border-radius:50%;border:2px solid '+bordaCor+';background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px;transition:background .2s;" onmouseover="this.style.background=\'rgba(123,47,255,0.25)\'" onmouseout="this.style.background=\'transparent\'"></button>'+
+    var atribTag = (t.atribuido&&t.atribuido!==userName) ? '<span class="badge b-purple" style="font-size:10px;"><i class="ti ti-user"></i> '+t.atribuido+'</span>' : '';
+    var dataTag = atrasada ? '<div style="font-size:11px;color:var(--red);margin-top:3px;"><i class="ti ti-alert-triangle"></i> Atrasada · '+dataRef+'</div>' :
+                  (dataRef&&dataRef!==hoje ? '<div style="font-size:11px;color:var(--muted);margin-top:3px;">'+dataRef+'</div>' : '');
+    var excBtn = (CU&&(CU.role==='gestor'||t.criador===userName)) ?
+      '<button onclick="excluirTarefa(\''+t.id+'\')" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;flex-shrink:0;" title="Excluir"><i class="ti ti-x"></i></button>' : '';
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid '+bordaCor+';border-radius:10px;margin-bottom:8px;">'+
+      '<button type="button" onclick="concluirTarefa(\''+t.id+'\')" title="Concluir" '+
+        'style="width:20px;height:20px;border-radius:50%;border:2px solid '+bordaCor+';background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px;transition:background .2s;" '+
+        'onmouseover="this.style.background=\'rgba(123,47,255,0.25)\'" onmouseout="this.style.background=\'transparent\'"></button>'+
       '<div style="flex:1;min-width:0;">'+
-        '<div style="font-family:Barlow Condensed,sans-serif;font-size:15px;font-weight:600;color:var(--white);margin-bottom:5px;">'+t.texto+'</div>'+
-        '<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">'+
-          urgenciaBadge(t.urgencia||'normal')+recTag+atribTag+criadorTag+dataTag+
-        '</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:600;color:var(--white);margin-bottom:4px;">'+t.texto+'</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">'+urgenciaBadge(t.urgencia||'normal')+recTag+atribTag+'</div>'+
+        dataTag+
       '</div>'+
-      (CU&&(CU.role==='gestor'||t.criador===CU.name)?
-        '<button onclick="excluirTarefa(\''+t.id+'\')" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;flex-shrink:0;" title="Excluir"><i class="ti ti-x"></i></button>':'')+
+      excBtn+
     '</div>';
-  });
-
-  if(concluidasHoje.length>0){
-    listHtml += '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">'+
-      '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">CONCLUÍDAS HOJE ('+concluidasHoje.length+')</div>';
-    concluidasHoje.forEach(function(t){
-      listHtml += '<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;opacity:0.45;text-decoration:line-through;font-size:13px;color:var(--muted);">'+
-        '<i class="ti ti-circle-check" style="color:var(--green);font-size:18px;flex-shrink:0;"></i>'+t.texto+'</div>';
-    });
-    listHtml += '</div>';
   }
 
-  // Painel de tarefas atribuídas (só gestor vê)
-  var atribHtml = '';
-  if(CU && CU.role==='gestor'){
-    var atrib = getTarefasAtribuidas();
-    var atribPend = atrib.filter(function(t){return !t.done;});
-    var atribOk = atrib.filter(function(t){return t.done;});
-    if(atrib.length>0){
-      atribHtml = '<div class="cb" style="margin-bottom:16px;">'+
-        '<div class="cb-hd"><div class="cb-title"><i class="ti ti-users" style="margin-right:6px;color:var(--cyan);"></i>Tarefas Atribuídas</div>'+
-        '<span class="badge b-cyan">'+atribPend.length+' pendentes</span></div>'+
-        '<div style="padding:14px 16px;">';
-      atrib.forEach(function(t){
-        var cor = t.done ? 'rgba(34,197,94,0.3)' : urgenciaCor(t.urgencia||'normal');
-        var dataRef = t.recorrente ? t.proximaData : t.date;
-        atribHtml += '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid '+cor+';border-radius:8px;margin-bottom:6px;'+(t.done?'opacity:0.5;':'')+'">'+
-          '<i class="ti '+(t.done?'ti-circle-check" style="color:var(--green)':'ti-clock" style="color:var(--muted)')+';font-size:16px;flex-shrink:0;"></i>'+
-          '<div style="flex:1;"><div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--white);'+(t.done?'text-decoration:line-through;':'')+'">'+t.texto+'</div>'+
-            '<div style="display:flex;gap:5px;margin-top:3px;">'+
-              '<span class="badge b-purple" style="font-size:10px;">'+t.atribuido+'</span>'+
-              urgenciaBadge(t.urgencia||'normal')+
-              (dataRef?'<span style="font-size:11px;color:var(--muted);">'+dataRef+'</span>':'')+
-              (t.done?'<span class="badge b-green" style="font-size:10px;">Concluída</span>':'')+
-            '</div>'+
-          '</div>'+
-          '<button onclick="excluirTarefa(\''+t.id+'\')" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;" title="Excluir"><i class="ti ti-x"></i></button>'+
-        '</div>';
-      });
-      atribHtml += '</div></div>';
-    }
+  function colHtml(title, items, hdClass, emptyMsg){
+    return '<div class="tarefas-col">'+
+      '<div class="tarefas-col-hd '+hdClass+'"><span>'+title+'</span><span class="tarefas-col-count">'+items.length+'</span></div>'+
+      '<div class="tarefas-col-body">'+
+        (items.length ? items.map(tarefaDiaRowHtml).join('') : '<div class="kanban-empty">'+emptyMsg+'</div>')+
+      '</div></div>';
   }
 
-  // Build the "nova tarefa" form
+  // Nova Tarefa form (collapsible)
   var atribOpts = '';
   if(CU && CU.role==='gestor'){
     atribOpts = '<div style="margin-top:10px;">'+
@@ -7486,7 +7468,7 @@ function renderTarefasDia(){
       '</select></div>';
   }
 
-  var diasBtns = '<div style="margin-top:10px;" id="rec-dias-wrap" style="display:none;">'+
+  var diasBtns = '<div style="margin-top:10px;display:none;" id="rec-dias-wrap">'+
     '<label style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;">Dias da semana</label>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
     ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(function(d,i){
@@ -7494,56 +7476,91 @@ function renderTarefasDia(){
     }).join('')+
     '</div></div>';
 
-  var isHoje = !_tarefasData || _tarefasData===todayStr();
-  return '<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Tarefas do Dia</div><div class="page-sub">'+hoje+' · '+pendentes.length+' pendentes</div></div>'+
-    '<div style="display:flex;align-items:center;gap:8px;">'+
-      '<button class="btn btn-outline" onclick="navTarefasData(-1)" style="padding:6px 10px;font-size:13px;"><i class="ti ti-chevron-left"></i></button>'+
-      (!isHoje?'<button class="btn btn-outline" onclick="resetTarefasData()" style="padding:6px 12px;font-size:12px;">Hoje</button>':'')+
-      '<button class="btn btn-outline" onclick="navTarefasData(1)" style="padding:6px 10px;font-size:13px;"><i class="ti ti-chevron-right"></i></button>'+
-      '<span class="badge b-purple">'+pendentes.length+' pendentes</span>'+
-    '</div></div>'+
-
-    '<div class="cb" style="margin-bottom:16px;">'+
-      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-plus" style="margin-right:6px;color:var(--purple3);"></i>Nova Tarefa</div></div>'+
-      '<div style="padding:16px;">'+
-        '<input id="nova-tarefa-txt" type="text" placeholder="Descreva a tarefa..." class="f-input" style="margin-bottom:10px;" onkeydown="if(event.key===\'Enter\')addTarefa()">'+
-
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
-          '<div>'+
-            '<label style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;">Data</label>'+
-            '<input id="nt-data" type="date" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--white);font-size:14px;outline:none;" value="'+new Date().toISOString().slice(0,10)+'">'+
-          '</div>'+
-          '<div>'+
-            '<label style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;">Urgência</label>'+
-            '<select id="nt-urgencia" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--white);font-size:14px;outline:none;">'+
-              '<option value="normal">Normal</option>'+
-              '<option value="urgente">🟡 Urgente</option>'+
-              '<option value="critico">🔴 Crítico</option>'+
-            '</select>'+
-          '</div>'+
+  var formHtml = '<details style="margin-bottom:16px;">'+
+    '<summary style="cursor:pointer;user-select:none;padding:13px 16px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--purple3);background:var(--bg2);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;gap:8px;list-style:none;outline:none;"><i class="ti ti-plus"></i> Nova Tarefa</summary>'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;padding:16px;">'+
+      '<input id="nova-tarefa-txt" type="text" placeholder="Descreva a tarefa..." class="f-input" style="margin-bottom:10px;" onkeydown="if(event.key===\'Enter\')addTarefa()">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
+        '<div>'+
+          '<label style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;">Data</label>'+
+          '<input id="nt-data" type="date" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--white);font-size:14px;outline:none;" value="'+new Date().toISOString().slice(0,10)+'">'+
         '</div>'+
-
-        '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;">'+
-          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--muted);">'+
-            '<input type="checkbox" id="nt-recorrente" onchange="toggleRecorrente()" style="width:16px;height:16px;accent-color:var(--purple);cursor:pointer;">'+
-            '<i class="ti ti-repeat" style="color:var(--cyan);"></i> Tarefa Recorrente'+
-          '</label>'+
-        '</div>'+
-
-        diasBtns+
-        atribOpts+
-
-        '<div style="margin-top:14px;">'+
-          '<button class="btn btn-primary" onclick="addTarefa()" style="width:100%;padding:12px;font-size:15px;"><i class="ti ti-plus"></i> Adicionar Tarefa</button>'+
+        '<div>'+
+          '<label style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;">Urgência</label>'+
+          '<select id="nt-urgencia" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--white);font-size:14px;outline:none;">'+
+            '<option value="normal">Normal</option>'+
+            '<option value="urgente">🟡 Urgente</option>'+
+            '<option value="critico">🔴 Crítico</option>'+
+          '</select>'+
         '</div>'+
       '</div>'+
+      '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;">'+
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--muted);">'+
+          '<input type="checkbox" id="nt-recorrente" onchange="toggleRecorrente()" style="width:16px;height:16px;accent-color:var(--purple);cursor:pointer;">'+
+          '<i class="ti ti-repeat" style="color:var(--cyan);"></i> Tarefa Recorrente'+
+        '</label>'+
+      '</div>'+
+      diasBtns+
+      atribOpts+
+      '<div style="margin-top:14px;">'+
+        '<button class="btn btn-primary" onclick="addTarefa()" style="width:100%;padding:12px;font-size:15px;"><i class="ti ti-plus"></i> Adicionar Tarefa</button>'+
+      '</div>'+
     '</div>'+
+  '</details>';
 
-    atribHtml+
+  var totalPend = atrasadas.length + hojeT.length;
+  var html = '<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title">Tarefas do Dia</div><div class="page-sub">'+hoje+' · '+totalPend+' pendentes</div></div></div>'+
+    formHtml+
+    '<div class="tarefas-board">'+
+      colHtml('Atrasadas', atrasadas, 'tarefas-hd-red',    'Sem tarefas atrasadas')+
+      colHtml('Hoje',      hojeT,     'tarefas-hd-purple', 'Tudo em dia!')+
+      colHtml('Amanhã',   amanhaT,   'tarefas-hd-cyan',   'Sem tarefas amanhã')+
+    '</div>';
 
-    '<div id="tarefas-lista">'+listHtml+'</div>'+
-  '</div>';
+  // Concluídas
+  if(concluidasAll.length){
+    html += '<div class="cb" style="margin-top:16px;"><div class="cb-hd"><span class="cb-title"><i class="ti ti-circle-check" style="color:var(--green);margin-right:6px;"></i>Concluídas recentemente</span><span class="badge b-green">'+concluidasAll.length+'</span></div>'+
+      '<div style="padding:8px 16px;">'+
+      concluidasAll.map(function(t){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);opacity:0.5;">'+
+          '<i class="ti ti-circle-check" style="color:var(--green);font-size:16px;flex-shrink:0;"></i>'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--white);text-decoration:line-through;flex:1;">'+t.texto+'</span>'+
+          (t.doneDate?'<span style="font-size:11px;color:var(--muted);">'+t.doneDate+'</span>':'')+
+        '</div>';
+      }).join('')+
+      '</div></div>';
+  }
+
+  // Tarefas atribuídas (gestor only)
+  if(CU && CU.role==='gestor'){
+    var atrib = getTarefasAtribuidas();
+    var atribPend = atrib.filter(function(t){return !t.done;});
+    if(atrib.length>0){
+      html += '<div class="cb" style="margin-top:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-users" style="margin-right:6px;color:var(--cyan);"></i>Tarefas Atribuídas</div>'+
+        '<span class="badge b-cyan">'+atribPend.length+' pendentes</span></div>'+
+        '<div style="padding:14px 16px;">';
+      atrib.forEach(function(t){
+        var cor = t.done ? 'rgba(34,197,94,0.3)' : urgenciaCor(t.urgencia||'normal');
+        var dataRef = t.recorrente ? t.proximaData : t.date;
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid '+cor+';border-radius:8px;margin-bottom:6px;'+(t.done?'opacity:0.5;':'')+'">'+
+          '<i class="ti '+(t.done?'ti-circle-check" style="color:var(--green)':'ti-clock" style="color:var(--muted)')+';font-size:16px;flex-shrink:0;"></i>'+
+          '<div style="flex:1;"><div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--white);'+(t.done?'text-decoration:line-through;':'')+'">'+t.texto+'</div>'+
+            '<div style="display:flex;gap:5px;margin-top:3px;">'+
+              '<span class="badge b-purple" style="font-size:10px;">'+t.atribuido+'</span>'+
+              urgenciaBadge(t.urgencia||'normal')+
+              (dataRef?'<span style="font-size:11px;color:var(--muted);">'+dataRef+'</span>':'')+
+            '</div>'+
+          '</div>'+
+          '<button onclick="excluirTarefa(\''+t.id+'\')" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;" title="Excluir"><i class="ti ti-x"></i></button>'+
+        '</div>';
+      });
+      html += '</div></div>';
+    }
+  }
+
+  html += '</div>';
+  return html;
 }
 
 function toggleDiaBtn(idx){
