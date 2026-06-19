@@ -2043,8 +2043,8 @@ function asaasStatusBadge(status){
   };
   return map[status]||'<span class="badge" style="background:rgba(100,100,100,0.2);color:var(--muted);">'+status+'</span>';
 }
-async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey){
-  if(!asaasApiKey){console.warn('Asaas: API key não configurada');return;}
+async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey,assinaturaId){
+  if(!asaasApiKey){showSheetToast('⚠️ API Key do Asaas não configurada — veja Configurações');return;}
   // 1. Buscar ou criar cliente
   var cpfCnpj=(leadInfo.cnpj||vendaData.cnpj||'').replace(/\D/g,'');
   var customerId=null;
@@ -2099,10 +2099,13 @@ async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey){
       kanbanData[kanbanKey].asaasStatus='ACTIVE';
       localStorage.setItem('audens_kanban',JSON.stringify(kanbanData));
     }
+    if(assinaturaId&&(fbDb||initFirebase())){
+      fbDb.ref('assinaturas/'+assinaturaId).update({asaasCustomerId:customerId,asaasChargeId:result.id,asaasStatus:'ACTIVE'});
+    }
     showSheetToast(isSub?'✅ Assinatura criada no Asaas':'✅ Cobrança criada no Asaas');
   }else{
     console.error('Asaas: falha ao criar',result);
-    showSheetToast('Asaas: erro ao criar cobrança — verifique o console');
+    showSheetToast('⚠️ Asaas: erro ao criar cobrança — verifique o console');
   }
 }
 function saveAsaasConfig(){
@@ -3947,7 +3950,7 @@ async function finSalvarLancamento(){
   loadFinanceiroData();
 }
 // ===== IMPORTAR EXTRATO BANCÁRIO =====
-var FIN_CATS=['Infraestrutura','Marketing','Equipe','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Outros'];
+var FIN_CATS=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Outros'];
 var _extratoRows=[];
 
 function openModalExtrato(){
@@ -4235,6 +4238,9 @@ async function loadAssinaturas(){
         : '<span class="badge b-amber">Pendente</span>';
       var criado=r.createdAt?new Date(r.createdAt).toLocaleDateString('pt-BR'):'-';
       var pagBadge = r.asaasStatus ? asaasStatusBadge(r.asaasStatus) : '<span style="color:var(--muted);font-size:12px;">-</span>';
+      var asaasBtn = (!r.asaasStatus && r.vendaData)
+        ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(139,92,246,0.15);color:var(--purple3);border:1px solid rgba(139,92,246,0.3);" onclick="criarCobrancaAssinaturaManual(\''+id+'\',this)" title="Criar cobrança no Asaas"><i class="ti ti-credit-card"></i> Asaas</button>'
+        : '';
       return '<tr>'+
         '<td>'+esc(r.cliente||'-')+'</td>'+
         '<td>'+esc(r.telefone||'-')+'</td>'+
@@ -4243,7 +4249,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;"><button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -4260,6 +4266,25 @@ async function apagarAssinatura(id, nomeCliente){
     showSheetToast('Contrato apagado.');
   }catch(e){
     alert('Erro ao apagar: '+e.message);
+  }
+}
+async function criarCobrancaAssinaturaManual(id, btn){
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Criando...';}
+  try{
+    var data=await fbGet('assinaturas/'+id);
+    if(!data||!data.vendaData){
+      showSheetToast('Dados insuficientes — use "Nova Assinatura" para preencher os dados comerciais');
+      if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-credit-card"></i> Asaas';}
+      return;
+    }
+    await criarCobrancaAsaas(
+      {nome:data.cliente||'',telefone:data.telefone||'',cnpj:data.cnpj||''},
+      data.vendaData,null,id
+    );
+    loadAssinaturas();
+  }catch(e){
+    showSheetToast('Erro: '+e.message);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-credit-card"></i> Asaas';}
   }
 }
 function copiarLinkAssinatura(id,btn){
@@ -4339,8 +4364,8 @@ async function salvarNovaAssinatura(){
       cnpj:cnpj,vendaData:vendaData,status:'pendente',createdAt:Date.now()
     });
     var id=ref&&ref.key;
-    // Cria no Asaas (mesmo fluxo do Kanban Venda)
-    await criarCobrancaAsaas({nome:cliente,telefone:telefone,cnpj:cnpj},vendaData,null);
+    // Cria no Asaas (mesmo fluxo do Kanban Venda) — passa id para salvar asaasChargeId na assinatura
+    await criarCobrancaAsaas({nome:cliente,telefone:telefone,cnpj:cnpj},vendaData,null,id);
     // Registra como cliente no sistema
     appendClienteRow({
       nomeCliente:cliente,plano:plano,duracaoMeses:duracao,
