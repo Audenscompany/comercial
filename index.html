@@ -1237,17 +1237,75 @@ async function enviarLinkAssinaturaWA(telefone, nome, link){
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
 async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink){
+  if(!telefone){console.warn('[WA] Confirmação não enviada: lead sem telefone (nome='+nome+')');return;}
   try{
     var payload={telefone:telefone, nome:nome, meetingDisplay:meetingDisplay};
     if(responsavel) payload.responsavel=responsavel;
     if(meetLink) payload.meetLink=meetLink;
-    await fetch(RECEBERLEAD_URL+'/agendar?secret='+WEBHOOK_SECRET,{
+    var resp=await fetch(RECEBERLEAD_URL+'/agendar?secret='+WEBHOOK_SECRET,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)
     });
+    if(!resp.ok) console.warn('[WA] /agendar retornou',resp.status,'para',nome);
+    else console.log('[WA] Confirmação enviada para',nome,telefone);
   }catch(e){console.error('enviarConfirmacaoReuniaoWA error',e);}
 }
+
+// ===== LEMBRETE DE VÉSPERA (21h) — notifica SDR e closers via WhatsApp =====
+// Chama o endpoint /vespera do Cloud Run com as reuniões do dia seguinte.
+// Lucas e Gustavo recebem apenas as próprias reuniões; João recebe todas.
+async function enviarLembreteVespera(){
+  var amanhaD = new Date(); amanhaD.setDate(amanhaD.getDate()+1);
+  var amanhaISO = amanhaD.toISOString().split('T')[0];
+  var reunioesAmanha = Object.values(meetings).filter(function(m){
+    if(m._hidden) return false;
+    var iso = m.dtISO || m.meetingISO || '';
+    return iso && iso.startsWith(amanhaISO);
+  }).map(function(m){
+    var display = m.dtDisplay || m.meetingDisplay || '';
+    return {
+      nome: m.nome||'',
+      horario: display.split(' ')[1]||'',
+      responsavel: m.responsavel||'',
+      meetLink: m.meetLink||''
+    };
+  });
+  if(!_contatosEquipe.lucas && !_contatosEquipe.gustavo && !_contatosEquipe.joao){
+    console.warn('[Vespera] Contatos da equipe não configurados. Acesse Configurações → Contatos da Equipe.');
+    return;
+  }
+  try{
+    var resp=await fetch(RECEBERLEAD_URL+'/vespera?secret='+WEBHOOK_SECRET,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contatosEquipe:_contatosEquipe,
+        reunioesAmanha:reunioesAmanha,
+        dataAmanha:amanhaISO
+      })
+    });
+    if(resp.ok) console.log('[Vespera] Notificação enviada:',reunioesAmanha.length,'reuniões para amanhã');
+    else console.warn('[Vespera] /vespera retornou',resp.status);
+  }catch(e){
+    console.error('[Vespera] Erro ao notificar equipe:',e);
+    // Remove flag para tentar novamente
+    localStorage.removeItem('_vespera_'+amanhaISO);
+  }
+}
+
+// Verifica a cada minuto se chegou 21h para disparar o lembrete de véspera
+function tickVespera(){
+  var now = new Date();
+  if(now.getHours() !== 21) return;
+  var amanhaISO = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1).toISOString().split('T')[0];
+  var flagKey = '_vespera_'+amanhaISO;
+  if(localStorage.getItem(flagKey)) return; // já enviado hoje
+  localStorage.setItem(flagKey, '1');
+  console.log('[Vespera] São 21h — enviando lembrete da equipe...');
+  enviarLembreteVespera();
+}
+setInterval(tickVespera, 60000); // verifica a cada 1 minuto
 // Arquiva o lead (sai das colunas do funil, vai para "Arquivados")
 function archiveKanbanCard(key){
   moveKanbanCard(key,'arquivado');
@@ -4218,8 +4276,6 @@ async function saveCallFinalAsync(){
     tarefaOrigem:_tuSDR?_tuSDR.tipo:'',tarefaOrigemDia:_tuSDR?'Dia '+_tuSDR.dia:''};
   if(fromReativacao){meeting.origem='Recuperacao';}else{meeting.origem='COLDCALL';}
   meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
-  // Dispara confirmacao da reuniao + materiais de aquecimento por WhatsApp (nao bloqueia a UI)
-  enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
   // Grava ligação + reunião no Google Sheets
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
   var btn=document.querySelector('#mc-body .btn-primary');
@@ -4229,6 +4285,8 @@ async function saveCallFinalAsync(){
     meetings[mid].gcalEventId=result.eventId;meetings[mid].meetLink=result.meetLink;meetings[mid].gcalLink=result.htmlLink;
     saveAll();saveMeetingFB(mid,meetings[mid]);
   }
+  // Dispara confirmacao WA APÓS Google Calendar (para incluir o meetLink na mensagem)
+  enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay, _callData.responsavel, (result.success?result.meetLink:null));
   if(fromReativacao){
     await saveReativacaoStatus(l.telefone,'agendou');
     // Registra a nova reuniao na planilha de Reunioes (Origem = Recuperacao) e salva sheetRow
@@ -4265,7 +4323,7 @@ async function saveCallFinal(){
       tarefaOrigem:_tuSDR2?_tuSDR2.tipo:'',tarefaOrigemDia:_tuSDR2?'Dia '+_tuSDR2.dia:''};
     meetings[mid2]=mtg2;
     saveMeetingFB(mid2,mtg2);
-    enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay);
+    enviarConfirmacaoReuniaoWA(l.telefone, l.nome, _callData.meetingDisplay, _callData.responsavel);
     // Registra a reuniao agendada via Cold Call (Leads de Hoje) na planilha de Reunioes e salva sheetRow
     try{
       var _shRowF=await appendSheetRow(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes,
