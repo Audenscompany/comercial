@@ -3997,12 +3997,13 @@ function extratoFileLoad(input){
 
 function parseExtratoValor(s){
   if(!s) return null;
-  // Remove currency symbols, spaces; handle Brazilian format (1.234,56) and US (1,234.56)
-  s=s.trim().replace(/[R$\s]/g,'');
+  s=s.trim().replace(/^"+|"+$/g,''); // remove surrounding quotes
+  // Remove R$, spaces
+  s=s.replace(/R\$\s*/g,'').replace(/\s/g,'');
   var neg=s.startsWith('-');
   s=s.replace(/^[+-]/,'');
-  // Brazilian: dots as thousands, comma as decimal
-  if(s.indexOf(',')>s.indexOf('.') && s.indexOf(',')!==-1){
+  // Brazilian format: dots as thousands, comma as decimal → "1.488,27"
+  if(s.indexOf(',')!==-1){
     s=s.replace(/\./g,'').replace(',','.');
   } else {
     s=s.replace(/,/g,'');
@@ -4013,7 +4014,7 @@ function parseExtratoValor(s){
 
 function parseExtratoData(s){
   if(!s) return '';
-  s=s.trim();
+  s=s.trim().replace(/^"+|"+$/g,'');
   // DD/MM/YYYY or DD-MM-YYYY → YYYY-MM-DD
   var m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if(m){
@@ -4025,29 +4026,98 @@ function parseExtratoData(s){
   return '';
 }
 
+// Proper CSV parser that handles quoted fields containing commas/newlines
+function parseCSVLine(line, sep){
+  var cols=[],cur='',inQ=false;
+  for(var i=0;i<line.length;i++){
+    var ch=line[i];
+    if(ch==='"'){inQ=!inQ;}
+    else if(ch===sep&&!inQ){cols.push(cur.replace(/^"+|"+$/g,'').trim());cur='';}
+    else{cur+=ch;}
+  }
+  cols.push(cur.replace(/^"+|"+$/g,'').trim());
+  return cols;
+}
+
+// Known column name aliases (lowercase)
+var _COL_DATA=['data','date','dt','data da transação'];
+var _COL_DESC=['nome','descrição','description','descricao','historico','histórico','estabelecimento','lançamento','lancamento'];
+var _COL_VALOR=['valor','value','amount','montante'];
+var _COL_DETALHE=['detalhe','detail','tipo','tipo de transação'];
+
+function detectColMap(headers){
+  // Returns {dataIdx, descIdx, valorIdx, detalheIdx}
+  var map={dataIdx:-1,descIdx:-1,valorIdx:-1,detalheIdx:-1};
+  headers.forEach(function(h,i){
+    var hl=h.toLowerCase().trim();
+    if(map.dataIdx===-1 && _COL_DATA.some(function(k){return hl.includes(k);})) map.dataIdx=i;
+    if(map.descIdx===-1 && _COL_DESC.some(function(k){return hl.includes(k);})) map.descIdx=i;
+    if(map.valorIdx===-1 && _COL_VALOR.some(function(k){return hl===k||hl.includes(k);})) map.valorIdx=i;
+    if(map.detalheIdx===-1 && _COL_DETALHE.some(function(k){return hl.includes(k);})) map.detalheIdx=i;
+  });
+  return map;
+}
+
 function processarExtrato(){
   var raw=(document.getElementById('extrato-csv').value||'').trim();
   if(!raw){ alert('Cole o extrato antes de processar.'); return; }
   var lines=raw.split(/\r?\n/).filter(function(l){return l.trim();});
+  // Detect separator: semicolon takes priority; comma if no semicolons
   var sep=raw.indexOf(';')!==-1?';':',';
   _extratoRows=[];
-  lines.forEach(function(line,idx){
-    var cols=line.split(sep).map(function(c){return c.trim().replace(/^"+|"+$/g,'');});
-    if(cols.length<2) return;
-    // Try to detect which column is data, description, value
-    // Heuristic: first col that looks like a date, then description, then value
-    var dataStr='',desc='',valorStr='';
-    // Try: col0=date, col1=desc, col2=value
-    var d0=parseExtratoData(cols[0]);
-    var d1=cols.length>2?parseExtratoData(cols[1]):'';
-    if(d0){ dataStr=d0; desc=cols[1]||''; valorStr=cols[2]||''; }
-    else if(d1){ dataStr=d1; desc=cols[0]||''; valorStr=cols[2]||''; }
-    else { dataStr=''; desc=cols[0]||''; valorStr=cols[cols.length-1]||''; }
-    var valor=parseExtratoValor(valorStr);
-    if(valor===null) return; // can't parse value, skip
-    _extratoRows.push({ idx:idx, data:dataStr, descricao:desc, valor:valor, sel:true, categoria:valor<0?'Outros':'Manual' });
+
+  // Detect header row
+  var startLine=0;
+  var colMap={dataIdx:-1,descIdx:-1,valorIdx:-1,detalheIdx:-1};
+  var firstCols=parseCSVLine(lines[0],sep);
+  var isHeader=firstCols.some(function(c){
+    var cl=c.toLowerCase();
+    return _COL_DATA.concat(_COL_DESC,_COL_VALOR).some(function(k){return cl.includes(k);});
   });
-  if(!_extratoRows.length){ alert('Nenhuma linha válida encontrada. Verifique o formato (Data ; Descrição ; Valor).'); return; }
+  if(isHeader){
+    colMap=detectColMap(firstCols);
+    startLine=1;
+  }
+
+  lines.slice(startLine).forEach(function(line,idx){
+    if(!line.trim()) return;
+    var cols=parseCSVLine(line,sep);
+    if(cols.length<2) return;
+
+    var dataStr='',desc='',valorStr='',tipoStr='';
+
+    if(colMap.valorIdx!==-1){
+      // Use detected column map
+      dataStr=colMap.dataIdx!==-1?parseExtratoData(cols[colMap.dataIdx]):'';
+      valorStr=colMap.valorIdx!==-1?(cols[colMap.valorIdx]||''):'';
+      // Build description: Nome + Detalhe (Mercado Pago style)
+      var nomeStr=colMap.descIdx!==-1?(cols[colMap.descIdx]||''):'';
+      var detStr=colMap.detalheIdx!==-1?(cols[colMap.detalheIdx]||''):'';
+      desc=[nomeStr,detStr].filter(function(s){return s&&s.toLowerCase()!=='enviado'&&s.toLowerCase()!=='recebido'&&s!==nomeStr.split(' ')[0];}).join(' — ');
+      if(!desc) desc=nomeStr||detStr;
+    } else {
+      // Fallback: heuristic detection
+      var d0=parseExtratoData(cols[0]);
+      if(d0){ dataStr=d0; desc=cols[1]||''; valorStr=cols[cols.length-1]||''; }
+      else{ dataStr=''; desc=cols[0]||''; valorStr=cols[cols.length-1]||''; }
+    }
+
+    var valor=parseExtratoValor(valorStr);
+    if(valor===null) return;
+    // Autoguess category
+    var cat=valor<0?'Outros':'Manual';
+    var dl=(desc||'').toLowerCase();
+    if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('meta ')) cat='Marketing';
+    if(dl.includes('anthropic')||dl.includes('google')||dl.includes('aws')||dl.includes('digitalocean')||dl.includes('servidor')) cat='Infraestrutura';
+    if(dl.includes('uber')||dl.includes('ifood')||dl.includes('99 tec')) cat='Outros';
+    if(dl.includes('salário')||dl.includes('salario')||dl.includes('joao')||dl.includes('joão')||dl.includes('pagamento')) cat=valor<0?'Equipe':'Manual';
+    if(dl.includes('imposto')||dl.includes('iof')||dl.includes('taxa')) cat='Taxas Bancárias';
+    if(dl.includes('vendas')||dl.includes('infinitepay')||dl.includes('recebido')) cat=valor<0?'Outros':'Manual';
+
+    _extratoRows.push({ idx:startLine+idx, data:dataStr, descricao:desc.trim(), valor:valor, sel:true, categoria:cat });
+  });
+
+  if(!_extratoRows.length){ alert('Nenhuma linha válida encontrada.\n\nFormatos aceitos:\n• Mercado Pago CSV (Data,Hora,Tipo,Nome,Detalhe,Valor)\n• Simples (Data;Descrição;Valor)'); return; }
   renderExtratoTable();
   document.getElementById('extrato-step1').style.display='none';
   var s2=document.getElementById('extrato-step2');
