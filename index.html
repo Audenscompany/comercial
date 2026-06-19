@@ -3950,7 +3950,7 @@ async function finSalvarLancamento(){
   loadFinanceiroData();
 }
 // ===== IMPORTAR EXTRATO BANCÁRIO =====
-var FIN_CATS=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Outros'];
+var FIN_CATS=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Uber','Padaria','Supermercado','Limpeza','Outros'];
 var _extratoRows=[];
 
 function openModalExtrato(){
@@ -3961,18 +3961,29 @@ function openModalExtrato(){
         '<button onclick="closeModal(\'modal-extrato\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button>'+
       '</div>'+
       '<div id="extrato-step1">'+
-        '<div class="info-note" style="margin-bottom:14px;"><i class="ti ti-info-circle"></i> Suporte a CSV com colunas: <b>Data ; Descrição ; Valor</b>. Valores negativos = saídas. Separe por <b>;</b> ou <b>,</b>.</div>'+
-        '<label class="f-label">Colar ou digitar o extrato (CSV)</label>'+
-        '<textarea id="extrato-csv" style="width:100%;height:200px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--white);font-family:monospace;font-size:12px;resize:vertical;outline:none;" placeholder="Exemplo:\n19/06/2026;Transferência Pix para Mercado Pago;-250,00\n18/06/2026;Pagamento Fornecedor XYZ;-1500,00\n17/06/2026;Recebimento Cliente ABC;+3000,00"></textarea>'+
-        '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;">'+
-          '<label style="cursor:pointer;color:var(--cyan);font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;">'+
-            '<i class="ti ti-upload"></i> Ou fazer upload de arquivo CSV'+
+        '<div class="info-note" style="margin-bottom:14px;"><i class="ti ti-info-circle"></i> Suporte a <b>CSV</b> (Data ; Descrição ; Valor) e <b>PDF</b> de extrato bancário. Valores negativos = saídas.</div>'+
+        '<div style="display:flex;gap:10px;margin-bottom:14px;">'+
+          '<label style="flex:1;border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'var(--cyan)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
+            '<i class="ti ti-file-type-pdf" style="font-size:28px;color:#ef4444;display:block;margin-bottom:6px;"></i>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;color:var(--white);">UPLOAD PDF</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:3px;">Extrato bancário em PDF</div>'+
+            '<input type="file" accept=".pdf" onchange="extratoPDFLoad(this)" style="display:none;">'+
+          '</label>'+
+          '<label style="flex:1;border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'var(--cyan)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
+            '<i class="ti ti-file-type-csv" style="font-size:28px;color:var(--cyan);display:block;margin-bottom:6px;"></i>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;color:var(--white);">UPLOAD CSV</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:3px;">Arquivo .csv / .txt</div>'+
             '<input type="file" accept=".csv,.txt,.ofx" onchange="extratoFileLoad(this)" style="display:none;">'+
           '</label>'+
         '</div>'+
+        '<label class="f-label">Ou colar o extrato (CSV)</label>'+
+        '<textarea id="extrato-csv" style="width:100%;height:140px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--white);font-family:monospace;font-size:12px;resize:vertical;outline:none;" placeholder="Exemplo:\n19/06/2026;Transferência Pix para Mercado Pago;-250,00\n18/06/2026;Pagamento Fornecedor XYZ;-1500,00\n17/06/2026;Recebimento Cliente ABC;+3000,00"></textarea>'+
+        '<div id="extrato-pdf-status" style="display:none;padding:10px 14px;background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.3);border-radius:8px;margin-top:10px;font-size:13px;color:var(--purple3);display:none;align-items:center;gap:8px;">'+
+          '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> <span id="extrato-pdf-msg">Lendo PDF...</span>'+
+        '</div>'+
         '<div style="display:flex;gap:10px;margin-top:16px;">'+
           '<button class="btn" onclick="closeModal(\'modal-extrato\')" style="flex:1;">Cancelar</button>'+
-          '<button class="btn btn-primary" onclick="processarExtrato()" style="flex:2;"><i class="ti ti-table"></i> Processar Extrato</button>'+
+          '<button class="btn btn-primary" onclick="processarExtrato()" style="flex:2;"><i class="ti ti-table"></i> Processar CSV</button>'+
         '</div>'+
       '</div>'+
       '<div id="extrato-step2" style="display:none;flex:1;overflow:hidden;display:none;flex-direction:column;">'+
@@ -3996,6 +4007,99 @@ function extratoFileLoad(input){
   var reader=new FileReader();
   reader.onload=function(e){ var ta=document.getElementById('extrato-csv'); if(ta) ta.value=e.target.result; };
   reader.readAsText(f,'UTF-8');
+}
+
+function autoGuessExtratoCategoria(desc, valor){
+  var cat=valor<0?'Outros':'Manual';
+  var dl=(desc||'').toLowerCase();
+  if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('meta ')) cat='Marketing';
+  if(dl.includes('anthropic')||dl.includes('google')||dl.includes('aws')||dl.includes('digitalocean')||dl.includes('servidor')) cat='Infraestrutura';
+  if(dl.includes('uber')) cat='Uber';
+  if(dl.includes('padaria')) cat='Padaria';
+  if(dl.includes('supermercado')||dl.includes('mercado')||dl.includes('atacado')) cat='Supermercado';
+  if(dl.includes('limpeza')||dl.includes('faxina')) cat='Limpeza';
+  if(dl.includes('aluguel')||dl.includes('locação')||dl.includes('locacao')) cat='Aluguel';
+  if(dl.includes('salário')||dl.includes('salario')||dl.includes('pagamento')) cat=valor<0?'Equipe':'Manual';
+  if(dl.includes('pró-labore')||dl.includes('pro labore')||dl.includes('prolabore')) cat='Pró-Labore';
+  if(dl.includes('imposto')||dl.includes('iof')||dl.includes('taxa')) cat='Taxas Bancárias';
+  if(dl.includes('fornecedor')) cat='Fornecedores';
+  return cat;
+}
+
+async function extratoPDFLoad(input){
+  var f=input.files[0];
+  if(!f) return;
+  var statusEl=document.getElementById('extrato-pdf-status');
+  var msgEl=document.getElementById('extrato-pdf-msg');
+  function setMsg(m){if(msgEl)msgEl.textContent=m;if(statusEl){statusEl.style.display='flex';}}
+  function hideStatus(){if(statusEl)statusEl.style.display='none';}
+  setMsg('Carregando leitor de PDF...');
+  try{
+    // Load PDF.js from CDN if not already loaded
+    if(!window.pdfjsLib){
+      await new Promise(function(resolve,reject){
+        var s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        s.onload=resolve; s.onerror=reject;
+        document.head.appendChild(s);
+      });
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    setMsg('Lendo o PDF...');
+    var buf=await f.arrayBuffer();
+    var pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+    setMsg('Extraindo texto ('+pdf.numPages+' página(s))...');
+    // Extract text items with positions for each page
+    var allLines=[];
+    for(var p=1;p<=pdf.numPages;p++){
+      var page=await pdf.getPage(p);
+      var tc=await page.getTextContent();
+      // Group items by y-position (rounded to 3px tolerance)
+      var lineMap={};
+      tc.items.forEach(function(item){
+        if(!item.str.trim()) return;
+        var y=Math.round(item.transform[5]/3)*3;
+        if(!lineMap[y]) lineMap[y]=[];
+        lineMap[y].push({x:item.transform[4],str:item.str});
+      });
+      // Sort lines top-to-bottom (y desc in PDF coords = top first)
+      Object.keys(lineMap).map(Number).sort(function(a,b){return b-a;}).forEach(function(y){
+        var line=lineMap[y].sort(function(a,b){return a.x-b.x;}).map(function(i){return i.str;}).join(' ');
+        allLines.push(line.trim());
+      });
+    }
+    // Parse lines looking for date + value patterns
+    var dateRe=/\b(\d{2}\/\d{2}\/\d{4})\b/;
+    var valorRe=/([-+]?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[-+]?\s*\d{1,3}(?:\.\d{3})*,\d{2})/;
+    _extratoRows=[];
+    allLines.forEach(function(line,idx){
+      var dm=line.match(dateRe);
+      var vm=line.match(valorRe);
+      if(!dm||!vm) return;
+      var dataStr=parseExtratoData(dm[1]);
+      var valor=parseExtratoValor(vm[1]);
+      if(valor===null||valor===0) return;
+      // Description = line minus the date and value tokens
+      var desc=line.replace(dm[0],'').replace(vm[1],'').replace(/\s{2,}/g,' ').trim();
+      if(!desc) desc='Transação PDF';
+      _extratoRows.push({idx:idx,data:dataStr,descricao:desc,valor:valor,sel:true,categoria:autoGuessExtratoCategoria(desc,valor)});
+    });
+    hideStatus();
+    if(!_extratoRows.length){
+      alert('Não foi possível extrair transações deste PDF.\n\nDica: tente exportar o extrato como CSV no seu banco e usar a opção de upload CSV.');
+      return;
+    }
+    // Go directly to table step
+    renderExtratoTable();
+    document.getElementById('extrato-step1').style.display='none';
+    var s2=document.getElementById('extrato-step2');
+    s2.style.display='flex';
+    s2.style.flexDirection='column';
+    showSheetToast(_extratoRows.length+' transação(ões) extraída(s) do PDF');
+  }catch(e){
+    hideStatus();
+    alert('Erro ao ler PDF: '+e.message+'\n\nCertifique-se de que o PDF não é uma imagem escaneada (precisa ter texto selecionável).');
+  }
 }
 
 function parseExtratoValor(s){
@@ -4107,16 +4211,7 @@ function processarExtrato(){
 
     var valor=parseExtratoValor(valorStr);
     if(valor===null) return;
-    // Autoguess category
-    var cat=valor<0?'Outros':'Manual';
-    var dl=(desc||'').toLowerCase();
-    if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('meta ')) cat='Marketing';
-    if(dl.includes('anthropic')||dl.includes('google')||dl.includes('aws')||dl.includes('digitalocean')||dl.includes('servidor')) cat='Infraestrutura';
-    if(dl.includes('uber')||dl.includes('ifood')||dl.includes('99 tec')) cat='Outros';
-    if(dl.includes('salário')||dl.includes('salario')||dl.includes('joao')||dl.includes('joão')||dl.includes('pagamento')) cat=valor<0?'Equipe':'Manual';
-    if(dl.includes('imposto')||dl.includes('iof')||dl.includes('taxa')) cat='Taxas Bancárias';
-    if(dl.includes('vendas')||dl.includes('infinitepay')||dl.includes('recebido')) cat=valor<0?'Outros':'Manual';
-
+    var cat=autoGuessExtratoCategoria(desc.trim(), valor);
     _extratoRows.push({ idx:startLine+idx, data:dataStr, descricao:desc.trim(), valor:valor, sel:true, categoria:cat });
   });
 
@@ -4238,8 +4333,8 @@ async function loadAssinaturas(){
         : '<span class="badge b-amber">Pendente</span>';
       var criado=r.createdAt?new Date(r.createdAt).toLocaleDateString('pt-BR'):'-';
       var pagBadge = r.asaasStatus ? asaasStatusBadge(r.asaasStatus) : '<span style="color:var(--muted);font-size:12px;">-</span>';
-      var asaasBtn = (!r.asaasStatus && r.vendaData)
-        ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(139,92,246,0.15);color:var(--purple3);border:1px solid rgba(139,92,246,0.3);" onclick="criarCobrancaAssinaturaManual(\''+id+'\',this)" title="Criar cobrança no Asaas"><i class="ti ti-credit-card"></i> Asaas</button>'
+      var asaasBtn = !r.asaasStatus
+        ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(139,92,246,0.15);color:var(--purple3);border:1px solid rgba(139,92,246,0.3);" onclick="abrirModalAsaasAssinatura(\''+id+'\')" title="Criar cobrança no Asaas"><i class="ti ti-credit-card"></i> Asaas</button>'
         : '';
       return '<tr>'+
         '<td>'+esc(r.cliente||'-')+'</td>'+
@@ -4268,23 +4363,81 @@ async function apagarAssinatura(id, nomeCliente){
     alert('Erro ao apagar: '+e.message);
   }
 }
-async function criarCobrancaAssinaturaManual(id, btn){
+async function abrirModalAsaasAssinatura(id){
+  var data=(await fbGet('assinaturas/'+id))||{};
+  var vd=data.vendaData||{};
+  var planos=['Essencial','Avançado','Premium','Custom'];
+  var freqs=['mensal','bimestral','trimestral','semestral','anual'];
+  var today=new Date().toISOString().split('T')[0];
+  var html='<div class="modal-ov active" id="modal-asaas-assinatura" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:500px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-credit-card"></i> Criar Cobrança no Asaas</div>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-asaas-assinatura\').remove()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase;">Cliente</div>'+
+        '<label class="f-label">Nome / Empresa</label>'+
+        '<input class="f-input" id="maa-nome" value="'+esc(data.cliente||'')+'" placeholder="Nome do cliente" style="margin-bottom:12px;">'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Telefone</label><input class="f-input" id="maa-tel" value="'+esc(data.telefone||'')+'" placeholder="DDD + número" style="margin-bottom:12px;"></div>'+
+          '<div><label class="f-label">CNPJ (opcional)</label><input class="f-input" id="maa-cnpj" value="'+esc(data.cnpj||vd.cnpj||'')+'" placeholder="00.000.000/0000-00" style="margin-bottom:12px;"></div>'+
+        '</div>'+
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase;">Cobrança</div>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Tipo</label>'+
+            '<select class="f-input" id="maa-tipo" style="margin-bottom:12px;">'+
+              '<option value="mensalidade"'+(vd.tipoValor!=='tcv'?' selected':'')+'>Mensalidade (recorrente)</option>'+
+              '<option value="tcv"'+(vd.tipoValor==='tcv'?' selected':'')+'>TCV (cobrança única)</option>'+
+            '</select></div>'+
+          '<div><label class="f-label">Plano</label>'+
+            '<select class="f-input" id="maa-plano" style="margin-bottom:12px;">'+
+              planos.map(function(p){return'<option'+(vd.plano===p?' selected':'')+'>'+p+'</option>';}).join('')+
+            '</select></div>'+
+        '</div>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Valor (R$)</label><input class="f-input" type="number" id="maa-valor" value="'+(vd.mensalidade||vd.contrato||'')+'" placeholder="0,00" style="margin-bottom:12px;"></div>'+
+          '<div><label class="f-label">1ª cobrança / vencimento</label><input class="f-input" type="date" id="maa-data" value="'+(vd.dataInicio||today)+'" style="margin-bottom:12px;"></div>'+
+        '</div>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Frequência</label>'+
+            '<select class="f-input" id="maa-freq" style="margin-bottom:12px;">'+
+              freqs.map(function(f){return'<option value="'+f+'"'+(vd.frequencia===f?' selected':'')+'>'+f.charAt(0).toUpperCase()+f.slice(1)+'</option>';}).join('')+
+            '</select></div>'+
+          '<div><label class="f-label">Duração (meses)</label><input class="f-input" type="number" id="maa-dur" value="'+(vd.duracaoMeses||vd.duracao||12)+'" min="1" style="margin-bottom:12px;"></div>'+
+        '</div>'+
+        '<div class="login-err" id="maa-err"></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" id="maa-btn" onclick="confirmarAsaasAssinatura(\''+id+'\')"><i class="ti ti-credit-card"></i> Criar no Asaas</button>'+
+        '<button class="btn btn-outline" onclick="document.getElementById(\'modal-asaas-assinatura\').remove()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function confirmarAsaasAssinatura(id){
+  var btn=document.getElementById('maa-btn');
+  var errEl=document.getElementById('maa-err');
+  errEl.textContent='';
+  var nome=document.getElementById('maa-nome').value.trim();
+  var tel=document.getElementById('maa-tel').value.replace(/\D/g,'');
+  var cnpj=(document.getElementById('maa-cnpj').value||'').replace(/\D/g,'');
+  var tipo=document.getElementById('maa-tipo').value;
+  var plano=document.getElementById('maa-plano').value;
+  var valor=parseFloat(document.getElementById('maa-valor').value)||0;
+  var dataInicio=document.getElementById('maa-data').value;
+  var freq=document.getElementById('maa-freq').value;
+  var dur=parseInt(document.getElementById('maa-dur').value)||12;
+  if(!nome){errEl.textContent='Informe o nome do cliente.';return;}
+  if(!valor){errEl.textContent='Informe o valor.';return;}
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Criando...';}
+  var vendaData={tipoValor:tipo,plano:plano,mensalidade:valor,contrato:valor*dur,dataInicio:dataInicio,frequencia:freq,duracaoMeses:dur,cnpj:cnpj};
   try{
-    var data=await fbGet('assinaturas/'+id);
-    if(!data||!data.vendaData){
-      showSheetToast('Dados insuficientes — use "Nova Assinatura" para preencher os dados comerciais');
-      if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-credit-card"></i> Asaas';}
-      return;
-    }
-    await criarCobrancaAsaas(
-      {nome:data.cliente||'',telefone:data.telefone||'',cnpj:data.cnpj||''},
-      data.vendaData,null,id
-    );
+    await criarCobrancaAsaas({nome:nome,telefone:tel,cnpj:cnpj},vendaData,null,id);
+    document.getElementById('modal-asaas-assinatura').remove();
     loadAssinaturas();
   }catch(e){
-    showSheetToast('Erro: '+e.message);
-    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-credit-card"></i> Asaas';}
+    errEl.textContent='Erro: '+e.message;
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-credit-card"></i> Criar no Asaas';}
   }
 }
 function copiarLinkAssinatura(id,btn){
