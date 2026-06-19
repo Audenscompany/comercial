@@ -3951,7 +3951,8 @@ async function finSalvarLancamento(){
   loadFinanceiroData();
 }
 // ===== IMPORTAR EXTRATO BANCÁRIO =====
-var FIN_CATS=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Uber','Padaria','Supermercado','Limpeza','Outros'];
+var FIN_CATS=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros'];
+var FIN_ENTRADA_CATS=['Receita Cliente','Asaas','InfinitePay','Transferência Recebida','Reembolso','Outros'];
 var _extratoRows=[];
 
 function openModalExtrato(){
@@ -4011,25 +4012,34 @@ function extratoFileLoad(input){
 }
 
 function autoGuessExtratoCategoria(desc, valor){
-  var cat=valor<0?'Outros':'Manual';
+  var cat=valor<0?'Outros':'Receita Cliente';
   var dl=(desc||'').toLowerCase();
-  if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('meta ')||dl.includes('fb ')) cat='Marketing';
-  if(dl.includes('google ads')||dl.includes('dl *google')) cat='Marketing';
-  if(dl.includes('anthropic')||dl.includes('openai')||dl.includes('chatgpt')||dl.includes('claude sub')) cat='Infraestrutura';
+  // Marketing
+  if(dl.includes('facebook')||dl.includes('facebk')||dl.includes('facebk*')||dl.includes('meta ')||dl.includes('meta*')) cat='Marketing';
+  if(dl.includes('google ads')||dl.includes('dl *google')||dl.includes('google ads')) cat='Marketing';
+  // Infraestrutura / SaaS
+  if(dl.includes('anthropic')||dl.includes('claude sub')||dl.includes('openai')||dl.includes('chatgpt')) cat='Infraestrutura';
   if(dl.includes('z-api')||dl.includes('sellflux')||dl.includes('clicksign')||dl.includes('criativivo')) cat='Infraestrutura';
   if(dl.includes('aws')||dl.includes('digitalocean')||dl.includes('servidor')||dl.includes('google cloud')) cat='Infraestrutura';
-  if(dl.includes('uber')||dl.includes('uber do brasil')) cat='Uber';
-  if(dl.includes('99 tecnologia')||dl.includes('99tec')) cat='Uber';
-  if(dl.includes('padaria')||dl.includes('lanchonete')) cat='Padaria';
-  if(dl.includes('supermercado')||dl.includes('atacado')||dl.includes('bh comercio')) cat='Supermercado';
+  if(dl.includes('cemig')||dl.includes('sabesp')||dl.includes('copasa')||dl.includes('light ')) cat='Infraestrutura';
+  // Transporte
+  if(dl.includes('uber')||dl.includes('uber do brasil')||dl.includes('99 tecnologia')||dl.includes('99tec')||dl.includes('cabify')||dl.includes('taxi')) cat='Transporte';
+  // Alimentação
+  if(dl.includes('padaria')||dl.includes('lanchonete')||dl.includes('panificadora')||dl.includes('ponto certo')) cat='Padaria';
+  if(dl.includes('supermercado')||dl.includes('bh comercio')||dl.includes('mercado')||dl.includes('atacado')||dl.includes('mart ')||dl.includes('carrefour')||dl.includes('atacadao')) cat='Supermercado';
+  // Outros
   if(dl.includes('limpeza')||dl.includes('faxina')) cat='Limpeza';
   if(dl.includes('aluguel')||dl.includes('locação')||dl.includes('locacao')||dl.includes('imobiliaria')) cat='Aluguel';
-  if(dl.includes('salário')||dl.includes('salario')) cat=valor<0?'Equipe':'Manual';
+  if(dl.includes('salário')||dl.includes('salario')) cat=valor<0?'Equipe':'Receita Cliente';
   if(dl.includes('pró-labore')||dl.includes('pro labore')||dl.includes('prolabore')) cat='Pró-Labore';
-  if(dl.includes('iof')||dl.includes('taxa')||dl.includes('tarifa bancaria')) cat='Taxas Bancárias';
-  if(dl.includes('imposto')||dl.includes('simples nacional')||dl.includes('dasn')) cat='Impostos';
+  if(dl.includes('iof')||dl.includes('tarifa bancaria')||dl.includes('tarifa')) cat='Taxas Bancárias';
+  if(dl.includes('imposto')||dl.includes('simples nacional')||dl.includes('dasn')||dl.includes('darf')) cat='Impostos';
   if(dl.includes('fornecedor')) cat='Fornecedores';
-  if(dl.includes('cemig')||dl.includes('sabesp')||dl.includes('copasa')||dl.includes('light ')) cat='Infraestrutura';
+  // Receitas (valores positivos)
+  if(valor>0){
+    if(dl.includes('pix recebido')||dl.includes('transferencia recebida')||dl.includes('recebido')) cat='Receita Cliente';
+    if(dl.includes('asaas')||dl.includes('infinitepay')||dl.includes('pagarme')||dl.includes('stone')||dl.includes('cielo')) cat='Receita Cliente';
+  }
   return cat;
 }
 
@@ -4047,6 +4057,7 @@ function parseInfinitePayPDF(allLines){
   var PT_DATE_RE=/\d{1,2}\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?,?\s+\d{4}/i;
   var rows=[];
   var currentDate='';
+  var seenTx={}; // deduplication: same date+time+valor = mesma transação
   allLines.forEach(function(line){
     var l=line.trim();
     if(!l) return;
@@ -4058,13 +4069,18 @@ function parseInfinitePayPDF(allLines){
     if(!tm) return;
     var valor=parseExtratoValor(tm[4]);
     if(valor===null) return;
+    // Deduplicate: (data + horário + valor) é único por transação
+    var txKey=currentDate+'|'+tm[1]+'|'+tm[4];
+    if(seenTx[txKey]) return;
+    seenTx[txKey]=true;
     var desc=tm[3].trim();
     // Pix transactions: Nome column also starts with "Pix " — remove duplicate
     desc=desc.replace(/^Pix\s+/i,'');
     // Remove known detail suffixes at end
     desc=desc.replace(/\s+(Enviado|Recebido|audenscompany|Pagamento efetuado|Pagamento)\s*$/i,'').trim();
     if(!desc) desc='Transação';
-    rows.push({data:currentDate,descricao:desc,valor:valor,sel:true,categoria:autoGuessExtratoCategoria(desc,valor)});
+    // Extrato = só saídas. Valores positivos (estornos/entradas) ficam desmarcados
+    rows.push({data:currentDate,descricao:desc,valor:valor,sel:valor<0,categoria:autoGuessExtratoCategoria(desc,valor)});
   });
   return rows;
 }
@@ -4276,7 +4292,8 @@ function processarExtrato(){
     var valor=parseExtratoValor(valorStr);
     if(valor===null) return;
     var cat=autoGuessExtratoCategoria(desc.trim(), valor);
-    _extratoRows.push({ idx:startLine+idx, data:dataStr, descricao:desc.trim(), valor:valor, sel:true, categoria:cat });
+    // Extrato = só saídas. Positivos (estornos) ficam desmarcados por padrão
+    _extratoRows.push({ idx:startLine+idx, data:dataStr, descricao:desc.trim(), valor:valor, sel:valor<0, categoria:cat });
   });
 
   if(!_extratoRows.length){ alert('Nenhuma linha válida encontrada.\n\nFormatos aceitos:\n• Mercado Pago CSV (Data,Hora,Tipo,Nome,Detalhe,Valor)\n• Simples (Data;Descrição;Valor)'); return; }
@@ -4288,15 +4305,12 @@ function processarExtrato(){
 }
 
 function renderExtratoTable(){
-  var catOpts=FIN_CATS.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
-  var entradaOpts='<option value="Manual">Entrada (Manual)</option><option value="Asaas">Entrada (Asaas)</option>';
   var rows=_extratoRows.map(function(r,i){
     var isSaida=r.valor<0;
     var valFmt=(isSaida?'− ':'+ ')+'R$ '+fmtMoeda(Math.abs(r.valor));
     var valColor=isSaida?'var(--red)':'var(--green)';
-    var catSel=isSaida
-      ?'<select onchange="_extratoRows['+i+'].categoria=this.value" style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;">'+catOpts+'</select>'
-      :'<select onchange="_extratoRows['+i+'].categoria=this.value" style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;">'+entradaOpts+'</select>';
+    var catOptsRow=FIN_CATS.map(function(c){return '<option value="'+c+'"'+(c===r.categoria?' selected':'')+'>'+c+'</option>';}).join('');
+    var catSel='<select onchange="_extratoRows['+i+'].categoria=this.value" style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;">'+catOptsRow+'</select>';
     var dataFmt=r.data?r.data.split('-').reverse().join('/'):'—';
     return '<tr style="opacity:'+(r.sel?'1':'0.4')+';">'+
       '<td style="width:36px;text-align:center;"><input type="checkbox" '+(r.sel?'checked':'')+' onchange="_extratoRows['+i+'].sel=this.checked;renderExtratoTable();" style="accent-color:var(--purple);"></td>'+
@@ -4316,16 +4330,15 @@ function renderExtratoTable(){
 }
 
 async function salvarExtrato(){
+  // Extrato = apenas saídas. Entradas sempre vêm do Asaas ou lançamento manual.
   var selecionadas=_extratoRows.filter(function(r){return r.sel;});
   if(!selecionadas.length){ alert('Selecione ao menos uma linha.'); return; }
   var btn=document.querySelector('#modal-extrato .btn-primary');
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
-  var saidas=selecionadas.filter(function(r){return r.valor<0;});
-  var entradas=selecionadas.filter(function(r){return r.valor>=0;});
   var today=new Date().toISOString().split('T')[0];
   var erros=0;
-  for(var i=0;i<saidas.length;i++){
-    var s=saidas[i];
+  for(var i=0;i<selecionadas.length;i++){
+    var s=selecionadas[i];
     try{
       await fbPush('financeiro/saidas',{
         data:s.data||today, valor:Math.abs(s.valor), descricao:s.descricao||'Importado extrato',
@@ -4334,18 +4347,8 @@ async function salvarExtrato(){
       });
     }catch(e){erros++;}
   }
-  for(var j=0;j<entradas.length;j++){
-    var en=entradas[j];
-    try{
-      await fbPush('financeiro/entradas_manuais',{
-        data:en.data||today, valor:en.valor, descricao:en.descricao||'Importado extrato',
-        categoria:en.categoria||'Manual',
-        criadoPor:(CU&&CU.name)||'gestor', createdAt:Date.now(), _importado:true
-      });
-    }catch(e){erros++;}
-  }
   closeModal('modal-extrato');
-  showSheetToast(selecionadas.length+' lançamento(s) importado(s)'+(erros?' ('+erros+' erros)':'')+'!',erros>0);
+  showSheetToast(selecionadas.length+' saída(s) importada(s)'+(erros?' ('+erros+' erros)':'')+'!',erros>0);
   loadFinanceiroData();
 }
 
