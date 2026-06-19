@@ -3908,6 +3908,16 @@ function openModalLancamento(tipo){
   var isEntrada=tipo==='entrada';
   var cats=['Infraestrutura','Marketing','Equipe','Impostos','Comissoes','Outros'];
   var today=new Date().toISOString().split('T')[0];
+  var taxaBlock=isEntrada
+    ?'<div style="margin-bottom:14px;">'+
+        '<label class="f-label">Taxa cobrada (%)</label>'+
+        '<div style="display:flex;align-items:center;gap:10px;">'+
+          '<input class="f-input" id="lanc-taxa-pct" type="number" step="0.01" min="0" max="100" placeholder="0,00" style="margin-bottom:0;width:110px;" oninput="lancAtualizaTaxa()">'+
+          '<span id="lanc-taxa-preview" style="font-family:Barlow Condensed,sans-serif;font-size:13px;color:var(--red);min-width:120px;"></span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Se preenchida, cria automaticamente uma saída em <b>Taxas Bancárias</b></div>'+
+      '</div>'
+    :'';
   var html='<div class="modal-ov" id="modal-lancamento" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-lancamento\')">'+
     '<div class="modal-box" style="max-width:440px;width:100%;">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
@@ -3921,8 +3931,8 @@ function openModalLancamento(tipo){
       '</div>'+
       '<div class="modal-grid2" style="margin-bottom:14px;">'+
         '<div>'+
-          '<label class="f-label">Valor (R$)</label>'+
-          '<input class="f-input" id="lanc-valor" type="number" step="0.01" min="0" placeholder="0,00" style="margin-bottom:0;">'+
+          '<label class="f-label">Valor bruto (R$)</label>'+
+          '<input class="f-input" id="lanc-valor" type="number" step="0.01" min="0" placeholder="0,00" style="margin-bottom:0;" oninput="lancAtualizaTaxa()">'+
         '</div>'+
         '<div>'+
           '<label class="f-label">Data</label>'+
@@ -3933,10 +3943,11 @@ function openModalLancamento(tipo){
         ?'<div style="margin-bottom:14px;"><label class="f-label">Categoria</label>'+
           '<select class="f-input" id="lanc-categoria" style="margin-bottom:0;">'+cats.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('')+'</select></div>'
         :'')+
-      '<div style="margin-bottom:18px;">'+
+      '<div style="margin-bottom:14px;">'+
         '<label class="f-label">Descrição</label>'+
-        '<input class="f-input" id="lanc-descricao" placeholder="'+(isEntrada?'Ex: Consultoria pontual — Cliente X':'Ex: Servidor VPS — DigitalOcean')+'" style="margin-bottom:0;">'+
+        '<input class="f-input" id="lanc-descricao" placeholder="'+(isEntrada?'Ex: Império Burguer — InfinitePay':'Ex: Servidor VPS — DigitalOcean')+'" style="margin-bottom:0;">'+
       '</div>'+
+      taxaBlock+
       '<input type="hidden" id="lanc-tipo" value="'+tipo+'">'+
       '<div style="display:flex;gap:10px;">'+
         '<button class="btn" onclick="closeModal(\'modal-lancamento\')" style="flex:1;">Cancelar</button>'+
@@ -3949,6 +3960,18 @@ function openModalLancamento(tipo){
   document.body.insertAdjacentHTML('beforeend',html);
   setTimeout(function(){var v=document.getElementById('lanc-valor');if(v)v.focus();},100);
 }
+function lancAtualizaTaxa(){
+  var valor=parseFloat(document.getElementById('lanc-valor')&&document.getElementById('lanc-valor').value)||0;
+  var pct=parseFloat(document.getElementById('lanc-taxa-pct')&&document.getElementById('lanc-taxa-pct').value)||0;
+  var prev=document.getElementById('lanc-taxa-preview');
+  if(!prev) return;
+  if(pct>0&&valor>0){
+    var taxa=Math.round(valor*pct)/100;
+    prev.textContent='− R$ '+fmtMoeda(taxa)+' de taxa';
+  } else {
+    prev.textContent='';
+  }
+}
 async function finSalvarLancamento(){
   var tipo=document.getElementById('lanc-tipo').value;
   var valor=parseFloat(document.getElementById('lanc-valor').value)||0;
@@ -3956,16 +3979,35 @@ async function finSalvarLancamento(){
   var descricao=(document.getElementById('lanc-descricao').value||'').trim();
   var categoriaEl=document.getElementById('lanc-categoria');
   var categoria=categoriaEl?categoriaEl.value:'Manual';
+  var taxaPctEl=document.getElementById('lanc-taxa-pct');
+  var taxaPct=taxaPctEl?parseFloat(taxaPctEl.value)||0:0;
   if(!valor||valor<=0){alert('Informe um valor válido.');return;}
   if(!data){alert('Informe a data.');return;}
   var btn=document.getElementById('btn-salvar-lanc');
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
   var path=tipo==='saida'?'financeiro/saidas':'financeiro/entradas_manuais';
-  var obj={data:data,valor:valor,descricao:descricao,categoria:categoria,criadoPor:(CU&&CU.name)||'gestor',createdAt:Date.now()};
+  var obj={data:data,valor:valor,descricao:descricao||'Entrada manual',categoria:categoria,criadoPor:(CU&&CU.name)||'gestor',createdAt:Date.now()};
   if(tipo==='saida') obj.status='confirmado';
   await fbPush(path,obj);
+  // Se entrada com taxa, cria saída automática em Taxas Bancárias
+  if(tipo==='entrada'&&taxaPct>0){
+    var taxaValor=Math.round(valor*taxaPct)/100;
+    if(taxaValor>0){
+      await fbPush('financeiro/saidas',{
+        data:data,
+        valor:taxaValor,
+        descricao:'Taxa '+(descricao||'entrada')+'  ('+taxaPct+'%)',
+        categoria:'Taxas Bancárias',
+        status:'confirmado',
+        criadoPor:(CU&&CU.name)||'gestor',
+        createdAt:Date.now(),
+        _autoTaxa:true
+      });
+    }
+  }
   closeModal('modal-lancamento');
-  showSheetToast(tipo==='saida'?'Despesa lançada!':'Entrada lançada!');
+  var msg=tipo==='saida'?'Despesa lançada!':'Entrada lançada!'+(taxaPct>0?' + taxa criada como saída.':'');
+  showSheetToast(msg);
   loadFinanceiroData();
 }
 // ===== IMPORTAR EXTRATO BANCÁRIO =====
