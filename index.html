@@ -3674,15 +3674,16 @@ function renderFinanceiro(){
 }
 // ---- Realtime listeners for Financeiro (WhatsApp bot updates) ----
 var _finRealtimeRefs=[];
+var _finReloadTimer=null;
 function startFinanceiroListeners(){
   loadFinanceiroData();
   // Attach realtime listeners so WhatsApp-processed comprovantes appear instantly
   if(_finRealtimeRefs.length) return; // already attached
+  // Debounced reload — prevents 50+ simultaneous calls during extrato import
   var reload=function(){
-    // Only reload if user is still on the financeiro page
-    if(document.getElementById('content')&&document.getElementById('content').getAttribute('data-page')==='financeiro'){
-      loadFinanceiroData();
-    }
+    if(!(document.getElementById('content')&&document.getElementById('content').getAttribute('data-page')==='financeiro')) return;
+    if(_finReloadTimer) clearTimeout(_finReloadTimer);
+    _finReloadTimer=setTimeout(function(){ _finReloadTimer=null; loadFinanceiroData(); },800);
   };
   var refSaidas=fbDb.ref('financeiro/saidas');
   var refEntradas=fbDb.ref('financeiro/entradas_manuais');
@@ -3844,7 +3845,9 @@ async function loadFinanceiroData(){
     allTx.push({data:s.data,tipo:'saida',valor:parseFloat(s.valor)||0,descricao:s.descricao||'Despesa',cat:s.categoria||'Outros',status:'pendente',_id:s._id,_src:'saida'});
   });
   allTx.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
-  var txRows=allTx.map(function(t){
+  // Collect IDs of saída rows for bulk-delete
+  var saidaIds=[];
+  var txRows=allTx.map(function(t,idx){
     var valorHtml=t.tipo==='entrada'
       ?'<span style="color:var(--green);font-weight:700;font-family:Barlow Condensed,sans-serif;">+ R$ '+fmtMoeda(t.valor)+'</span>'
       :'<span style="color:var(--red);font-weight:700;font-family:Barlow Condensed,sans-serif;">− R$ '+fmtMoeda(t.valor)+'</span>';
@@ -3856,7 +3859,10 @@ async function loadFinanceiroData(){
           ?'<span class="badge b-green">Confirmado</span>'
           :'<span class="badge b-amber">Pendente</span>';
     var actions='';
+    var chk='<td></td>';
     if(t._src==='saida'&&t._id){
+      saidaIds.push(t._id);
+      chk='<td><input type="checkbox" class="fin-chk" data-id="'+t._id+'" onchange="finUpdateBulkBar()" style="width:15px;height:15px;accent-color:var(--purple);cursor:pointer;"></td>';
       if(t.status==='pendente') actions='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finConfirmarSaida(\''+t._id+'\',this)" title="Confirmar"><i class="ti ti-check"></i></button>';
       actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="finDeletarLancamento(\'saidas\',\''+t._id+'\')" title="Excluir"><i class="ti ti-trash"></i></button>';
     }
@@ -3865,6 +3871,7 @@ async function loadFinanceiroData(){
     }
     var dataFmt=t.data?t.data.split('-').reverse().join('/'):'';
     return '<tr>'+
+      chk+
       '<td style="color:var(--muted);font-size:12px;">'+dataFmt+'</td>'+
       '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(t.descricao)+'">'+esc(t.descricao)+'</td>'+
       '<td><span style="font-size:11px;color:var(--muted);">'+esc(t.cat)+'</span></td>'+
@@ -3873,10 +3880,21 @@ async function loadFinanceiroData(){
       '<td style="text-align:right;">'+actions+'</td>'+
     '</tr>';
   }).join('');
+  var hasSaidas=saidaIds.length>0;
+  var bulkBar=hasSaidas
+    ?'<div id="fin-bulk-bar" style="display:none;align-items:center;gap:10px;padding:8px 16px;background:rgba(123,47,255,0.08);border-top:1px solid var(--border);">'+
+        '<span id="fin-bulk-count" style="font-family:Barlow Condensed,sans-serif;font-size:13px;color:var(--purple3);">0 selecionada(s)</span>'+
+        '<button class="btn btn-outline" style="padding:4px 12px;font-size:12px;color:var(--red);border-color:rgba(239,68,68,0.35);" onclick="finDeletarSelecionados()"><i class="ti ti-trash"></i> Apagar selecionadas</button>'+
+        '<button class="btn btn-outline" style="padding:4px 12px;font-size:12px;color:var(--muted);" onclick="finDeselecionarTodos()"><i class="ti ti-x"></i> Cancelar</button>'+
+      '</div>'
+    :'';
+  var selectAllChk=hasSaidas
+    ?'<th><input type="checkbox" id="fin-chk-all" title="Selecionar todas as saídas" onchange="finSelecionarTodos(this.checked)" style="width:15px;height:15px;accent-color:var(--purple);cursor:pointer;"></th>'
+    :'<th></th>';
   var txTable='<div class="cb">'+
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-list" style="color:var(--cyan);margin-right:6px;"></i>Lançamentos de '+finMesLabel(period)+'</div></div>'+
     (allTx.length
-      ?'<div class="t-scroll"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>'+txRows+'</tbody></table></div>'
+      ?'<div class="t-scroll"><table><thead><tr>'+selectAllChk+'<th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>'+txRows+'</tbody></table></div>'+bulkBar
       :'<div style="padding:48px;text-align:center;color:var(--muted);">'+
           '<i class="ti ti-inbox" style="font-size:32px;display:block;margin-bottom:8px;"></i>'+
           'Nenhum lançamento em '+finMesLabel(period)+'.'+
@@ -4362,6 +4380,36 @@ async function finDeletarLancamento(tipo,id){
   if(!confirm('Excluir este lançamento?')) return;
   await fbDb.ref('financeiro/'+tipo+'/'+id).remove();
   showSheetToast('Lançamento excluído.');
+  loadFinanceiroData();
+}
+function finUpdateBulkBar(){
+  var chks=document.querySelectorAll('.fin-chk');
+  var sel=Array.from(chks).filter(function(c){return c.checked;});
+  var bar=document.getElementById('fin-bulk-bar');
+  var cnt=document.getElementById('fin-bulk-count');
+  var all=document.getElementById('fin-chk-all');
+  if(bar) bar.style.display=sel.length?'flex':'none';
+  if(cnt) cnt.textContent=sel.length+' selecionada(s)';
+  if(all) all.indeterminate=sel.length>0&&sel.length<chks.length;
+}
+function finSelecionarTodos(checked){
+  document.querySelectorAll('.fin-chk').forEach(function(c){c.checked=checked;});
+  finUpdateBulkBar();
+}
+function finDeselecionarTodos(){
+  var all=document.getElementById('fin-chk-all');
+  if(all) all.checked=false;
+  finSelecionarTodos(false);
+}
+async function finDeletarSelecionados(){
+  var sel=Array.from(document.querySelectorAll('.fin-chk:checked'));
+  if(!sel.length) return;
+  if(!confirm('Apagar '+sel.length+' lançamento(s) selecionado(s)?')) return;
+  var ids=sel.map(function(c){return c.getAttribute('data-id');});
+  for(var i=0;i<ids.length;i++){
+    await fbDb.ref('financeiro/saidas/'+ids[i]).remove();
+  }
+  showSheetToast(ids.length+' lançamento(s) excluído(s).');
   loadFinanceiroData();
 }
 
