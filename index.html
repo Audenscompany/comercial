@@ -3718,6 +3718,7 @@ function renderFinanceiro(){
       '<div><div class="page-title">Financeiro</div><div class="page-sub">Controle de caixa da Audens Company</div></div>'+
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
         '<select class="f-input" id="fin-period-sel" onchange="_finPeriod=this.value;loadFinanceiroData();" style="width:170px;margin-bottom:0;">'+finPeriodOptions()+'</select>'+
+        (asaasApiKey?'<button class="btn btn-outline" style="white-space:nowrap;color:var(--cyan);border-color:rgba(56,189,248,0.3);" onclick="asaasSync(this)"><i class="ti ti-refresh"></i> Sync Asaas</button>':'')+
         '<button class="btn btn-outline" style="white-space:nowrap;" onclick="openModalExtrato()"><i class="ti ti-file-import"></i> Importar Extrato</button>'+
         '<button class="btn" onclick="openModalLancamento(\'saida\')" style="background:rgba(239,68,68,0.1);color:var(--red);border-color:rgba(239,68,68,0.25);white-space:nowrap;"><i class="ti ti-arrow-up-right"></i> Despesa</button>'+
         '<button class="btn btn-primary" style="white-space:nowrap;" onclick="openModalLancamento(\'entrada\')"><i class="ti ti-arrow-down-left"></i> Entrada Manual</button>'+
@@ -3730,6 +3731,31 @@ function renderFinanceiro(){
       '</div>'+
     '</div>'+
   '</div>';
+}
+// ===== ASAAS SYNC — importa pagamentos do Asaas para o Firebase =====
+async function asaasSync(btn){
+  if(!asaasApiKey){alert('Configure a API Key do Asaas primeiro nas Configurações.');return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sincronizando...';}
+  try{
+    var period=_finPeriod||getCurrentPeriod();
+    var r=await fetch(RECEBERLEAD_URL+'/asaas-sync?secret='+WEBHOOK_SECRET,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({apiKey:asaasApiKey,env:asaasEnv,period:period})
+    });
+    var data=await r.json();
+    if(data.ok){
+      showSheetToast('✅ '+data.total+' pagamento(s) importados do Asaas!');
+      loadFinanceiroData();
+    }else{
+      showSheetToast('❌ Erro ao sincronizar: '+(data.error||'erro desconhecido'),true);
+    }
+  }catch(e){
+    console.error('asaasSync error',e);
+    showSheetToast('❌ Erro ao conectar com o servidor',true);
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Sync Asaas';}
+  }
 }
 // ---- Realtime listeners for Financeiro (WhatsApp bot updates) ----
 var _finRealtimeRefs=[];
@@ -3746,12 +3772,15 @@ function startFinanceiroListeners(){
   };
   var refSaidas=fbDb.ref('financeiro/saidas');
   var refEntradas=fbDb.ref('financeiro/entradas_manuais');
+  var refRecebimentos=fbDb.ref('financeiro/recebimentos');
   var refBot=fbDb.ref('financeiro/bot_state');
   refSaidas.on('child_added',reload);
   refSaidas.on('child_changed',reload);
   refSaidas.on('child_removed',reload);
   refEntradas.on('child_added',reload);
   refEntradas.on('child_removed',reload);
+  refRecebimentos.on('child_added',reload);
+  refRecebimentos.on('child_changed',reload);
   // bot_state listener: show toast when a new pending entry arrives from WhatsApp
   refBot.on('value',function(snap){
     var val=snap.val();
@@ -3761,7 +3790,8 @@ function startFinanceiroListeners(){
   });
   _finRealtimeRefs=[
     {ref:refSaidas,events:['child_added','child_changed','child_removed'],cb:reload},
-    {ref:refEntradas,events:['child_added','child_removed'],cb:reload}
+    {ref:refEntradas,events:['child_added','child_removed'],cb:reload},
+    {ref:refRecebimentos,events:['child_added','child_changed'],cb:reload}
   ];
 }
 function stopFinanceiroListeners(){
@@ -3822,35 +3852,19 @@ async function loadFinanceiroData(){
   var lastISO=year+'-'+String(month).padStart(2,'0')+'-'+String(lastDayNum).padStart(2,'0');
   var firstDate=new Date(firstISO+'T00:00:00');
   var lastDate=new Date(lastISO+'T23:59:59');
-  // Busca Firebase + Asaas em paralelo
-  var asaasPromise=asaasApiKey
-    ? Promise.all([
-        asaasGet('/payments?limit=100&status=RECEIVED&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO),
-        asaasGet('/payments?limit=100&status=CONFIRMED&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO),
-        asaasGet('/payments?limit=100&status=RECEIVED_IN_CASH&paymentDate[ge]='+firstISO+'&paymentDate[le]='+lastISO)
-      ])
-    : Promise.resolve([null,null,null]);
-  var [clientesRaw,saidasRaw,entradasRaw,asaasResults]=await Promise.all([
+  // Busca tudo do Firebase (inclui recebimentos Asaas já sincronizados)
+  var [clientesRaw,saidasRaw,entradasRaw,recebimentosRaw]=await Promise.all([
     fbGet('clientes'),
     fbGet('financeiro/saidas'),
     fbGet('financeiro/entradas_manuais'),
-    asaasPromise
+    fbGet('financeiro/recebimentos')
   ]);
-  // Processa pagamentos Asaas do mês
-  var asaasPagamentos=[];
-  if(asaasResults){
-    var seenAsaas={};
-    asaasResults.forEach(function(res){
-      ((res&&res.data)||[]).forEach(function(p){
-        if(!seenAsaas[p.id]){seenAsaas[p.id]=true;asaasPagamentos.push(p);}
-      });
-    });
-  }
-  // Garante mapa de clientes para descrição
-  if(asaasApiKey&&Object.keys(_asaasCustomerMap).length===0){
-    var custs=await asaasGet('/customers?limit=100');
-    if(custs&&custs.data) custs.data.forEach(function(c){if(c.id&&c.name)_asaasCustomerMap[c.id]=c.name;});
-  }
+  // Pagamentos Asaas do mês filtrados do Firebase
+  var confStatuses=['CONFIRMED','RECEIVED','RECEIVED_IN_CASH'];
+  var asaasPagamentos=Object.values(recebimentosRaw||{}).filter(function(p){
+    var d=p.paymentDate||p.dueDate||'';
+    return d>=firstISO&&d<=lastISO&&confStatuses.includes(p.status);
+  });
   var clientes=Object.values(clientesRaw||{});
   var todasSaidas=Object.entries(saidasRaw||{}).map(function(e){return Object.assign({_id:e[0]},e[1]);});
   var todasEntradas=Object.entries(entradasRaw||{}).map(function(e){return Object.assign({_id:e[0]},e[1]);});
@@ -3932,7 +3946,7 @@ async function loadFinanceiroData(){
   });
   asaasPagamentos.forEach(function(p){
     var dt=p.paymentDate||p.dueDate||firstISO;
-    var nomeCli=_asaasCustomerMap[p.customer]||p.customerName||'';
+    var nomeCli=p.customerName||_asaasCustomerMap[p.customerId||p.customer]||'';
     var desc=nomeCli?(nomeCli+(p.description?' — '+p.description:'')):( p.description||'Pagamento Asaas');
     allTx.push({data:dt,tipo:'entrada',valor:parseFloat(p.value)||0,descricao:desc,cat:'Asaas',status:'asaas',_src:'asaas'});
   });
