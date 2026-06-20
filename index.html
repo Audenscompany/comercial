@@ -1702,7 +1702,7 @@ var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1
 var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852137};
 // Cache: gid (string) -> nome da aba resolvido, para evitar re-buscar metadata em cada updateSheetCell
 var _sheetTabNameCache={};
-var _sheetsMeta={},_investidoMes={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
+var _sheetsMeta={},_investidoMes={},_investidoManual={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
 var _contatosEquipe={lucas:'',gustavo:'',joao:''};
 
 function loadStorage(){
@@ -1716,6 +1716,7 @@ function loadStorage(){
     var cid=localStorage.getItem('audens_gcal_id');if(cid)gcalClientId=cid;
     var tok=localStorage.getItem('audens_gcal_token');if(tok)gcalToken=JSON.parse(tok);
     var inv=localStorage.getItem('audens_inv');if(inv)_investidoMes=JSON.parse(inv);
+    var invm=localStorage.getItem('audens_inv_manual');if(invm)_investidoManual=JSON.parse(invm);
     var mc=localStorage.getItem('audens_mcom');if(mc)_metaComercial=JSON.parse(mc);
     var si=localStorage.getItem('audens_sheets_ids');if(si)SHEETS_IDS=JSON.parse(si);
     var sg=localStorage.getItem('audens_sheets_gids');if(sg)SHEETS_GIDS=JSON.parse(sg);
@@ -1741,6 +1742,7 @@ function saveAll(){
     if(gcalClientId)localStorage.setItem('audens_gcal_id',gcalClientId);
     if(gcalToken)localStorage.setItem('audens_gcal_token',JSON.stringify(gcalToken));
     localStorage.setItem('audens_inv',JSON.stringify(_investidoMes));
+    localStorage.setItem('audens_inv_manual',JSON.stringify(_investidoManual));
     localStorage.setItem('audens_mcom',JSON.stringify(_metaComercial));
     localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS));
     localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS));
@@ -3772,6 +3774,8 @@ function stopFinanceiroListeners(){
 // ---- Dashboard Comercial realtime listeners ----
 var _dashRealtimeRefs=[];
 var _dashReloadTimer=null;
+var _dashRefreshInterval=null;
+var _dashFocusReload=null;
 function startDashComListeners(){
   if(_dashRealtimeRefs.length) return;
   var reload=function(){
@@ -3780,6 +3784,7 @@ function startDashComListeners(){
     if(_dashReloadTimer) clearTimeout(_dashReloadTimer);
     _dashReloadTimer=setTimeout(function(){ _dashReloadTimer=null; refreshDashCom(); },1500);
   };
+  // Firebase listeners (kanban, meetings, followups)
   var refs=[
     {ref:fbDb.ref('kanban'),events:['child_added','child_changed','child_removed']},
     {ref:fbDb.ref('meetings'),events:['child_added','child_changed','child_removed']},
@@ -3787,6 +3792,14 @@ function startDashComListeners(){
   ];
   refs.forEach(function(r){ r.events.forEach(function(ev){ r.ref.on(ev,reload); }); });
   _dashRealtimeRefs=refs;
+  // Refresh ao focar janela (pega mudanças na planilha Google Sheets)
+  _dashFocusReload=function(){ reload(); };
+  window.addEventListener('focus',_dashFocusReload);
+  // Refresh automático a cada 3 minutos
+  _dashRefreshInterval=setInterval(function(){
+    var pg=document.getElementById('content');
+    if(pg&&pg.getAttribute('data-page')==='dashcom') refreshDashCom();
+  },3*60*1000);
 }
 function stopDashComListeners(){
   _dashRealtimeRefs.forEach(function(r){
@@ -3794,6 +3807,8 @@ function stopDashComListeners(){
   });
   _dashRealtimeRefs=[];
   if(_dashReloadTimer){ clearTimeout(_dashReloadTimer); _dashReloadTimer=null; }
+  if(_dashFocusReload){ window.removeEventListener('focus',_dashFocusReload); _dashFocusReload=null; }
+  if(_dashRefreshInterval){ clearInterval(_dashRefreshInterval); _dashRefreshInterval=null; }
 }
 // ---- end realtime listeners ----
 async function loadFinanceiroData(){
@@ -6021,17 +6036,19 @@ async function refreshDashCom(){
   content.style.display='none';
   try{
     var data=await loadDataHybrid();
-    // Auto-fetch Meta Ads spend
+    // Auto-fetch Meta Ads spend (só se não houver valor manual definido)
     if(isMetaConnected()&&metaAccountId){
       var period=_dashPeriod||getCurrentPeriod();
-      var spend=await fetchMetaSpend(period);
-      if(spend!==null){_investidoMes[period]=spend;saveAll();}
+      if(!_investidoManual[period]){
+        var spend=await fetchMetaSpend(period);
+        if(spend!==null){_investidoMes[period]=spend;saveAll();}
+      }
       // Buscar mês anterior também para comparação
       var pp2=period.split('/');
       var prevM=parseInt(pp2[0])===1?12:parseInt(pp2[0])-1;
       var prevA=parseInt(pp2[0])===1?parseInt(pp2[1])-1:parseInt(pp2[1]);
       var prevP=String(prevM).padStart(2,'0')+'/'+prevA;
-      if(!_investidoMes[prevP]){
+      if(!_investidoMes[prevP]&&!_investidoManual[prevP]){
         var spendPrev=await fetchMetaSpend(prevP);
         if(spendPrev!==null){_investidoMes[prevP]=spendPrev;saveAll();}
       }
@@ -6039,7 +6056,21 @@ async function refreshDashCom(){
     content.innerHTML=buildDashComHTML(data);
     content.style.display='block';loading.style.display='none';
     var inv=document.getElementById('dc-inv-input');
-    if(inv)inv.addEventListener('change',function(){_investidoMes[_dashPeriod]=parseFloat(this.value)||0;saveAll();refreshDashCom();});
+    if(inv)inv.addEventListener('change',function(){
+      var p=_dashPeriod||getCurrentPeriod();
+      _investidoMes[p]=parseFloat(this.value)||0;
+      _investidoManual[p]=true;
+      saveAll();refreshDashCom();
+    });
+    var syncBtn=document.getElementById('dc-inv-sync');
+    if(syncBtn)syncBtn.addEventListener('click',async function(){
+      var p=_dashPeriod||getCurrentPeriod();
+      delete _investidoManual[p];
+      saveAll();
+      var spend=await fetchMetaSpend(p);
+      if(spend!==null){_investidoMes[p]=spend;saveAll();}
+      refreshDashCom();
+    });
     var mc=document.getElementById('dc-mc-input');
     if(mc)mc.addEventListener('change',function(){_metaComercial.contratos=parseFloat(this.value)||40000;saveAll();refreshDashCom();});
     var mcc=document.getElementById('dc-mcc-input');
@@ -6453,7 +6484,18 @@ function buildDashComHTML(data){
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-speakerphone" style="color:var(--purple3);margin-right:6px;"></i>Tráfego Pago · '+periodLabel+'</div></div>'+
     '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'+
       trafegoCard('Ticket Médio', ticketMedioTrafego, ticketMedioTrafego>0?'R$ '+Math.round(ticketMedioTrafego).toLocaleString('pt-BR'):'—', '', ticketMedioTrafegoP, 'rgba(123,47,255,0.35)', false)+
-      trafegoCard('Investido em Tráfego', inv, inv>0?'R$ '+Math.round(inv).toLocaleString('pt-BR'):'R$ 0', '', invPrev, 'rgba(245,158,11,0.3)', false)+
+      (function(){
+        var isManual=!!_investidoManual[period];
+        var invLabel=inv>0?'R$ '+Math.round(inv).toLocaleString('pt-BR'):'R$ 0';
+        var editBtn='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;">'+
+          '<input id="dc-inv-inline" type="number" value="'+Math.round(inv)+'" style="width:90px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:5px;padding:3px 7px;color:var(--white);font-size:12px;outline:none;" onchange="(function(v){var p=_dashPeriod||getCurrentPeriod();_investidoMes[p]=parseFloat(v)||0;_investidoManual[p]=true;saveAll();refreshDashCom();})(this.value)">'+
+          (isMetaConnected()&&metaAccountId?'<button id="dc-inv-sync" title="Sincronizar com Meta Ads" style="background:rgba(123,47,255,0.25);border:1px solid var(--purple3);border-radius:5px;padding:3px 7px;color:var(--purple3);font-size:11px;cursor:pointer;white-space:nowrap;">'+(isManual?'↺ Meta':'✓ Meta')+'</button>':'')+'</div>'+
+          (isManual?'<div style="font-size:10px;color:var(--amber);margin-top:2px;">valor manual</div>':'');
+        return '<div style="background:rgba(245,158,11,0.3);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:14px 16px;">'+
+          '<div style="font-size:11px;letter-spacing:1.5px;color:var(--muted);font-family:Barlow Condensed,sans-serif;text-transform:uppercase;margin-bottom:6px;">Investido em Tráfego</div>'+
+          '<div style="font-family:Bebas Neue,sans-serif;font-size:32px;color:var(--white);line-height:1;">'+invLabel+'</div>'+
+          editBtn+'</div>';
+      })()+
       trafegoCard('Leads Tráfego', leadsTrafegoCount, leadsTrafegoCount, '', leadsTrafegoCountP, 'rgba(56,189,248,0.3)', false)+
       trafegoCard('Leads Qualificados', leadsTrafegoQ, leadsTrafegoQ, '', leadsTrafegoQP, 'rgba(56,189,248,0.25)', false)+
       trafegoCard('Custo por Lead', cpl, cpl>0?'R$ '+Math.round(cpl).toLocaleString('pt-BR'):'—', '', cplP, 'rgba(239,68,68,0.25)', true)+
