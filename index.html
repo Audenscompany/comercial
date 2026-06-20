@@ -9606,15 +9606,18 @@ async function calcCloserFromSheets(nivelIdx, month){
       _ccDebugLines.push('Cabeçalhos: '+ch.join(' | '));
       cliRows.slice(1).forEach(function(row,_ri){
         var sdrC=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
+        var closerC2=(iCloser2>=0?row[iCloser2]||'':'').trim();
         var oriC=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
         var dateStr3=row[iData2]||'';
         var dt3=parseBRDate(dateStr3);
         var monthC=dateToMonthStr(dt3);
-        var hasGustavo=normCloserName(sdrC)==='Gustavo';
+        var hasGustavoSDR=normCloserName(sdrC)==='Gustavo';
+        var hasGustavoCloser=normCloserName(closerC2)==='Gustavo';
+        var hasGustavo=hasGustavoSDR||hasGustavoCloser;
         var hasCold=oriC.includes('cold')||oriC.includes('call');
         var hasMonth=monthC===month;
         if(hasGustavo||hasCold){
-          _ccDebugLines.push('Linha '+(row[1]||'?')+': sdr="'+sdrC+'" ori="'+oriC+'" mes='+monthC+' G='+hasGustavo+' CC='+hasCold+' M='+hasMonth+' val='+row[2]);
+          _ccDebugLines.push('Linha '+(row[1]||'?')+': sdr="'+sdrC+'" closer="'+closerC2+'" ori="'+oriC+'" mes='+monthC+' G='+hasGustavo+' CC='+hasCold+' M='+hasMonth+' val='+row[2]);
         }
         if(hasGustavo && hasCold && hasMonth){
           var valorMes=parseMoney(row[2]||'');
