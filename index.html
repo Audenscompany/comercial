@@ -2748,12 +2748,67 @@ function meetingsToReunioesRows(){
   });
 }
 
-// Híbrido: lê leads + reuniões do Firebase, apenas clientes vem da planilha
+// Converte lista de meetings (Firebase) em linhas de reunioes
+function _meetingObjsToRows(arr){
+  return arr.map(function(m){
+    var bookTs=m.scheduledAt||Date.now();
+    var bd=new Date(bookTs);
+    var ds=bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
+    var tel=(m.tel||'').replace(/\D/g,'');
+    var fu=followups[m.id];
+    var st;
+    if(fu){
+      if(fu.resultado==='noshow'||fu.comparecimento==='nao') st='NO-SHOW';
+      else if(fu.resultado==='venda') st='VENDA';
+      else st='REALIZADA';
+    } else if(m.status==='noshow') st='NO-SHOW';
+    else if(m.status==='done') st='REALIZADA';
+    else st='AGENDADA';
+    var ke=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var orig=m.origem||(ke&&ke.origem)||'Tráfego';
+    var sdr=m.sdrName||m.sdr||'';
+    var closer=(m.closerName||m.closer||'').trim();
+    return {
+      'DATA':ds,'Data':ds,'data':ds,
+      'DATA DE AGENDAMENTO':ds,'Data de Agendamento':ds,'DataAgendamento':ds,'Data Agendamento':ds,
+      'CLIENTE':m.nome||'','Cliente':m.nome||'','cliente':m.nome||'',
+      'NOME':m.nome||'','Nome':m.nome||'',
+      'STATUS REUNIÃO':st,'STATUS REUNIAO':st,'Status Reuniao':st,'STATUS':st,'Status':st,
+      'CLOSER':closer,'Closer':closer,'closer':closer,
+      'SDR/BDR':sdr,'SDR':sdr,'Sdr':sdr,
+      'ORIGEM':orig,'Origem':orig,'origem':orig,
+      'Telefone':tel,'TELEFONE':tel,'telefone':tel
+    };
+  });
+}
+
+// Híbrido: Google Sheets como fonte primária (dados completos), Firebase complementa com entradas novas
 async function loadDataHybrid(){
-  var clientesRaw = await fetchSheetVals(SHEETS_IDS.clientes, SHEETS_GIDS.clientes);
+  var [leadsRaw, reunioesRaw, clientesRaw] = await Promise.all([
+    fetchSheetVals(SHEETS_IDS.leads, SHEETS_GIDS.leads),
+    fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes),
+    fetchSheetVals(SHEETS_IDS.clientes, SHEETS_GIDS.clientes)
+  ]);
+  var sheetLeads=rawToObjs(leadsRaw).rows;
+  var sheetReuni=rawToObjs(reunioesRaw).rows;
+
+  // Leads do Firebase que não estão na planilha (match por telefone)
+  var sheetTels=new Set(sheetLeads.map(function(l){
+    return (col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+  }).filter(Boolean));
+  var fbExtraLeads=kanbanToLeadsRows().filter(function(l){
+    var t=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    return t&&!sheetTels.has(t);
+  });
+
+  // Reuniões do Firebase sem sheetRow = não estão na planilha
+  var fbExtraReuni=_meetingObjsToRows(
+    Object.values(meetings).filter(function(m){return !m._hidden&&!m.sheetRow;})
+  );
+
   return {
-    leads: {rows: kanbanToLeadsRows()},
-    reunioes: {rows: meetingsToReunioesRows()},
+    leads: {rows: sheetLeads.concat(fbExtraLeads)},
+    reunioes: {rows: sheetReuni.concat(fbExtraReuni)},
     clientes: rawToObjs(clientesRaw)
   };
 }
@@ -2985,6 +3040,8 @@ function showPage(id){
     if(id==='asaas') setTimeout(loadAsaasPage,50);
     if(id==='financeiro') setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
+    if(id==='dashcom') setTimeout(startDashComListeners,50);
+    else stopDashComListeners();
   }
   var tnav=document.getElementById('nav-tarefas');
   if(tnav){var p=getPendingFollowups().length;var ex=tnav.querySelector('.nav-badge');
@@ -3711,6 +3768,32 @@ function stopFinanceiroListeners(){
   });
   fbDb.ref('financeiro/bot_state').off('value');
   _finRealtimeRefs=[];
+}
+// ---- Dashboard Comercial realtime listeners ----
+var _dashRealtimeRefs=[];
+var _dashReloadTimer=null;
+function startDashComListeners(){
+  if(_dashRealtimeRefs.length) return;
+  var reload=function(){
+    var pg=document.getElementById('content');
+    if(!(pg&&pg.getAttribute('data-page')==='dashcom')) return;
+    if(_dashReloadTimer) clearTimeout(_dashReloadTimer);
+    _dashReloadTimer=setTimeout(function(){ _dashReloadTimer=null; refreshDashCom(); },1500);
+  };
+  var refs=[
+    {ref:fbDb.ref('kanban'),events:['child_added','child_changed','child_removed']},
+    {ref:fbDb.ref('meetings'),events:['child_added','child_changed','child_removed']},
+    {ref:fbDb.ref('followups'),events:['child_added','child_changed']}
+  ];
+  refs.forEach(function(r){ r.events.forEach(function(ev){ r.ref.on(ev,reload); }); });
+  _dashRealtimeRefs=refs;
+}
+function stopDashComListeners(){
+  _dashRealtimeRefs.forEach(function(r){
+    r.events.forEach(function(ev){ r.ref.off(ev); });
+  });
+  _dashRealtimeRefs=[];
+  if(_dashReloadTimer){ clearTimeout(_dashReloadTimer); _dashReloadTimer=null; }
 }
 // ---- end realtime listeners ----
 async function loadFinanceiroData(){
