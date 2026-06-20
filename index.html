@@ -9602,19 +9602,29 @@ async function calcCloserFromSheets(nivelIdx, month){
     if(cliRows && cliRows.length>1){
       // ciSDR2 and ciOri2 already found above; reuse ch (headers) from cliRows
       var ciValorVendido=ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
-      cliRows.slice(1).forEach(function(row){
+      console.log('[CC DEBUG] headers:', ch);
+      console.log('[CC DEBUG] ciSDR2='+ciSDR2+' ciOri2='+ciOri2+' iData2='+iData2+' ciValorVendido='+ciValorVendido+' month='+month);
+      cliRows.slice(1).forEach(function(row,_ri){
         var sdrC=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
         var oriC=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
         var dateStr3=row[iData2]||'';
         var dt3=parseBRDate(dateStr3);
         var monthC=dateToMonthStr(dt3);
-        if(normCloserName(sdrC)==='Gustavo' && (oriC.includes('cold')||oriC.includes('call')) && monthC===month){
-          // Comissão cold call = 25% sobre VALOR CONTRATO/MÊS (col 2)
+        var sdrNorm=normCloserName(sdrC);
+        var hasGustavo=sdrNorm==='Gustavo';
+        var hasCold=oriC.includes('cold')||oriC.includes('call');
+        var hasMonth=monthC===month;
+        if(hasGustavo||hasCold){
+          console.log('[CC DEBUG] row '+(_ri+2)+' cliente='+row[1]+' sdrC="'+sdrC+'" oriC="'+oriC+'" monthC='+monthC+' sdrNorm='+sdrNorm+' hasGustavo='+hasGustavo+' hasCold='+hasCold+' hasMonth='+hasMonth+' val='+row[2]);
+        }
+        if(hasGustavo && hasCold && hasMonth){
           var valorMes=parseMoney(row[2]||'');
           if(!valorMes && ciValorVendido>=0) valorMes=parseMoney(row[ciValorVendido]||'');
+          console.log('[CC DEBUG] CONTANDO row '+(_ri+2)+' '+row[1]+' valor='+valorMes);
           mrrColdCall+=valorMes;
         }
       });
+      console.log('[CC DEBUG] mrrColdCall final='+mrrColdCall);
     }
     result.mrrColdCall=mrrColdCall;
     result.reunColdCall=reunColdCall;
