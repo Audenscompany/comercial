@@ -9599,33 +9599,33 @@ async function calcCloserFromSheets(nivelIdx, month){
         }
       });
     }
+    var _ccDebugLines=[];
     if(cliRows && cliRows.length>1){
-      // ciSDR2 and ciOri2 already found above; reuse ch (headers) from cliRows
       var ciValorVendido=ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
-      console.log('[CC DEBUG] headers:', ch);
-      console.log('[CC DEBUG] ciSDR2='+ciSDR2+' ciOri2='+ciOri2+' iData2='+iData2+' ciValorVendido='+ciValorVendido+' month='+month);
+      _ccDebugLines.push('Cols: iData2='+iData2+' ciSDR2='+ciSDR2+' ciOri2='+ciOri2+' month='+month);
+      _ccDebugLines.push('Cabeçalhos: '+ch.join(' | '));
       cliRows.slice(1).forEach(function(row,_ri){
         var sdrC=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
         var oriC=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
         var dateStr3=row[iData2]||'';
         var dt3=parseBRDate(dateStr3);
         var monthC=dateToMonthStr(dt3);
-        var sdrNorm=normCloserName(sdrC);
-        var hasGustavo=sdrNorm==='Gustavo';
+        var hasGustavo=normCloserName(sdrC)==='Gustavo';
         var hasCold=oriC.includes('cold')||oriC.includes('call');
         var hasMonth=monthC===month;
         if(hasGustavo||hasCold){
-          console.log('[CC DEBUG] row '+(_ri+2)+' cliente='+row[1]+' sdrC="'+sdrC+'" oriC="'+oriC+'" monthC='+monthC+' sdrNorm='+sdrNorm+' hasGustavo='+hasGustavo+' hasCold='+hasCold+' hasMonth='+hasMonth+' val='+row[2]);
+          _ccDebugLines.push('Linha '+(row[1]||'?')+': sdr="'+sdrC+'" ori="'+oriC+'" mes='+monthC+' G='+hasGustavo+' CC='+hasCold+' M='+hasMonth+' val='+row[2]);
         }
         if(hasGustavo && hasCold && hasMonth){
           var valorMes=parseMoney(row[2]||'');
           if(!valorMes && ciValorVendido>=0) valorMes=parseMoney(row[ciValorVendido]||'');
-          console.log('[CC DEBUG] CONTANDO row '+(_ri+2)+' '+row[1]+' valor='+valorMes);
+          _ccDebugLines.push('→ CONTADO: '+row[1]+' R$'+valorMes);
           mrrColdCall+=valorMes;
         }
       });
-      console.log('[CC DEBUG] mrrColdCall final='+mrrColdCall);
+      _ccDebugLines.push('TOTAL mrrColdCall='+mrrColdCall);
     }
+    result._ccDebug=_ccDebugLines;
     result.mrrColdCall=mrrColdCall;
     result.reunColdCall=reunColdCall;
     result.comissaoColdCall=Math.round(mrrColdCall*0.25);
@@ -10021,7 +10021,13 @@ async function triggerCloserCalc(mode){
         '<div style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">NÍVEL · '+lv.tier.toUpperCase()+' '+lv.n+'</div>'+
         '<div style="font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:4px;">Tipo predominante: '+r.tipoContrato+'</div>'+
       '</div>'+
-    '</div>';
+    '</div>'+
+    (r._ccDebug&&r._ccDebug.length
+      ?'<details style="margin-top:10px;"><summary style="cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);padding:6px 0;">🔍 Debug Cold Call ('+r._ccDebug.length+' linhas)</summary>'+
+        '<div style="background:#000;border-radius:8px;padding:12px;margin-top:6px;font-family:monospace;font-size:11px;color:#0f0;max-height:300px;overflow-y:auto;white-space:pre-wrap;">'+
+          r._ccDebug.map(function(l){return esc(l);}).join('\n')+
+        '</div></details>'
+      :'');
 }
 
 async function triggerSDRCalc(mode){
