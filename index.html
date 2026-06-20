@@ -3864,10 +3864,12 @@ async function loadFinanceiroData(){
       saidaIds.push(t._id);
       chk='<td><input type="checkbox" class="fin-chk" data-id="'+t._id+'" onchange="finUpdateBulkBar()" style="width:15px;height:15px;accent-color:var(--purple);cursor:pointer;"></td>';
       if(t.status==='pendente') actions='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finConfirmarSaida(\''+t._id+'\',this)" title="Confirmar"><i class="ti ti-check"></i></button>';
+      actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finEditarLancamento(\'saidas\',\''+t._id+'\')" title="Editar"><i class="ti ti-pencil"></i></button>';
       actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="finDeletarLancamento(\'saidas\',\''+t._id+'\')" title="Excluir"><i class="ti ti-trash"></i></button>';
     }
     if(t._src==='entrada'&&t._id){
-      actions='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="finDeletarLancamento(\'entradas_manuais\',\''+t._id+'\')" title="Excluir"><i class="ti ti-trash"></i></button>';
+      actions='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finEditarLancamento(\'entradas_manuais\',\''+t._id+'\')" title="Editar"><i class="ti ti-pencil"></i></button>';
+      actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,0.3);" onclick="finDeletarLancamento(\'entradas_manuais\',\''+t._id+'\')" title="Excluir"><i class="ti ti-trash"></i></button>';
     }
     var dataFmt=t.data?t.data.split('-').reverse().join('/'):'';
     return '<tr>'+
@@ -4452,6 +4454,85 @@ async function finDeletarSelecionados(){
     await fbDb.ref('financeiro/saidas/'+ids[i]).remove();
   }
   showSheetToast(ids.length+' lançamento(s) excluído(s).');
+  loadFinanceiroData();
+}
+async function finEditarLancamento(tipo,id){
+  var dados=await fbGet('financeiro/'+tipo+'/'+id);
+  if(!dados){showSheetToast('Erro ao carregar lançamento.');return;}
+  var isSaida=tipo==='saidas';
+  var cats=isSaida
+    ?['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros']
+    :['Receita Cliente','Asaas','InfinitePay','Transferência Recebida','Reembolso','Outros'];
+  var catAtual=dados.categoria||'Outros';
+  var catOpts=cats.map(function(c){return '<option value="'+c+'"'+(c===catAtual?' selected':'')+'>'+c+'</option>';}).join('');
+  var html='<div class="modal-ov" id="modal-editar-lanc" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-editar-lanc\')">'+
+    '<div class="modal-box" style="max-width:440px;width:100%;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;">'+
+          '<div style="width:32px;height:32px;border-radius:8px;background:'+(isSaida?'rgba(239,68,68,0.15)':'rgba(34,197,94,0.15)')+';display:flex;align-items:center;justify-content:center;">'+
+            '<i class="ti ti-pencil" style="color:'+(isSaida?'var(--red)':'var(--green)')+'"></i>'+
+          '</div>'+
+          '<span class="modal-title" style="margin:0;">Editar '+(isSaida?'Despesa':'Entrada')+'</span>'+
+        '</div>'+
+        '<button onclick="closeModal(\'modal-editar-lanc\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<div class="modal-grid2" style="margin-bottom:14px;">'+
+        '<div>'+
+          '<label class="f-label">Valor (R$)</label>'+
+          '<input class="f-input" id="edit-lanc-valor" type="number" step="0.01" min="0" value="'+(dados.valor||'')+'" style="margin-bottom:0;">'+
+        '</div>'+
+        '<div>'+
+          '<label class="f-label">Data</label>'+
+          '<input class="f-input" id="edit-lanc-data" type="date" value="'+(dados.data||'')+'" style="margin-bottom:0;">'+
+        '</div>'+
+      '</div>'+
+      '<div style="margin-bottom:14px;">'+
+        '<label class="f-label">Descrição</label>'+
+        '<input class="f-input" id="edit-lanc-desc" value="'+esc(dados.descricao||'')+'" style="margin-bottom:0;">'+
+      '</div>'+
+      '<div style="margin-bottom:'+(isSaida?'14':'18')+'px;">'+
+        '<label class="f-label">Categoria</label>'+
+        '<select class="f-input" id="edit-lanc-cat" style="margin-bottom:0;">'+catOpts+'</select>'+
+      '</div>'+
+      (isSaida
+        ?'<div style="margin-bottom:18px;">'+
+            '<label class="f-label">Status</label>'+
+            '<select class="f-input" id="edit-lanc-status" style="margin-bottom:0;">'+
+              '<option value="confirmado"'+(dados.status==='confirmado'?' selected':'')+'>Confirmado</option>'+
+              '<option value="pendente"'+(dados.status==='pendente'?' selected':'')+'>Pendente</option>'+
+            '</select>'+
+          '</div>'
+        :'')+
+      '<input type="hidden" id="edit-lanc-tipo" value="'+tipo+'">'+
+      '<input type="hidden" id="edit-lanc-id" value="'+id+'">'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button class="btn" onclick="closeModal(\'modal-editar-lanc\')" style="flex:1;">Cancelar</button>'+
+        '<button class="btn btn-primary" onclick="finSalvarEdicao()" style="flex:2;" id="btn-salvar-edit">Salvar alterações</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  var ex=document.getElementById('modal-editar-lanc');
+  if(ex) ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function finSalvarEdicao(){
+  var tipo=document.getElementById('edit-lanc-tipo').value;
+  var id=document.getElementById('edit-lanc-id').value;
+  var valor=parseFloat(document.getElementById('edit-lanc-valor').value)||0;
+  var data=document.getElementById('edit-lanc-data').value;
+  var descricao=(document.getElementById('edit-lanc-desc').value||'').trim();
+  var categoria=document.getElementById('edit-lanc-cat').value;
+  var statusEl=document.getElementById('edit-lanc-status');
+  var status=statusEl?statusEl.value:'confirmado';
+  if(!valor||valor<=0){alert('Informe um valor válido.');return;}
+  if(!data){alert('Informe a data.');return;}
+  var btn=document.getElementById('btn-salvar-edit');
+  if(btn){btn.disabled=true;btn.textContent='Salvando...';}
+  var updates={valor:valor,data:data,descricao:descricao,categoria:categoria};
+  if(tipo==='saidas') updates.status=status;
+  await fbDb.ref('financeiro/'+tipo+'/'+id).update(updates);
+  closeModal('modal-editar-lanc');
+  showSheetToast('Lançamento atualizado!');
   loadFinanceiroData();
 }
 
@@ -9452,6 +9533,9 @@ async function calcCloserFromSheets(nivelIdx, month){
       var iCloser2 = ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
       var iPlano = ch.findIndex(function(h){return h.includes('PLANO');});
       var iValorV = ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
+      // Find SDR and ORIGEM cols here so we can exclude cold-call-SDR contracts from closer count
+      var ciSDR2=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
+      var ciOri2=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
 
       cliRows.slice(1).forEach(function(row){
         var closer2 = (row[iCloser2]||'').trim().toUpperCase();
@@ -9461,6 +9545,12 @@ async function calcCloserFromSheets(nivelIdx, month){
         if(!rowMonth2) return;
         var closerNorm2 = normCloserName(closer2);
         if(closerNorm2==='Gustavo' && rowMonth2===month){
+          // Regra: se Gustavo foi SDR (cold call) E closer no mesmo contrato,
+          // ele NÃO conta como contrato de closer — só ganha 25% como cold call SDR.
+          var sdrC2=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
+          var oriC2=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
+          var isGustavoSdrColdCall = normCloserName(sdrC2)==='Gustavo' && (oriC2.includes('cold')||oriC2.includes('call'));
+          if(isGustavoSdrColdCall) return; // skip: comissão vai pelo cold call 25%, não pelo closer
           result.contratos++;
           var plano = (row[iPlano]||'').toUpperCase();
           if(plano.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
@@ -9510,10 +9600,7 @@ async function calcCloserFromSheets(nivelIdx, month){
       });
     }
     if(cliRows && cliRows.length>1){
-      // Reuse headers already parsed above
-      var ciSDR2=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
-      var ciOri2=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
-      // Use VALOR VENDIDO DO CONTRATO for cold call commission (25% of total contract value)
+      // ciSDR2 and ciOri2 already found above; reuse ch (headers) from cliRows
       var ciValorVendido=ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
       cliRows.slice(1).forEach(function(row){
         var sdrC=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
