@@ -6058,35 +6058,25 @@ async function refreshDashCom(){
     _metaFetchErr=false;
     if(isMetaConnected()&&metaAccountId){
       var period=_dashPeriod||getCurrentPeriod();
-      if(!_investidoManual[period]){
-        var spend=await fetchMetaSpend(period);
-        if(spend!==null){_investidoMes[period]=spend;saveAll();}
-        else{_metaFetchErr=true;}
-      }
+      var spend=await fetchMetaSpend(period);
+      if(spend!==null){_investidoMes[period]=spend;saveAll();}
+      else{_metaFetchErr=true;}
       // Buscar mês anterior também para comparação
       var pp2=period.split('/');
       var prevM=parseInt(pp2[0])===1?12:parseInt(pp2[0])-1;
       var prevA=parseInt(pp2[0])===1?parseInt(pp2[1])-1:parseInt(pp2[1]);
       var prevP=String(prevM).padStart(2,'0')+'/'+prevA;
-      if(!_investidoMes[prevP]&&!_investidoManual[prevP]){
+      if(!_investidoMes[prevP]){
         var spendPrev=await fetchMetaSpend(prevP);
         if(spendPrev!==null){_investidoMes[prevP]=spendPrev;saveAll();}
       }
     }
     content.innerHTML=buildDashComHTML(data);
     content.style.display='block';loading.style.display='none';
-    var inv=document.getElementById('dc-inv-input');
-    if(inv)inv.addEventListener('change',function(){
-      var p=_dashPeriod||getCurrentPeriod();
-      _investidoMes[p]=parseFloat(this.value)||0;
-      _investidoManual[p]=true;
-      saveAll();refreshDashCom();
-    });
     var syncBtn=document.getElementById('dc-inv-sync');
     if(syncBtn)syncBtn.addEventListener('click',async function(){
       var p=_dashPeriod||getCurrentPeriod();
-      delete _investidoManual[p];
-      saveAll();
+      this.disabled=true;this.textContent='...';
       var spend=await fetchMetaSpend(p);
       if(spend!==null){_investidoMes[p]=spend;saveAll();}
       refreshDashCom();
@@ -6505,23 +6495,17 @@ function buildDashComHTML(data){
     '<div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'+
       trafegoCard('Ticket Médio', ticketMedioTrafego, ticketMedioTrafego>0?'R$ '+Math.round(ticketMedioTrafego).toLocaleString('pt-BR'):'—', '', ticketMedioTrafegoP, 'rgba(123,47,255,0.35)', false)+
       (function(){
-        var isManual=!!_investidoManual[period];
         var invLabel=inv>0?'R$ '+Math.round(inv).toLocaleString('pt-BR'):'R$ 0';
         var metaBtn=isMetaConnected()&&metaAccountId
-          ?'<button id="dc-inv-sync" title="Buscar valor atual do Meta Ads" style="background:rgba(123,47,255,0.25);border:1px solid var(--purple3);border-radius:5px;padding:3px 7px;color:var(--purple3);font-size:11px;cursor:pointer;white-space:nowrap;">↺ Meta</button>'
+          ?'<button id="dc-inv-sync" title="Atualizar do Meta Ads" style="background:rgba(123,47,255,0.25);border:1px solid var(--purple3);border-radius:5px;padding:3px 9px;color:var(--purple3);font-size:11px;cursor:pointer;white-space:nowrap;margin-top:8px;">↺ Atualizar</button>'
           :'';
-        var statusLine=isManual
-          ?'<div style="font-size:10px;color:var(--amber);margin-top:3px;">✏️ valor manual — clique ↺ Meta para atualizar</div>'
-          :(_metaFetchErr
-            ?'<div style="font-size:10px;color:var(--red);margin-top:3px;">⚠️ Erro ao buscar Meta Ads — clique ↺ Meta para tentar novamente</div>'
-            :'');
-        var editBtn='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;">'+
-          '<input id="dc-inv-inline" type="number" value="'+Math.round(inv)+'" style="width:90px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:5px;padding:3px 7px;color:var(--white);font-size:12px;outline:none;" onchange="(function(v){var p=_dashPeriod||getCurrentPeriod();_investidoMes[p]=parseFloat(v)||0;_investidoManual[p]=true;saveAll();refreshDashCom();})(this.value)">'+
-          metaBtn+'</div>'+statusLine;
+        var errLine=_metaFetchErr
+          ?'<div style="font-size:10px;color:var(--red);margin-top:4px;">⚠️ Erro ao buscar — clique Atualizar</div>'
+          :'';
         return '<div style="background:rgba(245,158,11,0.3);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:14px 16px;">'+
           '<div style="font-size:11px;letter-spacing:1.5px;color:var(--muted);font-family:Barlow Condensed,sans-serif;text-transform:uppercase;margin-bottom:6px;">Investido em Tráfego</div>'+
           '<div style="font-family:Bebas Neue,sans-serif;font-size:32px;color:var(--white);line-height:1;">'+invLabel+'</div>'+
-          editBtn+'</div>';
+          metaBtn+errLine+'</div>';
       })()+
       trafegoCard('Leads Tráfego', leadsTrafegoCount, leadsTrafegoCount, '', leadsTrafegoCountP, 'rgba(56,189,248,0.3)', false)+
       trafegoCard('Leads Qualificados', leadsTrafegoQ, leadsTrafegoQ, '', leadsTrafegoQP, 'rgba(56,189,248,0.25)', false)+
