@@ -787,6 +787,76 @@ function ensureKanbanEntry(lead){
   }).catch(function(e){console.error('ensureKanbanEntry error',e);});
 }
 
+// Sync Firebase → Planilha: busca telefones já presentes na sheet e só envia os que faltam
+async function syncFirebaseToSheets(btn){
+  if(!isGcalConnected()){alert('Conecte o Google Calendar primeiro em Configuracoes.');return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i> Verificando planilha...';}
+  try{
+    // 1. Resolve nome da aba
+    var tabName=_sheetTabNameCache[String(SHEETS_GIDS.leads)];
+    if(!tabName){
+      var mr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+SHEETS_IDS.leads+'?fields=sheets.properties',
+        {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+      var mm=await mr.json();
+      if(mm.error) throw new Error('Erro ao acessar planilha: '+mm.error.message);
+      for(var i=0;i<(mm.sheets||[]).length;i++){
+        var sp=mm.sheets[i].properties;
+        if(sp.sheetId===SHEETS_GIDS.leads||sp.sheetId===parseInt(SHEETS_GIDS.leads)){tabName=sp.title;break;}
+      }
+      if(!tabName) throw new Error('Aba nao encontrada');
+      _sheetTabNameCache[String(SHEETS_GIDS.leads)]=tabName;
+    }
+    // 2. Busca coluna D (Telefone) da planilha para ver o que já existe
+    var dr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+SHEETS_IDS.leads+'/values/'+encodeURIComponent(tabName+'!D:D'),
+      {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+    var dj=await dr.json();
+    var existingPhones=new Set();
+    (dj.values||[]).forEach(function(row){if(row[0])existingPhones.add(row[0].replace(/\D/g,''));});
+    // 3. Filtra leads do Firebase que não estão na planilha (por telefone)
+    var missing=Object.entries(kanbanData).filter(function(a){
+      var v=a[1];
+      if(!v.nome||!v.telefone) return false;
+      return !existingPhones.has((v.telefone||'').replace(/\D/g,''));
+    });
+    if(!missing.length){
+      if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-table-export"></i> Sync → Planilha';}
+      showSheetToast('Todos os leads ja estao na planilha ✓');
+      return;
+    }
+    if(btn){btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i> Enviando '+missing.length+' lead(s)...';}
+    // 4. Escreve apenas os que faltam
+    var ok=0,fail=0;
+    for(var j=0;j<missing.length;j++){
+      var key=missing[j][0],lead=missing[j][1];
+      lead._sheetSynced=false; // força appendLeadToSheets a rodar
+      var success=await appendLeadToSheets(lead,key);
+      if(success)ok++;else fail++;
+    }
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-table-export"></i> Sync → Planilha';}
+    showSheetToast(ok+' lead(s) adicionado(s) na planilha'+(fail?' · '+fail+' falhou':'')+'  ✓');
+    showPage('kanban');
+  }catch(e){
+    console.error('syncFirebaseToSheets',e);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-table-export"></i> Sync → Planilha';}
+    showSheetToast('Erro: '+e.message);
+  }
+}
+function pendingLeadsCount(){
+  // Conta leads do Firebase sem _sheetSynced (estimativa rápida para o badge)
+  return Object.values(kanbanData).filter(function(v){return v.nome&&v.telefone&&!v._sheetSynced;}).length;
+}
+
+// Força sync de um lead para a planilha pelo nome (uso: forceSyncLeadByName('Humberto') no console)
+window.forceSyncLeadByName = async function(nome){
+  var entry=Object.entries(kanbanData).find(function(a){return a[1].nome&&a[1].nome.toLowerCase().includes(nome.toLowerCase());});
+  if(!entry){alert('Lead nao encontrado: '+nome);return;}
+  var key=entry[0],lead=entry[1];
+  lead._sheetSynced=false;
+  if(fbDb)fbDb.ref('kanban/'+key+'/_sheetSynced').set(false);
+  var ok=await appendLeadToSheets(lead,key);
+  alert(ok?'✅ '+lead.nome+' sincronizado com a planilha!':'❌ Falhou — verifique se o Google esta conectado');
+};
+
 // Appenda uma linha na planilha de leads (colunas A-H) e marca _sheetSynced no Firebase
 async function appendLeadToSheets(lead, kanbanKey){
   if(!isGcalConnected()) return false;
@@ -1379,8 +1449,12 @@ function renderKanban(){
     return o;
   });
   entries.sort(function(a,b){return (b.statusAt||b._createdAt||0)-(a.statusAt||a._createdAt||0);});
+  var pending=pendingLeadsCount();
+  var syncBtn=CU&&CU.role==='gestor'
+    ?'<button class="btn btn-outline" onclick="syncFirebaseToSheets(this)" style="color:var(--green);border-color:var(--green);"><i class="ti ti-table-export"></i> Sync → Planilha'+(pending>0?'<span class="nav-badge" style="margin-left:6px;background:var(--amber);">'+pending+'</span>':'')+'</button>'
+    :'';
   var html='<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div><div style="display:flex;align-items:center;gap:10px;"><button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button><span class="badge b-purple">'+entries.length+' leads</span></div></div>'+
+    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div><div style="display:flex;align-items:center;gap:10px;">'+syncBtn+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button><span class="badge b-purple">'+entries.length+' leads</span></div></div>'+
     '<div class="kanban-board">';
   KANBAN_COLS.forEach(function(col,idx){
     var items=entries.filter(function(e){return (e.status||'novo')===col.id;});
