@@ -6830,6 +6830,23 @@ function buildHistoricoMensal(todosClientes){
 
 // ===== ANÁLISE DE ADS =====
 var _adsPeriod=null, _adsStart=null, _adsEnd=null, _adsCampanha='';
+var _reunDate=null; // null = hoje; formato ISO 'YYYY-MM-DD'
+function changeReunDate(delta){
+  var base=_reunDate?new Date(_reunDate+'T12:00:00'):new Date();
+  base.setDate(base.getDate()+delta);
+  _reunDate=base.getFullYear()+'-'+String(base.getMonth()+1).padStart(2,'0')+'-'+String(base.getDate()).padStart(2,'0');
+  showPage('reunioes');
+}
+function resetReunDate(){_reunDate=null;showPage('reunioes');}
+function _reunDateLabel(){
+  var iso=_reunDate||(function(){var n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');})();
+  var d=new Date(iso+'T12:00:00');
+  var mn=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var wd=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  var today=new Date();var todayIso=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  var suffix=iso===todayIso?' (Hoje)':'';
+  return wd[d.getDay()]+', '+d.getDate()+' '+mn[d.getMonth()]+suffix;
+}
 var _tarefasData=null; // data selecionada para visualização de tarefas
 
 function renderAnaliseAds(){
@@ -7352,6 +7369,55 @@ function buildAnaliseAdsHTML(data){
   });
 
   html+='</tbody></table></div></div>';
+
+  // ===== TABELA DE LEADS COM ATRIBUIÇÃO =====
+  var thStyle='text-align:left;padding:9px 12px;color:var(--muted);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;border-bottom:1px solid var(--border);';
+  var tdStyle='padding:9px 12px;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.04);';
+  var leadsRows=leadsTrafego.slice().sort(function(a,b){
+    var da=parseBRDate(col(a,['Data','DATA','data']));
+    var db=parseBRDate(col(b,['Data','DATA','data']));
+    return (db?db.getTime():0)-(da?da.getTime():0);
+  });
+  html+='<div class="cb" style="margin-top:16px;">'+
+    '<div class="cb-hd"><div class="cb-title"><i class="ti ti-list-details" style="color:var(--cyan);margin-right:6px;"></i>Leads do Período</div>'+
+    '<span class="badge b-cyan">'+leadsRows.length+'</span></div>'+
+    '<div style="overflow-x:auto;">'+
+    '<table style="width:100%;border-collapse:collapse;font-family:Barlow Condensed,sans-serif;font-size:13px;">'+
+    '<thead><tr>'+
+      '<th style="'+thStyle+'">Data</th>'+
+      '<th style="'+thStyle+'">Nome</th>'+
+      '<th style="'+thStyle+'">Faturamento</th>'+
+      '<th style="'+thStyle+'">Telefone</th>'+
+      '<th style="'+thStyle+'">Fonte</th>'+
+      '<th style="'+thStyle+'">Campanha</th>'+
+      '<th style="'+thStyle+'">Conjunto</th>'+
+      '<th style="'+thStyle+'">Ad</th>'+
+    '</tr></thead><tbody>'+
+    (leadsRows.length===0?'<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted);">Nenhum lead neste período</td></tr>':
+    leadsRows.map(function(r){
+      var d=parseBRDate(col(r,['Data','DATA','data']));
+      var dataFmt=d?(d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear()):'—';
+      var nome=col(r,['Nome','NOME','name'])||'—';
+      var fat=col(r,['Faturamento','FATURAMENTO','faturamento'])||'—';
+      var tel=(col(r,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+      var telFmt=tel?tel.replace(/^55/,'').replace(/(\d{2})(\d{4,5})(\d{4})/,'($1) $2-$3'):'—';
+      var fonte=col(r,['Fonte','FONTE','fonte','_source'])||'—';
+      var campanha=col(r,['Campanha','CAMPANHA','campanha'])||'—';
+      var conjunto=col(r,['Conjunto','CONJUNTO','conjunto'])||'—';
+      var ad=col(r,['Ad','AD','ad'])||'—';
+      return '<tr>'+
+        '<td style="'+tdStyle+';color:var(--muted);">'+dataFmt+'</td>'+
+        '<td style="'+tdStyle+';color:var(--white);font-weight:600;">'+nome+'</td>'+
+        '<td style="'+tdStyle+';"><span style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:2px 7px;border-radius:5px;font-size:11px;">'+fat+'</span></td>'+
+        '<td style="'+tdStyle+';color:var(--muted);font-family:monospace;font-size:11px;">'+telFmt+'</td>'+
+        '<td style="'+tdStyle+';color:var(--muted);">'+fonte+'</td>'+
+        '<td style="'+tdStyle+';color:var(--white);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+campanha+'">'+campanha+'</td>'+
+        '<td style="'+tdStyle+';color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+conjunto+'">'+conjunto+'</td>'+
+        '<td style="'+tdStyle+';color:var(--cyan);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+ad+'">'+ad+'</td>'+
+      '</tr>';
+    }).join(''))+
+    '</tbody></table></div></div>';
+
   return html;
 }
 
@@ -9226,31 +9292,38 @@ function renderReunioesPersonal(){
     '<div id="reunioes-sheet-view"><div style="padding:20px;color:var(--muted);font-size:13px;">Selecione o filtro e clique em Carregar.</div></div>'+
   '</div>';
 
-  // Reuniões de hoje (da planilha)
-  var hoje2 = todayStr();
+  // Reuniões do dia selecionado (navegável)
+  var _selIso=_reunDate||(function(){var n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');})();
+  var hoje2=_selIso.split('-').reverse().join('/'); // DD/MM/YYYY para comparar com dtDisplay
   var reunHoje = Object.values(meetings).filter(function(m){
     if(!m.dtISO && !m.dtDisplay) return false;
     var dtRef = m.dtDisplay || '';
-    // Verificar se é hoje
     if(dtRef.includes(hoje2)) return true;
-    if(m.dtISO){
-      var p2=hoje2.split('/');
-      var isoHoje=p2[2]+'-'+p2[1]+'-'+p2[0];
-      return m.dtISO.startsWith(isoHoje);
-    }
+    if(m.dtISO) return m.dtISO.startsWith(_selIso);
     return false;
   }).filter(function(m){
     if(isGestor) return true;
     return (m.responsavel||'').toLowerCase().includes(nome.toLowerCase()) ||
            (m.sdr||'').toLowerCase().includes(nome.toLowerCase()) ||
            (m.criador||'').toLowerCase().includes(nome.toLowerCase());
+  }).sort(function(a,b){
+    var ha=(a.dtISO||'').split('T')[1]||'';
+    var hb=(b.dtISO||'').split('T')[1]||'';
+    return ha.localeCompare(hb);
   });
 
-  var reunHojeHtml = '';
-  if(reunHoje.length>0){
-    reunHojeHtml = '<div class="cb" style="margin-bottom:16px;border-color:rgba(245,158,11,0.4);">'+
-      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-event" style="color:var(--amber);margin-right:6px;"></i>Reuniões de Hoje</div>'+
-      '<span class="badge b-amber">'+reunHoje.length+'</span></div>'+
+  var _dayLabel=_reunDateLabel();
+  var _navBtns='<div style="display:flex;align-items:center;gap:6px;">'+
+    '<button class="kbtn" onclick="changeReunDate(-1)" title="Dia anterior" style="padding:4px 9px;"><i class="ti ti-chevron-left"></i></button>'+
+    '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;color:var(--white);min-width:160px;text-align:center;">'+_dayLabel+'</span>'+
+    '<button class="kbtn" onclick="changeReunDate(1)" title="Próximo dia" style="padding:4px 9px;"><i class="ti ti-chevron-right"></i></button>'+
+    (_reunDate?'<button class="kbtn" onclick="resetReunDate()" title="Voltar para hoje" style="padding:4px 9px;font-size:11px;">Hoje</button>':'')+
+  '</div>';
+
+  var reunHojeHtml = '<div class="cb" style="margin-bottom:16px;border-color:rgba(245,158,11,0.4);">'+
+      '<div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-event" style="color:var(--amber);margin-right:6px;"></i>Reuniões do Dia</div>'+
+      '<div style="display:flex;align-items:center;gap:10px;">'+_navBtns+'<span class="badge b-amber">'+reunHoje.length+'</span></div></div>'+
+  (reunHoje.length===0?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Nenhuma reunião neste dia</div>':(
       '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
       reunHoje.map(function(m){
         var st=getMeetingStatus(m);
@@ -9273,8 +9346,7 @@ function renderReunioesPersonal(){
           '<td><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;"><i class="ti ti-edit"></i></button></td>'+
         '</tr>';
       }).join('')+
-      '</tbody></table></div></div>';
-  }
+      '</tbody></table></div>'))+'</div>';
 
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Reunioes</div><div class="page-sub">'+(isGestor?'Visao completa':'Minhas reunioes')+'</div></div>'+
