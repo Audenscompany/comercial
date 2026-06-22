@@ -1702,7 +1702,7 @@ var SHEETS_IDS={leads:'1q8uufghcA8ZtT8gCXbTvkt1PAsLxeT4KGMgolUicTXk',reunioes:'1
 var SHEETS_GIDS={leads:0,reunioes:1572161841,clientes:337545611,ligacoes:1951852137};
 // Cache: gid (string) -> nome da aba resolvido, para evitar re-buscar metadata em cada updateSheetCell
 var _sheetTabNameCache={};
-var _sheetsMeta={},_investidoMes={},_investidoManual={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null;
+var _sheetsMeta={},_investidoMes={},_investidoManual={},_metaComercial={contratos:40000,clientes:20},_dashPeriod=null,_dashStart=null,_dashEnd=null,_metaFetchErr=false;
 var _contatosEquipe={lucas:'',gustavo:'',joao:''};
 
 function loadStorage(){
@@ -1767,6 +1767,7 @@ function saveAll(){
         if(Object.keys(userKeys).length) fbDb.ref(_userPath).set(userKeys);
         fbDb.ref('config/goals').set(goals);
         fbDb.ref('config/investido').set(_investidoMes);
+        fbDb.ref('config/investido_manual').set(_investidoManual);
         fbDb.ref('config/meta_comercial').set(_metaComercial);
         fbDb.ref('config/sheets_ids').set(SHEETS_IDS);
         fbDb.ref('config/sheets_gids').set(SHEETS_GIDS);
@@ -2911,6 +2912,9 @@ function showMain(){
     }),
     fbGet('config/investido').then(function(fbInv){
       if(fbInv){ _investidoMes=fbInv; localStorage.setItem('audens_inv',JSON.stringify(_investidoMes)); }
+    }),
+    fbGet('config/investido_manual').then(function(fbInvM){
+      if(fbInvM){ _investidoManual=fbInvM; localStorage.setItem('audens_inv_manual',JSON.stringify(_investidoManual)); }
     }),
     fbGet('config/meta_comercial').then(function(fbMcom){
       if(fbMcom){ _metaComercial=fbMcom; localStorage.setItem('audens_mcom',JSON.stringify(_metaComercial)); }
@@ -6051,11 +6055,13 @@ async function refreshDashCom(){
   try{
     var data=await loadDataHybrid();
     // Auto-fetch Meta Ads spend (só se não houver valor manual definido)
+    _metaFetchErr=false;
     if(isMetaConnected()&&metaAccountId){
       var period=_dashPeriod||getCurrentPeriod();
       if(!_investidoManual[period]){
         var spend=await fetchMetaSpend(period);
         if(spend!==null){_investidoMes[period]=spend;saveAll();}
+        else{_metaFetchErr=true;}
       }
       // Buscar mês anterior também para comparação
       var pp2=period.split('/');
@@ -6501,10 +6507,17 @@ function buildDashComHTML(data){
       (function(){
         var isManual=!!_investidoManual[period];
         var invLabel=inv>0?'R$ '+Math.round(inv).toLocaleString('pt-BR'):'R$ 0';
+        var metaBtn=isMetaConnected()&&metaAccountId
+          ?'<button id="dc-inv-sync" title="Buscar valor atual do Meta Ads" style="background:rgba(123,47,255,0.25);border:1px solid var(--purple3);border-radius:5px;padding:3px 7px;color:var(--purple3);font-size:11px;cursor:pointer;white-space:nowrap;">↺ Meta</button>'
+          :'';
+        var statusLine=isManual
+          ?'<div style="font-size:10px;color:var(--amber);margin-top:3px;">✏️ valor manual — clique ↺ Meta para atualizar</div>'
+          :(_metaFetchErr
+            ?'<div style="font-size:10px;color:var(--red);margin-top:3px;">⚠️ Erro ao buscar Meta Ads — clique ↺ Meta para tentar novamente</div>'
+            :'');
         var editBtn='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;">'+
           '<input id="dc-inv-inline" type="number" value="'+Math.round(inv)+'" style="width:90px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:5px;padding:3px 7px;color:var(--white);font-size:12px;outline:none;" onchange="(function(v){var p=_dashPeriod||getCurrentPeriod();_investidoMes[p]=parseFloat(v)||0;_investidoManual[p]=true;saveAll();refreshDashCom();})(this.value)">'+
-          (isMetaConnected()&&metaAccountId?'<button id="dc-inv-sync" title="Sincronizar com Meta Ads" style="background:rgba(123,47,255,0.25);border:1px solid var(--purple3);border-radius:5px;padding:3px 7px;color:var(--purple3);font-size:11px;cursor:pointer;white-space:nowrap;">'+(isManual?'↺ Meta':'✓ Meta')+'</button>':'')+'</div>'+
-          (isManual?'<div style="font-size:10px;color:var(--amber);margin-top:2px;">valor manual</div>':'');
+          metaBtn+'</div>'+statusLine;
         return '<div style="background:rgba(245,158,11,0.3);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:14px 16px;">'+
           '<div style="font-size:11px;letter-spacing:1.5px;color:var(--muted);font-family:Barlow Condensed,sans-serif;text-transform:uppercase;margin-bottom:6px;">Investido em Tráfego</div>'+
           '<div style="font-family:Bebas Neue,sans-serif;font-size:32px;color:var(--white);line-height:1;">'+invLabel+'</div>'+
