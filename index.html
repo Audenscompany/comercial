@@ -2799,6 +2799,8 @@ function meetingsToReunioesRows(){
       statusStr='NO-SHOW';
     } else if(m.status==='done'){
       statusStr='REALIZADA';
+    } else if(m.status==='reagendado'){
+      statusStr='REAGENDADO';
     } else {
       statusStr='AGENDADA';
     }
@@ -2840,6 +2842,7 @@ function _meetingObjsToRows(arr){
       else st='REALIZADA';
     } else if(m.status==='noshow') st='NO-SHOW';
     else if(m.status==='done') st='REALIZADA';
+    else if(m.status==='reagendado') st='REAGENDADO';
     else st='AGENDADA';
     var ke=m.kanbanKey?kanbanData[m.kanbanKey]:null;
     var orig=m.origem||(ke&&ke.origem)||'Tráfego';
@@ -3217,6 +3220,7 @@ async function syncReunioesFBFromSheet(){
 
       var newSt = (stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW') ? 'noshow'
                : (stSheet==='AGENDADA'||stSheet==='PENDENTE') ? 'pending'
+               : (stSheet==='REAGENDADO') ? 'reagendado'
                : 'done';
       if(m.status !== newSt){
         meetings[m.id].status = newSt;
@@ -3250,7 +3254,8 @@ function migrateStaleStatuses(){
 
 function getPendingFollowups(){
   return Object.values(meetings).filter(function(m){
-    return getMeetingStatus(m)!=='done'&&getMeetingStatus(m)!=='noshow'&&!followups[m.id]&&
+    var _st=getMeetingStatus(m);
+    return _st!=='done'&&_st!=='noshow'&&_st!=='reagendado'&&!followups[m.id]&&
       Date.now()>new Date(m.dtISO).getTime()+MEETING_DURATION_MS&&
       m.responsavel===CU.closer;
   });
@@ -9250,8 +9255,8 @@ function renderReunioesPersonal(){
   } else {
     var trs = rows.map(function(m){
       var st=getMeetingStatus(m); // deriva de followups se status do Firebase estiver desatualizado
-      var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
-      var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
+      var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':st==='reagendado'?'Reagendado':'Agendada';
+      var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':st==='reagendado'?'var(--cyan)':'var(--amber)';
       // Tarefa responsável pelo agendamento
       var tarefaOrigemHtml = m.tarefaOrigem
         ? '<span style="font-size:11px;color:var(--purple3);white-space:nowrap;" title="'+m.tarefaOrigemDia+'"><i class="ti ti-checks" style="margin-right:3px;"></i>'+m.tarefaOrigem+(m.tarefaOrigemDia?' · '+m.tarefaOrigemDia:'')+'</span>'
@@ -9327,8 +9332,8 @@ function renderReunioesPersonal(){
       '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
       reunHoje.map(function(m){
         var st=getMeetingStatus(m);
-        var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':'Agendada';
-        var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':'var(--amber)';
+        var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':st==='reagendado'?'Reagendado':'Agendada';
+        var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':st==='reagendado'?'var(--cyan)':'var(--amber)';
         var dtN=normalizeDtDisplay(m.dtDisplay||'');
         var hora=(dtN&&dtN.includes(' '))?dtN.split(' ')[1]:(m.dtISO?(m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):''):'');
         var tel=(m.tel||'').replace(/\D/g,'');
@@ -9336,14 +9341,20 @@ function renderReunioesPersonal(){
         var telHtml=telFmt
           ?'<span onclick="(function(){navigator.clipboard.writeText(\''+tel+'\');var el=event.target;var orig=el.textContent;el.textContent=\'Copiado!\';setTimeout(function(){el.textContent=orig;},1200);})()" style="cursor:pointer;color:var(--muted);font-size:12px;font-family:monospace;user-select:none;" title="Clique para copiar">'+telFmt+'</span>'
           :'<span style="color:var(--border2);">—</span>';
+        var reagCnt=m.reagendamentos||0;
+        var reagBadge=reagCnt>0?'<span style="font-size:10px;color:'+(reagCnt>=2?'var(--red)':'var(--amber)')+';display:block;margin-top:2px;">↩'+reagCnt+'/2</span>':'';
+        var canReagendar = st==='pending'||st==='reagendado';
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
           '<td>'+telHtml+'</td>'+
           '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
-          '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
+          '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span>'+reagBadge+'</td>'+
           '<td>'+(m.responsavel||'—')+'</td>'+
           '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;"><i class="ti ti-video"></i> Abrir</a>':'—')+'</td>'+
-          '<td><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;"><i class="ti ti-edit"></i></button></td>'+
+          '<td style="white-space:nowrap;">'+
+            '<button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
+            (canReagendar?' <button class="btn btn-outline" onclick="abrirModalReagendar(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--cyan);border-color:rgba(6,182,212,0.35);" title="Reagendar"><i class="ti ti-calendar-repeat"></i></button>':'')+
+          '</td>'+
         '</tr>';
       }).join('')+
       '</tbody></table></div>'))+'</div>';
@@ -9383,7 +9394,7 @@ function abrirEditarReuniao(mid){
                  '<div><label class="f-label">Horário</label><input id="er-hora" type="time" class="f-input" value="'+isoTime+'" style="margin-bottom:0;"></div>';
         })() +
         '<div><label class="f-label">Status</label><select id="er-status" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
-          ['pending','done','noshow'].map(function(s){var l=s==='done'?'Realizada':s==='noshow'?'No-Show':'Agendada';return'<option value="'+s+'"'+(m.status===s?' selected':'')+'>'+l+'</option>';}).join('')+
+          ['pending','done','reagendado','noshow'].map(function(s){var l=s==='done'?'Realizada':s==='noshow'?'No-Show':s==='reagendado'?'Reagendado':'Agendada';return'<option value="'+s+'"'+(m.status===s?' selected':'')+'>'+l+'</option>';}).join('')+
         '</select></div>'+
         '<div><label class="f-label">Origem</label><select id="er-origem" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
           origens.map(function(o){return'<option'+(m.origem===o?' selected':'')+'>'+o+'</option>';}).join('')+
@@ -9401,6 +9412,114 @@ function abrirEditarReuniao(mid){
 function cancelarEdicaoReuniao(){
   var el = document.getElementById('modal-edit-reun');
   if(el) el.remove();
+}
+
+// ===== REAGENDAMENTO DE REUNIÃO =====
+function abrirModalReagendar(mid){
+  var m=meetings[mid];
+  if(!m){alert('Reunião não encontrada');return;}
+  var reagCnt=m.reagendamentos||0;
+  var hoje=new Date();
+  var hojeISO=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  var isMaximo=reagCnt>=2;
+  var aviso=reagCnt>0
+    ?'<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--amber);">'+
+      '⚠️ Este lead já reagendou <strong>'+reagCnt+'x</strong>. '+(isMaximo?'Limite atingido — será marcado como <strong>No-Show automático</strong>.':'Mais 1 reagendamento e será No-Show automático.')+
+    '</div>':'';;
+  var html='<div class="modal-ov active" id="modal-reagendar" onclick="if(event.target===this)fecharModalReagendar()">'+
+    '<div class="modal-box" style="max-width:440px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-calendar-repeat"></i> Reagendar Reunião</div>'+
+        '<button class="modal-close" onclick="fecharModalReagendar()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<p style="color:var(--muted);font-size:13px;margin-bottom:16px;">Lead: <strong style="color:var(--white);">'+(m.nome||'—')+'</strong></p>'+
+        aviso+
+        (isMaximo
+          ?'<p style="font-size:13px;color:var(--red);">Máximo de 2 reagendamentos atingido.<br>Confirmar como <strong>No-Show</strong>?</p>'
+          :'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+              '<div><label class="f-label">Nova Data</label><input id="rg-data" type="date" class="f-input" value="'+hojeISO+'" min="'+hojeISO+'" style="margin-bottom:0;"></div>'+
+              '<div><label class="f-label">Novo Horário</label><input id="rg-hora" type="time" class="f-input" value="09:00" style="margin-bottom:0;"></div>'+
+            '</div>')+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        (isMaximo
+          ?'<button class="btn" style="background:var(--red);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer;" onclick="confirmarReagendamento(\''+mid+'\',true)"><i class="ti ti-x"></i> Confirmar No-Show</button>'
+          :'<button class="btn btn-primary" id="rg-confirm-btn" onclick="confirmarReagendamento(\''+mid+'\',false)"><i class="ti ti-calendar-check"></i> Confirmar Reagendamento</button>')+
+        '<button class="btn btn-outline" onclick="fecharModalReagendar()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+function fecharModalReagendar(){
+  var el=document.getElementById('modal-reagendar');
+  if(el) el.remove();
+}
+
+async function confirmarReagendamento(mid, forcarNoshow){
+  var m=meetings[mid];
+  if(!m){alert('Reunião não encontrada');return;}
+  var reagCnt=m.reagendamentos||0;
+  var tel=(m.tel||'').replace(/\D/g,'');
+  var novaData='', novaHora='', meetingDisplay='', meetingISO='';
+
+  if(!forcarNoshow){
+    var rdEl=document.getElementById('rg-data');
+    var rhEl=document.getElementById('rg-hora');
+    novaData=(rdEl&&rdEl.value)||'';
+    novaHora=(rhEl&&rhEl.value)||'09:00';
+    if(!novaData){alert('Selecione a nova data');return;}
+    var dp=novaData.split('-');
+    meetingDisplay=dp[2]+'/'+dp[1]+'/'+dp[0]+' '+novaHora;
+    // Converte BRT (UTC-3) → UTC para dtISO
+    var hh=parseInt(novaHora.split(':')[0],10)+3;
+    var mn=novaHora.split(':')[1]||'00';
+    var d=new Date(novaData+'T00:00:00Z');
+    d.setUTCHours(hh,parseInt(mn,10),0,0);
+    meetingISO=d.toISOString();
+  }
+
+  var btn=document.getElementById('rg-confirm-btn')||document.querySelector('#modal-reagendar .btn[style*="red"]');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Aguarde...';}
+
+  try{
+    var resp=await fetch('https://receberlead-471063273836.us-central1.run.app/reagendar',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        secret:'audens2025xk',
+        meetingId:mid,
+        telefone:tel,
+        nome:m.nome||'',
+        meetingDisplay:meetingDisplay,
+        meetingISO:meetingISO,
+        kanbanKey:m.kanbanKey||'',
+        responsavel:m.responsavel||'',
+        forcarNoshow:forcarNoshow||false
+      })
+    });
+    var data=await resp.json();
+    if(data.ok){
+      fecharModalReagendar();
+      if(data.autoNoshow){
+        meetings[mid].status='noshow';
+        showSheetToast('⚠️ No-Show automático ('+((reagCnt>=2?reagCnt+1:3))+'º reagendamento)',true);
+      } else {
+        meetings[mid].status='reagendado';
+        if(data.newMeeting){
+          meetings[data.newMeeting.id]=data.newMeeting;
+        }
+        showSheetToast('✅ Reagendado para '+meetingDisplay+' ('+data.reagendamentos+'/2)',false);
+      }
+      showPage('reunioes');
+    } else {
+      alert('Erro: '+(data.error||'desconhecido'));
+      if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-check"></i> Confirmar Reagendamento';}
+    }
+  } catch(e){
+    alert('Erro de conexão: '+e.message);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-check"></i> Confirmar Reagendamento';}
+  }
 }
 
 function apagarReuniao(mid){
