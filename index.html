@@ -1377,6 +1377,69 @@ function tickVespera(){
   enviarLembreteVespera();
 }
 setInterval(tickVespera, 60000); // verifica a cada 1 minuto
+
+// ===== LEMBRETES AUTOMÁTICOS (2h, 1h e 10min antes da reunião) =====
+// Chama o endpoint /lembrete para enviar WhatsApp ao responsável e ao lead.
+async function enviarLembreteReuniao(key, tipo){
+  var m = kanbanData[key];
+  if(!m) return;
+  var tel = m.telefone || '';
+  var nome = m.nome || '';
+  var dtDisplay = m.meetingDisplay || '';
+  var responsavel = m.responsavel || '';
+  if(!tel || !nome){ console.warn('[Lembrete] Lead sem telefone, pulando:',nome); return; }
+  try{
+    var resp = await fetch(RECEBERLEAD_URL+'/lembrete?secret='+WEBHOOK_SECRET, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({telefone:tel, nome:nome, meetingDisplay:dtDisplay, tipo:tipo, responsavel:responsavel})
+    });
+    if(!resp.ok) console.warn('[Lembrete] /lembrete retornou', resp.status, 'para', nome, tipo);
+    else console.log('[Lembrete]', tipo, 'enviado para', nome, tel);
+  }catch(e){
+    console.error('[Lembrete] Erro ao enviar', tipo, 'para', nome, e);
+  }
+}
+
+// Roda a cada 30s. Itera os cards em status "reuniao" e dispara lembretes
+// quando o horário da reunião estiver dentro das janelas 2h / 1h / 10min.
+// Flags persistidas no Firebase evitam reenvios entre abas/sessões.
+function tickLembretes(){
+  var now = Date.now();
+  var changed = false;
+  Object.keys(kanbanData||{}).forEach(function(key){
+    var m = kanbanData[key];
+    if(!m || m.status !== 'reuniao') return;
+    var miso = m.meetingISO;
+    if(!miso) return;
+    var mt = new Date(miso).getTime();
+    if(isNaN(mt)) return;
+    var diff = mt - now; // ms até a reunião (positivo = no futuro)
+    if(!m.lembretes) m.lembretes = {h2:false, h1:false, m10:false};
+
+    // 2h antes: diff <= 7200s e ainda não enviado
+    if(!m.lembretes.h2 && diff > 0 && diff <= 7200000){
+      m.lembretes.h2 = true; changed = true;
+      enviarLembreteReuniao(key, 'h2');
+      if(fbDb || initFirebase()) fbDb.ref('kanban/'+key+'/lembretes/h2').set(true);
+    }
+    // 1h antes
+    if(!m.lembretes.h1 && diff > 0 && diff <= 3600000){
+      m.lembretes.h1 = true; changed = true;
+      enviarLembreteReuniao(key, 'h1');
+      if(fbDb || initFirebase()) fbDb.ref('kanban/'+key+'/lembretes/h1').set(true);
+    }
+    // 10min antes
+    if(!m.lembretes.m10 && diff > 0 && diff <= 600000){
+      m.lembretes.m10 = true; changed = true;
+      enviarLembreteReuniao(key, 'm10');
+      if(fbDb || initFirebase()) fbDb.ref('kanban/'+key+'/lembretes/m10').set(true);
+    }
+  });
+  if(changed) localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
+}
+setInterval(tickLembretes, 30000); // verifica a cada 30s
+
 // Arquiva o lead (sai das colunas do funil, vai para "Arquivados")
 function archiveKanbanCard(key){
   moveKanbanCard(key,'arquivado');
@@ -10382,8 +10445,8 @@ async function calcSDRFromSheets(nivelIdx, month){
         var isSS = origem.includes('SOCIAL');
 
         if(rowMonth === month){
-          // Agendamentos (todos, incluindo SS)
-          if(!isSS) result.agendamentos++;
+          // Agendamentos: apenas reuniões realizadas (status REALIZADA)
+          if(!isSS && status==='REALIZADA') result.agendamentos++;
           // SS agendamentos (para reuniões comparecidas SS)
           if(isSS && status==='REALIZADA' && rowMonthReal===month) result.ssReun++;
         }
@@ -10560,7 +10623,8 @@ async function calcSDRFromFirebase(nivelIdx, month){
         if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
         var isSS=origem.includes('SOCIAL');
         if(rowMonth===month){
-          if(!isSS) result.agendamentos++;
+          // Agendamentos: apenas reuniões realizadas (status REALIZADA)
+          if(!isSS&&status==='REALIZADA') result.agendamentos++;
           if(isSS&&status==='REALIZADA'&&rowMonthReal===month) result.ssReun++;
         }
         if(rowMonthReal===month&&status==='REALIZADA'){
