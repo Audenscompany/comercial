@@ -1454,18 +1454,57 @@ function renderKanban(){
     ?'<button class="btn btn-outline" onclick="syncFirebaseToSheets(this)" style="color:var(--green);border-color:var(--green);"><i class="ti ti-table-export"></i> Sync → Planilha'+(pending>0?'<span class="nav-badge" style="margin-left:6px;background:var(--amber);">'+pending+'</span>':'')+'</button>'
     :'';
   var html='<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div><div style="display:flex;align-items:center;gap:10px;">'+syncBtn+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button><span class="badge b-purple">'+entries.length+' leads</span></div></div>'+
+    '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div>'+
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'+
+    '<div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:5px 12px;">'+
+      '<i class="ti ti-search" style="color:var(--muted);font-size:14px;"></i>'+
+      '<input type="text" id="kanban-search" placeholder="Buscar nome, empresa ou telefone…" oninput="filterKanbanSearch(this.value)" '+
+        'style="background:transparent;border:none;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:13px;outline:none;width:230px;padding:0;" />'+
+    '</div>'+
+    syncBtn+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button>'+
+    '<span class="badge b-purple" id="kanban-total-badge">'+entries.length+' leads</span>'+
+    '</div></div>'+
     '<div class="kanban-board">';
   KANBAN_COLS.forEach(function(col,idx){
     var items=entries.filter(function(e){return (e.status||'novo')===col.id;});
-    html+='<div class="kanban-col">'+
-      '<div class="kanban-col-hd"><span>'+col.label+'</span><span class="badge b-'+col.color+'">'+items.length+'</span></div>'+
+    html+='<div class="kanban-col" data-colid="'+col.id+'">'+
+      '<div class="kanban-col-hd"><span>'+col.label+'</span><span class="badge b-'+col.color+'" id="kbadge-'+col.id+'">'+items.length+'</span></div>'+
       '<div class="kanban-col-body" ondragover="kanbanDragOver(event)" ondragleave="kanbanDragLeave(event)" ondrop="kanbanDrop(event,\''+col.id+'\')">'+
       (items.length?items.map(function(e){return kanbanCardHtml(e,idx);}).join(''):'<div class="kanban-empty">Nenhum lead</div>')+
+      '<div class="kanban-empty kanban-filter-empty" style="display:none;">Nenhum resultado</div>'+
       '</div></div>';
   });
   html+='</div></div>';
   return html;
+}
+function filterKanbanSearch(q){
+  q=(q||'').trim().toLowerCase();
+  var cards=document.querySelectorAll('.kanban-card');
+  var colCounts={};
+  cards.forEach(function(card){
+    var match=!q||(card.getAttribute('data-search')||'').indexOf(q)>=0;
+    card.style.display=match?'':'none';
+    var col=card.closest('[data-colid]');
+    if(col){var cid=col.getAttribute('data-colid');colCounts[cid]=(colCounts[cid]||0)+(match?1:0);}
+  });
+  // Update empty states and badges per column
+  document.querySelectorAll('.kanban-col').forEach(function(col){
+    var cid=col.getAttribute('data-colid');
+    var count=colCounts[cid]||0;
+    var body=col.querySelector('.kanban-col-body');
+    var emptyOrig=body?body.querySelector('.kanban-empty:not(.kanban-filter-empty)'):null;
+    var emptyFilt=body?body.querySelector('.kanban-filter-empty'):null;
+    if(emptyOrig) emptyOrig.style.display=(count===0&&!q)?'':'none';
+    if(emptyFilt) emptyFilt.style.display=(count===0&&q)?'':'none';
+    var badge=document.getElementById('kbadge-'+cid);
+    if(badge) badge.textContent=count;
+  });
+  // Update total badge
+  var totalBadge=document.getElementById('kanban-total-badge');
+  if(totalBadge){
+    var vis=Array.from(cards).filter(function(c){return c.style.display!=='none';}).length;
+    totalBadge.textContent=(q?vis:Object.keys(kanbanData||{}).length)+' leads';
+  }
 }
 function kanbanCardHtml(e,idx){
   var col=KANBAN_COLS[idx];
@@ -1492,7 +1531,8 @@ function kanbanCardHtml(e,idx){
       '<button class="kbtn kbtn-danger" title="Apagar" onclick="deleteKanbanCard(\''+e._key+'\')"><i class="ti ti-trash"></i></button>';
   }
   var leadTag=getLeadTag(e.faturamento);
-  return '<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
+  var _searchKey=((e.nome||'')+' '+(e.empresa||'')+' '+(e.telefone||'')).toLowerCase();
+  return '<div class="kanban-card" draggable="true" data-search="'+_searchKey+'" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
     '<div class="kanban-card-name">'+nome+(leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;">'+leadTag.label+'</span>':'')+'</div>'+
     (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
     (e.telefone?'<div class="kanban-card-sub kanban-tel" title="Clique para copiar o telefone" onclick="copiarTelefoneKanban(event,\''+e.telefone+'\')"><i class="ti ti-phone"></i> '+e.telefone+' <i class="ti ti-copy" style="opacity:.5;"></i></div>'+
@@ -6273,6 +6313,16 @@ function buildDashComHTML(data){
     return s+mrr;
   },0);
   var ticketMedioTrafego=novosClientesTrafego>0?valorVendidoTrafego/novosClientesTrafego:0;
+  // Receita TCV-aware para ROAS (MRR se mensal, TCV total se trimestral/semestral)
+  var revenueTrafego=clientesTrafego.reduce(function(s,c){
+    var plano=(col(c,['PLANO','Plano','plano'])||'').toUpperCase();
+    var isTCV=plano.includes('TRIMESTRAL')||plano.includes('SEMESTRAL');
+    if(isTCV) return s+parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+    if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+    return s+mrr;
+  },0);
+  var roasDash=inv>0&&revenueTrafego>0?revenueTrafego/inv:null;
 
   // ---- RANKING DE ADS ----
   var adMap={};
@@ -6641,6 +6691,17 @@ function buildDashComHTML(data){
       trafegoCard('Custo Lead Qualif.', cplq, cplq>0?'R$ '+Math.round(cplq).toLocaleString('pt-BR'):'—', '', cplqP, 'rgba(239,68,68,0.2)', true)+
       trafegoCard('Custo por Reunião', cpr, cpr>0?'R$ '+Math.round(cpr).toLocaleString('pt-BR'):'—', '', cprP, 'rgba(245,158,11,0.25)', true)+
       trafegoCard('Custo por Aquisição', cpa, cpa>0?'R$ '+Math.round(cpa).toLocaleString('pt-BR'):'—', '', cpaP, 'rgba(34,197,94,0.25)', true)+
+      // ROAS card
+      (function(){
+        if(!roasDash && roasDash!==0) return '';
+        var rc=roasDash>=3?'var(--green)':roasDash>=1?'var(--amber)':'var(--red)';
+        var rb=roasDash>=3?'rgba(34,197,94,0.3)':roasDash>=1?'rgba(245,158,11,0.3)':'rgba(239,68,68,0.3)';
+        return '<div style="background:var(--bg2);border:1.5px solid '+rb+';border-radius:10px;padding:14px;text-align:center;min-width:110px;">'+
+          '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:'+rc+';margin-bottom:6px;">ROAS</div>'+
+          '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:'+rc+';">'+roasDash.toFixed(2)+'×</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;margin-top:4px;">R$ '+Math.round(revenueTrafego).toLocaleString('pt-BR')+' receita</div>'+
+        '</div>';
+      })()+
     '</div>'+
   '</div>';
 
@@ -6930,12 +6991,19 @@ function renderAnaliseAds(){
         '<input type="date" id="ads-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
         '<button class="btn btn-outline" onclick="applyAdsDateRange()" style="font-size:12px;padding:8px 14px;"><i class="ti ti-filter"></i></button>'+
         '<button class="btn btn-outline" onclick="clearAdsDateRange()" style="font-size:12px;padding:8px 12px;" title="Limpar"><i class="ti ti-x"></i></button>'+
-        '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto total em anúncios no período">'+
-          '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto R$</span>'+
-          '<input type="number" id="ads-gasto-input" min="0" step="100" value="'+(_adsGasto||'')+'" placeholder="0" '+
-            'onchange="_adsGasto=parseFloat(this.value)||0;localStorage.setItem(\'audens_ads_gasto\',this.value);" '+
-            'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
-        '</div>'+
+        (_gastoViaFacebook
+          ? '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto em anúncios — via Meta API">'+
+              '<i class="ti ti-brand-meta" style="color:var(--amber);font-size:13px;"></i>'+
+              '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto</span>'+
+              '<span style="color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;">R$ '+Math.round(gastoAds).toLocaleString('pt-BR')+'</span>'+
+            '</div>'
+          : '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto total em anúncios (manual)">'+
+              '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto R$</span>'+
+              '<input type="number" id="ads-gasto-input" min="0" step="100" value="'+(_adsGasto||'')+'" placeholder="0" '+
+                'onchange="_adsGasto=parseFloat(this.value)||0;localStorage.setItem(\'audens_ads_gasto\',this.value);" '+
+                'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
+            '</div>'
+        )+
         '<button class="btn btn-primary" onclick="refreshAnaliseAds()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
       '</div>'+
     '</div>'+
@@ -7054,7 +7122,10 @@ function buildAnaliseAdsHTML(data){
       return s+mrr2;
     }
   },0);
-  var gastoAds=_adsGasto||0;
+  // Usa gasto do Meta API (mesmo período da dash) se disponível; fallback para input manual
+  var _metaSpendAds=(_investidoMes&&period)?(_investidoMes[period]||0):0;
+  var gastoAds=_metaSpendAds||_adsGasto||0;
+  var _gastoViaFacebook=_metaSpendAds>0;
   var roas=gastoAds>0?(funilRevenue/gastoAds):null;
   if(funilFechCli>funilFech) funilFech=funilFechCli;
   // Realizadas novas (Firebase) que ainda não estão na planilha — adiciona ao funil
