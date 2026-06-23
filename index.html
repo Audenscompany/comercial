@@ -11224,17 +11224,46 @@ async function confirmarCancelamento(){
   }catch(e){ showSheetToast('Erro: '+e.message,true); }
 }
 
-async function runImportContratos(reImport){
-  if(!reImport&&!confirm('Importar todos os contratos da planilha para o Firebase? Isso não duplica registros existentes mas importa tudo do zero.')) return;
-  if(reImport&&!confirm('Re-importar apagará os dados existentes e re-carregará da planilha. Confirma?')) return;
-  showSheetToast('Importando...',false);
+function runImportContratos(reImport){
+  // Mostra modal de confirmação próprio (confirm() não funciona em Electron)
+  var msg=reImport
+    ?'Isso apagará os dados existentes e reimportará tudo da planilha. Confirma?'
+    :'Importar todos os contratos da planilha Clientes Fechados para o Firebase?';
+  var modalHtml='<div id="modal-import-confirm" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center;">'+
+    '<div style="background:var(--bg1);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(400px,90vw);" onclick="event.stopPropagation()">'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;margin-bottom:12px;"><i class="ti ti-download" style="color:var(--amber);"></i> Importar Contratos</div>'+
+      '<div style="font-family:var(--font-bc),sans-serif;font-size:14px;color:var(--muted);margin-bottom:20px;">'+esc(msg)+'</div>'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button class="btn btn-outline" style="flex:1;" onclick="document.getElementById(\'modal-import-confirm\').remove()">Cancelar</button>'+
+        '<button class="btn btn-primary" style="flex:1;" onclick="document.getElementById(\'modal-import-confirm\').remove();_execImport('+!!reImport+')">Importar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',modalHtml);
+}
+
+async function _execImport(reImport){
+  showSheetToast('Importando contratos da planilha...',false);
   try{
-    if(reImport){ await fbDb.ref('contratos').remove(); _contratosCache=null; }
-    if(!isGcalConnected()){ showSheetToast('Google desconectado. Conecte primeiro.',true); return; }
+    if(!isGcalConnected()){
+      showSheetToast('Google desconectado. Reconecte em Configurações → Google Calendar.',true);
+      return;
+    }
+    if(reImport){
+      await fbDb.ref('contratos').remove();
+      _contratosCache=null;
+    }
     var count=await importContratosFromSheet();
-    showSheetToast(count+' contratos importados com sucesso!',false);
+    if(count===0){
+      showSheetToast('Nenhum contrato encontrado na planilha. Verifique as colunas.',true);
+    } else {
+      showSheetToast(count+' contratos importados com sucesso!',false);
+    }
     await loadContratosPage();
-  }catch(e){ showSheetToast('Erro ao importar: '+e.message,true); }
+  }catch(e){
+    console.error('Import error',e);
+    showSheetToast('Erro ao importar: '+e.message,true);
+  }
 }
 
 window.addEventListener('load', function(){
