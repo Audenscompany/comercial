@@ -2890,8 +2890,9 @@ function meetingsToReunioesRows(){
 // Converte lista de meetings (Firebase) em linhas de reunioes
 function _meetingObjsToRows(arr){
   return arr.map(function(m){
-    var bookTs=m.scheduledAt||Date.now();
-    var bd=new Date(bookTs);
+    // Usa dtISO (data real da reunião) em vez de scheduledAt (timestamp de criação)
+    var meetingTs=m.dtISO?(new Date(m.dtISO)).getTime():(m.scheduledAt||Date.now());
+    var bd=new Date(meetingTs);
     var ds=bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
     var tel=(m.tel||'').replace(/\D/g,'');
     var fu=followups[m.id];
@@ -2917,7 +2918,8 @@ function _meetingObjsToRows(arr){
       'CLOSER':closer,'Closer':closer,'closer':closer,
       'SDR/BDR':sdr,'SDR':sdr,'Sdr':sdr,
       'ORIGEM':orig,'Origem':orig,'origem':orig,
-      'Telefone':tel,'TELEFONE':tel,'telefone':tel
+      'Telefone':tel,'TELEFONE':tel,'telefone':tel,
+      '_fbOnly':true
     };
   });
 }
@@ -2941,14 +2943,39 @@ async function loadDataHybrid(){
     return t&&!sheetTels.has(t);
   });
 
-  // Reuniões do Firebase sem sheetRow = não estão na planilha
+  // Chaves de deduplicação das reuniões já na planilha: telefone + dia (ex: "5511999_2026-6-3")
+  // Isso evita contar duas vezes uma reunião que está no Firebase E na planilha
+  var sheetReunKeys=new Set(sheetReuni.map(function(r){
+    var tel=(col(r,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'');
+    if(!tel||!d) return null;
+    return tel+'_'+d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();
+  }).filter(Boolean));
+
+  // Reuniões do Firebase: só inclui se não tem sheetRow E não é duplicata por tel+dia
   var fbExtraReuni=_meetingObjsToRows(
-    Object.values(meetings).filter(function(m){return !m._hidden&&!m.sheetRow;})
+    Object.values(meetings).filter(function(m){
+      if(m._hidden) return false;
+      if(m.sheetRow) return false; // já tem linha na planilha
+      // Deduplicação por telefone + dia: não inclui se já existe na planilha
+      var tel=(m.tel||'').replace(/\D/g,'');
+      if(tel){
+        // Usa dtISO (data real da reunião) para deduplicação, igual à planilha
+        var bd=new Date(m.dtISO||(m.scheduledAt||Date.now()));
+        var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
+        if(sheetReunKeys.has(dk)) return false;
+      }
+      return true;
+    })
   );
 
+  // Telefones das reuniões que já estão na planilha (para diagnóstico de duplicatas)
+  var sheetReunTels=new Set(sheetReuni.map(function(r){
+    return (col(r,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+  }).filter(Boolean));
   return {
     leads: {rows: sheetLeads.concat(fbExtraLeads)},
-    reunioes: {rows: sheetReuni.concat(fbExtraReuni)},
+    reunioes: {rows: sheetReuni.concat(fbExtraReuni), sheetTels: sheetReunTels},
     clientes: rawToObjs(clientesRaw)
   };
 }
@@ -6496,6 +6523,7 @@ function buildDashComHTML(data){
 
   // ---- BY CLOSER ----
   var cData={};
+  var semCloserRows=[]; // reuniões sem closer para diagnóstico
   clientesF.forEach(function(c){
     var nm=normCloserName(col(c,['CLOSER','Closer','closer']))||'Outros';
     if(!cData[nm])cData[nm]={contratos:0,valor:0,rReal:0,rAg:0,noshow:0};
@@ -6503,12 +6531,27 @@ function buildDashComHTML(data){
     cData[nm].valor+=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO']));
   });
   reunioesF.forEach(function(r){
-    var nm=normCloserName(col(r,['CLOSER','Closer','closer']))||'Outros';
+    var rawCloser=(col(r,['CLOSER','Closer','closer'])||'').trim();
+    var nm=normCloserName(rawCloser)||'Outros';
     if(!cData[nm])cData[nm]={contratos:0,valor:0,rReal:0,rAg:0,noshow:0};
     var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
     cData[nm].rAg++;
     if(isRealizada(st)) cData[nm].rReal++;
     if(st==='NO-SHOW'||st==='NO SHOW'||st==='NOSHOW') cData[nm].noshow++;
+    // Captura linhas sem closer (ou "Outros") para diagnóstico
+    if(nm==='Outros'){
+      var tel=(col(r,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+      semCloserRows.push({
+        cliente:col(r,['CLIENTE','Cliente','NOME','Nome'])||'—',
+        data:col(r,['DATA DE AGENDAMENTO','Data de Agendamento','Data Agendamento'])||'—',
+        status:st||'—',
+        sdr:col(r,['SDR/BDR','SDR','Sdr'])||'—',
+        closerRaw:rawCloser||'(vazio)',
+        origem:col(r,['ORIGEM','Origem','origem'])||'—',
+        tel:tel,
+        fbOnly:!!r._fbOnly
+      });
+    }
   });
 
   // ---- BY SDR ----
@@ -6782,24 +6825,98 @@ function buildDashComHTML(data){
 
   // ===== POR CLOSER =====
   var closerCols=Object.keys(cData).filter(function(k){return k!=='Outros';});
-  if(closerCols.length>0){
+  // Calcula "Não atribuído" = reuniões sem closer ou closer="Outros"
+  var naoAtrib={rAg:0,rReal:0,noshow:0,contratos:0,valor:0};
+  var atribAg=closerCols.reduce(function(s,k){return s+(cData[k].rAg||0);},0);
+  var atribReal=closerCols.reduce(function(s,k){return s+(cData[k].rReal||0);},0);
+  var atribNS=closerCols.reduce(function(s,k){return s+(cData[k].noshow||0);},0);
+  var atribContr=closerCols.reduce(function(s,k){return s+(cData[k].contratos||0);},0);
+  naoAtrib.rAg=Math.max(0,reunAgend-atribAg);
+  naoAtrib.rReal=Math.max(0,reunReal-atribReal);
+  naoAtrib.noshow=Math.max(0,reunNoShow-atribNS);
+  naoAtrib.contratos=Math.max(0,novosClientes-atribContr);
+  var showNaoAtrib=naoAtrib.rAg>0||naoAtrib.rReal>0||naoAtrib.noshow>0||naoAtrib.contratos>0;
+  var allCols=closerCols.concat(showNaoAtrib?['Não atribuído']:[]);
+  if(allCols.length>0){
+    var metrics=[
+      {l:'Reunioes Agend.',f:function(d){return d.rAg||0;}},
+      {l:'Reunioes Reais',f:function(d){return d.rReal||0;}},
+      {l:'No-Show',f:function(d){return d.noshow||0;}},
+      {l:'Taxa No-Show',f:function(d){var res=(d.rReal||0)+(d.noshow||0);return res>0?Math.round((d.noshow||0)/res*100)+'%':'—';}},
+      {l:'Contratos',f:function(d){return d.contratos||0;}},
+      {l:'Conv. Reun→Venda',f:function(d){return (d.rReal||0)>0?Math.round((d.contratos||0)/(d.rReal||0)*100)+'%':'—';}}
+    ];
+    // Linha de total
+    var totalD={rAg:reunAgend,rReal:reunReal,noshow:reunNoShow,contratos:novosClientes};
+    var colHeaders=allCols.map(function(c){
+      var isNa=c==='Não atribuído';
+      return '<th style="'+(isNa?'color:var(--muted);font-size:11px;':'')+'">'+(isNa?'NÃO ATRIB.':c.toUpperCase())+'</th>';
+    }).join('')+'<th style="color:var(--cyan);">TOTAL</th>';
     html+='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-user-check" style="color:var(--purple3);margin-right:6px;"></i>Por Closer</div></div>'+
-      '<div style="overflow-x:auto;"><table><thead><tr><th>Metrica</th>'+closerCols.map(function(c){return'<th>'+c.toUpperCase()+'</th>';}).join('')+'</tr></thead><tbody>'+
-      [
-        {l:'Reunioes Agend.',f:function(d){return d.rAg||0;}},
-        {l:'Reunioes Reais',f:function(d){return d.rReal||0;}},
-        {l:'No-Show',f:function(d){return d.noshow||0;}},
-        {l:'Taxa No-Show',f:function(d){var res=(d.rReal||0)+(d.noshow||0);return res>0?Math.round((d.noshow||0)/res*100)+'%':'—';}},
-        {l:'Contratos',f:function(d){return d.contratos||0;}},
-        {l:'Conv. Reun→Venda',f:function(d){return (d.rReal||0)>0?Math.round((d.contratos||0)/(d.rReal||0)*100)+'%':'—';}}
-      ].map(function(m){
-        return '<tr><td style="font-size:12px;color:var(--muted);">'+m.l+'</td>'+
-          closerCols.map(function(c){
-            var v=m.f(cData[c]);
-            return '<td style="font-weight:700;color:var(--white);">'+v+'</td>';
-          }).join('')+'</tr>';
+      '<div style="overflow-x:auto;"><table><thead><tr><th>Metrica</th>'+colHeaders+'</tr></thead><tbody>'+
+      metrics.map(function(m){
+        var isRate=m.l.includes('%')||m.l.includes('Taxa')||m.l.includes('Conv.');
+        var cols=allCols.map(function(c){
+          var d=c==='Não atribuído'?naoAtrib:(cData[c]||{});
+          var v=m.f(d);
+          var isNa=c==='Não atribuído';
+          return '<td style="font-weight:700;color:'+(isNa?'var(--muted)':'var(--white)')+';">'+v+'</td>';
+        }).join('');
+        var tv=isRate?m.f(totalD):'—';
+        if(!isRate){
+          // For count rows, sum all including Não atribuído
+          var sum=allCols.reduce(function(s,c){
+            var d=c==='Não atribuído'?naoAtrib:(cData[c]||{});
+            var v=m.f(d);
+            return s+(typeof v==='number'?v:0);
+          },0);
+          tv=sum;
+        }
+        return '<tr><td style="font-size:12px;color:var(--muted);">'+m.l+'</td>'+cols+
+          '<td style="font-weight:700;color:var(--cyan);">'+tv+'</td></tr>';
       }).join('')+
       '</tbody></table></div></div>';
+
+    // ===== DIAGNÓSTICO: reuniões sem closer =====
+    var sheetReunTels=data.reunioes.sheetTels||new Set();
+    var semCloserReal=semCloserRows.filter(function(r){return isRealizada(r.status);});
+    if(semCloserReal.length>0){
+      var dupCount=semCloserReal.filter(function(r){return r.fbOnly&&r.tel&&sheetReunTels.has(r.tel);}).length;
+      var diagId='diag-sem-closer-'+Date.now();
+      html+='<div class="cb" style="margin-bottom:16px;border:1px solid var(--amber);">'+
+        '<div class="cb-hd" style="cursor:pointer;" onclick="var b=document.getElementById(\''+diagId+'\');b.style.display=b.style.display===\'none\'?\'block\':\'none\';">'+
+          '<div class="cb-title"><i class="ti ti-alert-triangle" style="color:var(--amber);margin-right:6px;"></i>'+
+          semCloserReal.length+' reuniões REALIZADAS sem closer atribuído'+
+          (dupCount>0?' <span style="color:var(--red);font-size:12px;">— '+dupCount+' são duplicatas do Firebase (já estão na planilha)</span>':'')+
+          ' <span style="font-size:11px;color:var(--muted);">(clique para ver)</span></div>'+
+        '</div>'+
+        '<div id="'+diagId+'" style="display:none;padding:0 16px 16px;">'+
+          '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">'+
+            (dupCount>0?'<b style="color:var(--red);">⚠ '+dupCount+' registros do Firebase têm o mesmo telefone de uma reunião na planilha — estão sendo contados em dobro.</b><br><br>':'')+'Fonte: '+
+            '<span style="color:var(--amber);">🔶 Firebase</span> | <span style="color:var(--muted);">📋 Planilha</span>'+
+          '</div>'+
+          '<div style="overflow-x:auto;"><table>'+
+          '<thead><tr><th>Fonte</th><th>Data</th><th>Cliente</th><th>Tel</th><th>SDR</th><th>Origem</th><th>Closer (raw)</th><th>Status</th></tr></thead><tbody>'+
+          semCloserReal.map(function(r){
+            var isDup=r.fbOnly&&r.tel&&sheetReunTels.has(r.tel);
+            var fonte=r.fbOnly
+              ?'<span style="color:'+(isDup?'var(--red)':'var(--amber)')+';">'+(isDup?'🔴 DUP FB':'🔶 FB')+'</span>'
+              :'<span style="color:var(--muted);">📋 Sheet</span>';
+            return '<tr style="'+(isDup?'background:rgba(239,68,68,0.08);':'')+'">'+
+              '<td>'+fonte+'</td>'+
+              '<td style="font-size:12px;">'+r.data+'</td>'+
+              '<td style="font-weight:600;color:var(--white);">'+r.cliente+'</td>'+
+              '<td style="font-size:11px;color:var(--muted);">'+r.tel+'</td>'+
+              '<td style="font-size:12px;color:var(--cyan);">'+r.sdr+'</td>'+
+              '<td style="font-size:12px;">'+r.origem+'</td>'+
+              '<td style="font-size:12px;color:var(--amber);">'+r.closerRaw+'</td>'+
+              '<td style="font-size:12px;color:var(--green);">'+r.status+'</td>'+
+            '</tr>';
+          }).join('')+
+          '</tbody></table></div>'+
+        '</div>'+
+      '</div>';
+    }
   }
 
   // ===== POR SDR =====
