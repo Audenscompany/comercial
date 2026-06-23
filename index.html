@@ -9644,7 +9644,7 @@ function renderReunioesPersonal(){
       '<div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-event" style="color:var(--amber);margin-right:6px;"></i>Reuniões do Dia</div>'+
       '<div style="display:flex;align-items:center;gap:10px;">'+_navBtns+'<span class="badge b-amber">'+reunHoje.length+'</span></div></div>'+
   (reunHoje.length===0?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Nenhuma reunião neste dia</div>':(
-      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Origem</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
+      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Origem</th><th>SDR</th><th>Ad</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
       reunHoje.map(function(m){
         var st=getMeetingStatus(m);
         var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':st==='reagendado'?'Reagendado':'Agendada';
@@ -9661,8 +9661,16 @@ function renderReunioesPersonal(){
         var canReagendar = st==='pending'||st==='reagendado';
         var origemRaw=(m.origem||'').toLowerCase();
         var origemLabel=m.origem||'';
-        // Se lead tem ad vinculado e origem não está clara → é Tráfego Pago
+        // Ad: tenta kanbanKey primeiro, depois busca por telefone no kanban
         var _kb=m.kanbanKey&&kanbanData[m.kanbanKey];
+        if(!_kb&&tel){
+          var kbKeys=Object.keys(kanbanData);
+          for(var _ki=0;_ki<kbKeys.length;_ki++){
+            var _kd=kanbanData[kbKeys[_ki]];
+            if((_kd.telefone||'').replace(/\D/g,'')===(tel||'').replace(/\D/g,'')){_kb=_kd;break;}
+          }
+        }
+        var adVal=m.ad||(_kb&&_kb.ad)||'';
         if(_kb&&_kb.ad&&(!origemLabel||origemLabel.toLowerCase()==='kanban')){
           origemLabel='Tráfego'; origemRaw='tráfego';
         }
@@ -9673,12 +9681,17 @@ function renderReunioesPersonal(){
                       origemRaw.includes('indic')?'#4ade80':
                       origemRaw.includes('organ')?'#4ade80':
                       'var(--muted)';
+        // SDR
+        var sdrLabel=(m.sdrName||m.sdr||'').trim();
+        if(sdrLabel) sdrLabel=sdrLabel.charAt(0).toUpperCase()+sdrLabel.slice(1).toLowerCase();
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
           '<td>'+telHtml+'</td>'+
           '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
           '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span>'+reagBadge+'</td>'+
           '<td><span style="font-size:11px;font-family:var(--font-bc),sans-serif;color:'+origemCol+';">'+esc(origemLabel)+'</span></td>'+
+          '<td style="font-size:12px;color:var(--cyan);">'+(sdrLabel||'—')+'</td>'+
+          '<td style="font-size:11px;color:var(--purple3);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+(adVal?esc(adVal):'')+'">'+(adVal?esc(adVal):'<span style="color:var(--border2);">—</span>')+'</td>'+
           '<td>'+(m.responsavel||'—')+'</td>'+
           '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;"><i class="ti ti-video"></i> Abrir</a>':'—')+'</td>'+
           '<td style="white-space:nowrap;">'+
