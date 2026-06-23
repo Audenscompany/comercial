@@ -46,8 +46,19 @@ body{font-family:Barlow,sans-serif;background:var(--bg);color:var(--white);min-h
 .cred-tag{font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:1px;}
 .cred-tag.g{background:rgba(123,47,255,0.2);color:var(--purple3);}
 .cred-tag.a{background:rgba(56,189,248,0.15);color:var(--cyan);}
-.sidebar{width:230px;height:100vh;position:sticky;top:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
-#sidebar-nav{overflow-y:auto;flex:1;}
+.sidebar{width:230px;height:100vh;position:sticky;top:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+#sidebar-nav{overflow:hidden;flex:1;display:flex;flex-direction:column;}
+/* Nav Groups */
+.nav-group-hd{display:flex;align-items:center;gap:10px;padding:8px 20px;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;border-left:2px solid transparent;transition:all .15s;user-select:none;}
+.nav-group-hd:hover{color:var(--white);background:var(--pglow2);}
+.nav-group-hd.open{color:var(--purple3);}
+.nav-group-hd i.nav-g-icon{font-size:16px;}
+.nav-group-arr{margin-left:auto;font-size:13px;transition:transform .2s;}
+.nav-group-hd.open .nav-group-arr{transform:rotate(90deg);}
+.nav-group-items{display:none;background:rgba(0,0,0,0.15);}
+.nav-group-items.open{display:block;}
+.nav-sub{padding-left:32px!important;font-size:13px!important;}
+.nav-sep{height:1px;background:var(--border);margin:4px 0;}
 .sb-top{padding:24px 20px 16px;border-bottom:1px solid var(--border);}
 .sb-brand{font-family:Bebas Neue,sans-serif;font-size:28px;letter-spacing:4px;color:var(--white);line-height:1;}
 .sb-sub{font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:600;letter-spacing:5px;color:var(--purple2);}
@@ -3139,59 +3150,110 @@ function buildNav(){
   var nav=document.getElementById('sidebar-nav');
   var pendFU=getPendingFollowups().length;
   var pendSDR=getPendingSdrTarefas().length;
-  // gI merged into gIG below
-  var closerNav=[
+
+  // Definições de navs com suporte a grupos
+  var gestorDef=[
+    {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
+    {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
+    {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
+    {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
+    {id:'calendario',icon:'ti-calendar',label:'Calendario'},
+    {group:'SDR',icon:'ti-report-analytics',items:[
+      {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
+      {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
+      {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
+    ]},
+    {group:'Financeiro',icon:'ti-report-money',items:[
+      {id:'financeiro',icon:'ti-report-money',label:'Financeiro'},
+      {id:'contratos',icon:'ti-file-invoice',label:'Contratos'},
+      {id:'plano-carreira',icon:'ti-award',label:'Planos de Carreira'},
+      {id:'asaas',icon:'ti-cash',label:'Cobrancas Asaas'},
+      {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'}
+    ]},
+    {group:'Cold Call',icon:'ti-phone-call',items:[
+      {id:'leads',icon:'ti-upload',label:'Importar Leads'},
+      {id:'historico',icon:'ti-history',label:'Historico Geral'},
+      {id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
+      {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'}
+    ]},
+    {id:'config',icon:'ti-settings',label:'Configuracoes'}
+  ];
+  var closerDef=[
     {id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Minhas Reunioes'},
-    {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
-    {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'},
+    {group:'Financeiro',icon:'ti-report-money',items:[
+      {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
+      {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
+    ]},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
-  var sdrNav=[
-    {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+  var sdrDef=[
     {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
-    {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
     {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
     {id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
-    {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'},
+    {group:'SDR',icon:'ti-report-analytics',items:[
+      {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+      {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'}
+    ]},
+    {group:'Financeiro',icon:'ti-report-money',items:[
+      {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
+    ]},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
-  var aI=CU.funcao==='sdr'?sdrNav:closerNav;
-  var gIG=[
-    {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
-    {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
-    {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
-    {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
-    {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
-    {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
-    {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
-    {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
-    {id:'asaas',icon:'ti-cash',label:'Cobrancas Asaas'},
-    {id:'financeiro',icon:'ti-report-money',label:'Financeiro'},
-    {id:'calendario',icon:'ti-calendar',label:'Calendario'},
-    {id:'contratos',icon:'ti-file-invoice',label:'Contratos'},
-    {id:'plano-carreira',icon:'ti-award',label:'Planos de Carreira'},
-    {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'},
-    {id:'leads',icon:'ti-upload',label:'Importar Leads'},
-    {id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
-    {id:'historico',icon:'ti-history',label:'Historico Geral'},
-    {id:'config',icon:'ti-settings',label:'Configuracoes'}
-  ];
-  var items=CU.role==='gestor'?gIG:aI;
-  nav.innerHTML=items.map(function(i){
-    return '<div class="nav-item" id="nav-'+i.id+'" onclick="showPage(\''+i.id+'\')">'+
+
+  var def=CU.role==='gestor'?gestorDef:(CU.funcao==='sdr'?sdrDef:closerDef);
+
+  function navItemHtml(i,sub){
+    var cls='nav-item'+(sub?' nav-sub':'');
+    return '<div class="'+cls+'" id="nav-'+i.id+'" onclick="showPage(\''+i.id+'\')">'+
       '<i class="ti '+i.icon+'"></i>'+i.label+(i.badge>0?'<span class="nav-badge">'+i.badge+'</span>':'')+
     '</div>';
+  }
+  function groupHtml(g){
+    var gId='ng-'+g.group.toLowerCase().replace(/\s+/g,'-');
+    return '<div class="nav-group">'+
+      '<div class="nav-group-hd" id="'+gId+'-hd" onclick="toggleNavGroup(\''+gId+'\')">'+
+        '<i class="ti '+g.icon+' nav-g-icon"></i><span>'+g.group+'</span>'+
+        '<i class="ti ti-chevron-right nav-group-arr"></i>'+
+      '</div>'+
+      '<div class="nav-group-items" id="'+gId+'">'+
+        g.items.map(function(i){return navItemHtml(i,true);}).join('')+
+      '</div>'+
+    '</div>';
+  }
+
+  nav.innerHTML=def.map(function(i){
+    return i.group?groupHtml(i):navItemHtml(i,false);
   }).join('');
+}
+
+function toggleNavGroup(gId){
+  var items=document.getElementById(gId);
+  var hd=document.getElementById(gId+'-hd');
+  if(!items||!hd) return;
+  var open=items.classList.toggle('open');
+  hd.classList.toggle('open',open);
+}
+
+function openNavGroupFor(pageId){
+  // Se a página está dentro de um grupo, abre o grupo
+  document.querySelectorAll('.nav-group-items').forEach(function(el){
+    if(el.querySelector('#nav-'+pageId)){
+      el.classList.add('open');
+      var hd=document.getElementById(el.id+'-hd');
+      if(hd) hd.classList.add('open');
+    }
+  });
 }
 function showPage(id){
   document.querySelectorAll('.nav-item').forEach(function(el){el.classList.remove('active');});
   var nel=document.getElementById('nav-'+id);if(nel)nel.classList.add('active');
+  if(typeof openNavGroupFor==='function') openNavGroupFor(id);
   var map={
     dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioesPersonal,
