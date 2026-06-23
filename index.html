@@ -3087,6 +3087,7 @@ function buildNav(){
     {id:'asaas',icon:'ti-cash',label:'Cobrancas Asaas'},
     {id:'financeiro',icon:'ti-report-money',label:'Financeiro'},
     {id:'calendario',icon:'ti-calendar',label:'Calendario'},
+    {id:'contratos',icon:'ti-file-invoice',label:'Contratos'},
     {id:'plano-carreira',icon:'ti-award',label:'Planos de Carreira'},
     {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'},
     {id:'leads',icon:'ti-upload',label:'Importar Leads'},
@@ -3112,7 +3113,8 @@ function showPage(id){
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
-    'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro
+    'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro,
+    'contratos':renderContratos
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -3123,6 +3125,7 @@ function showPage(id){
     if(id==='reativacao') setTimeout(loadReativacao,50);
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
+    if(id==='contratos') setTimeout(loadContratosPage,50);
     if(id==='financeiro') setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -9815,29 +9818,50 @@ function saveContatosEquipe(){
 
 // ---- CLOSER LEVELS DATA ----
 var CLOSER_LEVELS = [
-  {tier:'Junior',tiercol:'#A05218',n:'N1',base:2014,minG:2400,meta:4,bonusMeta:200,commMens:250,commTrim:300,commSem:432,ativa:5},
-  {tier:'Junior',tiercol:'#A05218',n:'N2',base:2014,minG:2400,meta:6,bonusMeta:300,commMens:262,commTrim:330,commSem:486,ativa:7},
-  {tier:'Junior',tiercol:'#A05218',n:'N3',base:2014,minG:2400,meta:8,bonusMeta:400,commMens:275,commTrim:360,commSem:540,ativa:9},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N1',base:2316,minG:3200,meta:10,bonusMeta:500,commMens:287,commTrim:360,commSem:540,ativa:11},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N2',base:2316,minG:3400,meta:12,bonusMeta:650,commMens:300,commTrim:390,commSem:594,ativa:13},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N3',base:2316,minG:3600,meta:14,bonusMeta:800,commMens:312,commTrim:420,commSem:648,ativa:15},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N1',base:2664,minG:4000,meta:16,bonusMeta:900,commMens:325,commTrim:420,commSem:648,ativa:17},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N2',base:2664,minG:4400,meta:18,bonusMeta:1100,commMens:337,commTrim:450,commSem:702,ativa:19},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N3',base:2664,minG:4800,meta:20,bonusMeta:1300,commMens:350,commTrim:480,commSem:756,ativa:21}
+  {tier:'Junior',tiercol:'#A05218',n:'N1',base:2014,minG:2400,meta:4,bonusMeta:200,commMens:250,commTrim:300,commSem:432,ativa:5,
+   promo:'1 mês batendo 4 contratos',promoMeses:1,promoJanela:1},
+  {tier:'Junior',tiercol:'#A05218',n:'N2',base:2014,minG:2400,meta:6,bonusMeta:300,commMens:262,commTrim:330,commSem:486,ativa:7,
+   promo:'Meta em 2 dos últimos 3 meses',promoMeses:2,promoJanela:3},
+  {tier:'Junior',tiercol:'#A05218',n:'N3',base:2014,minG:2400,meta:8,bonusMeta:400,commMens:275,commTrim:360,commSem:540,ativa:9,
+   promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N1',base:2316,minG:3200,meta:10,bonusMeta:500,commMens:287,commTrim:360,commSem:540,ativa:11,
+   promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N2',base:2316,minG:3400,meta:12,bonusMeta:650,commMens:300,commTrim:390,commSem:594,ativa:13,
+   promo:'Meta em 3 dos últimos 5 meses',promoMeses:3,promoJanela:5},
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N3',base:2316,minG:3600,meta:14,bonusMeta:800,commMens:312,commTrim:420,commSem:648,ativa:15,
+   promo:'Meta em 4 dos últimos 6 meses',promoMeses:4,promoJanela:6},
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N1',base:2664,minG:4000,meta:16,bonusMeta:900,commMens:325,commTrim:420,commSem:648,ativa:17,
+   promo:'Meta em 3 dos últimos 5 meses',promoMeses:3,promoJanela:5},
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N2',base:2664,minG:4400,meta:18,bonusMeta:1100,commMens:337,commTrim:450,commSem:702,ativa:19,
+   promo:'Meta em 4 dos últimos 6 meses',promoMeses:4,promoJanela:6},
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N3',base:2664,minG:4800,meta:20,bonusMeta:1300,commMens:350,commTrim:480,commSem:756,ativa:21,
+   promo:'Topo da carreira',promoMeses:0,promoJanela:0}
 ];
 
 // ---- SDR LEVELS DATA ----
 var SDR_LEVELS = [
-  {tier:'Junior',tiercol:'#A05218',n:'N1',base:2000,minG:2400,meta:20,bonusMeta:150,acel:15,commVenda:75,ssComm:0.25,incentivReun:10,threshold:11},
-  {tier:'Junior',tiercol:'#A05218',n:'N2',base:2150,minG:2600,meta:25,bonusMeta:350,acel:18,commVenda:85,ssComm:0.25,incentivReun:12,threshold:12},
-  {tier:'Junior',tiercol:'#C46A20',n:'N3',base:2300,minG:2900,meta:30,bonusMeta:600,acel:20,commVenda:95,ssComm:0.25,incentivReun:14,threshold:13},
-  {tier:'Pleno',tiercol:'#0B6E56',n:'N1',base:2300,minG:3000,meta:25,bonusMeta:350,acel:25,commVenda:105,ssComm:0.25,incentivReun:16,threshold:14},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N2',base:2500,minG:3200,meta:28,bonusMeta:550,acel:26,commVenda:115,ssComm:0.25,incentivReun:18,threshold:15},
-  {tier:'Pleno',tiercol:'#2AA07C',n:'N3',base:2700,minG:3500,meta:33,bonusMeta:800,acel:28,commVenda:130,ssComm:0.25,incentivReun:20,threshold:16},
-  {tier:'Senior',tiercol:'#2D1160',n:'N1',base:2800,minG:3700,meta:38,bonusMeta:600,acel:35,commVenda:145,ssComm:0.25,incentivReun:22,threshold:18},
-  {tier:'Senior',tiercol:'#4A1C7A',n:'N2',base:3000,minG:4000,meta:44,bonusMeta:900,acel:40,commVenda:160,ssComm:0.25,incentivReun:25,threshold:19},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N3',base:3200,minG:4400,meta:50,bonusMeta:1200,acel:40,commVenda:175,ssComm:0.25,incentivReun:28,threshold:21}
+  {tier:'Junior',tiercol:'#A05218',n:'N1',base:2000,minG:2400,meta:20,bonusMeta:150,acel:15,commVenda:75,ssComm:0.25,incentivReun:10,threshold:11,
+   promo:'1 mês batendo 20 agendamentos',promoMeses:1,promoJanela:1},
+  {tier:'Junior',tiercol:'#A05218',n:'N2',base:2150,minG:2600,meta:25,bonusMeta:350,acel:18,commVenda:85,ssComm:0.25,incentivReun:12,threshold:12,
+   promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
+  {tier:'Junior',tiercol:'#C46A20',n:'N3',base:2300,minG:2900,meta:30,bonusMeta:600,acel:20,commVenda:95,ssComm:0.25,incentivReun:14,threshold:13,
+   promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
+  {tier:'Pleno',tiercol:'#0B6E56',n:'N1',base:2300,minG:3000,meta:25,bonusMeta:350,acel:25,commVenda:105,ssComm:0.25,incentivReun:16,threshold:14,
+   promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N2',base:2500,minG:3200,meta:28,bonusMeta:550,acel:26,commVenda:115,ssComm:0.25,incentivReun:18,threshold:15,
+   promo:'Meta em 3 dos últimos 5 meses',promoMeses:3,promoJanela:5},
+  {tier:'Pleno',tiercol:'#2AA07C',n:'N3',base:2700,minG:3500,meta:33,bonusMeta:800,acel:28,commVenda:130,ssComm:0.25,incentivReun:20,threshold:16,
+   promo:'Meta em 4 dos últimos 6 meses',promoMeses:4,promoJanela:6},
+  {tier:'Senior',tiercol:'#2D1160',n:'N1',base:2800,minG:3700,meta:38,bonusMeta:600,acel:35,commVenda:145,ssComm:0.25,incentivReun:22,threshold:18,
+   promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
+  {tier:'Senior',tiercol:'#4A1C7A',n:'N2',base:3000,minG:4000,meta:44,bonusMeta:900,acel:40,commVenda:160,ssComm:0.25,incentivReun:25,threshold:19,
+   promo:'Meta em 4 dos últimos 6 meses',promoMeses:4,promoJanela:6},
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N3',base:3200,minG:4400,meta:50,bonusMeta:1200,acel:40,commVenda:175,ssComm:0.25,incentivReun:28,threshold:21,
+   promo:'Topo da carreira',promoMeses:0,promoJanela:0}
 ];
+
+// SDR commission % of MRR per sale above threshold (indices match SDR_LEVELS)
+var SDR_COMM_PCT = [10, 11, 12, 14, 15, 16, 18, 19, 20];
 
 // ===== CAREER LEVEL MANAGEMENT =====
 // Lucas sets levels in Firebase, employees read automatically
@@ -9867,6 +9891,95 @@ async function saveCareerLevel(person, idx){
   }catch(e){
     showSheetToast('Erro ao salvar nível: '+e.message, true);
   }
+}
+
+// ===== CONTRATOS FIREBASE =====
+var _contratosCache = null;
+
+async function loadContratos(forceRefresh){
+  if(!forceRefresh&&_contratosCache) return _contratosCache;
+  if(!fbDb) initFirebase();
+  var snap = await fbDb.ref('contratos').once('value');
+  var val = snap.val()||{};
+  _contratosCache = Object.entries(val).map(function(e){return Object.assign({},e[1],{id:e[0]});});
+  return _contratosCache;
+}
+
+async function saveContrato(id, data){
+  if(!fbDb) initFirebase();
+  _contratosCache = null;
+  if(id){
+    await fbDb.ref('contratos/'+id).update(Object.assign({},data,{updatedAt:Date.now()}));
+    return id;
+  } else {
+    var ref = fbDb.ref('contratos').push();
+    await ref.set(Object.assign({},data,{createdAt:Date.now()}));
+    return ref.key;
+  }
+}
+
+async function cancelarContrato(id, motivo, dataCancel){
+  if(!fbDb) initFirebase();
+  _contratosCache = null;
+  await fbDb.ref('contratos/'+id).update({
+    ativo:false, dataCancelamento:dataCancel, motivoCancelamento:motivo, updatedAt:Date.now()
+  });
+}
+
+async function importContratosFromSheet(){
+  _sheetDataCache={}; _sheetsMeta={};
+  var cliRows = await fetchSheetCached(SHEETS_IDS.clientes,SHEETS_GIDS.clientes,'clientes');
+  if(!cliRows||cliRows.length<2) return 0;
+  var ch = cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+  var iDataIn = ch.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
+  var iCliente = ch.findIndex(function(h){return h==='CLIENTE'||h==='EMPRESA';});
+  var iValorMes = ch.findIndex(function(h){return(h.includes('VALOR')&&h.includes('MES'))||(h.includes('VALOR')&&h.includes('/'));});
+  if(iValorMes<0) iValorMes=ch.findIndex(function(h){return h.includes('VALOR')&&!h.includes('VENDIDO');});
+  var iGestor=ch.findIndex(function(h){return h==='GESTOR';});
+  var iDataCancel=ch.findIndex(function(h){return h.includes('DATA')&&h.includes('CANCEL');});
+  var iMotivo=ch.findIndex(function(h){return h.includes('MOTIVO');});
+  var iPlano=ch.findIndex(function(h){return h.includes('PLANO');});
+  var iOrigem=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
+  var iCloser=ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
+  var iSDR=ch.findIndex(function(h){return h==='SDR'||h.includes('SDR')||h.includes('BDR');});
+  var iValorV=ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
+  function toISO(d){return d?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'):null;}
+  var batch={};
+  var count=0;
+  cliRows.slice(1).forEach(function(row){
+    var cliente=(row[iCliente]||'').trim();
+    if(!cliente) return;
+    var dataInicio=toISO(parseBRDate(row[iDataIn]||''));
+    if(!dataInicio) return;
+    var valorMes=parseMoney(row[iValorMes]||'')||0;
+    var valorVendido=iValorV>=0?parseMoney(row[iValorV]||'')||0:0;
+    var plano=(row[iPlano]||'').trim();
+    var pu=plano.toUpperCase();
+    var planoDuracao=pu.includes('SEMESTRAL')?6:pu.includes('TRIMESTRAL')?3:pu.includes('ANUAL')?12:1;
+    var dataCancelamento=toISO(iDataCancel>=0?parseBRDate(row[iDataCancel]||''):null);
+    var key=fbDb.ref('contratos').push().key;
+    batch[key]={
+      cliente:cliente,
+      dataInicio:dataInicio,
+      valorMes:valorMes,
+      valorVendido:valorVendido||valorMes*planoDuracao,
+      planoDuracao:planoDuracao,
+      gestor:(row[iGestor]||'').trim(),
+      dataCancelamento:dataCancelamento||null,
+      motivoCancelamento:(iMotivo>=0?row[iMotivo]||'':'')||null,
+      plano:plano,
+      origem:(row[iOrigem]||'').trim(),
+      closer:(row[iCloser]||'').trim(),
+      sdr:(iSDR>=0?row[iSDR]||'':'').trim(),
+      ativo:!dataCancelamento,
+      importedAt:Date.now()
+    };
+    count++;
+  });
+  if(!fbDb) initFirebase();
+  _contratosCache=null;
+  await fbDb.ref('contratos').update(batch);
+  return count;
 }
 
 // Get current month string YYYY-MM
@@ -10145,6 +10258,259 @@ async function calcSDRFromSheets(nivelIdx, month){
   return result;
 }
 
+// ===== CALCULATE CLOSER SALARY FROM FIREBASE =====
+async function calcCloserFromFirebase(nivelIdx, month){
+  var lv = CLOSER_LEVELS[nivelIdx];
+  var result = {base:lv.base,minG:lv.minG,reunioes:0,incentivReun:0,
+    contratos:0,tipoContrato:'Mensal',bonusMeta:0,comissaoUnit:0,
+    comissaoContratos:0,valorVendido:0,total:0,mrrColdCall:0,
+    reunColdCall:0,comissaoColdCall:0,incentivColdCall:0,totalBruto:0,
+    loading:false,error:null};
+  try{
+    // Reuniões realizadas from sheet (still needed for R$30 incentive)
+    var reunRows=await fetchSheetCached(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes,'reunioes');
+    if(reunRows&&reunRows.length>1){
+      var rh=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var iStatus=rh.findIndex(function(h){return h.includes('STATUS');});
+      var iCloserR=rh.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
+      var iDataReal=rh.findIndex(function(h){return h.includes('DATA')&&(h.includes('REAL')||h.includes('SERA'));});
+      var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
+      var iSDR_R=rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
+      var iOri_R=rh.findIndex(function(h){return h.includes('ORIGEM');});
+      reunRows.slice(1).forEach(function(row){
+        var closer=(row[iCloserR]||'').trim().toUpperCase();
+        var status=(row[iStatus]||'').trim().toUpperCase();
+        var dateStr=row[iDataReal]||row[iData]||'';
+        var dt=parseBRDate(dateStr);
+        var rowMonth=dateToMonthStr(dt);
+        var sdrR=(iSDR_R>=0?row[iSDR_R]||'':'').trim();
+        var oriR=(iOri_R>=0?row[iOri_R]||'':'').toLowerCase();
+        if(normCloserName(closer)==='Gustavo'&&status==='REALIZADA'&&rowMonth===month) result.reunioes++;
+        if(normCloserName(sdrR)==='Gustavo'&&oriR.includes('cold')&&isRealizada(status)&&rowMonth===month) result.reunColdCall++;
+      });
+    }
+    result.incentivReun=result.reunioes*30;
+    result.incentivColdCall=result.reunColdCall*30;
+
+    // Contracts from Firebase
+    var contratos=await loadContratos();
+    var mrrColdCall=0;
+    contratos.forEach(function(c){
+      var contMonth=c.dataInicio?c.dataInicio.substring(0,7):null;
+      if(!contMonth||contMonth!==month) return;
+      var closerC=normCloserName((c.closer||'').trim());
+      var sdrC=normCloserName((c.sdr||'').trim());
+      var oriC=(c.origem||'').toLowerCase();
+      var isColdCall=sdrC==='Gustavo'&&(oriC.includes('cold')||oriC.includes('call'));
+      if(isColdCall){
+        mrrColdCall+=c.valorMes||0;
+      } else if(closerC==='Gustavo'){
+        result.contratos++;
+        var pu=(c.plano||'').toUpperCase();
+        if(pu.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
+        else if(pu.includes('SEMESTRAL')) result.tipoContrato='Semestral';
+        result.valorVendido+=c.valorVendido||0;
+      }
+    });
+    result.mrrColdCall=mrrColdCall;
+    result.comissaoColdCall=Math.round(mrrColdCall*0.25);
+
+    var meta=lv.meta;
+    result.bonusMeta=result.contratos>=meta?lv.bonusMeta:0;
+    var acima=Math.max(0,result.contratos-meta);
+    var commUnit=result.tipoContrato==='Trimestral'?lv.commTrim:(result.tipoContrato==='Semestral'?lv.commSem:lv.commMens);
+    result.comissaoUnit=commUnit;
+    result.comissaoContratos=(result.contratos>=meta&&acima>0)?acima*commUnit:0;
+    var totalBruto=result.base+result.bonusMeta+result.comissaoContratos+result.incentivReun+result.comissaoColdCall+result.incentivColdCall;
+    result.total=Math.max(totalBruto,result.minG);
+    result.totalBruto=totalBruto;
+  }catch(e){result.error=e.message;}
+  return result;
+}
+
+// ===== CALCULATE SDR SALARY FROM FIREBASE =====
+async function calcSDRFromFirebase(nivelIdx, month){
+  var lv=SDR_LEVELS[nivelIdx];
+  var pct=(SDR_COMM_PCT[nivelIdx]||10)/100;
+  var result={base:lv.base,minG:lv.minG,
+    agendamentos:0,bonusMeta:0,acelerador:0,
+    reunioesComp:0,incentivReun:0,
+    vendas:0,comissaoVendas:0,
+    ssReun:0,ssVendas:0,ssIncentiv:0,ssComm:0,ssTotal:0,
+    total:0,totalSDR:0,grandTotal:0,error:null};
+  try{
+    // Agendamentos still from reunioes sheet
+    var reunRows=await fetchSheetCached(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes,'reunioes');
+    if(reunRows&&reunRows.length>1){
+      var rh=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var iStatus=rh.findIndex(function(h){return h.includes('STATUS');});
+      var iSDR=rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
+      var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
+      var iDataReal=rh.findIndex(function(h){return h.includes('DATA')&&(h.includes('REAL')||h.includes('SERA'));});
+      var iOrigem=rh.findIndex(function(h){return h.includes('ORIGEM');});
+      reunRows.slice(1).forEach(function(row){
+        var sdr=(row[iSDR]||'').trim().toUpperCase();
+        var status=(row[iStatus]||'').trim().toUpperCase();
+        var origem=(row[iOrigem]||'').trim().toUpperCase();
+        var dateStr=row[iData]||'';
+        var dt=parseBRDate(dateStr);
+        var rowMonth=dateToMonthStr(dt);
+        var dateRealStr=row[iDataReal]||'';
+        var dtReal=parseBRDate(dateRealStr);
+        var rowMonthReal=dateToMonthStr(dtReal)||rowMonth;
+        if(!rowMonth) return;
+        if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
+        var isSS=origem.includes('SOCIAL');
+        if(rowMonth===month){
+          if(!isSS) result.agendamentos++;
+          if(isSS&&status==='REALIZADA'&&rowMonthReal===month) result.ssReun++;
+        }
+        if(rowMonthReal===month&&status==='REALIZADA'){
+          if(!isSS) result.reunioesComp++;
+        }
+      });
+    }
+
+    // Contracts from Firebase
+    var contratos=await loadContratos();
+    var _vendaValores=[];
+    contratos.forEach(function(c){
+      var contMonth=c.dataInicio?c.dataInicio.substring(0,7):null;
+      if(!contMonth||contMonth!==month) return;
+      var sdr=(c.sdr||'').trim().toUpperCase();
+      if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
+      var ori=(c.origem||'').toUpperCase();
+      if(ori.includes('SOCIAL')){
+        result.ssVendas++;
+        result.ssComm+=(c.valorMes||0)*0.25;
+      } else {
+        result.vendas++;
+        _vendaValores.push(c.valorMes||0);
+      }
+    });
+
+    // Commission: % of valorMes for each venda above threshold
+    var threshold=lv.threshold;
+    if(_vendaValores.length>=threshold){
+      var sorted=_vendaValores.slice().sort(function(a,b){return a-b;});
+      var acima=sorted.slice(threshold-1);
+      result.comissaoVendas=Math.round(acima.reduce(function(s,v){return s+v*pct;},0));
+    }
+
+    var meta=lv.meta;
+    result.bonusMeta=result.agendamentos>=meta?lv.bonusMeta:0;
+    var agenAcima=Math.max(0,result.agendamentos-meta);
+    result.acelerador=result.agendamentos>=meta?agenAcima*lv.acel:0;
+    result.incentivReun=result.reunioesComp*lv.incentivReun;
+    result.ssIncentiv=result.ssReun*30;
+    result.ssTotal=result.incentivReun+result.ssIncentiv+result.ssComm;
+    var totalBrutoSDR=result.base+result.bonusMeta+result.acelerador+result.comissaoVendas;
+    result.totalSDR=totalBrutoSDR;
+    result.grandTotal=result.totalSDR+result.ssTotal;
+  }catch(e){result.error=e.message;}
+  return result;
+}
+
+// ===== META PROGRESSION HELPERS =====
+function _msLabel(ms){
+  var parts=ms.split('-');
+  var nomes=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  return nomes[parseInt(parts[1])-1]+'/'+parts[0].slice(2);
+}
+function _lastNMonths(n){
+  var result=[];
+  var now=new Date();
+  for(var i=n-1;i>=0;i--){
+    var d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    result.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+  }
+  return result;
+}
+async function calcCloserMetaHistory(nivelIdx){
+  var lv=CLOSER_LEVELS[nivelIdx];
+  if(!lv||lv.promoMeses===0) return null;
+  var meses=_lastNMonths(lv.promoJanela);
+  var counts={};
+  meses.forEach(function(ms){counts[ms]=0;});
+  try{
+    var cliRows=await fetchSheetCached(SHEETS_IDS.clientes,SHEETS_GIDS.clientes,'clientes');
+    if(cliRows&&cliRows.length>1){
+      var ch=cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var iData=ch.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
+      var iCloser=ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
+      var iSDR=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h.includes('SDR');});
+      var iOri=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
+      cliRows.slice(1).forEach(function(row){
+        var closer=normCloserName((row[iCloser]||'').trim());
+        if(closer!=='Gustavo') return;
+        var sdr=normCloserName((iSDR>=0?row[iSDR]||'':'').trim());
+        var ori=(iOri>=0?row[iOri]||'':'').toLowerCase();
+        if(sdr==='Gustavo'&&(ori.includes('cold')||ori.includes('call'))) return;
+        var dt=parseBRDate(row[iData]||'');
+        var ms=dateToMonthStr(dt);
+        if(counts.hasOwnProperty(ms)) counts[ms]++;
+      });
+    }
+  }catch(e){console.warn('metaHistory closer',e);}
+  return meses.map(function(ms){var c=counts[ms];return{ms:ms,label:_msLabel(ms),count:c,hit:c>=lv.meta,meta:lv.meta};});
+}
+async function calcSDRMetaHistory(nivelIdx){
+  var lv=SDR_LEVELS[nivelIdx];
+  if(!lv||lv.promoMeses===0) return null;
+  var meses=_lastNMonths(lv.promoJanela);
+  var counts={};
+  meses.forEach(function(ms){counts[ms]=0;});
+  try{
+    var reunRows=await fetchSheetCached(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes,'reunioes');
+    if(reunRows&&reunRows.length>1){
+      var rh=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var iSDR=rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
+      var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
+      var iOri=rh.findIndex(function(h){return h.includes('ORIGEM');});
+      reunRows.slice(1).forEach(function(row){
+        var sdr=(row[iSDR]||'').trim().toUpperCase();
+        if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
+        var ori=(iOri>=0?row[iOri]||'':'').trim().toUpperCase();
+        if(ori.includes('SOCIAL')) return;
+        var dt=parseBRDate(row[iData]||'');
+        var ms=dateToMonthStr(dt);
+        if(counts.hasOwnProperty(ms)) counts[ms]++;
+      });
+    }
+  }catch(e){console.warn('metaHistory sdr',e);}
+  return meses.map(function(ms){var c=counts[ms];return{ms:ms,label:_msLabel(ms),count:c,hit:c>=lv.meta,meta:lv.meta};});
+}
+function buildPromoProgressHtml(history,lv,currentMonth){
+  if(!history||history.length===0) return '';
+  var hitCount=history.filter(function(m){return m.hit;}).length;
+  var eligible=hitCount>=lv.promoMeses;
+  var badgeCol=eligible?'#4ade80':'var(--amber)';
+  var monthsHtml=history.map(function(m){
+    var isCurrent=m.ms===currentMonth;
+    var pct=Math.min(100,m.meta>0?Math.round(m.count/m.meta*100):0);
+    var barCol=m.hit?'#4ade80':'#ef4444';
+    return '<div style="text-align:center;flex:1;min-width:54px;padding:8px 6px;background:rgba(0,0,0,'+(isCurrent?'0.4':'0.2')+');border-radius:8px;border:1px solid rgba(255,255,255,'+(isCurrent?'0.15':'0.05')+');">'+
+      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:10px;color:'+(isCurrent?'var(--cyan)':'var(--muted)')+';margin-bottom:4px;font-weight:'+(isCurrent?'700':'400')+';">'+esc(m.label)+(isCurrent?' ◀':'')+'</div>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;color:'+(m.hit?'#4ade80':'#ef4444')+';">'+m.count+'</div>'+
+      '<div style="font-size:9px;color:var(--muted);margin-bottom:6px;">meta '+m.meta+'</div>'+
+      '<div style="height:5px;border-radius:99px;background:rgba(255,255,255,0.08);margin-bottom:5px;">'+
+        '<div style="height:100%;border-radius:99px;width:'+pct+'%;background:'+barCol+';"></div>'+
+      '</div>'+
+      '<div style="font-size:15px;line-height:1;">'+(m.hit?'✅':'❌')+'</div>'+
+    '</div>';
+  }).join('');
+  var remaining=lv.promoMeses-hitCount;
+  var statusText=eligible?'🚀 Elegível para promoção!':('Falta '+remaining+' mês'+(remaining>1?'es':'')+' batendo meta');
+  return '<div style="background:rgba(6,182,212,0.05);border:1.5px solid rgba(6,182,212,0.2);border-radius:12px;padding:16px 20px;margin-top:14px;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'+
+      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);">PROGRESSÃO PARA PROMOÇÃO</div>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:16px;color:'+badgeCol+';">'+hitCount+'/'+lv.promoMeses+' meses &nbsp;·&nbsp; '+statusText+'</div>'+
+    '</div>'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;color:var(--muted);margin-bottom:10px;">Critério: '+esc(lv.promo)+'</div>'+
+    '<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">'+monthsHtml+'</div>'+
+  '</div>';
+}
+
 // Month selector helper
 function monthOptions(selectedMonth){
   var opts = '';
@@ -10170,11 +10536,14 @@ function buildCloserTable(){
     {name:"Pleno - acima de R$30k faturamento", col:"linear-gradient(135deg,#0B6E56,#1A8A68)", rows:[3,4,5]},
     {name:"Senior - High Ticket", col:"linear-gradient(135deg,#2D1160,#4A1C7A)", rows:[6,7,8]}
   ];
-  var thead = "<table><thead><tr><th>Nivel</th><th>Meta/mes</th><th>Base</th><th>Min. Garantido</th><th>Bonus Meta</th><th>Comm. Mensal</th><th>Comm. Trim.</th><th>Comm. Sem.</th><th>Ativa na</th></tr></thead><tbody>";
+  var thead = "<table><thead><tr><th>Nivel</th><th>Meta/mes</th><th>Base</th><th>Min. Garantido</th><th>Bonus Meta</th><th>Comm. Mensal</th><th>Comm. Trim.</th><th>Comm. Sem.</th><th>Ativa na</th><th>Progressão →</th></tr></thead><tbody>";
   tiers.forEach(function(t){
-    rows += "<tr><td colspan='9' style='background:"+t.col+";color:white;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;'>"+t.name+"</td></tr>";
+    rows += "<tr><td colspan='10' style='background:"+t.col+";color:white;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;'>"+t.name+"</td></tr>";
     t.rows.forEach(function(ri){
       var l = CLOSER_LEVELS[ri];
+      var promoHtml = l.promoMeses===0
+        ? "<span style='color:var(--amber);font-size:11px;'>🏆 Topo</span>"
+        : "<span style='color:var(--cyan);font-size:11px;'>"+l.promo+"</span>";
       rows += "<tr><td style='font-weight:700;color:"+l.tiercol+";'>"+l.tier+" "+l.n+"</td>"+
         "<td style='font-weight:700;color:"+l.tiercol+";'>"+l.meta+"</td>"+
         "<td>R$"+l.base.toLocaleString("pt-BR")+"</td>"+
@@ -10183,7 +10552,8 @@ function buildCloserTable(){
         "<td style='color:var(--purple3);'>R$"+l.commMens.toLocaleString("pt-BR")+"</td>"+
         "<td style='color:var(--cyan);'>R$"+l.commTrim.toLocaleString("pt-BR")+"</td>"+
         "<td style='color:var(--green);'>R$"+l.commSem.toLocaleString("pt-BR")+"</td>"+
-        "<td style='color:var(--muted);font-size:12px;'>"+l.ativa+"o contrato</td></tr>";
+        "<td style='color:var(--muted);font-size:12px;'>"+l.ativa+"o contrato</td>"+
+        "<td style='font-size:11px;'>"+promoHtml+"</td></tr>";
     });
   });
   return '<div class="cb"><div class="cb-hd"><div class="cb-title">Tabela Completa - Closer</div></div><div style="overflow-x:auto;">'+thead+rows+"</tbody></table></div></div>";
@@ -10196,11 +10566,14 @@ function buildSDRTable(){
     {name:"SDR Pleno", col:"linear-gradient(135deg,#0B6E56,#1A8A68)", rows:[3,4,5]},
     {name:"SDR Senior", col:"linear-gradient(135deg,#2D1160,#4A1C7A)", rows:[6,7,8]}
   ];
-  var thead = "<table><thead><tr><th>Nivel</th><th>Meta ag./mes</th><th>Base</th><th>Min. Garantido</th><th>Bonus Meta</th><th>Acelerador</th><th>Comm/venda</th><th>Ativa na</th><th>Incent. Reuniao</th></tr></thead><tbody>";
+  var thead = "<table><thead><tr><th>Nivel</th><th>Meta ag./mes</th><th>Base</th><th>Min. Garantido</th><th>Bonus Meta</th><th>Acelerador</th><th>Comm/venda</th><th>Ativa na</th><th>Incent. Reuniao</th><th>Progressão →</th></tr></thead><tbody>";
   tiers.forEach(function(t){
-    rows += "<tr><td colspan='9' style='background:"+t.col+";color:white;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;'>"+t.name+"</td></tr>";
+    rows += "<tr><td colspan='10' style='background:"+t.col+";color:white;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;'>"+t.name+"</td></tr>";
     t.rows.forEach(function(ri){
       var l = SDR_LEVELS[ri];
+      var promoHtml = l.promoMeses===0
+        ? "<span style='color:var(--amber);font-size:11px;'>🏆 Topo</span>"
+        : "<span style='color:var(--cyan);font-size:11px;'>"+l.promo+"</span>";
       rows += "<tr><td style='font-weight:700;color:"+l.tiercol+";'>"+l.tier+" "+l.n+"</td>"+
         "<td style='font-weight:700;color:"+l.tiercol+";'>"+l.meta+" ag.</td>"+
         "<td>R$"+l.base.toLocaleString("pt-BR")+"</td>"+
@@ -10209,7 +10582,8 @@ function buildSDRTable(){
         "<td style='color:var(--amber);'>+R$"+l.acel+"/ag.</td>"+
         "<td style='color:var(--purple3);'>R$"+l.commVenda+"</td>"+
         "<td style='color:var(--muted);font-size:12px;'>"+l.threshold+"a venda</td>"+
-        "<td style='color:var(--cyan);'>R$"+l.incentivReun+"</td></tr>";
+        "<td style='color:var(--cyan);'>R$"+l.incentivReun+"</td>"+
+        "<td style='font-size:11px;'>"+promoHtml+"</td></tr>";
     });
   });
   return '<div class="cb"><div class="cb-hd"><div class="cb-title">Tabela Completa - SDR</div></div><div style="overflow-x:auto;">'+thead+rows+"</tbody></table></div></div>";
@@ -10309,6 +10683,16 @@ function renderCloserCarreira(){
           '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:32px;color:var(--white);line-height:1;">Closer '+lv.tier+' '+lv.n+'</div>'+
           '<div style="font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:4px;">Meta: '+lv.meta+' contratos/mês · Base: R$'+lv.base.toLocaleString('pt-BR')+'</div>'+
         '</div>'+
+        (lv.promoMeses>0?
+          '<div style="background:rgba(6,182,212,0.08);border:1.5px solid rgba(6,182,212,0.3);border-radius:12px;padding:16px 24px;min-width:220px;">'+
+            '<div class="m-lbl" style="color:var(--cyan);">Para avançar ao próximo nível</div>'+
+            '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:18px;font-weight:700;color:var(--white);margin-top:6px;">'+lv.promo+'</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Meta atual: '+lv.meta+' contratos/mês</div>'+
+          '</div>'
+        :'<div style="background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,0.3);border-radius:12px;padding:16px 24px;">'+
+            '<div class="m-lbl" style="color:var(--amber);">Posição</div>'+
+            '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:18px;font-weight:700;color:var(--amber);margin-top:6px;">🏆 Topo da Carreira</div>'+
+          '</div>')+
       '</div>'+
     '</div>'+
     buildAutoCalcCloser('closer', nivelIdx, month)+
@@ -10335,6 +10719,16 @@ function renderSDRCarreira(){
           '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:32px;color:var(--white);line-height:1;">SDR '+lv.tier+' '+lv.n+'</div>'+
           '<div style="font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:4px;">Meta: '+lv.meta+' agendamentos/mês · Base: R$'+lv.base.toLocaleString('pt-BR')+'</div>'+
         '</div>'+
+        (lv.promoMeses>0?
+          '<div style="background:rgba(6,182,212,0.08);border:1.5px solid rgba(6,182,212,0.3);border-radius:12px;padding:16px 24px;min-width:220px;">'+
+            '<div class="m-lbl" style="color:var(--cyan);">Para avançar ao próximo nível</div>'+
+            '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:18px;font-weight:700;color:var(--white);margin-top:6px;">'+lv.promo+'</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Meta atual: '+lv.meta+' agendamentos/mês</div>'+
+          '</div>'
+        :'<div style="background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,0.3);border-radius:12px;padding:16px 24px;">'+
+            '<div class="m-lbl" style="color:var(--amber);">Posição</div>'+
+            '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:18px;font-weight:700;color:var(--amber);margin-top:6px;">🏆 Topo da Carreira</div>'+
+          '</div>')+
       '</div>'+
     '</div>'+
     buildAutoCalcSDR('sdr', nivelIdx, month)+
@@ -10388,12 +10782,19 @@ async function triggerCloserCalc(mode){
     resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Google desconectado. Reconecte em <b>Configuracoes - Google Calendar</b> e tente novamente.</div>';
     return;
   }
-  resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados da planilha...</div>';
-  _sheetDataCache = {}; _sheetsMeta = {}; // force refresh
+  resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados...</div>';
+  _sheetDataCache = {}; _sheetsMeta = {}; _contratosCache = null; // force refresh
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = mode==='gestor' ? (_careerLevels.gustavo||0) : (_careerLevels.gustavo||0);
   var r;
-  try{ r = await calcCloserFromSheets(nivelIdx, month); }
+  try{
+    var allContratos = await loadContratos();
+    if(allContratos.length > 0){
+      r = await calcCloserFromFirebase(nivelIdx, month);
+    } else {
+      r = await calcCloserFromSheets(nivelIdx, month);
+    }
+  }
   catch(e){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e.message+'</div>'; return; }
   if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = CLOSER_LEVELS[nivelIdx];
@@ -10434,6 +10835,13 @@ async function triggerCloserCalc(mode){
           r._ccDebug.map(function(l){return esc(l);}).join('\n')+
         '</div></details>'
       :'');
+  // Meta progression
+  if(lv.promoMeses>0){
+    try{
+      var hist = await calcCloserMetaHistory(nivelIdx);
+      resEl.innerHTML += buildPromoProgressHtml(hist, lv, month);
+    }catch(e){console.warn('closer progression',e);}
+  }
 }
 
 async function triggerSDRCalc(mode){
@@ -10444,12 +10852,19 @@ async function triggerSDRCalc(mode){
     resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Google desconectado. Reconecte em <b>Configuracoes - Google Calendar</b> e tente novamente.</div>';
     return;
   }
-  resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados da planilha...</div>';
-  _sheetDataCache = {}; _sheetsMeta = {};
+  resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados...</div>';
+  _sheetDataCache = {}; _sheetsMeta = {}; _contratosCache = null;
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = _careerLevels.joao||0;
   var r;
-  try{ r = await calcSDRFromSheets(nivelIdx, month); }
+  try{
+    var allContratos = await loadContratos();
+    if(allContratos.length > 0){
+      r = await calcSDRFromFirebase(nivelIdx, month);
+    } else {
+      r = await calcSDRFromSheets(nivelIdx, month);
+    }
+  }
   catch(e){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e.message+'</div>'; return; }
   if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = SDR_LEVELS[nivelIdx];
@@ -10488,8 +10903,295 @@ async function triggerSDRCalc(mode){
         '<div style="text-align:right;font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">SDR R$'+r.totalSDR.toLocaleString('pt-BR')+' + SS R$'+r.ssTotal.toFixed(0)+'</div>'+
       '</div>':
       '');
+  // Meta progression
+  if(lv.promoMeses>0){
+    try{
+      var hist = await calcSDRMetaHistory(nivelIdx);
+      resEl.innerHTML += buildPromoProgressHtml(hist, lv, month);
+    }catch(e){console.warn('sdr progression',e);}
+  }
 }
 
+
+// ===== CONTRATOS PAGE =====
+function renderContratos(){
+  return '<div class="page active">'+
+    '<div class="page-header"><div>'+
+      '<div class="page-title">Contratos</div>'+
+      '<div class="page-sub">Base de dados Firebase · Cálculo automático</div>'+
+    '</div></div>'+
+    '<div id="contratos-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando...</div>'+
+  '</div>';
+}
+
+async function loadContratosPage(){
+  var el=document.getElementById('contratos-content');
+  if(!el) return;
+  try{
+    var contratos=await loadContratos(true);
+    el.innerHTML=buildContratosHTML(contratos);
+    setTimeout(filtrarContratos,0); // populate table
+  }catch(e){
+    el.innerHTML='<div style="color:var(--red);">Erro: '+esc(e.message)+'</div>';
+  }
+}
+
+function buildContratosHTML(contratos){
+  var now=new Date();
+  var ativos=contratos.filter(function(c){return c.ativo!==false&&!c.dataCancelamento;});
+  var cancelados=contratos.filter(function(c){return c.ativo===false||c.dataCancelamento;});
+  var mrrTotal=ativos.reduce(function(s,c){return s+(c.valorMes||0);},0);
+
+  // Summary cards
+  var cards='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px;">'+
+    '<div class="bonus-card" style="padding:14px;"><div class="m-lbl">Contratos Ativos</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:32px;color:var(--green);">'+ativos.length+'</div></div>'+
+    '<div class="bonus-card" style="padding:14px;"><div class="m-lbl">MRR Total</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:var(--purple3);">R$'+mrrTotal.toLocaleString('pt-BR')+'</div></div>'+
+    '<div class="bonus-card" style="padding:14px;"><div class="m-lbl">Cancelados</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:32px;color:var(--red);">'+cancelados.length+'</div></div>'+
+    '<div class="bonus-card" style="padding:14px;"><div class="m-lbl">Total base</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:var(--white);">'+contratos.length+'</div></div>'+
+  '</div>';
+
+  // Toolbar
+  var toolbar='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">'+
+    '<button class="btn btn-primary" onclick="abrirModalContrato(null)"><i class="ti ti-plus"></i> Novo Contrato</button>'+
+    (contratos.length===0?
+      '<button class="btn btn-outline" style="border-color:var(--amber);color:var(--amber);" onclick="runImportContratos()"><i class="ti ti-download"></i> Importar da Planilha</button>':
+      '<button class="btn btn-outline" style="font-size:11px;color:var(--muted);" onclick="runImportContratos(true)"><i class="ti ti-refresh"></i> Re-importar</button>')+
+    '<select id="ct-filtro-status" onchange="filtrarContratos()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:13px;outline:none;">'+
+      '<option value="ativos">Ativos</option>'+
+      '<option value="cancelados">Cancelados</option>'+
+      '<option value="todos">Todos</option>'+
+    '</select>'+
+    '<input id="ct-busca" type="text" placeholder="Buscar cliente..." oninput="filtrarContratos()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:13px;outline:none;width:200px;">'+
+  '</div>';
+
+  // Table
+  var tableHead='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
+    '<thead><tr style="border-bottom:1px solid var(--border);">'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:left;">CLIENTE</th>'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:left;">PLANO</th>'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:right;">MRR</th>'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:left;">CLOSER</th>'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:left;">SDR</th>'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:left;">INÍCIO</th>'+
+      '<th style="padding:8px 10px;font-family:var(--font-bc),sans-serif;font-size:11px;letter-spacing:1px;color:var(--muted);text-align:left;">STATUS</th>'+
+      '<th style="padding:8px 10px;"></th>'+
+    '</tr></thead>'+
+    '<tbody id="ct-tbody"></tbody></table></div>';
+
+  // Store for filtering
+  window._allContratos = contratos;
+
+  return cards + toolbar + tableHead + buildContratosModal();
+}
+
+function filtrarContratos(){
+  var status=document.getElementById('ct-filtro-status').value;
+  var busca=(document.getElementById('ct-busca').value||'').toLowerCase();
+  var list=(window._allContratos||[]).filter(function(c){
+    var ativo=c.ativo!==false&&!c.dataCancelamento;
+    if(status==='ativos'&&!ativo) return false;
+    if(status==='cancelados'&&ativo) return false;
+    if(busca&&!(c.cliente||'').toLowerCase().includes(busca)) return false;
+    return true;
+  });
+  list.sort(function(a,b){return (b.dataInicio||'').localeCompare(a.dataInicio||'');});
+  var tbody=document.getElementById('ct-tbody');
+  if(!tbody) return;
+  tbody.innerHTML=list.map(function(c){
+    var ativo=c.ativo!==false&&!c.dataCancelamento;
+    var stLabel=ativo?'Ativo':'Cancelado';
+    var stCol=ativo?'var(--green)':'var(--red)';
+    var planoCurto=(c.plano||'').replace(/Plano\s+\d+\s*-?\s*/i,'').replace(/Plano\s+Premium\s*-?\s*/i,'');
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);" id="ct-row-'+c.id+'">'+
+      '<td style="padding:10px;font-weight:600;color:var(--white);">'+esc(c.cliente)+'</td>'+
+      '<td style="padding:10px;font-size:12px;color:var(--muted);">'+esc(planoCurto||c.plano||'—')+'</td>'+
+      '<td style="padding:10px;font-family:\'Bebas Neue\',sans-serif;font-size:16px;color:var(--purple3);text-align:right;">R$'+(c.valorMes||0).toLocaleString('pt-BR')+'</td>'+
+      '<td style="padding:10px;font-size:13px;">'+esc(c.closer||'—')+'</td>'+
+      '<td style="padding:10px;font-size:13px;">'+esc(c.sdr||'—')+'</td>'+
+      '<td style="padding:10px;font-size:12px;color:var(--muted);">'+(c.dataInicio?c.dataInicio.split('-').reverse().join('/'):'—')+'</td>'+
+      '<td style="padding:10px;"><span style="font-family:var(--font-bc),sans-serif;font-size:11px;padding:3px 8px;border-radius:6px;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span>'+
+        (c.dataCancelamento?'<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+(c.dataCancelamento.split('-').reverse().join('/'))+'</div>':'')+
+      '</td>'+
+      '<td style="padding:10px;white-space:nowrap;">'+
+        '<button class="btn btn-edit" onclick="abrirModalContrato(\''+c.id+'\')" title="Editar"><i class="ti ti-edit"></i></button>'+
+        (ativo?' <button class="btn btn-outline" style="color:var(--red);border-color:rgba(239,68,68,0.4);font-size:11px;padding:5px 10px;" onclick="abrirModalCancelar(\''+c.id+'\')" title="Cancelar"><i class="ti ti-x"></i></button>':'')+
+      '</td>'+
+    '</tr>';
+  }).join('');
+  if(!list.length) tbody.innerHTML='<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted);font-family:var(--font-bc),sans-serif;">Nenhum contrato encontrado</td></tr>';
+}
+
+function buildContratosModal(){
+  var gestores=['Arthur G.','Yan Moreira','João Victor','Gabriel C.','Elias Julio','Fernando R.','Diego Torres','Raian Reis'];
+  var origens=['Orgânico','Indicação','Tráfego Pago','Disparo','Cold Call','Social Selling'];
+  return '<div id="modal-contrato" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9000;display:flex;align-items:center;justify-content:center;" onclick="if(event.target===this)fecharModalContrato()">'+
+    '<div style="background:var(--bg1);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;" onclick="event.stopPropagation()">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'+
+        '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;" id="modal-ct-title">Novo Contrato</div>'+
+        '<button class="btn btn-edit" onclick="fecharModalContrato()"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<input type="hidden" id="ct-id">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+        '<div style="grid-column:1/-1;"><label class="f-label">Cliente</label>'+
+          '<input id="ct-cliente" type="text" placeholder="Nome do cliente" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+        '<div><label class="f-label">Data de início</label>'+
+          '<input id="ct-dataInicio" type="date" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+        '<div><label class="f-label">Plano</label>'+
+          '<select id="ct-plano" onchange="ctAutoValor()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;">'+
+            '<option value="Plano 3 - Mensal">Plano 3 · Mensal</option>'+
+            '<option value="Plano 3 - Trimestral">Plano 3 · Trimestral</option>'+
+            '<option value="Plano Premium - Semestral">Plano Premium · Semestral</option>'+
+            '<option value="Plano 2 - Mensal">Plano 2 · Mensal</option>'+
+            '<option value="Plano 1 - Mensal">Plano 1 · Mensal</option>'+
+          '</select></div>'+
+        '<div><label class="f-label">Valor/mês (MRR)</label>'+
+          '<input id="ct-valorMes" type="number" placeholder="1500" oninput="ctAutoValor()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+        '<div><label class="f-label">Valor vendido (TCV)</label>'+
+          '<input id="ct-valorVendido" type="number" placeholder="auto" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+        '<div><label class="f-label">Gestor</label>'+
+          '<select id="ct-gestor" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;">'+
+            gestores.map(function(g){return'<option>'+g+'</option>';}).join('')+
+          '</select></div>'+
+        '<div><label class="f-label">Origem</label>'+
+          '<select id="ct-origem" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;">'+
+            origens.map(function(o){return'<option>'+o+'</option>';}).join('')+
+          '</select></div>'+
+        '<div><label class="f-label">Closer</label>'+
+          '<input id="ct-closer" type="text" placeholder="Lucas" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+        '<div><label class="f-label">SDR</label>'+
+          '<input id="ct-sdr" type="text" placeholder="João" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+      '</div>'+
+      '<button class="btn btn-primary" style="width:100%;margin-top:20px;font-size:15px;padding:12px;" onclick="salvarContrato()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>'+
+  '</div>'+
+  '<div id="modal-cancelar-ct" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9000;align-items:center;justify-content:center;" onclick="if(event.target===this)fecharModalCancelar()">'+
+    '<div style="background:var(--bg1);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(420px,95vw);" onclick="event.stopPropagation()">'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--red);margin-bottom:16px;">Cancelar Contrato</div>'+
+      '<input type="hidden" id="cancel-ct-id">'+
+      '<div style="margin-bottom:12px;"><label class="f-label">Data de cancelamento</label>'+
+        '<input id="cancel-ct-data" type="date" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
+      '<div style="margin-bottom:20px;"><label class="f-label">Motivo</label>'+
+        '<select id="cancel-ct-motivo" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;">'+
+          '<option>Não renovou</option><option>Falta de dinheiro</option><option>Falta de Resultado</option>'+
+          '<option>Internalização de processos</option><option>Incompatibilidade de Ideias</option>'+
+          '<option>Erros internos</option><option>Faliu/fechou</option><option>Outro</option>'+
+        '</select></div>'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button class="btn btn-outline" style="flex:1;" onclick="fecharModalCancelar()">Voltar</button>'+
+        '<button class="btn" style="flex:1;background:rgba(239,68,68,0.2);color:var(--red);border-color:rgba(239,68,68,0.4);" onclick="confirmarCancelamento()"><i class="ti ti-x"></i> Confirmar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+function ctAutoValor(){
+  var plano=(document.getElementById('ct-plano').value||'').toUpperCase();
+  var dur=plano.includes('SEMESTRAL')?6:plano.includes('TRIMESTRAL')?3:1;
+  var mrr=parseFloat(document.getElementById('ct-valorMes').value)||0;
+  if(mrr) document.getElementById('ct-valorVendido').value=Math.round(mrr*dur);
+}
+
+function abrirModalContrato(id){
+  var modal=document.getElementById('modal-contrato');
+  if(!modal) return;
+  modal.style.display='flex';
+  document.getElementById('ct-id').value=id||'';
+  document.getElementById('modal-ct-title').textContent=id?'Editar Contrato':'Novo Contrato';
+  if(id){
+    var c=(window._allContratos||[]).find(function(x){return x.id===id;});
+    if(c){
+      document.getElementById('ct-cliente').value=c.cliente||'';
+      document.getElementById('ct-dataInicio').value=c.dataInicio||'';
+      document.getElementById('ct-plano').value=c.plano||'Plano 3 - Mensal';
+      document.getElementById('ct-valorMes').value=c.valorMes||'';
+      document.getElementById('ct-valorVendido').value=c.valorVendido||'';
+      document.getElementById('ct-gestor').value=c.gestor||'';
+      document.getElementById('ct-origem').value=c.origem||'Orgânico';
+      document.getElementById('ct-closer').value=c.closer||'';
+      document.getElementById('ct-sdr').value=c.sdr||'';
+    }
+  } else {
+    document.getElementById('ct-cliente').value='';
+    document.getElementById('ct-dataInicio').value=new Date().toISOString().split('T')[0];
+    document.getElementById('ct-valorMes').value='';
+    document.getElementById('ct-valorVendido').value='';
+    document.getElementById('ct-closer').value='Lucas';
+    document.getElementById('ct-sdr').value='';
+  }
+}
+
+function fecharModalContrato(){
+  var m=document.getElementById('modal-contrato');
+  if(m) m.style.display='none';
+}
+
+async function salvarContrato(){
+  var id=document.getElementById('ct-id').value||null;
+  var plano=document.getElementById('ct-plano').value;
+  var pu=plano.toUpperCase();
+  var planoDuracao=pu.includes('SEMESTRAL')?6:pu.includes('TRIMESTRAL')?3:1;
+  var valorMes=parseFloat(document.getElementById('ct-valorMes').value)||0;
+  var valorVendido=parseFloat(document.getElementById('ct-valorVendido').value)||valorMes*planoDuracao;
+  var data={
+    cliente:document.getElementById('ct-cliente').value.trim(),
+    dataInicio:document.getElementById('ct-dataInicio').value,
+    plano:plano,
+    planoDuracao:planoDuracao,
+    valorMes:valorMes,
+    valorVendido:valorVendido,
+    gestor:document.getElementById('ct-gestor').value,
+    origem:document.getElementById('ct-origem').value,
+    closer:document.getElementById('ct-closer').value.trim(),
+    sdr:document.getElementById('ct-sdr').value.trim(),
+    ativo:true
+  };
+  if(!data.cliente||!data.dataInicio||!data.valorMes){
+    showSheetToast('Preencha cliente, data e valor.',true); return;
+  }
+  try{
+    await saveContrato(id,data);
+    fecharModalContrato();
+    showSheetToast(id?'Contrato atualizado!':'Contrato criado!',false);
+    await loadContratosPage();
+  }catch(e){ showSheetToast('Erro: '+e.message,true); }
+}
+
+function abrirModalCancelar(id){
+  var modal=document.getElementById('modal-cancelar-ct');
+  if(!modal) return;
+  modal.style.display='flex';
+  document.getElementById('cancel-ct-id').value=id;
+  document.getElementById('cancel-ct-data').value=new Date().toISOString().split('T')[0];
+}
+function fecharModalCancelar(){
+  var m=document.getElementById('modal-cancelar-ct');
+  if(m) m.style.display='none';
+}
+async function confirmarCancelamento(){
+  var id=document.getElementById('cancel-ct-id').value;
+  var data=document.getElementById('cancel-ct-data').value;
+  var motivo=document.getElementById('cancel-ct-motivo').value;
+  if(!id||!data){ showSheetToast('Preencha a data.',true); return; }
+  try{
+    await cancelarContrato(id,motivo,data);
+    fecharModalCancelar();
+    showSheetToast('Contrato cancelado.',false);
+    await loadContratosPage();
+  }catch(e){ showSheetToast('Erro: '+e.message,true); }
+}
+
+async function runImportContratos(reImport){
+  if(!reImport&&!confirm('Importar todos os contratos da planilha para o Firebase? Isso não duplica registros existentes mas importa tudo do zero.')) return;
+  if(reImport&&!confirm('Re-importar apagará os dados existentes e re-carregará da planilha. Confirma?')) return;
+  showSheetToast('Importando...',false);
+  try{
+    if(reImport){ await fbDb.ref('contratos').remove(); _contratosCache=null; }
+    if(!isGcalConnected()){ showSheetToast('Google desconectado. Conecte primeiro.',true); return; }
+    var count=await importContratosFromSheet();
+    showSheetToast(count+' contratos importados com sucesso!',false);
+    await loadContratosPage();
+  }catch(e){ showSheetToast('Erro ao importar: '+e.message,true); }
+}
 
 window.addEventListener('load', function(){
   initFirebase();
