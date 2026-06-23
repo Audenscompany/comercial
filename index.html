@@ -9376,7 +9376,7 @@ function renderReunioesPersonal(){
       '<div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-event" style="color:var(--amber);margin-right:6px;"></i>Reuniões do Dia</div>'+
       '<div style="display:flex;align-items:center;gap:10px;">'+_navBtns+'<span class="badge b-amber">'+reunHoje.length+'</span></div></div>'+
   (reunHoje.length===0?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Nenhuma reunião neste dia</div>':(
-      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
+      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Horário</th><th>Status</th><th>Origem</th><th>Responsável</th><th>Meet</th><th></th></tr></thead><tbody>'+
       reunHoje.map(function(m){
         var st=getMeetingStatus(m);
         var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':st==='reagendado'?'Reagendado':'Agendada';
@@ -9391,11 +9391,20 @@ function renderReunioesPersonal(){
         var reagCnt=m.reagendamentos||0;
         var reagBadge=reagCnt>0?'<span style="font-size:10px;color:'+(reagCnt>=2?'var(--red)':'var(--amber)')+';display:block;margin-top:2px;">↩'+reagCnt+'/2</span>':'';
         var canReagendar = st==='pending'||st==='reagendado';
+        var origemRaw=(m.origem||'').toLowerCase();
+        var origemLabel=m.origem||'—';
+        var origemCol=origemRaw.includes('cold')||origemRaw.includes('ligac')?'var(--amber)':
+                      origemRaw.includes('social')?'var(--cyan)':
+                      origemRaw.includes('traf')?'var(--purple3)':
+                      origemRaw.includes('indic')?'#4ade80':
+                      origemRaw.includes('organ')?'#4ade80':
+                      'var(--muted)';
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
           '<td>'+telHtml+'</td>'+
           '<td style="color:var(--amber);font-weight:700;">'+hora+'</td>'+
           '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span>'+reagBadge+'</td>'+
+          '<td><span style="font-size:11px;font-family:var(--font-bc),sans-serif;color:'+origemCol+';">'+esc(origemLabel)+'</span></td>'+
           '<td>'+(m.responsavel||'—')+'</td>'+
           '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;"><i class="ti ti-video"></i> Abrir</a>':'—')+'</td>'+
           '<td style="white-space:nowrap;">'+
@@ -10105,12 +10114,12 @@ async function calcCloserFromSheets(nivelIdx, month){
         if(!rowMonth2) return;
         var closerNorm2 = normCloserName(closer2);
         if(closerNorm2==='Gustavo' && rowMonth2===month){
-          // Regra: se Gustavo foi SDR (cold call) E closer no mesmo contrato,
-          // ele NÃO conta como contrato de closer — só ganha 25% como cold call SDR.
+          // Regra: qualquer contrato de cold call (origem) não conta como closer,
+          // Gustavo recebe 25% de MRR independente de quem fez a venda.
           var sdrC2=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
           var oriC2=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
-          var isGustavoSdrColdCall = normCloserName(sdrC2)==='Gustavo' && (oriC2.includes('cold')||oriC2.includes('call'));
-          if(isGustavoSdrColdCall) return; // skip: comissão vai pelo cold call 25%, não pelo closer
+          var isColdCall2 = oriC2.includes('cold')||oriC2.includes('call');
+          if(isColdCall2) return; // skip: comissão vai pelo cold call 25%, não pelo closer
           result.contratos++;
           var plano = (row[iPlano]||'').toUpperCase();
           if(plano.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
@@ -10179,10 +10188,11 @@ async function calcCloserFromSheets(nivelIdx, month){
         if(hasGustavo||hasCold){
           _ccDebugLines.push('Linha '+(row[1]||'?')+': sdr="'+sdrC+'" closer="'+closerC2+'" ori="'+oriC+'" mes='+monthC+' G='+hasGustavo+' CC='+hasCold+' M='+hasMonth+' val='+row[2]);
         }
-        if(hasGustavo && hasCold && hasMonth){
+        if(hasCold && hasMonth){
+          // Todos os contratos cold call → Gustavo recebe 25% independente de quem fechou
           var valorMes=parseMoney(row[2]||'');
           if(!valorMes && ciValorVendido>=0) valorMes=parseMoney(row[ciValorVendido]||'');
-          _ccDebugLines.push('→ CONTADO: '+row[1]+' R$'+valorMes);
+          _ccDebugLines.push('→ CONTADO CC: '+row[1]+' R$'+valorMes);
           mrrColdCall+=valorMes;
         }
       });
@@ -10345,7 +10355,8 @@ async function calcCloserFromFirebase(nivelIdx, month){
       var closerC=normCloserName((c.closer||'').trim());
       var sdrC=normCloserName((c.sdr||'').trim());
       var oriC=(c.origem||'').toLowerCase();
-      var isColdCall=sdrC==='Gustavo'&&(oriC.includes('cold')||oriC.includes('call'));
+      // Qualquer contrato cold call → Gustavo recebe 25% independente de quem fechou
+      var isColdCall=oriC.includes('cold')||oriC.includes('call');
       if(isColdCall){
         mrrColdCall+=c.valorMes||0;
       } else if(closerC==='Gustavo'){
@@ -10545,7 +10556,7 @@ function buildPromoProgressHtml(history,lv,currentMonth){
   }).join('');
   var remaining=lv.promoMeses-hitCount;
   var statusText=eligible?'🚀 Elegível para promoção!':('Falta '+remaining+' mês'+(remaining>1?'es':'')+' batendo meta');
-  return '<div style="background:rgba(6,182,212,0.05);border:1.5px solid rgba(6,182,212,0.2);border-radius:12px;padding:16px 20px;margin-top:14px;">'+
+  return '<div class="audens-promo-progress" style="background:rgba(6,182,212,0.05);border:1.5px solid rgba(6,182,212,0.2);border-radius:12px;padding:16px 20px;margin-top:14px;">'+
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'+
       '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);">PROGRESSÃO PARA PROMOÇÃO</div>'+
       '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:16px;color:'+badgeCol+';">'+hitCount+'/'+lv.promoMeses+' meses &nbsp;·&nbsp; '+statusText+'</div>'+
@@ -10879,11 +10890,13 @@ async function triggerCloserCalc(mode){
           r._ccDebug.map(function(l){return esc(l);}).join('\n')+
         '</div></details>'
       :'');
-  // Meta progression
+  // Meta progression (usa DOM insert para evitar duplicata em chamadas paralelas)
   if(lv.promoMeses>0){
     try{
       var hist = await calcCloserMetaHistory(nivelIdx);
-      resEl.innerHTML += buildPromoProgressHtml(hist, lv, month);
+      var _oldCP = resEl.querySelector('.audens-promo-progress');
+      if(_oldCP) _oldCP.remove();
+      resEl.insertAdjacentHTML('beforeend', buildPromoProgressHtml(hist, lv, month));
     }catch(e){console.warn('closer progression',e);}
   }
 }
@@ -10902,8 +10915,8 @@ async function triggerSDRCalc(mode){
   var nivelIdx = _careerLevels.joao||0;
   var r;
   try{
-    var allContratos = await loadContratos();
-    if(allContratos.length > 0){
+    var allContratosSDR = await loadContratos();
+    if(allContratosSDR.length > 0){
       r = await calcSDRFromFirebase(nivelIdx, month);
     } else {
       r = await calcSDRFromSheets(nivelIdx, month);
@@ -10947,11 +10960,13 @@ async function triggerSDRCalc(mode){
         '<div style="text-align:right;font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">SDR R$'+r.totalSDR.toLocaleString('pt-BR')+' + SS R$'+r.ssTotal.toFixed(0)+'</div>'+
       '</div>':
       '');
-  // Meta progression
+  // Meta progression (usa DOM insert para evitar duplicata em chamadas paralelas)
   if(lv.promoMeses>0){
     try{
       var hist = await calcSDRMetaHistory(nivelIdx);
-      resEl.innerHTML += buildPromoProgressHtml(hist, lv, month);
+      var _oldSP = resEl.querySelector('.audens-promo-progress');
+      if(_oldSP) _oldSP.remove();
+      resEl.insertAdjacentHTML('beforeend', buildPromoProgressHtml(hist, lv, month));
     }catch(e){console.warn('sdr progression',e);}
   }
 }
@@ -10968,13 +10983,65 @@ function renderContratos(){
   '</div>';
 }
 
+// Lê contratos direto da planilha Clientes Fechados para exibição na aba
+async function _fetchContratosSheet(){
+  var rows=await fetchSheetVals(SHEETS_IDS.clientes,SHEETS_GIDS.clientes);
+  if(!rows||rows.length<2) return [];
+  var h=rows[0].map(function(x){return(x||'').trim().toUpperCase();});
+  var iData   =h.findIndex(function(c){return c.includes('DATA')&&c.includes('IN')&&!c.includes('CANCEL');});
+  var iCliente=h.findIndex(function(c){return c.includes('CLIENTE');});
+  var iValMes =h.findIndex(function(c){return c.includes('VALOR')&&!c.includes('VENDIDO');});
+  var iGestor =h.findIndex(function(c){return c.includes('GESTOR');});
+  var iDataCan=h.findIndex(function(c){return c.includes('DATA')&&c.includes('CANCEL');});
+  var iMotivo =h.findIndex(function(c){return c.includes('MOTIVO');});
+  var iPlano  =h.findIndex(function(c){return c.includes('PLANO');});
+  var iOrigem =h.findIndex(function(c){return c.includes('ORIGEM');});
+  var iCloser =h.findIndex(function(c){return c==='CLOSER'||c.includes('CLOSER');});
+  var iSDR    =h.findIndex(function(c){return c.includes('SDR')||c.includes('BDR');});
+  var iValVend=h.findIndex(function(c){return c.includes('VALOR')&&c.includes('VENDIDO');});
+  return rows.slice(1).map(function(row,idx){
+    var rawCancel=(iDataCan>=0?row[iDataCan]||'':'').trim();
+    var dataCancelamento=rawCancel?_brDateToISO(rawCancel):'';
+    var dataInicio=_brDateToISO((iData>=0?row[iData]||'':'').trim());
+    return {
+      id:'_sheet_'+idx,
+      _fromSheet:true,
+      cliente:(iCliente>=0?row[iCliente]||'':''),
+      valorMes:parseMoney(iValMes>=0?row[iValMes]||'':''),
+      valorVendido:parseMoney(iValVend>=0?row[iValVend]||'':''),
+      plano:(iPlano>=0?row[iPlano]||'':''),
+      gestor:(iGestor>=0?row[iGestor]||'':''),
+      origem:(iOrigem>=0?row[iOrigem]||'':''),
+      closer:(iCloser>=0?row[iCloser]||'':''),
+      sdr:(iSDR>=0?row[iSDR]||'':''),
+      dataInicio:dataInicio,
+      dataCancelamento:dataCancelamento,
+      motivo:(iMotivo>=0?row[iMotivo]||'':''),
+      ativo:!dataCancelamento
+    };
+  }).filter(function(c){return c.cliente;});
+}
+function _brDateToISO(s){
+  if(!s) return '';
+  // Handles "22/06/2026" or "2026-06-22"
+  if(s.includes('-')) return s.split('T')[0];
+  var p=s.split('/');
+  if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+  return '';
+}
+
 async function loadContratosPage(){
   var el=document.getElementById('contratos-content');
   if(!el) return;
   try{
-    var contratos=await loadContratos(true);
+    var contratos;
+    if(isGcalConnected()){
+      contratos=await _fetchContratosSheet();
+    } else {
+      contratos=await loadContratos(true); // fallback Firebase se desconectado
+    }
     el.innerHTML=buildContratosHTML(contratos);
-    setTimeout(filtrarContratos,0); // populate table
+    setTimeout(filtrarContratos,0);
   }catch(e){
     el.innerHTML='<div style="color:var(--red);">Erro: '+esc(e.message)+'</div>';
   }
@@ -11057,8 +11124,10 @@ function filtrarContratos(){
         (c.dataCancelamento?'<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+(c.dataCancelamento.split('-').reverse().join('/'))+'</div>':'')+
       '</td>'+
       '<td style="padding:10px;white-space:nowrap;">'+
-        '<button class="btn btn-edit" onclick="abrirModalContrato(\''+c.id+'\')" title="Editar"><i class="ti ti-edit"></i></button>'+
-        (ativo?' <button class="btn btn-outline" style="color:var(--red);border-color:rgba(239,68,68,0.4);font-size:11px;padding:5px 10px;" onclick="abrirModalCancelar(\''+c.id+'\')" title="Cancelar"><i class="ti ti-x"></i></button>':'')+
+        (c._fromSheet?'<span style="font-size:10px;color:var(--muted);font-family:var(--font-bc),sans-serif;">Planilha</span>':(
+          '<button class="btn btn-edit" onclick="abrirModalContrato(\''+c.id+'\')" title="Editar"><i class="ti ti-edit"></i></button>'+
+          (ativo?' <button class="btn btn-outline" style="color:var(--red);border-color:rgba(239,68,68,0.4);font-size:11px;padding:5px 10px;" onclick="abrirModalCancelar(\''+c.id+'\')" title="Cancelar"><i class="ti ti-x"></i></button>':'')
+        ))+
       '</td>'+
     '</tr>';
   }).join('');
