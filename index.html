@@ -10106,6 +10106,7 @@ var SDR_COMM_PCT = [10, 11, 12, 14, 15, 16, 18, 19, 20];
 // Lucas sets levels in Firebase, employees read automatically
 
 var _careerLevels = {gustavo: 0, joao: 0}; // index into CLOSER_LEVELS / SDR_LEVELS
+var _careerLevelSince = {gustavo: null, joao: null}; // YYYY-MM: mês em que entrou no nível atual
 var _sheetDataCache = {}; // cache fetched sheet data
 
 // Load career levels from Firebase
@@ -10117,18 +10118,35 @@ async function loadCareerLevels(){
     if(data){
       _careerLevels.gustavo = data.gustavo || 0;
       _careerLevels.joao = data.joao || 0;
+      _careerLevelSince.gustavo = data.gustavo_since || null;
+      _careerLevelSince.joao = data.joao_since || null;
     }
   }catch(e){console.error('loadCareerLevels error',e);}
 }
 
-// Save career level (Lucas only)
+// Save career level (Lucas only) — também registra o mês atual como início do nível
 async function saveCareerLevel(person, idx){
   try{
-    await fbDb.ref('careerLevels/'+person).set(idx);
+    var since = currentMonthStr(); // YYYY-MM
+    await fbDb.ref('careerLevels').update({[person]: idx, [person+'_since']: since});
     _careerLevels[person] = idx;
-    showSheetToast('Nível de '+person+' atualizado!', false);
+    _careerLevelSince[person] = since;
+    showSheetToast('Nível de '+person+' atualizado! (desde '+since+')', false);
   }catch(e){
     showSheetToast('Erro ao salvar nível: '+e.message, true);
+  }
+}
+
+// Salva apenas o mês de início do nível atual (para corrigir retroativamente)
+async function saveCareerLevelSince(person, since){
+  if(!since) return;
+  try{
+    await fbDb.ref('careerLevels/'+person+'_since').set(since);
+    _careerLevelSince[person] = since;
+    showSheetToast('Início do nível de '+person+' definido como '+since, false);
+    setTimeout(function(){showPage('plano-carreira');}, 400);
+  }catch(e){
+    showSheetToast('Erro: '+e.message, true);
   }
 }
 
@@ -10445,9 +10463,10 @@ async function calcSDRFromSheets(nivelIdx, month){
 
         var isSS = origem.includes('SOCIAL');
 
-        // Reuniões realizadas = REALIZADA ou VENDA (meeting que converteu), pelo mês real
+        // Usa DATA AGENDAMENTO (rowMonth) — mesma lógica do painel SDR/BDR
+        // para garantir consistência entre as duas telas
         var isRealiz = status==='REALIZADA' || status==='VENDA';
-        if(rowMonthReal === month && isRealiz){
+        if(rowMonth === month && isRealiz){
           result.agendamentos++;           // SS + tráfego → verifica se bateu a meta
           if(!isSS){
             result.reunioesComp++;         // tráfego → incentivo R$12/reunião
@@ -10626,9 +10645,9 @@ async function calcSDRFromFirebase(nivelIdx, month){
         if(!rowMonth) return;
         if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
         var isSS=origem.includes('SOCIAL');
-        // Reuniões realizadas = REALIZADA ou VENDA (meeting que converteu), pelo mês real
+        // Usa DATA AGENDAMENTO (rowMonth) — mesma lógica do painel SDR/BDR
         var isRealiz=status==='REALIZADA'||status==='VENDA';
-        if(rowMonthReal===month&&isRealiz){
+        if(rowMonth===month&&isRealiz){
           result.agendamentos++;           // SS + tráfego → verifica se bateu a meta
           if(!isSS){
             result.reunioesComp++;         // tráfego → incentivo R$12/reunião
@@ -10732,6 +10751,9 @@ async function calcSDRMetaHistory(nivelIdx){
   var lv=SDR_LEVELS[nivelIdx];
   if(!lv||lv.promoMeses===0) return null;
   var meses=_lastNMonths(lv.promoJanela);
+  // Exclui meses anteriores ao início do nível atual
+  var since=_careerLevelSince.joao||null;
+  if(since) meses=meses.filter(function(ms){return ms>=since;});
   var counts={};
   meses.forEach(function(ms){counts[ms]=0;});
   try{
@@ -10741,11 +10763,13 @@ async function calcSDRMetaHistory(nivelIdx){
       var iSDR=rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
       var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
       var iOri=rh.findIndex(function(h){return h.includes('ORIGEM');});
+      var iStatus=rh.findIndex(function(h){return h.includes('STATUS');});
       reunRows.slice(1).forEach(function(row){
         var sdr=(row[iSDR]||'').trim().toUpperCase();
         if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
-        var ori=(iOri>=0?row[iOri]||'':'').trim().toUpperCase();
-        if(ori.includes('SOCIAL')) return;
+        var st=(iStatus>=0?row[iStatus]||'':'').trim().toUpperCase();
+        // Só conta realizadas (mesma lógica do salário e do SDR/BDR)
+        if(st!=='REALIZADA'&&st!=='VENDA') return;
         var dt=parseBRDate(row[iData]||'');
         var ms=dateToMonthStr(dt);
         if(counts.hasOwnProperty(ms)) counts[ms]++;
@@ -10919,6 +10943,7 @@ function buildGestorSDRView(){
   var nivelIdx = _careerLevels.joao||0;
   var lv = SDR_LEVELS[nivelIdx];
   var month = currentMonthStr();
+  var joaoSince = _careerLevelSince.joao || '';
   var html = '<div class="cb" style="margin-bottom:16px;border-color:rgba(56,189,248,0.3);">'+
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-settings" style="color:var(--cyan);margin-right:6px;"></i>Definir Nível do João</div></div>'+
     '<div style="padding:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">'+
@@ -10926,6 +10951,12 @@ function buildGestorSDRView(){
       '<select id="gestor-sdr-nivel" onchange="saveCareerLevel(\'joao\',parseInt(this.value));setTimeout(function(){showPage(\'plano-carreira\');},500);" style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;color:var(--white);font-family:\'Barlow Condensed\',sans-serif;font-size:14px;font-weight:600;outline:none;">'+
       SDR_LEVELS.map(function(l,i){return'<option value="'+i+'"'+(i===nivelIdx?' selected':'')+'>SDR '+l.tier+' '+l.n+'</option>';}).join('')+
       '</select></div>'+
+      '<div><label class="f-label">Nível desde (mês)</label>'+
+      '<div style="display:flex;gap:6px;align-items:center;">'+
+        '<input type="month" id="gestor-sdr-since" value="'+joaoSince+'" style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--white);font-family:\'Barlow Condensed\',sans-serif;font-size:14px;outline:none;">'+
+        '<button class="btn btn-outline" style="padding:9px 14px;font-size:12px;" onclick="saveCareerLevelSince(\'joao\',document.getElementById(\'gestor-sdr-since\').value)"><i class="ti ti-check"></i></button>'+
+      '</div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:4px;">Meses anteriores não entram na progressão</div></div>'+
       '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;">'+
         '<div class="m-lbl">Salário Base</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;color:var(--white);">R$'+lv.base.toLocaleString('pt-BR')+'</div>'+
       '</div>'+
