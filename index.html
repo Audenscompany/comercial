@@ -10316,14 +10316,9 @@ async function calcCloserFromSheets(nivelIdx, month){
           _ccDebugLines.push('Linha '+(row[1]||'?')+': sdr="'+sdrC+'" closer="'+closerC2+'" ori="'+oriC+'" mes='+monthC+' G='+hasGustavo+' CC='+hasCold+' M='+hasMonth+' val='+row[2]);
         }
         if(hasCold && hasMonth){
-          // Conta venda para meta/progressão quando Gustavo é SDR e NÃO é o closer
-          // (caso closer=Gustavo já foi contado no loop anterior)
-          if(hasGustavoSDR && !hasGustavoCloser){
-            result.contratos++;
-            _ccDebugLines.push('→ CC SDR-only: '+row[1]+' contado para meta');
-          }
-          // 25% sobre o valor do contrato (comissão SDR cold call)
-          // NÃO se aplica a comissão padrão de closer por contrato acima da meta
+          // SDR-only cold call: NÃO conta como venda do Gustavo (não incrementa contratos)
+          // Só acumula mrrColdCall para a comissão de 25% SDR
+          // (quando closer=Gustavo, o primeiro loop já contou como venda dele)
           if(hasGustavoSDR || hasGustavoCloser){
             var valorMes=parseMoney(row[2]||'');
             if(!valorMes && ciValorVendido>=0) valorMes=parseMoney(row[ciValorVendido]||'');
@@ -10423,12 +10418,11 @@ async function calcSDRFromSheets(nivelIdx, month){
         var mrr = parseMoney(iValMes2>=0?row[iValMes2]||'':'');
         if(!mrr) mrr = parseMoney(iValorV>=0?row[iValorV]||'':'');
 
+        result.vendas++; // Todas as vendas contam para o threshold (SS e não-SS)
         if(origem2.includes('SOCIAL')){
-          // Social Selling: toda venda tem comissão de 25% do MRR, sem threshold
+          // Social Selling: comissão de 25% do MRR, sem threshold próprio
           result.ssVendas++;
           result.ssComm += mrr * 0.25;
-        } else {
-          result.vendas++;
         }
       });
     }
@@ -10586,21 +10580,22 @@ async function calcSDRFromFirebase(nivelIdx, month){
       if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
       var ori=(c.origem||'').toUpperCase();
       var mrr=c.valorMes||0;
+      result.vendas++; // Todas as vendas contam para o threshold (SS e não-SS)
       if(ori.includes('SOCIAL')){
-        // Social Selling: toda venda tem comissão de 25% do MRR, sem threshold
+        // Social Selling: comissão de 25% do MRR, sem threshold próprio
         result.ssVendas++;
         result.ssComm+=mrr*0.25;
       } else {
-        result.vendas++;
         _vendaValores.push(mrr);
       }
     });
 
-    // Commission: % of valorMes for each venda above threshold
+    // Commission: % of valorMes for each non-SS venda above threshold (total vendas inclusive)
     var threshold=lv.threshold;
-    if(_vendaValores.length>=threshold){
+    if(result.vendas>=threshold){
       var sorted=_vendaValores.slice().sort(function(a,b){return a-b;});
-      var acima=sorted.slice(threshold-1);
+      // acima = all non-SS contracts from threshold onward (SS já têm comissão própria)
+      var acima=sorted.slice(Math.max(0,threshold-1-(result.vendas-_vendaValores.length)));
       result.comissaoVendas=Math.round(acima.reduce(function(s,v){return s+v*pct;},0));
     }
 
