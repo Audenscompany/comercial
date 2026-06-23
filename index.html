@@ -6896,12 +6896,27 @@ function buildDashComHTML(data){
             '<span style="color:var(--amber);">🔶 Firebase</span> | <span style="color:var(--muted);">📋 Planilha</span>'+
           '</div>'+
           '<div style="overflow-x:auto;"><table>'+
-          '<thead><tr><th>Fonte</th><th>Data</th><th>Cliente</th><th>Tel</th><th>SDR</th><th>Origem</th><th>Closer (raw)</th><th>Status</th></tr></thead><tbody>'+
+          '<thead><tr><th>Fonte</th><th>Data</th><th>Cliente</th><th>Tel</th><th>SDR</th><th>Origem</th><th>Status</th><th>Ação</th></tr></thead><tbody>'+
           semCloserReal.map(function(r){
             var isDup=r.fbOnly&&r.tel&&sheetReunTels.has(r.tel);
             var fonte=r.fbOnly
               ?'<span style="color:'+(isDup?'var(--red)':'var(--amber)')+';">'+(isDup?'🔴 DUP FB':'🔶 FB')+'</span>'
               :'<span style="color:var(--muted);">📋 Sheet</span>';
+            var acaoHtml='';
+            if(isDup){
+              acaoHtml='<button class="btn btn-outline" style="font-size:11px;padding:4px 8px;border-color:var(--red);color:var(--red);" onclick="ocultarMeetingFirebase(\''+r.tel+'\',this)">Ocultar duplicata</button>';
+            } else if(r.fbOnly){
+              acaoHtml='<div style="display:flex;gap:4px;align-items:center;">'+
+                '<select id="sel-'+r.tel+'" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--white);font-size:11px;outline:none;">'+
+                  '<option value="">— closer —</option>'+
+                  '<option value="Lucas">Lucas</option>'+
+                  '<option value="Gustavo">Gustavo</option>'+
+                '</select>'+
+                '<button class="btn btn-outline" style="font-size:11px;padding:4px 8px;" onclick="atribuirCloserMeeting(\''+r.tel+'\',document.getElementById(\'sel-'+r.tel+'\').value,this)">Salvar</button>'+
+              '</div>';
+            } else {
+              acaoHtml='<span style="font-size:11px;color:var(--muted);">Corrigir na planilha</span>';
+            }
             return '<tr style="'+(isDup?'background:rgba(239,68,68,0.08);':'')+'">'+
               '<td>'+fonte+'</td>'+
               '<td style="font-size:12px;">'+r.data+'</td>'+
@@ -6909,8 +6924,8 @@ function buildDashComHTML(data){
               '<td style="font-size:11px;color:var(--muted);">'+r.tel+'</td>'+
               '<td style="font-size:12px;color:var(--cyan);">'+r.sdr+'</td>'+
               '<td style="font-size:12px;">'+r.origem+'</td>'+
-              '<td style="font-size:12px;color:var(--amber);">'+r.closerRaw+'</td>'+
               '<td style="font-size:12px;color:var(--green);">'+r.status+'</td>'+
+              '<td>'+acaoHtml+'</td>'+
             '</tr>';
           }).join('')+
           '</tbody></table></div>'+
@@ -10221,6 +10236,55 @@ async function saveCareerLevelSince(person, since){
   }catch(e){
     showSheetToast('Erro: '+e.message, true);
   }
+}
+
+// ===== ATRIBUIR CLOSER A REUNIÃO DO FIREBASE (diagnóstico) =====
+async function atribuirCloserMeeting(tel, closer, btnEl){
+  var normTel=(tel||'').replace(/\D/g,'');
+  if(!normTel||!closer){showSheetToast('Tel ou closer inválido',true);return;}
+  var updates={};
+  Object.keys(meetings).forEach(function(mid){
+    var m=meetings[mid];
+    if((m.tel||'').replace(/\D/g,'')===normTel){
+      updates['meetings/'+mid+'/closer']=closer.toLowerCase();
+      updates['meetings/'+mid+'/closerName']=closer;
+    }
+  });
+  if(!Object.keys(updates).length){showSheetToast('Nenhuma reunião encontrada para tel '+normTel,true);return;}
+  try{
+    if(btnEl){btnEl.disabled=true;btnEl.textContent='Salvando...';}
+    await fbDb.ref().update(updates);
+    // Atualiza local também
+    Object.keys(meetings).forEach(function(mid){
+      if((meetings[mid].tel||'').replace(/\D/g,'')===normTel){
+        meetings[mid].closer=closer.toLowerCase();
+        meetings[mid].closerName=closer;
+      }
+    });
+    showSheetToast('✓ Closer "'+closer+'" atribuído para tel '+normTel,false);
+    if(btnEl){var row=btnEl.closest('tr');if(row)row.style.opacity='0.4';}
+  }catch(e){showSheetToast('Erro: '+e.message,true);if(btnEl){btnEl.disabled=false;btnEl.textContent='Salvar';}}
+}
+
+async function ocultarMeetingFirebase(tel, btnEl){
+  var normTel=(tel||'').replace(/\D/g,'');
+  var updates={};
+  Object.keys(meetings).forEach(function(mid){
+    var m=meetings[mid];
+    if((m.tel||'').replace(/\D/g,'')===normTel&&!m.sheetRow){
+      updates['meetings/'+mid+'/_hidden']=true;
+    }
+  });
+  if(!Object.keys(updates).length){showSheetToast('Nenhuma reunião Firebase para ocultar',true);return;}
+  try{
+    if(btnEl){btnEl.disabled=true;btnEl.textContent='...';}
+    await fbDb.ref().update(updates);
+    Object.keys(meetings).forEach(function(mid){
+      if((meetings[mid].tel||'').replace(/\D/g,'')===normTel&&!meetings[mid].sheetRow) meetings[mid]._hidden=true;
+    });
+    showSheetToast('✓ Duplicata ocultada',false);
+    if(btnEl){var row=btnEl.closest('tr');if(row)row.style.opacity='0.4';}
+  }catch(e){showSheetToast('Erro: '+e.message,true);}
 }
 
 // ===== CONTRATOS FIREBASE =====
