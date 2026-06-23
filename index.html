@@ -10414,6 +10414,7 @@ async function calcSDRFromSheets(nivelIdx, month){
   var result = {base: lv.base, minG: lv.minG,
     agendamentos: 0, bonusMeta: 0, acelerador: 0,
     reunioesComp: 0, incentivReun: 0,
+    trafegoReun: 0,  // só tráfego — base do acelerador
     vendas: 0, comissaoVendas: 0,
     ssReun: 0, ssIncentiv: 0, ssVendas: 0, ssComm: 0, ssTotal: 0,
     total: 0, totalSDR: 0, grandTotal: 0, error: null};
@@ -10444,15 +10445,15 @@ async function calcSDRFromSheets(nivelIdx, month){
 
         var isSS = origem.includes('SOCIAL');
 
-        if(rowMonth === month){
-          // Agendamentos: apenas reuniões realizadas (status REALIZADA)
-          if(!isSS && status==='REALIZADA') result.agendamentos++;
-          // SS agendamentos (para reuniões comparecidas SS)
-          if(isSS && status==='REALIZADA' && rowMonthReal===month) result.ssReun++;
-        }
-        // Reuniões realizadas no mês real
-        if(rowMonthReal === month && status==='REALIZADA'){
-          if(!isSS) result.reunioesComp++;
+        // Reuniões realizadas = REALIZADA ou VENDA (meeting que converteu), pelo mês real
+        var isRealiz = status==='REALIZADA' || status==='VENDA';
+        if(rowMonthReal === month && isRealiz){
+          result.agendamentos++;           // SS + tráfego → verifica se bateu a meta
+          if(!isSS){
+            result.reunioesComp++;         // tráfego → incentivo R$12/reunião
+            result.trafegoReun++;          // tráfego → base do acelerador (acima da meta)
+          }
+          if(isSS) result.ssReun++;        // SS → incentivo R$30/reunião
         }
       });
     }
@@ -10493,9 +10494,11 @@ async function calcSDRFromSheets(nivelIdx, month){
     // Calculate SDR
     var meta = lv.meta;
     var threshold = lv.threshold;
+    // Meta: SS + tráfego juntos
     result.bonusMeta = result.agendamentos >= meta ? lv.bonusMeta : 0;
-    var agenAcima = Math.max(0, result.agendamentos - meta);
-    result.acelerador = result.agendamentos >= meta ? agenAcima * lv.acel : 0;
+    // Acelerador: só reuniões de TRÁFEGO acima da meta
+    var agenAcima = result.agendamentos >= meta ? Math.max(0, result.trafegoReun - meta) : 0;
+    result.acelerador = agenAcima * lv.acel;
     result.incentivReun = result.reunioesComp * lv.incentivReun;
     var vendasEfetivas = Math.max(0, result.vendas - (threshold - 1));
     result.comissaoVendas = vendasEfetivas > 0 ? vendasEfetivas * lv.commVenda : 0;
@@ -10596,6 +10599,7 @@ async function calcSDRFromFirebase(nivelIdx, month){
   var result={base:lv.base,minG:lv.minG,
     agendamentos:0,bonusMeta:0,acelerador:0,
     reunioesComp:0,incentivReun:0,
+    trafegoReun:0,  // só tráfego — base do acelerador
     vendas:0,comissaoVendas:0,
     ssReun:0,ssVendas:0,ssIncentiv:0,ssComm:0,ssTotal:0,
     total:0,totalSDR:0,grandTotal:0,error:null};
@@ -10622,13 +10626,15 @@ async function calcSDRFromFirebase(nivelIdx, month){
         if(!rowMonth) return;
         if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
         var isSS=origem.includes('SOCIAL');
-        if(rowMonth===month){
-          // Agendamentos: apenas reuniões realizadas (status REALIZADA)
-          if(!isSS&&status==='REALIZADA') result.agendamentos++;
-          if(isSS&&status==='REALIZADA'&&rowMonthReal===month) result.ssReun++;
-        }
-        if(rowMonthReal===month&&status==='REALIZADA'){
-          if(!isSS) result.reunioesComp++;
+        // Reuniões realizadas = REALIZADA ou VENDA (meeting que converteu), pelo mês real
+        var isRealiz=status==='REALIZADA'||status==='VENDA';
+        if(rowMonthReal===month&&isRealiz){
+          result.agendamentos++;           // SS + tráfego → verifica se bateu a meta
+          if(!isSS){
+            result.reunioesComp++;         // tráfego → incentivo R$12/reunião
+            result.trafegoReun++;          // tráfego → base do acelerador (acima da meta)
+          }
+          if(isSS) result.ssReun++;        // SS → incentivo R$30/reunião
         }
       });
     }
@@ -10664,9 +10670,11 @@ async function calcSDRFromFirebase(nivelIdx, month){
     }
 
     var meta=lv.meta;
+    // Meta: SS + tráfego juntos
     result.bonusMeta=result.agendamentos>=meta?lv.bonusMeta:0;
-    var agenAcima=Math.max(0,result.agendamentos-meta);
-    result.acelerador=result.agendamentos>=meta?agenAcima*lv.acel:0;
+    // Acelerador: só reuniões de TRÁFEGO acima da meta
+    var agenAcima=result.agendamentos>=meta?Math.max(0,result.trafegoReun-meta):0;
+    result.acelerador=agenAcima*lv.acel;
     result.incentivReun=result.reunioesComp*lv.incentivReun;
     result.ssIncentiv=result.ssReun*30;
     result.ssTotal=result.incentivReun+result.ssIncentiv+result.ssComm;
