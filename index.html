@@ -6991,19 +6991,24 @@ function renderAnaliseAds(){
         '<input type="date" id="ads-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
         '<button class="btn btn-outline" onclick="applyAdsDateRange()" style="font-size:12px;padding:8px 14px;"><i class="ti ti-filter"></i></button>'+
         '<button class="btn btn-outline" onclick="clearAdsDateRange()" style="font-size:12px;padding:8px 12px;" title="Limpar"><i class="ti ti-x"></i></button>'+
-        (_gastoViaFacebook
-          ? '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto em anúncios — via Meta API">'+
+        (function(){
+          // Usa spend do Meta API se disponível para o período selecionado
+          var _p=_adsPeriod||getCurrentPeriod();
+          var _ms=(_investidoMes&&_p)?(_investidoMes[_p]||0):0;
+          if(_ms>0){
+            return '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto em anúncios — via Meta API">'+
               '<i class="ti ti-brand-meta" style="color:var(--amber);font-size:13px;"></i>'+
               '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto</span>'+
-              '<span style="color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;">R$ '+Math.round(gastoAds).toLocaleString('pt-BR')+'</span>'+
-            '</div>'
-          : '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto total em anúncios (manual)">'+
-              '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto R$</span>'+
-              '<input type="number" id="ads-gasto-input" min="0" step="100" value="'+(_adsGasto||'')+'" placeholder="0" '+
-                'onchange="_adsGasto=parseFloat(this.value)||0;localStorage.setItem(\'audens_ads_gasto\',this.value);" '+
-                'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
-            '</div>'
-        )+
+              '<span style="color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;padding:0 2px;">R$ '+Math.round(_ms).toLocaleString('pt-BR')+'</span>'+
+            '</div>';
+          }
+          return '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto total em anúncios">'+
+            '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto R$</span>'+
+            '<input type="number" id="ads-gasto-input" min="0" step="100" value="'+(_adsGasto||'')+'" placeholder="0" '+
+              'onchange="_adsGasto=parseFloat(this.value)||0;localStorage.setItem(\'audens_ads_gasto\',this.value);" '+
+              'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
+          '</div>';
+        })()+
         '<button class="btn btn-primary" onclick="refreshAnaliseAds()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
       '</div>'+
     '</div>'+
