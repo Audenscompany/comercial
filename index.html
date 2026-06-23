@@ -5839,6 +5839,28 @@ function saveFollowup(){
       closer:_fuMeeting.responsavel||'',
       sdr:_fuMeeting.sdr||''
     });
+    // Salva contrato no Firebase para cálculo de comissão
+    (function(){
+      var _planoDur=duracao||1;
+      var _planoNome=plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
+      var _planoSufixo=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
+      var _mrr=tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato);
+      var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
+      saveContrato(null,{
+        cliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+        dataInicio:dataInicio,
+        valorMes:_mrr,
+        valorVendido:_tcv,
+        planoDuracao:_planoDur,
+        plano:_planoNome+_planoSufixo,
+        gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',
+        origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+        closer:_fuMeeting.responsavel||'',
+        sdr:_fuMeeting.sdr||'',
+        kanbanKey:kk2||'',
+        ativo:true
+      }).catch(function(e){console.warn('Firebase contrato:',e);});
+    })();
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
 }
@@ -5933,6 +5955,28 @@ function saveFollowupEdit(){
         closer:_fuMeeting.responsavel||'',
         sdr:_fuMeeting.sdr||''
       });
+      // Salva contrato no Firebase (apenas na primeira vez)
+      (function(){
+        var _planoDur=duracao||1;
+        var _planoNome=plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
+        var _planoSufixo=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
+        var _mrr=tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato);
+        var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
+        saveContrato(null,{
+          cliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+          dataInicio:dataInicio,
+          valorMes:_mrr,
+          valorVendido:_tcv,
+          planoDuracao:_planoDur,
+          plano:_planoNome+_planoSufixo,
+          gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',
+          origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+          closer:_fuMeeting.responsavel||'',
+          sdr:_fuMeeting.sdr||'',
+          kanbanKey:kk2||'',
+          ativo:true
+        }).catch(function(e){console.warn('Firebase contrato:',e);});
+      })();
     }
     // Cria no Asaas se ainda não foi criado (verifica pelo asaasChargeId no kanban)
     var jaTemAsaas=kk2&&kanbanData[kk2]&&kanbanData[kk2].asaasChargeId;
