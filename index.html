@@ -1074,7 +1074,7 @@ async function confirmarAgendamentoReuniao(key){
   var mid='km_'+key+'_'+Date.now();
   var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
     status:'pending',responsavel:responsavel,guestEmail:email||'',faturamentoLead:kanbanData[key].faturamento||'',
-    origem:(kanbanData[key].origem||'Tráfego'),kanbanKey:key,
+    origem:(kanbanData[key].origem||'Tráfego'),ad:kanbanData[key].ad||'',kanbanKey:key,
     sdrName:((CU&&CU.closer)||'João').toUpperCase(),
     scheduledAt:Date.now(),
     tarefaOrigem: ultimaTarefaSDR ? ultimaTarefaSDR.tipo : '',
@@ -9392,7 +9392,13 @@ function renderReunioesPersonal(){
         var reagBadge=reagCnt>0?'<span style="font-size:10px;color:'+(reagCnt>=2?'var(--red)':'var(--amber)')+';display:block;margin-top:2px;">↩'+reagCnt+'/2</span>':'';
         var canReagendar = st==='pending'||st==='reagendado';
         var origemRaw=(m.origem||'').toLowerCase();
-        var origemLabel=m.origem||'—';
+        var origemLabel=m.origem||'';
+        // Se lead tem ad vinculado e origem não está clara → é Tráfego Pago
+        var _kb=m.kanbanKey&&kanbanData[m.kanbanKey];
+        if(_kb&&_kb.ad&&(!origemLabel||origemLabel.toLowerCase()==='kanban')){
+          origemLabel='Tráfego'; origemRaw='tráfego';
+        }
+        if(!origemLabel) origemLabel='—';
         var origemCol=origemRaw.includes('cold')||origemRaw.includes('ligac')?'var(--amber)':
                       origemRaw.includes('social')?'var(--cyan)':
                       origemRaw.includes('traf')?'var(--purple3)':
