@@ -6882,6 +6882,7 @@ function buildHistoricoMensal(todosClientes){
 
 // ===== ANÁLISE DE ADS =====
 var _adsPeriod=null, _adsStart=null, _adsEnd=null, _adsCampanha='';
+var _adsGasto=parseFloat(localStorage.getItem('audens_ads_gasto')||'0')||0;
 var _reunDate=null; // null = hoje; formato ISO 'YYYY-MM-DD'
 function changeReunDate(delta){
   var base=_reunDate?new Date(_reunDate+'T12:00:00'):new Date();
@@ -6929,6 +6930,12 @@ function renderAnaliseAds(){
         '<input type="date" id="ads-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
         '<button class="btn btn-outline" onclick="applyAdsDateRange()" style="font-size:12px;padding:8px 14px;"><i class="ti ti-filter"></i></button>'+
         '<button class="btn btn-outline" onclick="clearAdsDateRange()" style="font-size:12px;padding:8px 12px;" title="Limpar"><i class="ti ti-x"></i></button>'+
+        '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto total em anúncios no período">'+
+          '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto R$</span>'+
+          '<input type="number" id="ads-gasto-input" min="0" step="100" value="'+(_adsGasto||'')+'" placeholder="0" '+
+            'onchange="_adsGasto=parseFloat(this.value)||0;localStorage.setItem(\'audens_ads_gasto\',this.value);" '+
+            'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
+        '</div>'+
         '<button class="btn btn-primary" onclick="refreshAnaliseAds()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
       '</div>'+
     '</div>'+
@@ -7034,6 +7041,21 @@ function buildAnaliseAdsHTML(data){
     if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
     return s+mrr;
   },0);
+  // Receita para ROAS: MRR para mensais, TCV para trimestral/semestral
+  var funilRevenue=_clientesTrafegoPeriodo.reduce(function(s,c){
+    var plano=(col(c,['PLANO','Plano','plano'])||'').toUpperCase();
+    var isTCV=plano.includes('TRIMESTRAL')||plano.includes('SEMESTRAL');
+    if(isTCV){
+      var tcv=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+      return s+tcv;
+    } else {
+      var mrr2=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
+      if(!mrr2) mrr2=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
+      return s+mrr2;
+    }
+  },0);
+  var gastoAds=_adsGasto||0;
+  var roas=gastoAds>0?(funilRevenue/gastoAds):null;
   if(funilFechCli>funilFech) funilFech=funilFechCli;
   // Realizadas novas (Firebase) que ainda não estão na planilha — adiciona ao funil
   // Só conta meetings que TÊM ad atribuído no kanbanData (= leads novos via kanban)
@@ -7305,6 +7327,24 @@ function buildAnaliseAdsHTML(data){
       '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:'+c.c+';">'+c.v+'</div>'+
     '</div>';
   });
+  // Card: Gasto em Ads
+  html+='<div style="background:var(--bg2);border:1.5px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px;text-align:center;">'+
+    '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);margin-bottom:6px;">Gasto Ads</div>'+
+    '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:var(--amber);">'+
+      (gastoAds>0?'R$'+gastoAds.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—')+
+    '</div>'+
+    (gastoAds===0?'<div style="font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;margin-top:4px;">Informe no filtro ↑</div>':'')+
+  '</div>';
+  // Card: ROAS
+  var roasCol=roas===null?'var(--muted)':roas>=3?'var(--green)':roas>=1?'var(--amber)':'var(--red)';
+  var roasBorder=roas===null?'var(--border)':roas>=3?'rgba(34,197,94,0.3)':roas>=1?'rgba(245,158,11,0.3)':'rgba(239,68,68,0.3)';
+  html+='<div style="background:var(--bg2);border:1.5px solid '+roasBorder+';border-radius:10px;padding:14px;text-align:center;">'+
+    '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:'+roasCol+';margin-bottom:6px;">ROAS</div>'+
+    '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:'+roasCol+';">'+
+      (roas!==null?roas.toFixed(2)+'×':'—')+
+    '</div>'+
+    (roas!==null?'<div style="font-size:10px;color:var(--muted);font-family:Barlow Condensed,sans-serif;margin-top:4px;">R$'+Math.round(funilRevenue).toLocaleString('pt-BR')+' receita</div>':'')+
+  '</div>';
   html+='</div>';
 
 
