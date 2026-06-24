@@ -3737,7 +3737,11 @@ function saveMetas(){
 function renderLeads(){
   var sources=allLeads.length?Array.from(new Set(allLeads.map(function(l){return l._source;}).filter(Boolean))):[];
   return '<div class="page active">'+
-  '<div class="page-header"><div><div class="page-title">Importar Leads</div><div class="page-sub">Base para geracao diaria</div></div><span class="badge b-purple">'+allLeads.length+' unicos</span></div>'+
+  '<div class="page-header"><div><div class="page-title">Importar Leads</div><div class="page-sub">Base para geracao diaria</div></div>'+
+  '<div style="display:flex;gap:8px;align-items:center;">'+
+    '<span class="badge b-purple">'+allLeads.length+' unicos</span>'+
+    (isGcalConnected()?'<button id="btn-varredura-leads" class="btn btn-outline" style="font-size:11px;" onclick="varreduraLeadsSemAd()"><i class="ti ti-tag"></i> Varredura de Ad</button>':'')+
+  '</div></div>'+
   '<div class="info-note"><i class="ti ti-info-circle"></i> Multiplos CSVs aceitos. Duplicatas por telefone removidas automaticamente.</div>'+
   '<div class="cb"><div class="cb-hd"><div class="cb-title">Upload Planilhas</div><span class="badge b-cyan">Multiplos arquivos</span></div>'+
   '<div style="padding:20px;">'+
@@ -10783,6 +10787,204 @@ async function aplicarCorrecoesFirebase(){
   }catch(e){
     if(btn){btn.disabled=false;btn.textContent='Corrigir no Firebase';}
     showSheetToast('Erro: '+e.message,true);
+  }
+}
+
+// ===== VARREDURA DE LEADS SEM AD (atribuição de campanha) =====
+function _colLetter(idx){ // 0-based → 'A','B',...,'Z','AA',...
+  var s=''; idx++;
+  while(idx>0){var r=(idx-1)%26;s=String.fromCharCode(65+r)+s;idx=Math.floor((idx-1)/26);}
+  return s;
+}
+
+var _leadsAdFixes=null; // [{fbKey, nome, data, tel, campSheet, conjSheet, adSheet, campFb, conjFb, adFb}]
+
+async function varreduraLeadsSemAd(){
+  if(!isGcalConnected()){showSheetToast('Google desconectado',true);return;}
+  var btn=document.getElementById('btn-varredura-leads');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader ti-spin"></i> Buscando...';}
+  try{
+    // 1. Carrega planilha e monta mapa tel → {ad, campanha, conjunto}
+    var raw=await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads);
+    var sheetAdMap={}; // tel → {ad,campanha,conjunto,fonte}
+    if(raw&&raw.length>1){
+      var headers=raw[0];
+      var norm=function(h){return(h||'').trim().toLowerCase();};
+      var fi=function(opts){for(var o of opts){var i=headers.findIndex(function(h){return norm(h).includes(o);});if(i>=0)return i;}return -1;};
+      var iTel=fi(['telefone','tel','phone','celular']);
+      var iCamp=fi(['campanha','campaign']);
+      var iConj=fi(['conjunto','adset','ad set']);
+      var iAd=fi(['ad','anuncio','anúncio']);
+      var iFonte=fi(['fonte','source','origem']);
+      if(iTel>=0){
+        raw.slice(1).forEach(function(row){
+          var t=(row[iTel]||'').replace(/\D/g,'');
+          if(!t) return;
+          var ad=(row[iAd]>=0?row[iAd]||'':'').trim();
+          var camp=(iCamp>=0?row[iCamp]||'':'').trim();
+          var conj=(iConj>=0?row[iConj]||'':'').trim();
+          var fonte=(iFonte>=0?row[iFonte]||'':'').trim();
+          // Armazena apenas se tiver alguma atribuição (planilha é fonte de verdade)
+          if(ad||camp||conj) sheetAdMap[t]={ad:ad,campanha:camp,conjunto:conj,fonte:fonte};
+        });
+      }
+    }
+
+    // 2. Varre kanbanData: entradas sem campo `ad`
+    var semAd=[];
+    Object.keys(kanbanData).forEach(function(fbKey){
+      var k=kanbanData[fbKey];
+      if(!k||!k.nome) return;
+      var adFb=(k.ad||'').trim();
+      if(adFb&&adFb!=='-'&&adFb!=='(sem ad)') return; // já tem ad no Firebase
+      var tel=(k.telefone||'').replace(/\D/g,'');
+      var ts=k._createdAt||0;
+      var bd=new Date(ts);
+      var dataStr=ts?(bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear()):'';
+      var sheetMatch=tel?sheetAdMap[tel]:null;
+      semAd.push({
+        fbKey:fbKey,
+        nome:k.nome||'',
+        tel:tel,
+        data:dataStr,
+        // Pré-preenche com dados da planilha quando encontrar match por telefone
+        campSheet:sheetMatch?sheetMatch.campanha:'',
+        conjSheet:sheetMatch?sheetMatch.conjunto:'',
+        adSheet:sheetMatch?sheetMatch.ad:'',
+        campFb:k.campanha||'',
+        conjFb:k.conjunto||'',
+        autoMatch:!!sheetMatch
+      });
+    });
+
+    _leadsAdFixes=semAd;
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-search"></i> Varredura de Ad';}
+
+    var autoCount=semAd.filter(function(r){return r.autoMatch;}).length;
+    var manualCount=semAd.length-autoCount;
+
+    // Agrupa por data
+    var byDate={};
+    semAd.forEach(function(r){var d=r.data||'(sem data)';if(!byDate[d])byDate[d]=[];byDate[d].push(r);});
+
+    var old=document.getElementById('modal-leads-ad');if(old)old.remove();
+
+    var dateRows=Object.keys(byDate).sort().reverse().map(function(d){
+      var rows=byDate[d];
+      return '<div style="margin-bottom:16px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;color:var(--amber);">'+esc(d)+
+            ' <span style="color:var(--muted);font-weight:400;">('+rows.length+' leads)</span></div>'+
+          '<button class="btn btn-outline" style="font-size:11px;padding:4px 10px;" onclick="preencherDataLeads(\''+d.replace(/\//g,'_')+'\')">'+
+            '<i class="ti ti-copy"></i> Replicar 1º desta data</button>'+
+        '</div>'+
+        '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;">'+
+        '<table style="width:100%;border-collapse:collapse;font-family:\'Barlow Condensed\',sans-serif;font-size:12px;">'+
+        '<thead><tr style="background:rgba(255,255,255,0.04);">'+
+          '<th style="padding:7px 10px;text-align:left;color:var(--muted);">Nome</th>'+
+          '<th style="padding:7px 10px;text-align:left;color:var(--muted);">Tel</th>'+
+          '<th style="padding:7px 10px;text-align:left;color:var(--muted);">Campanha</th>'+
+          '<th style="padding:7px 10px;text-align:left;color:var(--muted);">Conjunto</th>'+
+          '<th style="padding:7px 10px;text-align:left;color:var(--muted);">Ad <span style="color:var(--amber);">*</span></th>'+
+          '<th style="padding:7px 10px;text-align:center;color:var(--muted);">Planilha</th>'+
+        '</tr></thead><tbody>'+
+        rows.map(function(r){
+          var hasMatch=r.autoMatch;
+          return '<tr style="border-top:1px solid rgba(255,255,255,0.05);" data-date="'+d.replace(/\//g,'_')+'" data-fbkey="'+r.fbKey+'">'+
+            '<td style="padding:6px 10px;color:var(--white);">'+esc(r.nome)+'</td>'+
+            '<td style="padding:6px 10px;color:var(--muted);font-family:monospace;font-size:11px;">'+r.tel+'</td>'+
+            '<td style="padding:4px 6px;"><input id="lfix-camp-'+r.fbKey+'" class="f-input" style="margin:0;padding:4px 8px;font-size:12px;" value="'+esc(r.campSheet||r.campFb)+'" placeholder="Campanha"></td>'+
+            '<td style="padding:4px 6px;"><input id="lfix-conj-'+r.fbKey+'" class="f-input" style="margin:0;padding:4px 8px;font-size:12px;" value="'+esc(r.conjSheet||r.conjFb)+'" placeholder="Conjunto/AdSet"></td>'+
+            '<td style="padding:4px 6px;"><input id="lfix-ad-'+r.fbKey+'" class="f-input" style="margin:0;padding:4px 8px;font-size:12px;'+(hasMatch?'border-color:rgba(34,197,94,0.5);':'border-color:rgba(245,158,11,0.4);')+'" value="'+esc(r.adSheet)+'" placeholder="nome-do-ad"></td>'+
+            '<td style="padding:6px 10px;text-align:center;">'+(hasMatch?'<span style="color:#4ade80;font-size:13px;" title="Encontrado na planilha">✓</span>':'<span style="color:var(--muted);font-size:11px;">manual</span>')+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table></div></div>';
+    }).join('');
+
+    var mo=document.createElement('div');mo.className='modal-overlay';mo.id='modal-leads-ad';
+    mo.innerHTML='<div class="modal" style="max-width:900px;max-height:88vh;overflow-y:auto;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-tag" style="margin-right:8px;color:var(--amber);"></i>Varredura de Ad — Firebase / Kanban</div>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-leads-ad\').remove()">×</button></div>'+
+      '<div class="modal-bd">'+
+        (semAd.length===0
+          ?'<div class="success-note"><i class="ti ti-circle-check"></i> Todos os leads no Firebase já têm Ad preenchido!</div>'
+          :'<div style="display:flex;gap:10px;margin-bottom:16px;">'+
+              '<div style="flex:1;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:12px;text-align:center;">'+
+                '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:#4ade80;">'+autoCount+'</div>'+
+                '<div style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">CRUZADOS COM PLANILHA</div></div>'+
+              '<div style="flex:1;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px;text-align:center;">'+
+                '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:var(--amber);">'+manualCount+'</div>'+
+                '<div style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">PREENCHIMENTO MANUAL</div></div>'+
+            '</div>'+
+            '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Campos com <strong style="color:#4ade80;">✓</strong> foram preenchidos automaticamente cruzando o telefone com a planilha. Verifique e clique em Salvar no Firebase.</div>'+
+            dateRows+
+            '<button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="aplicarCorrecaoLeadsAd()"><i class="ti ti-brand-firebase"></i> Salvar '+semAd.length+' registros no Firebase</button>')+
+      '</div></div>';
+    document.body.appendChild(mo);
+  }catch(e){
+    showSheetToast('Erro na varredura: '+e.message,true);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-search"></i> Varredura de Ad';}
+  }
+}
+
+// Copia campanha/conjunto/ad do 1º lead da data para os demais da mesma data (sem Ad preenchido)
+function preencherDataLeads(dataNorm){
+  var rows=document.querySelectorAll('#modal-leads-ad tr[data-date="'+dataNorm+'"]');
+  if(!rows.length) return;
+  var firstKey=rows[0].getAttribute('data-fbkey');
+  var campV=(document.getElementById('lfix-camp-'+firstKey)||{}).value||'';
+  var conjV=(document.getElementById('lfix-conj-'+firstKey)||{}).value||'';
+  var adV=(document.getElementById('lfix-ad-'+firstKey)||{}).value||'';
+  if(!campV&&!conjV&&!adV){showSheetToast('Preencha o 1º lead da data como referência',true);return;}
+  rows.forEach(function(row){
+    var key=row.getAttribute('data-fbkey');
+    if(key===firstKey) return;
+    var c=document.getElementById('lfix-camp-'+key);
+    var cj=document.getElementById('lfix-conj-'+key);
+    var a=document.getElementById('lfix-ad-'+key);
+    if(c&&!c.value)c.value=campV;
+    if(cj&&!cj.value)cj.value=conjV;
+    if(a&&!a.value)a.value=adV;
+  });
+}
+
+async function aplicarCorrecaoLeadsAd(){
+  var fixes=_leadsAdFixes||[];
+  if(!fixes.length){showSheetToast('Nada para corrigir',false);return;}
+  var btn=document.querySelector('#modal-leads-ad .btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Salvando no Firebase...';}
+  try{
+    var updates={};
+    var count=0;
+    fixes.forEach(function(r){
+      var adEl=document.getElementById('lfix-ad-'+r.fbKey);
+      var campEl=document.getElementById('lfix-camp-'+r.fbKey);
+      var conjEl=document.getElementById('lfix-conj-'+r.fbKey);
+      var ad=adEl?adEl.value.trim():'';
+      var camp=campEl?campEl.value.trim():'';
+      var conj=conjEl?conjEl.value.trim():'';
+      if(!ad) return; // Ad é obrigatório para aparecer nas métricas
+      var base='kanban/'+r.fbKey+'/';
+      updates[base+'ad']=ad;
+      if(camp) updates[base+'campanha']=camp;
+      if(conj) updates[base+'conjunto']=conj;
+      // Atualiza também no objeto local
+      if(kanbanData[r.fbKey]){
+        kanbanData[r.fbKey].ad=ad;
+        if(camp) kanbanData[r.fbKey].campanha=camp;
+        if(conj) kanbanData[r.fbKey].conjunto=conj;
+      }
+      count++;
+    });
+    if(!count){showSheetToast('Preencha o campo Ad em pelo menos um registro',true);if(btn){btn.disabled=false;btn.textContent='Salvar no Firebase';}return;}
+    await fbDb.ref().update(updates);
+    showSheetToast(count+' leads atualizados no Firebase!',false);
+    document.getElementById('modal-leads-ad').remove();
+    _leadsAdFixes=null;
+  }catch(e){
+    showSheetToast('Erro: '+e.message,true);
+    if(btn){btn.disabled=false;btn.textContent='Salvar no Firebase';}
   }
 }
 
