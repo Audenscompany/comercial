@@ -2879,7 +2879,7 @@ function meetingsToReunioesRows(){
     var empresa = (kanbanEntry&&kanbanEntry.empresa)||m.empresa||'';
     var cidade = (kanbanEntry&&kanbanEntry.cidade)||m.cidade||'';
     var orig = m.origem||(kanbanEntry&&kanbanEntry.origem)||'Tráfego';
-    var sdr = m.sdrName||m.sdr||'';
+    var sdr = m.sdrName||m.sdr||m.criador||'';
     return {
       'DATA':bookDateStr,'Data':bookDateStr,'data':bookDateStr,
       'DATA DE AGENDAMENTO':bookDateStr,'Data de Agendamento':bookDateStr,
@@ -2918,7 +2918,7 @@ function _meetingObjsToRows(arr){
     else st='AGENDADA';
     var ke=m.kanbanKey?kanbanData[m.kanbanKey]:null;
     var orig=m.origem||(ke&&ke.origem)||'Tráfego';
-    var sdr=m.sdrName||m.sdr||'';
+    var sdr=m.sdrName||m.sdr||m.criador||'';
     var closer=(m.closerName||m.closer||'').trim();
     return {
       'DATA':ds,'Data':ds,'data':ds,
@@ -2954,6 +2954,47 @@ async function loadDataHybrid(){
     return t&&!sheetTels.has(t);
   });
 
+  // Mapa tel+dia → status derivado do Firebase (followups são a fonte de verdade para status)
+  // Isso resolve o problema de reuniões na planilha com status desatualizado
+  var fbStatusByKey={};
+  Object.values(meetings).forEach(function(m){
+    if(m._hidden) return;
+    var tel=(m.tel||'').replace(/\D/g,'');
+    if(!tel) return;
+    var bd=new Date(m.dtISO||(m.scheduledAt||Date.now()));
+    var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
+    var fu=followups[m.id];
+    var st;
+    if(fu){
+      if(fu.resultado==='noshow'||fu.comparecimento==='nao') st='NO-SHOW';
+      else if(fu.resultado==='venda') st='VENDA';
+      else st='REALIZADA';
+    } else if(m.status==='noshow') st='NO-SHOW';
+    else if(m.status==='done') st='REALIZADA';
+    else if(m.status==='reagendado') st='REAGENDADO';
+    // Só sobrescreve se Firebase tem um status definitivo (não AGENDADA)
+    // Agendada = sem followup = não sabemos ainda, deixa a planilha falar
+    if(st&&st!=='AGENDADA') fbStatusByKey[dk]=st;
+  });
+
+  // Enriquece reuniões da planilha com status do Firebase quando disponível
+  sheetReuni=sheetReuni.map(function(r){
+    var tel=(col(r,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'');
+    if(!tel||!d) return r;
+    var dk=tel+'_'+d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();
+    var fbSt=fbStatusByKey[dk];
+    if(!fbSt) return r; // sem match no Firebase, usa planilha como está
+    var enriched=Object.assign({},r);
+    // Sobrescreve todas as variações do campo status com o valor do Firebase
+    enriched['STATUS REUNIÃO']=fbSt;
+    enriched['STATUS REUNIAO']=fbSt;
+    enriched['Status Reuniao']=fbSt;
+    enriched['STATUS']=fbSt;
+    enriched['Status']=fbSt;
+    return enriched;
+  });
+
   // Chaves de deduplicação das reuniões já na planilha: telefone + dia (ex: "5511999_2026-6-3")
   // Isso evita contar duas vezes uma reunião que está no Firebase E na planilha
   var sheetReunKeys=new Set(sheetReuni.map(function(r){
@@ -2964,9 +3005,11 @@ async function loadDataHybrid(){
   }).filter(Boolean));
 
   // Reuniões do Firebase: só inclui se não tem sheetRow E não é duplicata por tel+dia
+  // _retorno:true = reunião de retorno, não conta como nova reunião para métricas SDR
   var fbExtraReuni=_meetingObjsToRows(
     Object.values(meetings).filter(function(m){
       if(m._hidden) return false;
+      if(m._retorno) return false; // retorno não conta como nova reunião
       if(m.sheetRow) return false; // já tem linha na planilha
       // Deduplicação por telefone + dia: não inclui se já existe na planilha
       var tel=(m.tel||'').replace(/\D/g,'');
@@ -5962,6 +6005,8 @@ function saveFollowup(){
     var newMeeting={id:newMid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
       dtISO:retornoDtISO,dtDisplay:retornoDisplay+' '+retornoTime,
       status:'pending',responsavel:_fuMeeting.responsavel,
+      // Copia SDR do meeting original — retorno é do mesmo SDR
+      sdr:_fuMeeting.sdr||'',sdrName:_fuMeeting.sdrName||'',
       meetLink:_fuMeeting.meetLink||'',gcalLink:_fuMeeting.gcalLink||'',
       kanbanKey:_fuMeeting.kanbanKey||'',origem:_fuMeeting.origem||'Retorno',
       _retorno:true,_retornoDe:fid};
@@ -9697,7 +9742,7 @@ function renderReunioesPersonal(){
         : '<span style="color:var(--muted);font-size:11px;">—</span>';
       var _d=new Date(m.dtISO||(m.scheduledAt||Date.now()));
       var _rowMes=String(_d.getMonth()+1).padStart(2,'0')+'/'+_d.getFullYear();
-      var _rowSdr=(m.sdrName||m.sdr||'').trim().toUpperCase();
+      var _rowSdr=(m.sdrName||m.sdr||m.criador||'').trim().toUpperCase();
       var sdrLabel=_rowSdr?_rowSdr.charAt(0)+_rowSdr.slice(1).toLowerCase():'—';
       return '<tr data-st="'+st+'" data-mes="'+_rowMes+'" data-sdr="'+_rowSdr+'">'+
         '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
@@ -9811,7 +9856,7 @@ function renderReunioesPersonal(){
                       origemRaw.includes('organ')?'#4ade80':
                       'var(--muted)';
         // SDR
-        var sdrLabel=(m.sdrName||m.sdr||'').trim();
+        var sdrLabel=(m.sdrName||m.sdr||m.criador||'').trim();
         if(sdrLabel) sdrLabel=sdrLabel.charAt(0).toUpperCase()+sdrLabel.slice(1).toLowerCase();
         return '<tr>'+
           '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
