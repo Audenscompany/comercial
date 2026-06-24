@@ -3232,6 +3232,29 @@ function buildNav(){
   }).join('');
 }
 
+// ===== FILTRO REUNIÕES FIREBASE =====
+function filtrarReunioesFB(){
+  var fMes=(document.getElementById('fbf-mes')||{}).value||'';
+  var fSdr=((document.getElementById('fbf-sdr')||{}).value||'').toUpperCase();
+  var fSt=(document.getElementById('fbf-st')||{}).value||'';
+  var tbl=document.getElementById('fb-reun-tbl');
+  if(!tbl) return;
+  var rows=tbl.querySelectorAll('tbody tr');
+  var vis=0;
+  rows.forEach(function(tr){
+    var mes=tr.getAttribute('data-mes')||'';
+    var sdr=(tr.getAttribute('data-sdr')||'').toUpperCase();
+    var st=tr.getAttribute('data-st')||'';
+    var ok=(!fMes||mes===fMes)&&(!fSdr||sdr===fSdr)&&(!fSt||st===fSt);
+    tr.style.display=ok?'':'none';
+    if(ok) vis++;
+  });
+  var cnt=document.getElementById('fbf-cnt');
+  if(cnt) cnt.textContent=vis+' reuniões';
+  var badge=document.getElementById('fbf-badge');
+  if(badge) badge.textContent=vis;
+}
+
 function toggleNavGroup(gId){
   var items=document.getElementById(gId);
   var hd=document.getElementById(gId+'-hd');
@@ -9625,36 +9648,80 @@ function renderReunioesPersonal(){
     '</div>'+
   '</div>';
 
-  // Firebase meetings list
+  // Firebase meetings list com filtros
   var fbHtml = '';
   if(rows.length === 0){
     fbHtml = '<div class="cb"><div class="empty-st"><i class="ti ti-calendar-check"></i><p>Nenhuma reuniao registrada</p></div></div>';
   } else {
+    // Meses disponíveis nas reuniões
+    var _fbMonths={};
+    rows.forEach(function(m){
+      var d=new Date(m.dtISO||(m.scheduledAt||Date.now()));
+      var mk=String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+      _fbMonths[mk]=1;
+    });
+    var _mn=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    var _mks=Object.keys(_fbMonths).sort(function(a,b){
+      var pa=a.split('/'),pb=b.split('/');
+      return(parseInt(pb[1])*12+parseInt(pb[0]))-(parseInt(pa[1])*12+parseInt(pa[0]));
+    });
+    var _monthOpts='<option value="">Todos os meses</option>'+_mks.map(function(mk){
+      var p=mk.split('/');return'<option value="'+mk+'">'+_mn[parseInt(p[0])-1]+' '+p[1]+'</option>';
+    }).join('');
+    // SDRs disponíveis
+    var _fbSDRs={};
+    rows.forEach(function(m){var s=(m.sdrName||m.sdr||'').trim().toUpperCase();if(s)_fbSDRs[s]=1;});
+    var _sdrOpts='<option value="">Todos os SDRs</option>'+Object.keys(_fbSDRs).sort().map(function(s){
+      return'<option value="'+s+'">'+s.charAt(0)+s.slice(1).toLowerCase()+'</option>';
+    }).join('');
+    var _sel='background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--white);font-size:12px;outline:none;';
+    var _filterBar='<div style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--border);">'+
+      '<select id="fbf-mes" style="'+_sel+'" onchange="filtrarReunioesFB()">'+_monthOpts+'</select>'+
+      (isGestor?'<select id="fbf-sdr" style="'+_sel+'" onchange="filtrarReunioesFB()">'+_sdrOpts+'</select>':'<span id="fbf-sdr" style="display:none;"></span>')+
+      '<select id="fbf-st" style="'+_sel+'" onchange="filtrarReunioesFB()">'+
+        '<option value="">Todos os status</option>'+
+        '<option value="done">Realizada</option>'+
+        '<option value="pending">Agendada</option>'+
+        '<option value="noshow">No-Show</option>'+
+        '<option value="reagendado">Reagendado</option>'+
+      '</select>'+
+      '<span id="fbf-cnt" style="font-size:12px;color:var(--muted);margin-left:auto;"></span>'+
+    '</div>';
+
     var trs = rows.map(function(m){
-      var st=getMeetingStatus(m); // deriva de followups se status do Firebase estiver desatualizado
+      var st=getMeetingStatus(m);
       var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':st==='reagendado'?'Reagendado':'Agendada';
       var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':st==='reagendado'?'var(--cyan)':'var(--amber)';
-      // Tarefa responsável pelo agendamento
       var tarefaOrigemHtml = m.tarefaOrigem
         ? '<span style="font-size:11px;color:var(--purple3);white-space:nowrap;" title="'+m.tarefaOrigemDia+'"><i class="ti ti-checks" style="margin-right:3px;"></i>'+m.tarefaOrigem+(m.tarefaOrigemDia?' · '+m.tarefaOrigemDia:'')+'</span>'
         : '<span style="color:var(--muted);font-size:11px;">—</span>';
-      return '<tr>'+
+      var _d=new Date(m.dtISO||(m.scheduledAt||Date.now()));
+      var _rowMes=String(_d.getMonth()+1).padStart(2,'0')+'/'+_d.getFullYear();
+      var _rowSdr=(m.sdrName||m.sdr||'').trim().toUpperCase();
+      var sdrLabel=_rowSdr?_rowSdr.charAt(0)+_rowSdr.slice(1).toLowerCase():'—';
+      return '<tr data-st="'+st+'" data-mes="'+_rowMes+'" data-sdr="'+_rowSdr+'">'+
         '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
         '<td style="font-size:12px;">'+(normalizeDtDisplay(m.dtDisplay)||'—')+'</td>'+
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
+        '<td style="font-size:12px;color:var(--cyan);">'+sdrLabel+'</td>'+
         '<td>'+(m.responsavel||'—')+'</td>'+
         '<td>'+tarefaOrigemHtml+'</td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
-        '<td style="white-space:nowrap;"><button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\''+')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
-          (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;" title="Lançar Resultado"><i class="ti ti-flag-check"></i> Resultado</button>':
-            ' <button class="btn btn-outline" onclick="openFollowup(meetings[\''+m.id+'\'],true)" style="font-size:11px;padding:4px 10px;" title="Editar Resultado"><i class="ti ti-edit-circle"></i> Resultado</button>')+
-          ' <button class="btn btn-outline" onclick="reenviarConfirmacaoReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--green);border-color:rgba(34,197,94,0.4);" title="Enviar confirmacao por WhatsApp"><i class="ti ti-brand-whatsapp"></i></button>'+
-          ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:rgba(239,68,68,0.4);" title="Apagar"><i class="ti ti-trash"></i></button>'+
+        '<td style="white-space:nowrap;">'+
+          '<button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
+          (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 10px;"><i class="ti ti-flag-check"></i> Resultado</button>':
+            ' <button class="btn btn-outline" onclick="openFollowup(meetings[\''+m.id+'\'],true)" style="font-size:11px;padding:4px 10px;"><i class="ti ti-edit-circle"></i> Resultado</button>')+
+          ' <button class="btn btn-outline" onclick="reenviarConfirmacaoReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--green);border-color:rgba(34,197,94,0.4);"><i class="ti ti-brand-whatsapp"></i></button>'+
+          ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:rgba(239,68,68,0.4);"><i class="ti ti-trash"></i></button>'+
         '</td>'+
       '</tr>';
     }).join('');
-    fbHtml = '<div class="cb"><div class="cb-hd"><div class="cb-title">Reunioes Registradas ('+(isGestor?'todas':'minhas')+')</div></div>'+
-      '<div style="overflow-x:auto;"><table><thead><tr><th>Cliente</th><th>Data/Hora</th><th>Status</th><th>Responsavel</th><th>Tarefa Origem</th><th>Meet</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+    fbHtml = '<div class="cb"><div class="cb-hd"><div class="cb-title">Reunioes Registradas ('+(isGestor?'todas':'minhas')+')</div>'+
+      '<span id="fbf-badge" class="badge b-amber">'+rows.length+'</span></div>'+
+      _filterBar+
+      '<div style="overflow-x:auto;"><table id="fb-reun-tbl"><thead><tr>'+
+        '<th>Cliente</th><th>Data/Hora</th><th>Status</th><th>SDR</th><th>Responsavel</th><th>Tarefa Origem</th><th>Meet</th><th></th>'+
+      '</tr></thead><tbody>'+trs+'</tbody></table></div></div>';
   }
 
   // Sheets reunioes general view
