@@ -2969,6 +2969,41 @@ async function loadDataHybrid(){
     fetchSheetVals(SHEETS_IDS.clientes, SHEETS_GIDS.clientes)
   ]);
   var sheetLeads=rawToObjs(leadsRaw).rows;
+
+  // Deduplicação de leads com janela de 30 dias:
+  // Duplicatas no webhook (mesmo formulário enviado várias vezes no mesmo dia) são removidas.
+  // Mas se a mesma pessoa se cadastrar novamente após 30 dias, conta como novo lead.
+  var LEAD_DEDUP_DAYS=30;
+  // Processa em ordem cronológica para aplicar a janela corretamente
+  var _sortedForDedup=sheetLeads.slice().sort(function(a,b){
+    var da=parseBRDate(col(a,['Data','DATA','data'])||'');
+    var db=parseBRDate(col(b,['Data','DATA','data'])||'');
+    return (da?da.getTime():0)-(db?db.getTime():0);
+  });
+  var _lastSeenTel={}; // tel → última data incluída (ms)
+  var _dedupedLeads=[];
+  _sortedForDedup.forEach(function(l){
+    var t=(col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+    if(!t){_dedupedLeads.push(l);return;} // sem tel, inclui sempre
+    var d=parseBRDate(col(l,['Data','DATA','data'])||'');
+    var dMs=d?d.getTime():0;
+    var prevMs=_lastSeenTel[t];
+    if(prevMs===undefined){
+      // Primeira aparição
+      _lastSeenTel[t]=dMs;
+      _dedupedLeads.push(l);
+    } else {
+      var diffDays=(dMs-prevMs)/(1000*60*60*24);
+      if(diffDays>LEAD_DEDUP_DAYS){
+        // Novo cadastro após 30 dias — conta como novo lead
+        _lastSeenTel[t]=dMs;
+        _dedupedLeads.push(l);
+      }
+      // Caso contrário: duplicata de webhook ou re-cadastro no mesmo período → ignora
+    }
+  });
+  sheetLeads=_dedupedLeads;
+
   var sheetReuni=rawToObjs(reunioesRaw).rows;
 
   // Leads do Firebase que não estão na planilha (match por telefone)
