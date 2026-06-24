@@ -11237,21 +11237,66 @@ async function calcSDRFromFirebase(nivelIdx, month){
     ssReun:0,ssVendas:0,ssIncentiv:0,ssComm:0,ssTotal:0,
     total:0,totalSDR:0,grandTotal:0,error:null};
   try{
-    // Usa dados híbridos (planilha + Firebase-only) com status enriquecido do Firebase
-    // Mesma fonte que o dashboard "Por SDR/BDR" — garante consistência
-    var hybridData=await loadDataHybrid();
-    hybridData.reunioes.rows.forEach(function(r){
-      var sdr=(col(r,['SDR','SDR/BDR','BDR','Sdr'])||'').trim().toUpperCase();
-      if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
-      var dateStr=col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'';
-      var dt=parseBRDate(dateStr);
-      var rowMonth=dateToMonthStr(dt);
-      if(!rowMonth||rowMonth!==month) return;
-      var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').trim().toUpperCase();
-      var origem=(col(r,['ORIGEM','Origem','origem'])||'').trim().toUpperCase();
-      var isSS=origem.includes('SOCIAL');
-      var isRealiz=status==='REALIZADA'||status==='VENDA';
-      if(isRealiz){
+    // Passo 1: Planilha com status enriquecido pelo Firebase
+    var reunRows=await fetchSheetCached(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes,'reunioes');
+    var sheetReunKeys=new Set(); // tel+dia de todas as linhas da planilha (para dedup Firebase)
+    var _fbStMap=buildFbStatusMap();
+    if(reunRows&&reunRows.length>1){
+      var rh=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      var iStatus=rh.findIndex(function(h){return h.includes('STATUS');});
+      var iSDR=rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
+      var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
+      var iOrigem=rh.findIndex(function(h){return h.includes('ORIGEM');});
+      var iTel=rh.findIndex(function(h){return h.includes('TELEFONE')||h==='TEL';});
+      reunRows.slice(1).forEach(function(row){
+        var tel=(iTel>=0?(row[iTel]||''):'').replace(/\D/g,'');
+        var dateStr=row[iData]||'';
+        var dt=parseBRDate(dateStr);
+        // Rastreia todas as linhas da planilha (para não contar de novo no Firebase)
+        if(tel&&dt) sheetReunKeys.add(tel+'_'+dt.getFullYear()+'-'+dt.getMonth()+'-'+dt.getDate());
+        var sdr=(row[iSDR]||'').trim().toUpperCase();
+        var rowMonth=dateToMonthStr(dt);
+        if(!rowMonth||rowMonth!==month) return;
+        if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
+        // Status: Firebase tem prioridade
+        var status=(row[iStatus]||'').trim().toUpperCase();
+        if(tel&&dt){
+          var dk=tel+'_'+dt.getFullYear()+'-'+dt.getMonth()+'-'+dt.getDate();
+          if(_fbStMap[dk]) status=_fbStMap[dk];
+        }
+        var origem=(row[iOrigem]||'').trim().toUpperCase();
+        var isSS=origem.includes('SOCIAL');
+        if(status==='REALIZADA'||status==='VENDA'){
+          result.agendamentos++;
+          if(!isSS){ result.reunioesComp++; result.trafegoReun++; }
+          if(isSS) result.ssReun++;
+        }
+      });
+    }
+    // Passo 2: Reuniões só no Firebase (não estão na planilha) com SDR = João
+    Object.values(meetings).forEach(function(m){
+      if(m._hidden||m._retorno) return;
+      var tel=(m.tel||'').replace(/\D/g,'');
+      if(!tel) return;
+      var bd=new Date(m.dtISO||(m.scheduledAt||0));
+      if(bd.getFullYear()<2020) return;
+      var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
+      if(sheetReunKeys.has(dk)) return; // já contado via planilha
+      var mSdr=(m.sdrName||m.sdr||m.criador||'').toUpperCase();
+      if(!mSdr.includes('JOÃO')&&!mSdr.includes('JOAO')) return;
+      var mMonth=dateToMonthStr(bd);
+      if(mMonth!==month) return;
+      var fu=followups[m.id];
+      var st;
+      if(fu){
+        if(fu.resultado==='noshow'||fu.comparecimento==='nao') st='NO-SHOW';
+        else if(fu.resultado==='venda') st='VENDA';
+        else st='REALIZADA';
+      } else if(m.status==='done') st='REALIZADA';
+      if(st==='REALIZADA'||st==='VENDA'){
+        var ke=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+        var ori=(m.origem||(ke&&ke.origem)||'').toUpperCase();
+        var isSS=ori.includes('SOCIAL');
         result.agendamentos++;
         if(!isSS){ result.reunioesComp++; result.trafegoReun++; }
         if(isSS) result.ssReun++;
