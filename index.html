@@ -11237,48 +11237,26 @@ async function calcSDRFromFirebase(nivelIdx, month){
     ssReun:0,ssVendas:0,ssIncentiv:0,ssComm:0,ssTotal:0,
     total:0,totalSDR:0,grandTotal:0,error:null};
   try{
-    // Agendamentos da planilha com status enriquecido pelo Firebase
-    var reunRows=await fetchSheetCached(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes,'reunioes');
-    if(reunRows&&reunRows.length>1){
-      var rh=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      var iStatus=rh.findIndex(function(h){return h.includes('STATUS');});
-      var iSDR=rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
-      var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
-      var iDataReal=rh.findIndex(function(h){return h.includes('DATA')&&(h.includes('REAL')||h.includes('SERA'));});
-      var iOrigem=rh.findIndex(function(h){return h.includes('ORIGEM');});
-      var iTel=rh.findIndex(function(h){return h.includes('TELEFONE')||h==='TEL';});
-      // Mapa Firebase: status real sobrescreve status da planilha
-      var _fbStMap=buildFbStatusMap();
-      reunRows.slice(1).forEach(function(row){
-        var sdr=(row[iSDR]||'').trim().toUpperCase();
-        var origem=(row[iOrigem]||'').trim().toUpperCase();
-        var dateStr=row[iData]||'';
-        var dt=parseBRDate(dateStr);
-        var rowMonth=dateToMonthStr(dt);
-        var dateRealStr=row[iDataReal]||'';
-        var dtReal=parseBRDate(dateRealStr);
-        var rowMonthReal=dateToMonthStr(dtReal)||rowMonth;
-        if(!rowMonth) return;
-        if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
-        // Enriquece status: Firebase tem prioridade sobre planilha
-        var status=(row[iStatus]||'').trim().toUpperCase();
-        var tel=(iTel>=0?(row[iTel]||''):'').replace(/\D/g,'');
-        if(tel&&dt){
-          var dk=tel+'_'+dt.getFullYear()+'-'+dt.getMonth()+'-'+dt.getDate();
-          if(_fbStMap[dk]) status=_fbStMap[dk];
-        }
-        var isSS=origem.includes('SOCIAL');
-        var isRealiz=status==='REALIZADA'||status==='VENDA';
-        if(rowMonth===month&&isRealiz){
-          result.agendamentos++;
-          if(!isSS){
-            result.reunioesComp++;
-            result.trafegoReun++;
-          }
-          if(isSS) result.ssReun++;
-        }
-      });
-    }
+    // Usa dados híbridos (planilha + Firebase-only) com status enriquecido do Firebase
+    // Mesma fonte que o dashboard "Por SDR/BDR" — garante consistência
+    var hybridData=await loadDataHybrid();
+    hybridData.reunioes.rows.forEach(function(r){
+      var sdr=(col(r,['SDR','SDR/BDR','BDR','Sdr'])||'').trim().toUpperCase();
+      if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
+      var dateStr=col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'';
+      var dt=parseBRDate(dateStr);
+      var rowMonth=dateToMonthStr(dt);
+      if(!rowMonth||rowMonth!==month) return;
+      var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').trim().toUpperCase();
+      var origem=(col(r,['ORIGEM','Origem','origem'])||'').trim().toUpperCase();
+      var isSS=origem.includes('SOCIAL');
+      var isRealiz=status==='REALIZADA'||status==='VENDA';
+      if(isRealiz){
+        result.agendamentos++;
+        if(!isSS){ result.reunioesComp++; result.trafegoReun++; }
+        if(isSS) result.ssReun++;
+      }
+    });
 
     // Contracts from Firebase
     var contratos=await loadContratos();
