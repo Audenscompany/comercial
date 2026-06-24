@@ -2935,6 +2935,32 @@ function _meetingObjsToRows(arr){
   });
 }
 
+// Mapa tel+dia → status derivado dos followups do Firebase
+// Usado para enriquecer status da planilha (Firebase é a fonte de verdade para status)
+function buildFbStatusMap(){
+  var map={};
+  Object.values(meetings).forEach(function(m){
+    if(m._hidden) return;
+    var tel=(m.tel||'').replace(/\D/g,'');
+    if(!tel) return;
+    var bd=new Date(m.dtISO||(m.scheduledAt||0));
+    if(bd.getFullYear()<2000) return; // data inválida
+    var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
+    var fu=followups[m.id];
+    var st;
+    if(fu){
+      if(fu.resultado==='noshow'||fu.comparecimento==='nao') st='NO-SHOW';
+      else if(fu.resultado==='venda') st='VENDA';
+      else st='REALIZADA';
+    } else if(m.status==='noshow') st='NO-SHOW';
+    else if(m.status==='done') st='REALIZADA';
+    else if(m.status==='reagendado') st='REAGENDADO';
+    // Só registra se tem status definitivo (não AGENDADA — sem followup não sabemos)
+    if(st&&st!=='AGENDADA') map[dk]=st;
+  });
+  return map;
+}
+
 // Híbrido: Google Sheets como fonte primária (dados completos), Firebase complementa com entradas novas
 async function loadDataHybrid(){
   var [leadsRaw, reunioesRaw, clientesRaw] = await Promise.all([
@@ -2954,28 +2980,8 @@ async function loadDataHybrid(){
     return t&&!sheetTels.has(t);
   });
 
-  // Mapa tel+dia → status derivado do Firebase (followups são a fonte de verdade para status)
-  // Isso resolve o problema de reuniões na planilha com status desatualizado
-  var fbStatusByKey={};
-  Object.values(meetings).forEach(function(m){
-    if(m._hidden) return;
-    var tel=(m.tel||'').replace(/\D/g,'');
-    if(!tel) return;
-    var bd=new Date(m.dtISO||(m.scheduledAt||Date.now()));
-    var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
-    var fu=followups[m.id];
-    var st;
-    if(fu){
-      if(fu.resultado==='noshow'||fu.comparecimento==='nao') st='NO-SHOW';
-      else if(fu.resultado==='venda') st='VENDA';
-      else st='REALIZADA';
-    } else if(m.status==='noshow') st='NO-SHOW';
-    else if(m.status==='done') st='REALIZADA';
-    else if(m.status==='reagendado') st='REAGENDADO';
-    // Só sobrescreve se Firebase tem um status definitivo (não AGENDADA)
-    // Agendada = sem followup = não sabemos ainda, deixa a planilha falar
-    if(st&&st!=='AGENDADA') fbStatusByKey[dk]=st;
-  });
+  // Mapa tel+dia → status derivado do Firebase (fonte de verdade para status)
+  var fbStatusByKey=buildFbStatusMap();
 
   // Enriquece reuniões da planilha com status do Firebase quando disponível
   sheetReuni=sheetReuni.map(function(r){
@@ -11231,7 +11237,7 @@ async function calcSDRFromFirebase(nivelIdx, month){
     ssReun:0,ssVendas:0,ssIncentiv:0,ssComm:0,ssTotal:0,
     total:0,totalSDR:0,grandTotal:0,error:null};
   try{
-    // Agendamentos still from reunioes sheet
+    // Agendamentos da planilha com status enriquecido pelo Firebase
     var reunRows=await fetchSheetCached(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes,'reunioes');
     if(reunRows&&reunRows.length>1){
       var rh=reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
@@ -11240,9 +11246,11 @@ async function calcSDRFromFirebase(nivelIdx, month){
       var iData=rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
       var iDataReal=rh.findIndex(function(h){return h.includes('DATA')&&(h.includes('REAL')||h.includes('SERA'));});
       var iOrigem=rh.findIndex(function(h){return h.includes('ORIGEM');});
+      var iTel=rh.findIndex(function(h){return h.includes('TELEFONE')||h==='TEL';});
+      // Mapa Firebase: status real sobrescreve status da planilha
+      var _fbStMap=buildFbStatusMap();
       reunRows.slice(1).forEach(function(row){
         var sdr=(row[iSDR]||'').trim().toUpperCase();
-        var status=(row[iStatus]||'').trim().toUpperCase();
         var origem=(row[iOrigem]||'').trim().toUpperCase();
         var dateStr=row[iData]||'';
         var dt=parseBRDate(dateStr);
@@ -11252,16 +11260,22 @@ async function calcSDRFromFirebase(nivelIdx, month){
         var rowMonthReal=dateToMonthStr(dtReal)||rowMonth;
         if(!rowMonth) return;
         if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
+        // Enriquece status: Firebase tem prioridade sobre planilha
+        var status=(row[iStatus]||'').trim().toUpperCase();
+        var tel=(iTel>=0?(row[iTel]||''):'').replace(/\D/g,'');
+        if(tel&&dt){
+          var dk=tel+'_'+dt.getFullYear()+'-'+dt.getMonth()+'-'+dt.getDate();
+          if(_fbStMap[dk]) status=_fbStMap[dk];
+        }
         var isSS=origem.includes('SOCIAL');
-        // Usa DATA AGENDAMENTO (rowMonth) — mesma lógica do painel SDR/BDR
         var isRealiz=status==='REALIZADA'||status==='VENDA';
         if(rowMonth===month&&isRealiz){
-          result.agendamentos++;           // SS + tráfego → verifica se bateu a meta
+          result.agendamentos++;
           if(!isSS){
-            result.reunioesComp++;         // tráfego → incentivo R$12/reunião
-            result.trafegoReun++;          // tráfego → base do acelerador (acima da meta)
+            result.reunioesComp++;
+            result.trafegoReun++;
           }
-          if(isSS) result.ssReun++;        // SS → incentivo R$30/reunião
+          if(isSS) result.ssReun++;
         }
       });
     }
