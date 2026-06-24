@@ -7064,6 +7064,19 @@ function buildDashComHTML(data){
     }
   }
 
+  // ===== VARREDURA DE DADOS =====
+  if(isGestor){
+    html+='<div class="cb" style="margin-bottom:16px;border:1px solid var(--border2);">'+
+      '<div class="cb-hd">'+
+        '<div class="cb-title"><i class="ti ti-search" style="color:var(--purple3);margin-right:6px;"></i>Varredura de Dados</div>'+
+        '<button class="btn btn-outline" style="font-size:11px;" onclick="varrereDadosReunoes()"><i class="ti ti-refresh"></i> Executar Varredura</button>'+
+      '</div>'+
+      '<div style="padding:10px 16px;font-size:12px;color:var(--muted);">'+
+        'Cruza planilha × Firebase por telefone — mostra dados faltando, duplicatas e permite corrigir o Firebase automaticamente.'+
+      '</div>'+
+    '</div>';
+  }
+
   // ===== POR SDR =====
   var sdrCols=Object.keys(sData);
   if(sdrCols.length>0){
@@ -9744,9 +9757,18 @@ function renderReunioesPersonal(){
       var _rowMes=String(_d.getMonth()+1).padStart(2,'0')+'/'+_d.getFullYear();
       var _rowSdr=(m.sdrName||m.sdr||m.criador||'').trim().toUpperCase();
       var sdrLabel=_rowSdr?_rowSdr.charAt(0)+_rowSdr.slice(1).toLowerCase():'—';
+      // Fallback de data: dtDisplay → dtISO → scheduledAt
+      var _dtLabel = normalizeDtDisplay(m.dtDisplay);
+      if(!_dtLabel && m.dtISO){
+        var _di=new Date(m.dtISO);
+        _dtLabel=_di.getDate()+'/'+(_di.getMonth()+1)+'/'+_di.getFullYear();
+      } else if(!_dtLabel && m.scheduledAt){
+        var _ds=new Date(m.scheduledAt);
+        _dtLabel=_ds.getDate()+'/'+(_ds.getMonth()+1)+'/'+_ds.getFullYear()+' <span style="color:var(--muted);font-size:10px;">(criação)</span>';
+      }
       return '<tr data-st="'+st+'" data-mes="'+_rowMes+'" data-sdr="'+_rowSdr+'">'+
         '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
-        '<td style="font-size:12px;">'+(normalizeDtDisplay(m.dtDisplay)||'—')+'</td>'+
+        '<td style="font-size:12px;">'+(_dtLabel||'—')+'</td>'+
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
         '<td style="font-size:12px;color:var(--cyan);">'+sdrLabel+'</td>'+
         '<td>'+(m.responsavel||'—')+'</td>'+
@@ -10422,6 +10444,268 @@ async function saveCareerLevelSince(person, since){
     setTimeout(function(){showPage('plano-carreira');}, 400);
   }catch(e){
     showSheetToast('Erro: '+e.message, true);
+  }
+}
+
+// ===== VARREDURA DE DADOS: Planilha × Firebase =====
+var _varreturaFixes=[];
+
+async function varrereDadosReunoes(){
+  // Cria modal de resultado
+  var existM=document.getElementById('modal-varretur');
+  if(existM) existM.remove();
+  var m=document.createElement('div');
+  m.id='modal-varretur';
+  m.className='modal-ov active';
+  m.onclick=function(e){if(e.target===this)this.remove();};
+  m.innerHTML='<div class="modal" style="max-width:900px;width:95%;max-height:90vh;overflow-y:auto;">'+
+    '<div class="modal-hd"><div class="modal-title"><i class="ti ti-search" style="margin-right:8px;color:var(--purple3);"></i>Varredura de Dados</div>'+
+    '<button class="btn-close" onclick="document.getElementById(\'modal-varretur\').remove()">✕</button></div>'+
+    '<div id="varretur-body" style="padding:20px;"><div style="text-align:center;padding:40px;color:var(--muted);"><i class="ti ti-loader" style="font-size:24px;"></i><br>Carregando dados...</div></div>'+
+  '</div>';
+  document.body.appendChild(m);
+
+  try{
+    var reunRaw=await fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes);
+    if(!reunRaw||reunRaw.length<2){
+      document.getElementById('varretur-body').innerHTML='<div class="warn-note">Não foi possível carregar a planilha.</div>';
+      return;
+    }
+
+    // Parse headers
+    var hdr=reunRaw[0].map(function(h){return(h||'').trim().toUpperCase();});
+    var iTel=hdr.findIndex(function(h){return h.includes('TELEFONE')||h==='TEL';});
+    var iDataAg=hdr.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
+    var iDataR=hdr.findIndex(function(h){return h.includes('DATA')&&(h.includes('REUN')||h.includes('REAL')||h.includes('SERA'));});
+    var iStatus=hdr.findIndex(function(h){return h.includes('STATUS');});
+    var iSDR=hdr.findIndex(function(h){return h==='SDR'||h==='SDR/BDR'||h.includes('SDR');});
+    var iCloser=hdr.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
+    var iOrigem=hdr.findIndex(function(h){return h.includes('ORIGEM');});
+    var iNome=hdr.findIndex(function(h){return h==='CLIENTE'||h==='NOME'||h.includes('CLIENT');});
+
+    // Parse sheet rows (ignora linhas sem telefone)
+    var sheetRows=reunRaw.slice(1).map(function(row,idx){
+      var tel=(row[iTel]||'').replace(/\D/g,'');
+      return {
+        rowNum:idx+2,
+        tel:tel,
+        nome:row[iNome]||'',
+        dataAgStr:row[iDataAg]||'',
+        dataRStr:iDataR>=0?(row[iDataR]||''):'',
+        dataAg:parseBRDate(row[iDataAg]||''),
+        dataR:parseBRDate(iDataR>=0?(row[iDataR]||''):'')||parseBRDate(row[iDataAg]||''),
+        status:(row[iStatus]||'').trim().toUpperCase(),
+        sdr:(row[iSDR]||'').trim(),
+        closer:(row[iCloser]||'').trim(),
+        origem:(row[iOrigem]||'').trim()
+      };
+    }).filter(function(r){return r.tel;});
+
+    // Firebase: mapa tel → [meetings]
+    var fbByTel={};
+    Object.values(meetings).forEach(function(m){
+      var tel=(m.tel||'').replace(/\D/g,'');
+      if(!tel) return;
+      if(!fbByTel[tel]) fbByTel[tel]=[];
+      fbByTel[tel].push(m);
+    });
+
+    // Mapa tel+dia → meeting id (para match preciso)
+    var fbByKey={};
+    Object.values(meetings).forEach(function(m){
+      var tel=(m.tel||'').replace(/\D/g,'');
+      if(!tel) return;
+      var bd=new Date(m.dtISO||(m.scheduledAt||0));
+      var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
+      fbByKey[dk]=m;
+    });
+
+    // Duplicatas na planilha (mesmo telefone aparece mais de uma vez)
+    var telCount={};
+    sheetRows.forEach(function(r){telCount[r.tel]=(telCount[r.tel]||0)+1;});
+    var dupsTel=Object.keys(telCount).filter(function(t){return telCount[t]>1;});
+
+    // Cross-reference
+    var fixes=[];
+    var issues=[];
+    var sheetOnlyCount=0;
+    var matchedCount=0;
+
+    sheetRows.forEach(function(sr){
+      var fbList=fbByTel[sr.tel]||[];
+
+      // Tenta match por tel+dia
+      var match=null;
+      if(sr.dataR){
+        var dk=sr.tel+'_'+sr.dataR.getFullYear()+'-'+sr.dataR.getMonth()+'-'+sr.dataR.getDate();
+        match=fbByKey[dk];
+      }
+      // Fallback: primeiro meeting com esse telefone
+      if(!match&&fbList.length>0) match=fbList[0];
+
+      if(!match){
+        sheetOnlyCount++;
+        return;
+      }
+      matchedCount++;
+
+      var fix={mid:match.id,tel:sr.tel,nome:sr.nome};
+      var hasIssue=false;
+      var issueDesc=[];
+
+      // SDR faltando no Firebase
+      if(!match.sdrName&&!match.sdr&&sr.sdr){
+        fix.sdrName=sr.sdr.toUpperCase();
+        fix.sdr=sr.sdr;
+        issueDesc.push('SDR faltando → "'+sr.sdr+'"');
+        hasIssue=true;
+      }
+
+      // Data faltando no Firebase
+      if(!match.dtISO&&sr.dataR){
+        var iso=sr.dataR.getFullYear()+'-'+
+          String(sr.dataR.getMonth()+1).padStart(2,'0')+'-'+
+          String(sr.dataR.getDate()).padStart(2,'0')+'T09:00:00';
+        fix.dtISO=iso;
+        fix.dtDisplay=sr.dataR.getDate()+'/'+(sr.dataR.getMonth()+1)+'/'+sr.dataR.getFullYear()+' 09:00';
+        issueDesc.push('Data faltando → '+fix.dtDisplay);
+        hasIssue=true;
+      }
+
+      // Closer faltando no Firebase
+      if((!match.responsavel||match.responsavel==='')&&sr.closer){
+        fix.responsavel=sr.closer;
+        issueDesc.push('Closer faltando → "'+sr.closer+'"');
+        hasIssue=true;
+      }
+
+      if(hasIssue){
+        fix.desc=issueDesc;
+        fixes.push(fix);
+        issues.push({sr:sr,match:match,desc:issueDesc,fix:fix});
+      }
+    });
+
+    // Firebase sem planilha
+    var fbOnlyList=Object.values(meetings).filter(function(m){
+      if(m._hidden||m._retorno) return false;
+      var tel=(m.tel||'').replace(/\D/g,'');
+      return tel&&!sheetRows.find(function(r){return r.tel===tel;});
+    });
+
+    _varreturaFixes=fixes;
+
+    // Monta HTML do resultado
+    var bodyHtml='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">';
+    function statCard(label,val,color){
+      return '<div style="background:var(--bg2);border-radius:10px;padding:12px;text-align:center;">'+
+        '<div style="font-size:22px;font-weight:700;color:'+(color||'var(--white)')+';">'+val+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+label+'</div>'+
+      '</div>';
+    }
+    bodyHtml+=statCard('Na planilha',sheetRows.length,'var(--white)');
+    bodyHtml+=statCard('No Firebase',Object.values(meetings).filter(function(m){return!m._hidden&&!m._retorno;}).length,'var(--white)');
+    bodyHtml+=statCard('Com problemas',issues.length,'var(--amber)');
+    bodyHtml+=statCard('Duplicatas (tel)',dupsTel.length,'var(--red)');
+    bodyHtml+='</div>';
+
+    // Seção de correções automáticas
+    if(fixes.length>0){
+      bodyHtml+='<div style="background:rgba(251,191,36,0.08);border:1px solid var(--amber);border-radius:10px;padding:14px;margin-bottom:16px;">'+
+        '<div style="font-weight:700;color:var(--amber);margin-bottom:8px;"><i class="ti ti-tool" style="margin-right:6px;"></i>'+fixes.length+' registros com dados faltando no Firebase</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">O Firebase pode ser atualizado com os dados da planilha automaticamente.</div>'+
+        '<button class="btn btn-primary" onclick="aplicarCorrecoesFirebase()" style="font-size:12px;"><i class="ti ti-check"></i> Corrigir '+fixes.length+' registros no Firebase</button>'+
+        '<div style="margin-top:12px;max-height:200px;overflow-y:auto;">'+
+        '<table style="width:100%;border-collapse:collapse;font-size:11px;">'+
+        '<thead><tr><th style="text-align:left;padding:4px 6px;color:var(--muted);">Cliente</th><th style="text-align:left;padding:4px 6px;color:var(--muted);">Telefone</th><th style="text-align:left;padding:4px 6px;color:var(--muted);">O que vai ser corrigido</th></tr></thead><tbody>'+
+        issues.map(function(iss){
+          return '<tr style="border-top:1px solid var(--border);">'+
+            '<td style="padding:4px 6px;">'+iss.sr.nome+'</td>'+
+            '<td style="padding:4px 6px;color:var(--muted);">'+iss.sr.tel+'</td>'+
+            '<td style="padding:4px 6px;color:var(--cyan);">'+iss.desc.join(' | ')+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table></div>'+
+      '</div>';
+    } else {
+      bodyHtml+='<div style="background:rgba(34,197,94,0.08);border:1px solid var(--green);border-radius:10px;padding:14px;margin-bottom:16px;color:var(--green);font-weight:600;">'+
+        '<i class="ti ti-check" style="margin-right:6px;"></i>Nenhum dado faltando encontrado — Firebase e planilha estão alinhados!'+
+      '</div>';
+    }
+
+    // Duplicatas por telefone
+    if(dupsTel.length>0){
+      bodyHtml+='<div style="background:rgba(239,68,68,0.08);border:1px solid var(--red);border-radius:10px;padding:14px;margin-bottom:16px;">'+
+        '<div style="font-weight:700;color:var(--red);margin-bottom:8px;"><i class="ti ti-copy" style="margin-right:6px;"></i>'+dupsTel.length+' telefones duplicados na planilha</div>'+
+        '<div style="max-height:160px;overflow-y:auto;">'+
+        '<table style="width:100%;border-collapse:collapse;font-size:11px;">'+
+        '<thead><tr><th style="text-align:left;padding:4px 6px;color:var(--muted);">Telefone</th><th style="text-align:left;padding:4px 6px;color:var(--muted);">Qtd linhas</th><th style="text-align:left;padding:4px 6px;color:var(--muted);">Clientes</th></tr></thead><tbody>'+
+        dupsTel.map(function(tel){
+          var rows=sheetRows.filter(function(r){return r.tel===tel;});
+          return '<tr style="border-top:1px solid var(--border);">'+
+            '<td style="padding:4px 6px;color:var(--muted);">'+tel+'</td>'+
+            '<td style="padding:4px 6px;color:var(--red);font-weight:700;">'+rows.length+'x</td>'+
+            '<td style="padding:4px 6px;">'+rows.map(function(r){return r.nome+' ('+r.dataAgStr+')';}).join(', ')+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table></div>'+
+      '</div>';
+    }
+
+    // Firebase sem planilha
+    if(fbOnlyList.length>0){
+      bodyHtml+='<div style="background:rgba(251,191,36,0.05);border:1px solid var(--border2);border-radius:10px;padding:14px;margin-bottom:16px;">'+
+        '<div style="font-weight:700;color:var(--muted);margin-bottom:8px;"><i class="ti ti-database" style="margin-right:6px;"></i>'+fbOnlyList.length+' reuniões no Firebase sem correspondência na planilha</div>'+
+        '<div style="max-height:160px;overflow-y:auto;font-size:11px;">'+
+        fbOnlyList.map(function(m){
+          var bd=new Date(m.dtISO||(m.scheduledAt||0));
+          var dt=bd.getFullYear()>2000?bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear():'?';
+          return '<div style="padding:3px 0;border-top:1px solid var(--border);display:flex;gap:12px;">'+
+            '<span style="color:var(--white);font-weight:600;">'+(m.nome||'—')+'</span>'+
+            '<span style="color:var(--muted);">'+(m.tel||'')+'</span>'+
+            '<span style="color:var(--muted);">'+dt+'</span>'+
+            '<span style="color:var(--cyan);">'+(m.sdrName||m.sdr||m.criador||'—')+'</span>'+
+          '</div>';
+        }).join('')+
+        '</div>'+
+      '</div>';
+    }
+
+    document.getElementById('varretur-body').innerHTML=bodyHtml;
+
+  }catch(e){
+    document.getElementById('varretur-body').innerHTML='<div class="warn-note">Erro: '+e.message+'</div>';
+  }
+}
+
+async function aplicarCorrecoesFirebase(){
+  var fixes=_varreturaFixes||[];
+  if(!fixes.length){showSheetToast('Nada para corrigir',false);return;}
+  var btn=document.querySelector('#modal-varretur .btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Aplicando...';}
+  try{
+    var updates={};
+    fixes.forEach(function(f){
+      var base='meetings/'+f.mid+'/';
+      if(f.sdrName){updates[base+'sdrName']=f.sdrName;updates[base+'sdr']=f.sdr;}
+      if(f.dtISO){updates[base+'dtISO']=f.dtISO;updates[base+'dtDisplay']=f.dtDisplay;}
+      if(f.responsavel){updates[base+'responsavel']=f.responsavel;}
+    });
+    await fbDb.ref().update(updates);
+    // Atualiza objeto local
+    fixes.forEach(function(f){
+      var m=meetings[f.mid];
+      if(!m) return;
+      if(f.sdrName){m.sdrName=f.sdrName;m.sdr=f.sdr;}
+      if(f.dtISO){m.dtISO=f.dtISO;m.dtDisplay=f.dtDisplay;}
+      if(f.responsavel) m.responsavel=f.responsavel;
+    });
+    showSheetToast(fixes.length+' registros corrigidos no Firebase!',false);
+    document.getElementById('modal-varretur').remove();
+    _varreturaFixes=[];
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Corrigir no Firebase';}
+    showSheetToast('Erro: '+e.message,true);
   }
 }
 
