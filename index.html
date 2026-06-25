@@ -10864,6 +10864,15 @@ async function varreduraLeadsSemAd(btnEl){
     _leadsAdFixes=semAd;
     if(btn){btn.disabled=false;btn.innerHTML=origLabel||'<i class="ti ti-tag"></i> Leads sem Ad (Firebase)';}
 
+    // Debug toast — sempre aparece para confirmar que a varredura rodou
+    var totalKb=Object.keys(kanbanData).length;
+    showSheetToast('Varredura: '+totalKb+' leads no Firebase · '+semAd.length+' sem Ad',false);
+
+    if(semAd.length===0){
+      // Nada para corrigir — toast já informou, não precisa de modal
+      return;
+    }
+
     var autoCount=semAd.filter(function(r){return r.autoMatch;}).length;
     var manualCount=semAd.length-autoCount;
 
@@ -10907,6 +10916,7 @@ async function varreduraLeadsSemAd(btnEl){
     }).join('');
 
     var mo=document.createElement('div');mo.className='modal-overlay';mo.id='modal-leads-ad';
+    mo.style.cssText='display:flex!important;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;';
     mo.innerHTML='<div class="modal" style="max-width:900px;max-height:88vh;overflow-y:auto;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-tag" style="margin-right:8px;color:var(--amber);"></i>Varredura de Ad — Firebase / Kanban</div>'+
         '<button class="modal-close" onclick="document.getElementById(\'modal-leads-ad\').remove()">×</button></div>'+
