@@ -3740,7 +3740,7 @@ function renderLeads(){
   '<div class="page-header"><div><div class="page-title">Importar Leads</div><div class="page-sub">Base para geracao diaria</div></div>'+
   '<div style="display:flex;gap:8px;align-items:center;">'+
     '<span class="badge b-purple">'+allLeads.length+' unicos</span>'+
-    (isGcalConnected()?'<button id="btn-varredura-leads" class="btn btn-outline" style="font-size:11px;" onclick="varreduraLeadsSemAd()"><i class="ti ti-tag"></i> Varredura de Ad</button>':'')+
+    '<button id="btn-varredura-leads" class="btn btn-outline" style="font-size:11px;" onclick="varreduraLeadsSemAd(this)"><i class="ti ti-tag"></i> Varredura de Ad</button>'+
   '</div></div>'+
   '<div class="info-note"><i class="ti ti-info-circle"></i> Multiplos CSVs aceitos. Duplicatas por telefone removidas automaticamente.</div>'+
   '<div class="cb"><div class="cb-hd"><div class="cb-title">Upload Planilhas</div><span class="badge b-cyan">Multiplos arquivos</span></div>'+
@@ -7115,7 +7115,7 @@ function buildDashComHTML(data){
       '<div class="cb-hd">'+
         '<div class="cb-title"><i class="ti ti-search" style="color:var(--purple3);margin-right:6px;"></i>Varredura de Dados</div>'+
         '<div style="display:flex;gap:8px;">'+
-          '<button class="btn btn-outline" style="font-size:11px;" onclick="varreduraLeadsSemAd()"><i class="ti ti-tag"></i> Leads sem Ad (Firebase)</button>'+
+          '<button class="btn btn-outline" style="font-size:11px;" onclick="varreduraLeadsSemAd(this)"><i class="ti ti-tag"></i> Leads sem Ad (Firebase)</button>'+
           '<button class="btn btn-outline" style="font-size:11px;" onclick="varrereDadosReunoes()"><i class="ti ti-refresh"></i> Executar Varredura</button>'+
         '</div>'+
       '</div>'+
@@ -10802,13 +10802,14 @@ function _colLetter(idx){ // 0-based → 'A','B',...,'Z','AA',...
 
 var _leadsAdFixes=null; // [{fbKey, nome, data, tel, campSheet, conjSheet, adSheet, campFb, conjFb, adFb}]
 
-async function varreduraLeadsSemAd(){
-  if(!isGcalConnected()){showSheetToast('Google desconectado',true);return;}
-  var btn=document.getElementById('btn-varredura-leads');
+async function varreduraLeadsSemAd(btnEl){
+  var btn=btnEl||document.getElementById('btn-varredura-leads');
+  var origLabel=btn?btn.innerHTML:'';
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader ti-spin"></i> Buscando...';}
   try{
     // 1. Carrega planilha e monta mapa tel → {ad, campanha, conjunto}
-    var raw=await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads);
+    // (só se Google estiver conectado — se não, pula o cruzamento)
+    var raw=isGcalConnected()?await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads):null;
     var sheetAdMap={}; // tel → {ad,campanha,conjunto,fonte}
     if(raw&&raw.length>1){
       var headers=raw[0];
@@ -10861,7 +10862,7 @@ async function varreduraLeadsSemAd(){
     });
 
     _leadsAdFixes=semAd;
-    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-search"></i> Varredura de Ad';}
+    if(btn){btn.disabled=false;btn.innerHTML=origLabel||'<i class="ti ti-tag"></i> Leads sem Ad (Firebase)';}
 
     var autoCount=semAd.filter(function(r){return r.autoMatch;}).length;
     var manualCount=semAd.length-autoCount;
@@ -10927,7 +10928,8 @@ async function varreduraLeadsSemAd(){
     document.body.appendChild(mo);
   }catch(e){
     showSheetToast('Erro na varredura: '+e.message,true);
-    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-search"></i> Varredura de Ad';}
+    console.error('varreduraLeadsSemAd',e);
+    if(btn){btn.disabled=false;btn.innerHTML=origLabel||'<i class="ti ti-tag"></i> Leads sem Ad (Firebase)';}
   }
 }
 
