@@ -9996,6 +9996,7 @@ function abrirEditarReuniao(mid){
   var m = meetings[mid];
   if(!m){ alert('Reunião não encontrada'); return; }
   var closers = ['Lucas','Gustavo','João'];
+  var sdrs = ['João','Lucas','Gustavo'];
   var origens = ['Trafego Pago','Social Selling','Organico','Indicacao','Evento','Recuperacao','Ligacao'];
   var html = '<div class="modal-ov active" id="modal-edit-reun" onclick="if(event.target===this)cancelarEdicaoReuniao()">'+
     '<div class="modal-box" style="max-width:520px;">'+
@@ -10022,6 +10023,20 @@ function abrirEditarReuniao(mid){
         '<div><label class="f-label">Origem</label><select id="er-origem" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
           origens.map(function(o){return'<option'+(m.origem===o?' selected':'')+'>'+o+'</option>';}).join('')+
         '</select></div>'+
+        '<div><label class="f-label">SDR/BDR</label><select id="er-sdr" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
+          sdrs.map(function(s){var cur=(m.sdrName||m.sdr||'').trim();return'<option'+(cur.toLowerCase()===s.toLowerCase()||cur.toUpperCase()===s.toUpperCase()?' selected':'')+'>'+s+'</option>';}).join('')+
+        '</select></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 14px;">'+
+        '<label class="f-label" style="display:block;margin-bottom:8px;">Avisar lead sobre a mudança?</label>'+
+        '<div style="display:flex;gap:16px;">'+
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--white);">'+
+            '<input type="radio" name="er-avisar" value="sim" checked style="accent-color:var(--purple);width:15px;height:15px;"> Sim, enviar mensagem'+
+          '</label>'+
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted);">'+
+            '<input type="radio" name="er-avisar" value="nao" style="accent-color:var(--purple);width:15px;height:15px;"> Não enviar'+
+          '</label>'+
+        '</div>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="salvarEdicaoReuniao(\''+mid+'\')"><i class="ti ti-device-floppy"></i> Salvar</button>'+
@@ -10191,6 +10206,8 @@ async function salvarEdicaoReuniao(mid){
   m.responsavel = document.getElementById('er-closer').value;
   m.status = document.getElementById('er-status').value;
   m.origem = document.getElementById('er-origem').value;
+  var _erSdrEl = document.getElementById('er-sdr');
+  if(_erSdrEl) m.sdrName = _erSdrEl.value.toUpperCase();
 
   // Check if date/time changed
   var newDate = document.getElementById('er-data') ? document.getElementById('er-data').value : '';
@@ -10221,7 +10238,9 @@ async function salvarEdicaoReuniao(mid){
   showSheetToast('Reunião atualizada!', false);
 
   // Send reagendamento WA + reset lembretes if time changed and phone available
-  if(dtChanged && m.tel){
+  var _avisarEl = document.querySelector('input[name="er-avisar"]:checked');
+  var _avisar = _avisarEl ? _avisarEl.value === 'sim' : true;
+  if(dtChanged && m.tel && _avisar){
     try{
       await enviarReagendamentoWA(m.tel, m.nome, newDtDisplay, m.kanbanKey, newDtISO);
       showSheetToast('Mensagem de reagendamento enviada ao cliente.', false);
