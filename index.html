@@ -1089,7 +1089,9 @@ async function confirmarAgendamentoReuniao(key){
     sdrName:((CU&&CU.closer)||'João').toUpperCase(),
     scheduledAt:Date.now(),
     tarefaOrigem: ultimaTarefaSDR ? ultimaTarefaSDR.tipo : '',
-    tarefaOrigemDia: ultimaTarefaSDR ? 'Dia '+ultimaTarefaSDR.dia : ''};
+    tarefaOrigemDia: ultimaTarefaSDR ? 'Dia '+ultimaTarefaSDR.dia : '',
+    audensDay: !!(kanbanData[key]&&kanbanData[key].audensDay),
+    audensDayResp: (kanbanData[key]&&kanbanData[key].audensDayResp)||''};
   meetings[mid]=meetingObj;
   kanbanData[key].meetingId=mid;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -12304,15 +12306,29 @@ function renderAudensDay(){
         '<i class="ti ti-users"></i> Leads de Recuperação</button>'+
       '<button id="adtab-ind" onclick="adShowTab(\'ind\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
         '<i class="ti ti-heart-handshake"></i> Indicações</button>'+
+      '<button id="adtab-comp" onclick="adShowTab(\'comp\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
+        '<i class="ti ti-trophy"></i> Competição</button>'+
     '</div>'+
     '<div id="ad-tab-leads"><div id="audens-leads-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando leads...</div></div>'+
     '<div id="ad-tab-ind" style="display:none;"><div id="audens-ind-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando indicações...</div></div>'+
+    '<div id="ad-tab-comp" style="display:none;"><div id="audens-comp-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando competição...</div></div>'+
   '</div>';
 }
 
 function adShowTab(tab){
   document.getElementById('ad-tab-leads').style.display = tab==='leads'?'':'none';
   document.getElementById('ad-tab-ind').style.display  = tab==='ind'?'':'none';
+  var compEl = document.getElementById('ad-tab-comp');
+  if(compEl) compEl.style.display = tab==='comp'?'':'none';
+  ['leads','ind','comp'].forEach(function(t){
+    var btn = document.getElementById('adtab-'+t);
+    if(btn){
+      btn.style.borderBottom = t===tab ? '2px solid var(--purple)' : '2px solid transparent';
+      btn.style.color = t===tab ? 'var(--purple3)' : 'var(--muted)';
+    }
+  });
+  if(tab==='comp') loadAudensCompetition();
+  if(tab==='ind') _loadAudensIndicacoes(document.getElementById('audens-ind-content'));
   document.getElementById('adtab-leads').style.borderBottomColor = tab==='leads'?'var(--purple)':'transparent';
   document.getElementById('adtab-leads').style.color = tab==='leads'?'var(--purple3)':'var(--muted)';
   document.getElementById('adtab-ind').style.borderBottomColor = tab==='ind'?'var(--purple)':'transparent';
@@ -12353,16 +12369,16 @@ async function loadAudensDay(){
   if(!leadsEl) return;
 
   var agora = Date.now();
-  var JANELA = 60 * 24 * 60 * 60 * 1000;
-  var STATUS_EXCLUIR = ['fechado','contrato','venda'];
+  var JANELA = 90 * 24 * 60 * 60 * 1000; // 90 dias
+  var FAT_MINIMO = 2; // índice mínimo = "20 mil até 40 mil"
 
-  // Monta Set de telefones de clientes ativos (para excluir do Audens Day)
+  // Monta Set de telefones/nomes de clientes ativos
   var _clientesTels = new Set();
   var _clientesNomes = new Set();
   try{
     var _ctrs = await loadContratos();
     _ctrs.forEach(function(c){
-      if(c.ativo===false||c.dataCancelamento) return; // cancelados não contam
+      if(c.ativo===false||c.dataCancelamento) return;
       var tel = (c.telefone||c.tel||'').replace(/\D/g,'');
       if(tel) _clientesTels.add(tel);
       var nome = (c.cliente||c.nome||'').trim().toLowerCase();
@@ -12370,23 +12386,104 @@ async function loadAudensDay(){
     });
   }catch(e){ console.warn('[AudensDay] Erro ao carregar contratos:', e); }
 
-  _audensLeads60 = [];
-  var _excluidos = 0;
+  // Monta mapa tel → status do kanban (para enriquecer leads da planilha)
+  var _kanbanByTel = {};
   Object.keys(kanbanData).forEach(function(key){
     var k = kanbanData[key];
-    if(!k||!k.nome) return;
-    var ts = k._createdAt || k.statusAt || 0;
-    if(agora - ts > JANELA) return;
-    var st = (k.status||'novo').toLowerCase();
-    if(STATUS_EXCLUIR.indexOf(st) >= 0) return;
-    // Exclui se já é cliente ativo (por telefone ou nome)
-    var tel = (k.telefone||'').replace(/\D/g,'');
-    var nome = (k.nome||'').trim().toLowerCase();
-    if(tel && _clientesTels.has(tel)){ _excluidos++; return; }
-    if(nome && _clientesNomes.has(nome)){ _excluidos++; return; }
-    _audensLeads60.push({key:key, k:k, ts:ts, fat:_fatScore(k.faturamento||''), st:st});
+    if(!k||!k.telefone) return;
+    var tel = k.telefone.replace(/\D/g,'');
+    if(tel) _kanbanByTel[tel] = {key:key, k:k};
   });
-  if(_excluidos>0) console.log('[AudensDay] '+_excluidos+' leads excluídos por já serem clientes ativos');
+
+  _audensLeads60 = [];
+  var _excluidos = 0;
+
+  // Fonte principal: planilha de leads (Google Sheets) — abril e maio
+  var _sheetOk = false;
+  if(isGcalConnected()){
+    try{
+      var leadsRaw = await fetchSheetVals(SHEETS_IDS.leads, SHEETS_GIDS.leads);
+      if(leadsRaw && leadsRaw.length > 1){
+        var _lObj = rawToObjs(leadsRaw);
+        _sheetOk = true;
+        var _seen = new Set(); // dedup por telefone
+        _lObj.rows.forEach(function(row){
+          var nome = (col(row,['Nome','NOME','nome'])||'').trim();
+          if(!nome) return;
+          var tel  = (col(row,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
+          var fat  = (col(row,['Faturamento','FATURAMENTO','faturamento'])||'').trim();
+          var data = col(row,['Data','DATA','data'])||'';
+          var empresa = (col(row,['Empresa','EMPRESA','empresa'])||'').trim();
+          var ad   = (col(row,['Ad','AD','ad'])||col(row,['Anuncio','ANUNCIO','anúncio'])||'').trim();
+          var camp = (col(row,['Campanha','CAMPANHA','campaign'])||'').trim();
+
+          // Filtro faturamento
+          var fatIdx = _fatScore(fat);
+          if(fatIdx < FAT_MINIMO) return; // abaixo de 20 mil
+
+          // Filtro data (últimos 90 dias)
+          var dt = parseBRDate(data);
+          if(!dt) return;
+          var ts = dt.getTime();
+          if(agora - ts > JANELA) return;
+
+          // Dedup por telefone (mantém o mais recente)
+          if(tel){
+            if(_seen.has(tel)) return;
+            _seen.add(tel);
+          }
+
+          // Exclui clientes ativos
+          if(tel && _clientesTels.has(tel)){ _excluidos++; return; }
+          var nomeL = nome.toLowerCase();
+          if(_clientesNomes.has(nomeL)){ _excluidos++; return; }
+
+          // Enriquece com status do kanban se tiver
+          var kanbanEntry = tel ? _kanbanByTel[tel] : null;
+          var st = 'novo';
+          var kanbanKey = null;
+          if(kanbanEntry){
+            st = (kanbanEntry.k.status||'novo').toLowerCase();
+            kanbanKey = kanbanEntry.key;
+            // Se já fechou via kanban, exclui
+            if(['fechado','contrato','venda'].indexOf(st)>=0){ _excluidos++; return; }
+          }
+
+          _audensLeads60.push({
+            key: kanbanKey||('sheet_'+tel+(ts||Math.random())),
+            k: {
+              nome:nome, telefone:tel, faturamento:fat,
+              empresa:empresa, ad:ad, campanha:camp,
+              status:st, _createdAt:ts,
+              responsavel: kanbanEntry ? kanbanEntry.k.responsavel : ''
+            },
+            ts:ts, fat:fatIdx, st:st
+          });
+        });
+      }
+    }catch(e){ console.warn('[AudensDay] Erro ao carregar planilha de leads:', e); }
+  }
+
+  // Fallback: kanbanData se planilha não disponível
+  if(!_sheetOk){
+    Object.keys(kanbanData).forEach(function(key){
+      var k = kanbanData[key];
+      if(!k||!k.nome) return;
+      var ts = k._createdAt || k.statusAt || 0;
+      if(agora - ts > JANELA) return;
+      var st = (k.status||'novo').toLowerCase();
+      if(['fechado','contrato','venda'].indexOf(st)>=0) return;
+      var fatIdx = _fatScore(k.faturamento||'');
+      if(fatIdx < FAT_MINIMO) return; // abaixo de 20 mil
+      var tel = (k.telefone||'').replace(/\D/g,'');
+      var nome = (k.nome||'').trim().toLowerCase();
+      if(tel && _clientesTels.has(tel)){ _excluidos++; return; }
+      if(nome && _clientesNomes.has(nome)){ _excluidos++; return; }
+      _audensLeads60.push({key:key, k:k, ts:ts, fat:fatIdx, st:st});
+    });
+  }
+
+  if(_excluidos>0) console.log('[AudensDay] '+_excluidos+' leads excluídos (clientes ativos ou faturamento baixo)');
   _audensLeads60.sort(function(a,b){
     if(b.fat !== a.fat) return b.fat - a.fat;
     return b.ts - a.ts;
@@ -12433,23 +12530,30 @@ function _renderAudensLeads(el, savedDist, mesKey){
     });
   }
 
+  // Mapa global para adAgendarLead referenciar por chave
+  window._adLeadsMapRender = {};
+  leads.forEach(function(item){ window._adLeadsMapRender[item.key] = item; });
+
   function buildColuna(pessoa){
     var items = dist[pessoa];
     var cards = items.map(function(item){
       var k = item.k;
       var diasAtras = Math.round((agora - item.ts) / (24*60*60*1000));
-      var waLink = k.telefone ? 'https://wa.me/'+k.telefone.replace(/\D/g,'') : '';
+      var waHref = k.telefone ? 'https://wa.me/'+k.telefone.replace(/\D/g,'') : '';
+      var jaAgendada = item.st === 'reuniao' || item.st === 'proposta';
       return '<div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 12px;margin-bottom:8px;">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">'+
           '<div style="font-weight:700;font-size:13px;color:var(--white);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(k.nome||'—')+'</div>'+
-          (waLink?'<a href="'+waLink+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:5px;color:#25d366;font-size:12px;text-decoration:none;flex-shrink:0;margin-left:6px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+
+          (waHref?'<a href="'+waHref+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:5px;color:#25d366;font-size:12px;text-decoration:none;flex-shrink:0;margin-left:6px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+
         '</div>'+
         (k.empresa?'<div style="font-size:11px;color:var(--muted);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(k.empresa)+'</div>':'')+
-        '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">'+
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'+
           _fatLabel(k.faturamento||'')+
           _statusLabel(item.st)+
           '<span style="font-size:10px;color:rgba(255,255,255,0.25);font-family:\'Barlow Condensed\',sans-serif;">'+diasAtras+'d</span>'+
         '</div>'+
+        '<button onclick="adAgendarLead(\''+esc(item.key)+'\')" style="width:100%;padding:6px 10px;font-size:11px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:'+(jaAgendada?'rgba(74,222,128,0.1)':'rgba(123,47,255,0.15)')+';border:1px solid '+(jaAgendada?'rgba(74,222,128,0.3)':'rgba(123,47,255,0.35)')+';border-radius:6px;color:'+(jaAgendada?'#4ade80':'var(--purple3)')+';cursor:pointer;">'+
+          '<i class="ti ti-calendar-plus"></i> '+(jaAgendada?'Ver / Reagendar':'Agendar Reunião')+'</button>'+
       '</div>';
     }).join('');
 
@@ -12490,7 +12594,7 @@ function _renderAudensLeads(el, savedDist, mesKey){
     '</div>'+
     alertDist+
     (totalLeads === 0
-      ? '<div style="text-align:center;padding:40px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhum lead nos últimos 60 dias para recuperar.</div>'
+      ? '<div style="text-align:center;padding:40px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhum lead nos últimos 90 dias para recuperar.</div>'
       : '<div style="display:flex;gap:12px;flex-wrap:wrap;">'+
           buildColuna('Lucas')+buildColuna('Gustavo')+buildColuna('João')+
         '</div>');
@@ -12527,6 +12631,182 @@ async function adSalvarDist(mesKey){
   } else {
     showSheetToast('Firebase offline — distribuição não persistida', true);
   }
+}
+
+// ---- AGENDAR REUNIÃO DO AUDENS DAY ----
+async function adAgendarLead(itemKey){
+  var item = window._adLeadsMapRender ? window._adLeadsMapRender[itemKey] : null;
+  if(!item){ showSheetToast('Lead não encontrado', true); return; }
+
+  // Descobre a quem o lead foi atribuído
+  var dist = window._adDistAtual||{};
+  var pessoa = '';
+  ['Lucas','Gustavo','João'].forEach(function(p){
+    if((dist[p]||[]).some(function(i){ return i.key===itemKey; })) pessoa=p;
+  });
+
+  var k = item.k;
+  var kanbanKey = item.key;
+
+  // Se é lead da planilha sem kanban, cria entrada no kanban primeiro
+  if(!kanbanData[kanbanKey]){
+    var novoKey = 'ad_'+Date.now()+'_'+Math.random().toString(36).substring(2,6);
+    var novoLead = {
+      nome: k.nome||'', telefone: k.telefone||'', faturamento: k.faturamento||'',
+      empresa: k.empresa||'', campanha: k.campanha||'', ad: k.ad||'',
+      status:'novo', origem:'Audens Day', _createdAt: item.ts||Date.now(),
+      audensDay: true, audensDayResp: pessoa
+    };
+    kanbanData[novoKey] = novoLead;
+    if(fbDb) fbDb.ref('kanban/'+novoKey).set(novoLead);
+    kanbanKey = novoKey;
+    // Atualiza mapa local
+    item.key = novoKey;
+    if(window._adLeadsMapRender){ window._adLeadsMapRender[novoKey]=item; }
+  } else {
+    // Lead já existe no kanban — marca como Audens Day
+    kanbanData[kanbanKey].audensDay = true;
+    kanbanData[kanbanKey].audensDayResp = pessoa;
+    if(fbDb) fbDb.ref('kanban/'+kanbanKey).update({audensDay:true, audensDayResp:pessoa});
+  }
+
+  abrirAgendarReuniao(kanbanKey);
+}
+
+// ---- COMPETIÇÃO AUDENS DAY ----
+async function loadAudensCompetition(){
+  var el = document.getElementById('audens-comp-content');
+  if(!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;padding:20px;"><i class="ti ti-loader ti-spin"></i> Calculando pontuação...</div>';
+
+  var EQUIPE = ['Lucas','Gustavo','João'];
+  var pts = {Lucas:{agendadas:0,realizadas:0,vendas:0}, Gustavo:{agendadas:0,realizadas:0,vendas:0}, João:{agendadas:0,realizadas:0,vendas:0}};
+  var mesKey = new Date().toISOString().substring(0,7); // ex: "2026-06"
+
+  function normResp(s){
+    s = (s||'').trim().toUpperCase();
+    if(s==='LUCAS') return 'Lucas';
+    if(s==='GUSTAVO') return 'Gustavo';
+    if(s==='JOÃO'||s==='JOAO') return 'João';
+    return null;
+  }
+
+  // Carrega meetings do Firebase
+  var allMeetings = [];
+  if(fbDb){
+    try{
+      var snapM = await fbDb.ref('meetings').once('value');
+      var mData = snapM.val()||{};
+      Object.keys(mData).forEach(function(mid){
+        var m = mData[mid];
+        if(m && m.audensDay){
+          // Só deste mês
+          var dt = m.dtISO ? m.dtISO.substring(0,7) : (m.scheduledAt ? new Date(m.scheduledAt).toISOString().substring(0,7) : '');
+          if(dt === mesKey) allMeetings.push(m);
+        }
+      });
+    }catch(e){ console.warn('[AudensComp] Erro meetings:', e); }
+  } else {
+    // Fallback: meetings locais
+    Object.keys(meetings||{}).forEach(function(mid){
+      var m = meetings[mid];
+      if(m && m.audensDay){
+        var dt = m.dtISO ? m.dtISO.substring(0,7) : '';
+        if(dt === mesKey) allMeetings.push(m);
+      }
+    });
+  }
+
+  // Calcula pontuação
+  allMeetings.forEach(function(m){
+    // Responsável: prefere audensDayResp (pessoa do Audens Day), senão responsavel
+    var resp = normResp(m.audensDayResp) || normResp(m.responsavel);
+    if(!resp) return;
+    if(!pts[resp]) return;
+
+    pts[resp].agendadas += 1; // +1 por agendar
+    var st = (m.status||'').toLowerCase();
+    if(st==='realizada') pts[resp].realizadas += 1; // +2 ao realizar
+    if(st==='venda'){
+      pts[resp].vendas += 1; // +5 por venda
+    } else if(m.kanbanKey && kanbanData[m.kanbanKey]){
+      var kbSt = (kanbanData[m.kanbanKey].status||'').toLowerCase();
+      if(kbSt==='contrato'||kbSt==='fechado'||kbSt==='venda') pts[resp].vendas += 1;
+    }
+  });
+
+  _renderAudensComp(el, pts, allMeetings.length, mesKey);
+}
+
+function _renderAudensComp(el, pts, totalMeetings, mesKey){
+  var EQUIPE = ['Lucas','Gustavo','João'];
+  var COR = {Lucas:'var(--cyan)', Gustavo:'var(--purple3)', João:'#4ade80'};
+  var BG  = {Lucas:'rgba(56,189,248,0.12)', Gustavo:'rgba(123,47,255,0.12)', João:'rgba(74,222,128,0.12)'};
+  var BRD = {Lucas:'rgba(56,189,248,0.3)', Gustavo:'rgba(123,47,255,0.3)', João:'rgba(74,222,128,0.3)'};
+
+  function total(p){ return pts[p].agendadas*1 + pts[p].realizadas*2 + pts[p].vendas*5; }
+
+  // Ordena por total desc
+  var ranking = EQUIPE.slice().sort(function(a,b){ return total(b)-total(a); });
+  var medalhas = ['🥇','🥈','🥉'];
+
+  var podium = ranking.map(function(p, i){
+    var t = total(p);
+    return '<div style="background:'+BG[p]+';border:1px solid '+BRD[p]+';border-radius:12px;padding:20px;text-align:center;flex:1;min-width:160px;">'+
+      '<div style="font-size:32px;margin-bottom:4px;">'+medalhas[i]+'</div>'+
+      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:18px;color:'+COR[p]+';letter-spacing:1px;text-transform:uppercase;">'+p+'</div>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:48px;color:'+COR[p]+';line-height:1;margin:6px 0;">'+t+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;">PONTOS</div>'+
+      '<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;text-align:left;">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;font-family:\'Barlow Condensed\',sans-serif;">'+
+          '<span style="color:var(--muted);">📅 Agendadas</span>'+
+          '<span style="color:var(--white);font-weight:700;">'+pts[p].agendadas+' <span style="color:rgba(255,255,255,0.3);font-size:10px;">×1</span> = '+pts[p].agendadas+'pt</span>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;font-family:\'Barlow Condensed\',sans-serif;">'+
+          '<span style="color:var(--muted);">✅ Realizadas</span>'+
+          '<span style="color:var(--white);font-weight:700;">'+pts[p].realizadas+' <span style="color:rgba(255,255,255,0.3);font-size:10px;">×2</span> = '+(pts[p].realizadas*2)+'pt</span>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;font-family:\'Barlow Condensed\',sans-serif;">'+
+          '<span style="color:var(--muted);">🏆 Vendas</span>'+
+          '<span style="color:'+(pts[p].vendas>0?'#fde047':'var(--white)')+';font-weight:700;">'+pts[p].vendas+' <span style="color:rgba(255,255,255,0.3);font-size:10px;">×5</span> = '+(pts[p].vendas*5)+'pt</span>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  // Tabela de regras
+  var regras = '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:14px 18px;margin-top:20px;">'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:12px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">Regras de Pontuação</div>'+
+    '<div style="display:flex;gap:20px;flex-wrap:wrap;">'+
+      '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-family:\'Barlow Condensed\',sans-serif;">'+
+        '<span style="background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);border-radius:5px;padding:2px 8px;color:var(--cyan);font-weight:700;">+1</span>'+
+        '<span style="color:var(--muted);">Reunião agendada</span>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-family:\'Barlow Condensed\',sans-serif;">'+
+        '<span style="background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.3);border-radius:5px;padding:2px 8px;color:#4ade80;font-weight:700;">+2</span>'+
+        '<span style="color:var(--muted);">Reunião realizada</span>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-family:\'Barlow Condensed\',sans-serif;">'+
+        '<span style="background:rgba(253,224,71,0.15);border:1px solid rgba(253,224,71,0.3);border-radius:5px;padding:2px 8px;color:#fde047;font-weight:700;">+5</span>'+
+        '<span style="color:var(--muted);">Venda fechada via reunião</span>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+
+  var header = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
+    '<div>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--purple3);letter-spacing:1px;">AUDENS DAY — COMPETIÇÃO</div>'+
+      '<div style="font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">'+mesKey+' · '+totalMeetings+' reuniões do Audens Day</div>'+
+    '</div>'+
+    '<button onclick="loadAudensCompetition()" style="font-size:12px;padding:6px 14px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:7px;color:var(--purple3);cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:1px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
+  '</div>';
+
+  el.innerHTML = header +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;">' + podium + '</div>' +
+    (totalMeetings===0
+      ? '<div style="text-align:center;padding:20px;font-size:13px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhuma reunião do Audens Day registrada neste mês ainda.<br>Agende reuniões pela aba <strong>Leads de Recuperação</strong> para começar a pontuar.</div>'
+      : '') +
+    regras;
 }
 
 function adAtribuirLead(key, responsavel){
