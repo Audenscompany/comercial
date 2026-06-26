@@ -12988,33 +12988,38 @@ function _renderIndicacoesList(el){
   var counts = {total:list.length, novo:0, contato:0, reuniao:0, fechou:0, perdeu:0};
   list.forEach(function(i){ var s=i.status||'novo'; if(counts[s]!==undefined) counts[s]++; });
 
-  // ── Ranking do operacional ──────────────────────────────
+  // ── Ranking do operacional — só conta quando o lead participou de reunião ──
   var _rankOp = {};
-  (window.AUDENS_OPERACIONAL||['João Victor','Yan','Elias','João Alfer','Isabela','Emanuel']).forEach(function(n){ _rankOp[n]={total:0,fechou:0}; });
+  (window.AUDENS_OPERACIONAL||['João Victor','Yan','Elias','João Alfer','Isabela','Emanuel']).forEach(function(n){ _rankOp[n]={reunioes:0,fechou:0,pendentes:0}; });
   list.forEach(function(i){
     var q = (i.clienteIndicou||'').trim();
-    if(_rankOp[q]){
-      _rankOp[q].total++;
-      if(i.status==='fechou') _rankOp[q].fechou++;
+    if(!_rankOp[q]) return;
+    var st = i.status||'novo';
+    if(st==='reuniao'||st==='fechou'){
+      _rankOp[q].reunioes++; // chegou à reunião = conta
+      if(st==='fechou') _rankOp[q].fechou++;
+    } else {
+      _rankOp[q].pendentes++; // cadastrado mas ainda não reuniu
     }
   });
   var _rankSorted = Object.keys(_rankOp).sort(function(a,b){
-    if(_rankOp[b].total !== _rankOp[a].total) return _rankOp[b].total - _rankOp[a].total;
+    if(_rankOp[b].reunioes !== _rankOp[a].reunioes) return _rankOp[b].reunioes - _rankOp[a].reunioes;
     return _rankOp[b].fechou - _rankOp[a].fechou;
   });
   var _medalhas = ['🥇','🥈','🥉'];
   var _rankCards = _rankSorted.map(function(n, i){
     var r = _rankOp[n];
-    var isTop = r.total > 0 && i < 3;
+    var isTop = r.reunioes > 0 && i < 3;
     return '<div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,'+(isTop?'0.1':'0.05')+');border-radius:8px;padding:9px 13px;flex:1;min-width:130px;">'+
-      '<div style="font-size:'+(isTop&&i===0?'20px':'15px')+';min-width:20px;text-align:center;">'+(r.total>0&&i<3?_medalhas[i]:(i+1)+'º')+'</div>'+
+      '<div style="font-size:'+(isTop&&i===0?'20px':'15px')+';min-width:20px;text-align:center;">'+(r.reunioes>0&&i<3?_medalhas[i]:(i+1)+'º')+'</div>'+
       '<div style="flex:1;min-width:0;">'+
-        '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:13px;color:'+(r.total>0?'var(--white)':'var(--muted)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(n)+'</div>'+
-        '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:1px;">'+
-          (r.fechou>0?'<span style="color:#4ade80;">'+r.fechou+' fechou</span> · ':'')+ r.total+' indicaç'+(r.total===1?'ão':'ões')+
+        '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:13px;color:'+(r.reunioes>0?'var(--white)':'var(--muted)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(n)+'</div>'+
+        '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:2px;">'+
+          (r.fechou>0?'<span style="color:#4ade80;">'+r.fechou+' fechou</span> · ':'')+ r.reunioes+' reuniã'+(r.reunioes===1?'o':'es')+
+          (r.pendentes>0?' · <span style="color:rgba(255,255,255,0.25);">'+r.pendentes+' aguard.</span>':'')+
         '</div>'+
       '</div>'+
-      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:'+(r.total>0?'var(--purple3)':'rgba(255,255,255,0.15)')+';line-height:1;">'+r.total+'</div>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:'+(r.reunioes>0?'var(--purple3)':'rgba(255,255,255,0.15)')+';line-height:1;">'+r.reunioes+'</div>'+
     '</div>';
   }).join('');
 
