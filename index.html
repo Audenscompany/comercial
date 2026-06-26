@@ -12299,7 +12299,19 @@ function renderAudensDay(){
         '<i class="ti ti-star" style="color:#fde047;"></i> Audens Day'+
       '</div>'+
       '<div class="page-sub">Recuperação de leads · Indicações de clientes</div>'+
-    '</div></div>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;">'+
+      '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;text-transform:uppercase;">Janela:</span>'+
+      '<select id="ad-duracao" onchange="adMudarDuracao(this.value)" style="background:var(--bg2);border:1px solid rgba(255,255,255,0.12);border-radius:7px;padding:6px 12px;color:var(--white);font-size:13px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:1px;cursor:pointer;outline:none;">'+
+        '<option value="30">Últimos 30 dias</option>'+
+        '<option value="60">Últimos 60 dias</option>'+
+        '<option value="90">Últimos 90 dias</option>'+
+        '<option value="jan2026" selected>Desde Jan 2026</option>'+
+        '<option value="180">Últimos 180 dias</option>'+
+        '<option value="365">Último ano</option>'+
+      '</select>'+
+    '</div>'+
+    '</div>'+
     // Tabs
     '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;">'+
       '<button id="adtab-leads" onclick="adShowTab(\'leads\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;">'+
@@ -12369,7 +12381,17 @@ async function loadAudensDay(){
   if(!leadsEl) return;
 
   var agora = Date.now();
-  var JANELA = 90 * 24 * 60 * 60 * 1000; // 90 dias
+  var _durVal = (document.getElementById('ad-duracao')&&document.getElementById('ad-duracao').value) || window._audensDuracao || 'jan2026';
+  window._audensDuracao = _durVal;
+  // Suporte a opção "jan2026" = data absoluta, senão janela relativa em dias
+  var _tsInicio;
+  if(_durVal === 'jan2026'){
+    _tsInicio = new Date('2026-01-01T00:00:00').getTime();
+  } else {
+    var _durDias = parseInt(_durVal)||90;
+    _tsInicio = agora - _durDias * 24 * 60 * 60 * 1000;
+  }
+  var JANELA = agora - _tsInicio; // usado como referência de ms
   var FAT_MINIMO = 2; // índice mínimo = "20 mil até 40 mil"
 
   // Monta Set de telefones/nomes de clientes ativos
@@ -12425,7 +12447,7 @@ async function loadAudensDay(){
           var dt = parseBRDate(data);
           if(!dt) return;
           var ts = dt.getTime();
-          if(agora - ts > JANELA) return;
+          if(ts < _tsInicio) return;
 
           // Dedup por telefone (mantém o mais recente)
           if(tel){
@@ -12470,7 +12492,7 @@ async function loadAudensDay(){
       var k = kanbanData[key];
       if(!k||!k.nome) return;
       var ts = k._createdAt || k.statusAt || 0;
-      if(agora - ts > JANELA) return;
+      if(ts < _tsInicio) return;
       var st = (k.status||'novo').toLowerCase();
       if(['fechado','contrato','venda'].indexOf(st)>=0) return;
       var fatIdx = _fatScore(k.faturamento||'');
@@ -12488,6 +12510,9 @@ async function loadAudensDay(){
     if(b.fat !== a.fat) return b.fat - a.fat;
     return b.ts - a.ts;
   });
+
+  // Pré-carrega pontuação da competição em paralelo (não bloqueia a UI)
+  _fetchAudensCompPts().then(function(pts){ window._audensCompPtsCache = pts; });
 
   // Tenta carregar distribuição salva no Firebase para o mês atual
   var mesKey = new Date().toISOString().substring(0,7); // "2026-06"
@@ -12546,7 +12571,11 @@ function _renderAudensLeads(el, savedDist, mesKey){
           '<div style="font-weight:700;font-size:13px;color:var(--white);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(k.nome||'—')+'</div>'+
           (waHref?'<a href="'+waHref+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:5px;color:#25d366;font-size:12px;text-decoration:none;flex-shrink:0;margin-left:6px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+
         '</div>'+
-        (k.empresa?'<div style="font-size:11px;color:var(--muted);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(k.empresa)+'</div>':'')+
+        (k.empresa?'<div style="font-size:11px;color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(k.empresa)+'</div>':'')+
+        (k.telefone?'<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">'+
+          '<span style="font-size:11px;color:rgba(255,255,255,0.35);font-family:\'Barlow Condensed\',sans-serif;">'+k.telefone+'</span>'+
+          '<button onclick="adCopiarTel(event,\''+k.telefone+'\')" title="Copiar telefone" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;padding:0;flex-shrink:0;"><i class="ti ti-copy"></i></button>'+
+        '</div>':'')+
         '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'+
           _fatLabel(k.faturamento||'')+
           _statusLabel(item.st)+
@@ -12574,7 +12603,60 @@ function _renderAudensLeads(el, savedDist, mesKey){
       '</div>'
     : '';
 
+  // ── Mini-ranking ──────────────────────────────────────────────────
+  var _cp = window._audensCompPtsCache;
+  var _miniRankHtml = '';
+  if(_cp){
+    function _ptsTot(p){ return (_cp[p]?_cp[p].agendadas*1+_cp[p].realizadas*2+_cp[p].vendas*5:0); }
+    var _rank = ['Lucas','Gustavo','João'].slice().sort(function(a,b){ return _ptsTot(b)-_ptsTot(a); });
+    var _corR = {Lucas:'var(--cyan)', Gustavo:'var(--purple3)', João:'#4ade80'};
+    var _medalR = ['🥇','🥈','🥉'];
+    var _totalVendas = (_cp.Lucas?_cp.Lucas.vendas:0)+(_cp.Gustavo?_cp.Gustavo.vendas:0)+(_cp.João?_cp.João.vendas:0);
+    var _metaVendas = 5;
+    var _progPct = Math.min(100, Math.round(_totalVendas/_metaVendas*100));
+    var _metaBatida = _totalVendas >= _metaVendas;
+    var _vencedor = _metaBatida ? _rank[0] : '';
+
+    var _rankCols = _rank.map(function(p,i){
+      return '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:120px;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 12px;">'+
+        '<span style="font-size:18px;">'+_medalR[i]+'</span>'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:13px;color:'+_corR[p]+';letter-spacing:1px;">'+p.toUpperCase()+'</div>'+
+          '<div style="display:flex;gap:8px;font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:1px;">'+
+            '<span>📅 '+_cp[p].agendadas+'</span>'+
+            '<span>✅ '+_cp[p].realizadas+'</span>'+
+            '<span style="color:'+(_cp[p].vendas>0?'#fde047':'inherit')+';">🏆 '+_cp[p].vendas+'</span>'+
+          '</div>'+
+        '</div>'+
+        '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:26px;color:'+_corR[p]+';line-height:1;">'+_ptsTot(p)+'</div>'+
+      '</div>';
+    }).join('');
+
+    var _barColor = _metaBatida ? '#4ade80' : (_progPct>60?'#fde047':'var(--purple3)');
+    _miniRankHtml =
+      '<div style="background:rgba(253,224,71,0.04);border:1px solid rgba(253,224,71,0.15);border-radius:12px;padding:14px 16px;margin-bottom:16px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'+
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:13px;color:#fde047;letter-spacing:1px;text-transform:uppercase;">'+
+            '<i class="ti ti-trophy" style="margin-right:5px;"></i>Competição · Audens Day</div>'+
+          '<button onclick="adShowTab(\'comp\')" style="font-size:11px;padding:4px 12px;background:rgba(253,224,71,0.1);border:1px solid rgba(253,224,71,0.3);border-radius:6px;color:#fde047;cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:1px;">Ver completo →</button>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'+_rankCols+'</div>'+
+        // Barra de progresso para 5 vendas
+        '<div>'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'+
+            '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;">META: 5 VENDAS = R$500 PARA O VENCEDOR</span>'+
+            '<span style="font-size:12px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;color:'+(_metaBatida?'#4ade80':'var(--white)')+';">'+_totalVendas+'/'+_metaVendas+(_metaBatida?' 🎉':'')+' vendas</span>'+
+          '</div>'+
+          '<div style="background:rgba(255,255,255,0.06);border-radius:100px;height:8px;overflow:hidden;">'+
+            '<div style="width:'+_progPct+'%;height:100%;background:'+_barColor+';border-radius:100px;transition:width 0.6s ease;'+(  _metaBatida?'box-shadow:0 0 12px rgba(74,222,128,0.6);':'')+'""></div>'+
+          '</div>'+
+          (_metaBatida?'<div style="margin-top:8px;font-size:12px;color:#4ade80;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:1px;">🏆 META BATIDA! '+_vencedor.toUpperCase()+' lidera — R$500 no salário!</div>':'')+
+        '</div>'+
+      '</div>';
+  }
+
   el.innerHTML =
+    _miniRankHtml+
     '<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;justify-content:space-between;">'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
         '<div style="background:var(--bg2);border:1px solid rgba(123,47,255,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:80px;">'+
@@ -12633,6 +12715,25 @@ async function adSalvarDist(mesKey){
   }
 }
 
+function adCopiarTel(ev, tel){
+  if(ev) ev.stopPropagation();
+  var txt = (tel||'').replace(/\D/g,'');
+  var btn = ev ? ev.currentTarget : null;
+  navigator.clipboard.writeText(txt).then(function(){
+    if(btn){ btn.innerHTML='<i class="ti ti-check" style="color:#4ade80;"></i>'; setTimeout(function(){ btn.innerHTML='<i class="ti ti-copy"></i>'; },2000); }
+  }).catch(function(){
+    // Fallback para navegadores sem clipboard API
+    var ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    if(btn){ btn.innerHTML='<i class="ti ti-check" style="color:#4ade80;"></i>'; setTimeout(function(){ btn.innerHTML='<i class="ti ti-copy"></i>'; },2000); }
+  });
+}
+
+function adMudarDuracao(dias){
+  window._audensDuracao = parseInt(dias)||90;
+  loadAudensDay();
+}
+
 // ---- AGENDAR REUNIÃO DO AUDENS DAY ----
 async function adAgendarLead(itemKey){
   var item = window._adLeadsMapRender ? window._adLeadsMapRender[itemKey] : null;
@@ -12674,24 +12775,17 @@ async function adAgendarLead(itemKey){
 }
 
 // ---- COMPETIÇÃO AUDENS DAY ----
-async function loadAudensCompetition(){
-  var el = document.getElementById('audens-comp-content');
-  if(!el) return;
-  el.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;padding:20px;"><i class="ti ti-loader ti-spin"></i> Calculando pontuação...</div>';
+function _normAudensResp(s){
+  s = (s||'').trim().toUpperCase();
+  if(s==='LUCAS') return 'Lucas';
+  if(s==='GUSTAVO') return 'Gustavo';
+  if(s==='JOÃO'||s==='JOAO') return 'João';
+  return null;
+}
 
-  var EQUIPE = ['Lucas','Gustavo','João'];
+async function _fetchAudensCompPts(){
   var pts = {Lucas:{agendadas:0,realizadas:0,vendas:0}, Gustavo:{agendadas:0,realizadas:0,vendas:0}, João:{agendadas:0,realizadas:0,vendas:0}};
-  var mesKey = new Date().toISOString().substring(0,7); // ex: "2026-06"
-
-  function normResp(s){
-    s = (s||'').trim().toUpperCase();
-    if(s==='LUCAS') return 'Lucas';
-    if(s==='GUSTAVO') return 'Gustavo';
-    if(s==='JOÃO'||s==='JOAO') return 'João';
-    return null;
-  }
-
-  // Carrega meetings do Firebase
+  var mesKey = new Date().toISOString().substring(0,7);
   var allMeetings = [];
   if(fbDb){
     try{
@@ -12700,14 +12794,12 @@ async function loadAudensCompetition(){
       Object.keys(mData).forEach(function(mid){
         var m = mData[mid];
         if(m && m.audensDay){
-          // Só deste mês
           var dt = m.dtISO ? m.dtISO.substring(0,7) : (m.scheduledAt ? new Date(m.scheduledAt).toISOString().substring(0,7) : '');
           if(dt === mesKey) allMeetings.push(m);
         }
       });
     }catch(e){ console.warn('[AudensComp] Erro meetings:', e); }
   } else {
-    // Fallback: meetings locais
     Object.keys(meetings||{}).forEach(function(mid){
       var m = meetings[mid];
       if(m && m.audensDay){
@@ -12716,26 +12808,31 @@ async function loadAudensCompetition(){
       }
     });
   }
-
-  // Calcula pontuação
   allMeetings.forEach(function(m){
-    // Responsável: prefere audensDayResp (pessoa do Audens Day), senão responsavel
-    var resp = normResp(m.audensDayResp) || normResp(m.responsavel);
-    if(!resp) return;
-    if(!pts[resp]) return;
-
-    pts[resp].agendadas += 1; // +1 por agendar
+    var resp = _normAudensResp(m.audensDayResp) || _normAudensResp(m.responsavel);
+    if(!resp||!pts[resp]) return;
+    pts[resp].agendadas += 1;
     var st = (m.status||'').toLowerCase();
-    if(st==='realizada') pts[resp].realizadas += 1; // +2 ao realizar
+    if(st==='realizada') pts[resp].realizadas += 1;
     if(st==='venda'){
-      pts[resp].vendas += 1; // +5 por venda
+      pts[resp].vendas += 1;
     } else if(m.kanbanKey && kanbanData[m.kanbanKey]){
       var kbSt = (kanbanData[m.kanbanKey].status||'').toLowerCase();
       if(kbSt==='contrato'||kbSt==='fechado'||kbSt==='venda') pts[resp].vendas += 1;
     }
   });
+  pts._total = allMeetings.length;
+  pts._mesKey = mesKey;
+  return pts;
+}
 
-  _renderAudensComp(el, pts, allMeetings.length, mesKey);
+async function loadAudensCompetition(){
+  var el = document.getElementById('audens-comp-content');
+  if(!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;padding:20px;"><i class="ti ti-loader ti-spin"></i> Calculando pontuação...</div>';
+  var pts = await _fetchAudensCompPts();
+  window._audensCompPtsCache = pts;
+  _renderAudensComp(el, pts, pts._total||0, pts._mesKey||new Date().toISOString().substring(0,7));
 }
 
 function _renderAudensComp(el, pts, totalMeetings, mesKey){
