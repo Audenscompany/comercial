@@ -3260,6 +3260,7 @@ function buildNav(){
       {id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
       {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'}
     ]},
+    {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var closerDef=[
@@ -3272,6 +3273,7 @@ function buildNav(){
       {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
       {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
     ]},
+    {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var sdrDef=[
@@ -3287,6 +3289,7 @@ function buildNav(){
     {group:'Financeiro',icon:'ti-report-money',items:[
       {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
     ]},
+    {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
 
@@ -3370,7 +3373,7 @@ function showPage(id){
     'reativacao':renderReativacao,'kanban':renderKanban,
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro,
-    'contratos':renderContratos
+    'contratos':renderContratos,'audens-day':renderAudensDay
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -3382,6 +3385,7 @@ function showPage(id){
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
     if(id==='contratos') setTimeout(loadContratosPage,50);
+    if(id==='audens-day') setTimeout(loadAudensDay,50);
     if(id==='financeiro') setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -12281,6 +12285,419 @@ async function triggerSDRCalc(mode){
   }
 }
 
+
+// ===== AUDENS DAY =====
+var _audensIndicacoes = {}; // cache local de indicações
+var _audensIndListener = null;
+
+function renderAudensDay(){
+  return '<div class="page active">'+
+    '<div class="page-header"><div>'+
+      '<div class="page-title" style="display:flex;align-items:center;gap:10px;">'+
+        '<i class="ti ti-star" style="color:#fde047;"></i> Audens Day'+
+      '</div>'+
+      '<div class="page-sub">Recuperação de leads · Indicações de clientes</div>'+
+    '</div></div>'+
+    // Tabs
+    '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;">'+
+      '<button id="adtab-leads" onclick="adShowTab(\'leads\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;">'+
+        '<i class="ti ti-users"></i> Leads de Recuperação</button>'+
+      '<button id="adtab-ind" onclick="adShowTab(\'ind\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
+        '<i class="ti ti-heart-handshake"></i> Indicações</button>'+
+    '</div>'+
+    '<div id="ad-tab-leads"><div id="audens-leads-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando leads...</div></div>'+
+    '<div id="ad-tab-ind" style="display:none;"><div id="audens-ind-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando indicações...</div></div>'+
+  '</div>';
+}
+
+function adShowTab(tab){
+  document.getElementById('ad-tab-leads').style.display = tab==='leads'?'':'none';
+  document.getElementById('ad-tab-ind').style.display  = tab==='ind'?'':'none';
+  document.getElementById('adtab-leads').style.borderBottomColor = tab==='leads'?'var(--purple)':'transparent';
+  document.getElementById('adtab-leads').style.color = tab==='leads'?'var(--purple3)':'var(--muted)';
+  document.getElementById('adtab-ind').style.borderBottomColor = tab==='ind'?'var(--purple)':'transparent';
+  document.getElementById('adtab-ind').style.color = tab==='ind'?'var(--purple3)':'var(--muted)';
+}
+
+// Converte faturamento string em número para ordenação
+function _fatScore(fat){
+  var idx = FATURAMENTO_OPTS.indexOf(fat);
+  return idx >= 0 ? idx : -1;
+}
+
+function _fatLabel(fat){
+  if(!fat) return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  var idx = FATURAMENTO_OPTS.indexOf(fat);
+  var cols = ['rgba(255,255,255,0.3)','rgba(255,255,255,0.35)','rgba(255,255,255,0.4)','var(--cyan)','var(--cyan)','var(--green)','var(--green)','#fde047','#fde047','var(--amber)'];
+  var col = cols[idx] || 'var(--muted)';
+  return '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:2px 7px;color:'+col+';">'+esc(fat)+'</span>';
+}
+
+function _statusLabel(st){
+  var map={
+    'novo':'<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:0.5px;">NOVO</span>',
+    'tentativa':'<span style="font-size:11px;color:var(--cyan);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:0.5px;">EM CONTATO</span>',
+    'reuniao':'<span style="font-size:11px;color:var(--green);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:0.5px;">REUNIÃO</span>',
+    'proposta':'<span style="font-size:11px;color:var(--purple3);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:0.5px;">PROPOSTA</span>',
+    'noshow':'<span style="font-size:11px;color:var(--amber);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:0.5px;">NO-SHOW</span>',
+    'perdido':'<span style="font-size:11px;color:var(--red);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:0.5px;">PERDIDO</span>'
+  };
+  return map[st]||'<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">'+esc(st||'—')+'</span>';
+}
+
+var _audensLeads60 = []; // cache dos leads filtrados
+
+async function loadAudensDay(){
+  var leadsEl = document.getElementById('audens-leads-content');
+  var indEl   = document.getElementById('audens-ind-content');
+  if(!leadsEl) return;
+
+  var agora = Date.now();
+  var JANELA = 60 * 24 * 60 * 60 * 1000;
+  var STATUS_EXCLUIR = ['fechado','contrato','venda'];
+
+  // Monta Set de telefones de clientes ativos (para excluir do Audens Day)
+  var _clientesTels = new Set();
+  var _clientesNomes = new Set();
+  try{
+    var _ctrs = await loadContratos();
+    _ctrs.forEach(function(c){
+      if(c.ativo===false||c.dataCancelamento) return; // cancelados não contam
+      var tel = (c.telefone||c.tel||'').replace(/\D/g,'');
+      if(tel) _clientesTels.add(tel);
+      var nome = (c.cliente||c.nome||'').trim().toLowerCase();
+      if(nome) _clientesNomes.add(nome);
+    });
+  }catch(e){ console.warn('[AudensDay] Erro ao carregar contratos:', e); }
+
+  _audensLeads60 = [];
+  var _excluidos = 0;
+  Object.keys(kanbanData).forEach(function(key){
+    var k = kanbanData[key];
+    if(!k||!k.nome) return;
+    var ts = k._createdAt || k.statusAt || 0;
+    if(agora - ts > JANELA) return;
+    var st = (k.status||'novo').toLowerCase();
+    if(STATUS_EXCLUIR.indexOf(st) >= 0) return;
+    // Exclui se já é cliente ativo (por telefone ou nome)
+    var tel = (k.telefone||'').replace(/\D/g,'');
+    var nome = (k.nome||'').trim().toLowerCase();
+    if(tel && _clientesTels.has(tel)){ _excluidos++; return; }
+    if(nome && _clientesNomes.has(nome)){ _excluidos++; return; }
+    _audensLeads60.push({key:key, k:k, ts:ts, fat:_fatScore(k.faturamento||''), st:st});
+  });
+  if(_excluidos>0) console.log('[AudensDay] '+_excluidos+' leads excluídos por já serem clientes ativos');
+  _audensLeads60.sort(function(a,b){
+    if(b.fat !== a.fat) return b.fat - a.fat;
+    return b.ts - a.ts;
+  });
+
+  // Tenta carregar distribuição salva no Firebase para o mês atual
+  var mesKey = new Date().toISOString().substring(0,7); // "2026-06"
+  var savedDist = {};
+  if(fbDb){
+    try{
+      var snap = await fbDb.ref('audensDay/'+mesKey).once('value');
+      savedDist = snap.val() || {};
+    }catch(e){ savedDist = {}; }
+  }
+
+  _renderAudensLeads(leadsEl, savedDist, mesKey);
+  _loadAudensIndicacoes(indEl);
+}
+
+function _renderAudensLeads(el, savedDist, mesKey){
+  var leads = _audensLeads60;
+  var totalLeads = leads.length;
+  var altoFat = leads.filter(function(l){ return l.fat >= 5; }).length;
+  var agora = Date.now();
+  var EQUIPE = ['Lucas','Gustavo','João'];
+  var CORES = {Lucas:'rgba(56,189,248,0.15)', Gustavo:'rgba(123,47,255,0.15)', João:'rgba(74,222,128,0.15)'};
+  var BORDER = {Lucas:'rgba(56,189,248,0.35)', Gustavo:'rgba(123,47,255,0.35)', João:'rgba(74,222,128,0.35)'};
+  var COR_TEXT = {Lucas:'var(--cyan)', Gustavo:'var(--purple3)', João:'#4ade80'};
+
+  // Monta distribuição: usa savedDist se existir, senão round-robin
+  var dist = {Lucas:[], Gustavo:[], João:[]};
+  var temDist = Object.keys(savedDist).length > 0;
+
+  if(temDist){
+    leads.forEach(function(item){
+      var pessoa = savedDist[item.key];
+      if(pessoa && dist[pessoa]) dist[pessoa].push(item);
+      else dist['Lucas'].push(item); // fallback
+    });
+  } else {
+    // Round-robin: ordena por faturamento, distribui ciclicamente
+    leads.forEach(function(item, i){
+      dist[EQUIPE[i % 3]].push(item);
+    });
+  }
+
+  function buildColuna(pessoa){
+    var items = dist[pessoa];
+    var cards = items.map(function(item){
+      var k = item.k;
+      var diasAtras = Math.round((agora - item.ts) / (24*60*60*1000));
+      var waLink = k.telefone ? 'https://wa.me/'+k.telefone.replace(/\D/g,'') : '';
+      return '<div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 12px;margin-bottom:8px;">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">'+
+          '<div style="font-weight:700;font-size:13px;color:var(--white);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(k.nome||'—')+'</div>'+
+          (waLink?'<a href="'+waLink+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:5px;color:#25d366;font-size:12px;text-decoration:none;flex-shrink:0;margin-left:6px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+
+        '</div>'+
+        (k.empresa?'<div style="font-size:11px;color:var(--muted);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(k.empresa)+'</div>':'')+
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">'+
+          _fatLabel(k.faturamento||'')+
+          _statusLabel(item.st)+
+          '<span style="font-size:10px;color:rgba(255,255,255,0.25);font-family:\'Barlow Condensed\',sans-serif;">'+diasAtras+'d</span>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    return '<div style="flex:1;min-width:220px;background:'+CORES[pessoa]+';border:1px solid '+BORDER[pessoa]+';border-radius:12px;padding:14px;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'+
+        '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:15px;color:'+COR_TEXT[pessoa]+';letter-spacing:1px;">'+pessoa.toUpperCase()+'</div>'+
+        '<span style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+COR_TEXT[pessoa]+';">'+items.length+'</span>'+
+      '</div>'+
+      (items.length === 0
+        ? '<div style="text-align:center;padding:20px;font-size:12px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Sem leads atribuídos</div>'
+        : cards)+
+    '</div>';
+  }
+
+  var alertDist = !temDist && totalLeads > 0
+    ? '<div style="background:rgba(253,224,71,0.07);border:1px solid rgba(253,224,71,0.3);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#fde047;font-family:\'Barlow Condensed\',sans-serif;">'+
+        '⚡ Distribuição prévia gerada por round-robin — clique em <strong>Salvar Distribuição</strong> para confirmar.'+
+      '</div>'
+    : '';
+
+  el.innerHTML =
+    '<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;justify-content:space-between;">'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+        '<div style="background:var(--bg2);border:1px solid rgba(123,47,255,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:80px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:var(--purple3);">'+totalLeads+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;">LEADS</div></div>'+
+        '<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:80px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:#fde047;">'+altoFat+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;">ALTO FAT.</div></div>'+
+        '<div style="background:var(--bg2);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:80px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:var(--amber);">'+leads.filter(function(l){return l.st==='reuniao'||l.st==='proposta';}).length+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;">REUN/PROP</div></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;">'+
+        '<button class="btn btn-outline" style="font-size:12px;" onclick="adRedistribuir(\''+mesKey+'\')"><i class="ti ti-refresh"></i> Redistribuir</button>'+
+        '<button class="btn btn-primary" style="font-size:12px;" onclick="adSalvarDist(\''+mesKey+'\')"><i class="ti ti-device-floppy"></i> Salvar Distribuição</button>'+
+      '</div>'+
+    '</div>'+
+    alertDist+
+    (totalLeads === 0
+      ? '<div style="text-align:center;padding:40px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhum lead nos últimos 60 dias para recuperar.</div>'
+      : '<div style="display:flex;gap:12px;flex-wrap:wrap;">'+
+          buildColuna('Lucas')+buildColuna('Gustavo')+buildColuna('João')+
+        '</div>');
+
+  // Guarda distribuição atual em memória para salvar depois
+  window._adDistAtual = dist;
+  window._adDistMes = mesKey;
+}
+
+function adRedistribuir(mesKey){
+  // Refaz round-robin e re-renderiza (sem salvar ainda)
+  var leads = _audensLeads60;
+  var EQUIPE = ['Lucas','Gustavo','João'];
+  var dist = {Lucas:[], Gustavo:[], João:[]};
+  leads.forEach(function(item, i){ dist[EQUIPE[i % 3]].push(item); });
+  window._adDistAtual = dist;
+  window._adDistMes = mesKey;
+  var el = document.getElementById('audens-leads-content');
+  if(el) _renderAudensLeads(el, {}, mesKey); // passa {} = sem dist salva → mostra alerta
+}
+
+async function adSalvarDist(mesKey){
+  var dist = window._adDistAtual;
+  if(!dist){ showSheetToast('Nenhuma distribuição para salvar', true); return; }
+  var updates = {};
+  ['Lucas','Gustavo','João'].forEach(function(p){
+    (dist[p]||[]).forEach(function(item){ updates[item.key] = p; });
+  });
+  if(fbDb){
+    try{
+      await fbDb.ref('audensDay/'+(mesKey||window._adDistMes)).set(updates);
+      showSheetToast('Distribuição salva para '+Object.keys(updates).length+' leads!', false);
+    }catch(e){ showSheetToast('Erro ao salvar: '+e.message, true); }
+  } else {
+    showSheetToast('Firebase offline — distribuição não persistida', true);
+  }
+}
+
+function adAtribuirLead(key, responsavel){
+  if(!responsavel) return;
+  if(!kanbanData[key]) return;
+  kanbanData[key].responsavel = responsavel;
+  if(fbDb) fbDb.ref('kanban/'+key+'/responsavel').set(responsavel);
+  showSheetToast('Lead atribuído para '+responsavel, false);
+}
+
+// ---- INDICAÇÕES ----
+function _loadAudensIndicacoes(el){
+  if(!el) el = document.getElementById('audens-ind-content');
+  if(!el) return;
+  // Botão + lista
+  _renderIndicacoesList(el);
+  // Realtime listener
+  if(_audensIndListener) { try{ _audensIndListener.off(); }catch(e){} }
+  if(fbDb){
+    _audensIndListener = fbDb.ref('indicacoes');
+    _audensIndListener.on('value', function(snap){
+      _audensIndicacoes = snap.val() || {};
+      var el2 = document.getElementById('audens-ind-content');
+      if(el2) _renderIndicacoesList(el2);
+    });
+  }
+}
+
+function _renderIndicacoesList(el){
+  var ind = _audensIndicacoes;
+  var list = Object.keys(ind).map(function(k){ return Object.assign({_id:k}, ind[k]); });
+  list.sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); });
+
+  var statusCols = {
+    'novo':'var(--muted)', 'contato':'var(--cyan)',
+    'reuniao':'var(--green)', 'fechou':'#4ade80', 'perdeu':'var(--red)'
+  };
+  var statusLabel = {
+    'novo':'Novo','contato':'Em Contato','reuniao':'Reunião','fechou':'Fechou ✓','perdeu':'Perdeu'
+  };
+
+  var rows = list.map(function(i){
+    var waLink = i.telefone ? 'https://wa.me/'+i.telefone.replace(/\D/g,'') : '';
+    var col = statusCols[i.status||'novo']||'var(--muted)';
+    var dt = i.createdAt ? new Date(i.createdAt) : null;
+    var dtStr = dt ? dt.getDate()+'/'+(dt.getMonth()+1)+'/'+dt.getFullYear() : '—';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+      '<td style="padding:10px 12px;">'+
+        '<div style="font-weight:700;font-size:14px;color:var(--white);">'+esc(i.nomeIndicado||'—')+'</div>'+
+        (i.empresa?'<div style="font-size:11px;color:var(--muted);">'+esc(i.empresa)+'</div>':'')+
+      '</td>'+
+      '<td style="padding:10px 12px;font-family:monospace;font-size:12px;color:var(--muted);">'+(i.telefone||'—')+'</td>'+
+      '<td style="padding:10px 12px;">'+
+        '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:2px 8px;color:var(--purple3);">'+esc(i.clienteIndicou||'—')+'</span>'+
+      '</td>'+
+      '<td style="padding:10px 12px;font-size:12px;color:var(--cyan);font-family:\'Barlow Condensed\',sans-serif;">'+(i.responsavel||'—')+'</td>'+
+      '<td style="padding:10px 12px;">'+
+        '<select onchange="adAtualizarStatusInd(\''+i._id+'\',this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:'+col+';font-size:12px;font-family:\'Barlow Condensed\',sans-serif;cursor:pointer;">'+
+          ['novo','contato','reuniao','fechou','perdeu'].map(function(s){
+            return '<option value="'+s+'"'+(i.status===s?' selected':'')+' style="color:var(--white);">'+statusLabel[s]+'</option>';
+          }).join('')+
+        '</select>'+
+      '</td>'+
+      '<td style="padding:10px 12px;font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">'+dtStr+'</td>'+
+      '<td style="padding:10px 12px;font-size:11px;color:var(--muted);">'+(i.obs?esc(i.obs.substring(0,40)+(i.obs.length>40?'…':'')):'—')+'</td>'+
+      '<td style="padding:10px 12px;">'+
+        (waLink?'<a href="'+waLink+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);border-radius:6px;color:#25d366;font-size:14px;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i></a>':'')+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  var counts = {total:list.length, novo:0, contato:0, reuniao:0, fechou:0, perdeu:0};
+  list.forEach(function(i){ var s=i.status||'novo'; if(counts[s]!==undefined) counts[s]++; });
+
+  el.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+        '<div style="background:var(--bg2);border:1px solid rgba(123,47,255,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:70px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:26px;color:var(--purple3);">'+counts.total+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">TOTAL</div></div>'+
+        '<div style="background:var(--bg2);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:70px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:26px;color:var(--cyan);">'+counts.contato+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">EM CONTATO</div></div>'+
+        '<div style="background:var(--bg2);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:8px 14px;text-align:center;min-width:70px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:26px;color:var(--green);">'+counts.reuniao+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">REUNIÃO</div></div>'+
+        '<div style="background:var(--bg2);border:1px solid rgba(74,222,128,0.4);border-radius:8px;padding:8px 14px;text-align:center;min-width:70px;">'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:26px;color:#4ade80;">'+counts.fechou+'</div>'+
+          '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">FECHOU</div></div>'+
+      '</div>'+
+      '<button class="btn btn-primary" onclick="adAbrirNovaIndicacao()"><i class="ti ti-plus"></i> Nova Indicação</button>'+
+    '</div>'+
+    (list.length === 0
+      ? '<div style="text-align:center;padding:40px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhuma indicação cadastrada ainda.<br><br><button class="btn btn-primary" onclick="adAbrirNovaIndicacao()"><i class="ti ti-plus"></i> Cadastrar primeira indicação</button></div>'
+      : '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;">'+
+          '<table style="width:100%;border-collapse:collapse;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;">'+
+            '<thead><tr style="background:rgba(255,255,255,0.03);">'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">INDICADO</th>'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">TELEFONE</th>'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">INDICOU</th>'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">RESPONSÁVEL</th>'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">STATUS</th>'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">DATA</th>'+
+              '<th style="padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;">OBS</th>'+
+              '<th style="padding:10px 12px;"></th>'+
+            '</tr></thead>'+
+            '<tbody>'+rows+'</tbody>'+
+          '</table>'+
+        '</div>');
+}
+
+function adAbrirNovaIndicacao(){
+  var closers = ['Lucas','Gustavo','João'];
+  var html = '<div class="modal-ov active" id="modal-nova-ind" onclick="if(event.target===this)document.getElementById(\'modal-nova-ind\').remove()">'+
+    '<div class="modal-box" style="max-width:500px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-heart-handshake" style="color:var(--purple3);margin-right:6px;"></i>Nova Indicação</div>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-nova-ind\').remove()">×</button></div>'+
+      '<div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+        '<div style="grid-column:span 2;"><label class="f-label">Nome do Indicado *</label><input id="ind-nome" class="f-input" placeholder="Ex: Carlos Silva" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Telefone</label><input id="ind-tel" class="f-input" type="tel" placeholder="(92) 9xxxx-xxxx" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Empresa</label><input id="ind-empresa" class="f-input" placeholder="Nome da empresa" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Cliente que indicou *</label><input id="ind-origem" class="f-input" placeholder="Ex: Yan, Maria, João..." style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Responsável</label><select id="ind-resp" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
+          closers.map(function(c){return'<option>'+c+'</option>';}).join('')+
+        '</select></div>'+
+        '<div style="grid-column:span 2;"><label class="f-label">Observações</label><textarea id="ind-obs" class="f-input" rows="2" placeholder="Contexto, necessidade do lead..." style="margin-bottom:0;resize:vertical;"></textarea></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="adSalvarIndicacao()"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+        '<button class="btn btn-outline" onclick="document.getElementById(\'modal-nova-ind\').remove()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(function(){ var el=document.getElementById('ind-nome'); if(el) el.focus(); }, 50);
+}
+
+function adSalvarIndicacao(){
+  var nome = (document.getElementById('ind-nome').value||'').trim();
+  var tel  = (document.getElementById('ind-tel').value||'').replace(/\D/g,'');
+  var empresa = (document.getElementById('ind-empresa').value||'').trim();
+  var origem  = (document.getElementById('ind-origem').value||'').trim();
+  var resp    = (document.getElementById('ind-resp').value||'').trim();
+  var obs     = (document.getElementById('ind-obs').value||'').trim();
+  if(!nome){ showSheetToast('Informe o nome do indicado', true); return; }
+  if(!origem){ showSheetToast('Informe o cliente que indicou', true); return; }
+  var id = 'ind_'+Date.now();
+  var obj = {nomeIndicado:nome, telefone:tel, empresa:empresa, clienteIndicou:origem,
+             responsavel:resp, obs:obs, status:'novo', createdAt:Date.now()};
+  if(fbDb){
+    fbDb.ref('indicacoes/'+id).set(obj).then(function(){
+      showSheetToast('Indicação salva!', false);
+      var mo = document.getElementById('modal-nova-ind');
+      if(mo) mo.remove();
+    }).catch(function(e){ showSheetToast('Erro ao salvar: '+e.message, true); });
+  } else {
+    _audensIndicacoes[id] = obj;
+    var el = document.getElementById('audens-ind-content');
+    if(el) _renderIndicacoesList(el);
+    showSheetToast('Indicação salva (localmente — Firebase offline)', false);
+    var mo = document.getElementById('modal-nova-ind');
+    if(mo) mo.remove();
+  }
+}
+
+function adAtualizarStatusInd(id, status){
+  if(!id||!status) return;
+  if(_audensIndicacoes[id]) _audensIndicacoes[id].status = status;
+  if(fbDb) fbDb.ref('indicacoes/'+id+'/status').set(status);
+  showSheetToast('Status atualizado: '+status, false);
+}
 
 // ===== CONTRATOS PAGE =====
 function renderContratos(){
