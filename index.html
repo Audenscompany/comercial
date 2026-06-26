@@ -12538,6 +12538,10 @@ function _renderAudensLeads(el, savedDist, mesKey){
   var BORDER = {Lucas:'rgba(56,189,248,0.35)', Gustavo:'rgba(123,47,255,0.35)', João:'rgba(74,222,128,0.35)'};
   var COR_TEXT = {Lucas:'var(--cyan)', Gustavo:'var(--purple3)', João:'#4ade80'};
 
+  // Detecta usuário atual
+  var _minhaColuna = _normAudensResp(CU&&CU.name);
+  var _isGestor = CU && CU.role === 'gestor';
+
   // Monta distribuição: usa savedDist se existir, senão round-robin
   var dist = {Lucas:[], Gustavo:[], João:[]};
   var temDist = Object.keys(savedDist).length > 0;
@@ -12597,7 +12601,7 @@ function _renderAudensLeads(el, savedDist, mesKey){
     '</div>';
   }
 
-  var alertDist = !temDist && totalLeads > 0
+  var alertDist = _isGestor && !temDist && totalLeads > 0
     ? '<div style="background:rgba(253,224,71,0.07);border:1px solid rgba(253,224,71,0.3);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#fde047;font-family:\'Barlow Condensed\',sans-serif;">'+
         '⚡ Distribuição prévia gerada por round-robin — clique em <strong>Salvar Distribuição</strong> para confirmar.'+
       '</div>'
@@ -12669,17 +12673,29 @@ function _renderAudensLeads(el, savedDist, mesKey){
           '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;color:var(--amber);">'+leads.filter(function(l){return l.st==='reuniao'||l.st==='proposta';}).length+'</div>'+
           '<div style="font-size:10px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;">REUN/PROP</div></div>'+
       '</div>'+
-      '<div style="display:flex;gap:8px;">'+
-        '<button class="btn btn-outline" style="font-size:12px;" onclick="adRedistribuir(\''+mesKey+'\')"><i class="ti ti-refresh"></i> Redistribuir</button>'+
-        '<button class="btn btn-primary" style="font-size:12px;" onclick="adSalvarDist(\''+mesKey+'\')"><i class="ti ti-device-floppy"></i> Salvar Distribuição</button>'+
-      '</div>'+
+      // Botões de gestão só para gestor
+      (_isGestor
+        ? '<div style="display:flex;gap:8px;">'+
+            '<button class="btn btn-outline" style="font-size:12px;" onclick="adRedistribuir(\''+mesKey+'\')"><i class="ti ti-refresh"></i> Redistribuir</button>'+
+            '<button class="btn btn-primary" style="font-size:12px;" onclick="adSalvarDist(\''+mesKey+'\')"><i class="ti ti-device-floppy"></i> Salvar Distribuição</button>'+
+          '</div>'
+        : '')+
     '</div>'+
     alertDist+
     (totalLeads === 0
-      ? '<div style="text-align:center;padding:40px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhum lead nos últimos 90 dias para recuperar.</div>'
-      : '<div style="display:flex;gap:12px;flex-wrap:wrap;">'+
-          buildColuna('Lucas')+buildColuna('Gustavo')+buildColuna('João')+
-        '</div>');
+      ? '<div style="text-align:center;padding:40px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">Nenhum lead para recuperar neste período.</div>'
+      : (function(){
+          // Gestor vê todas as colunas; demais veem só a sua
+          var colunas;
+          if(_isGestor || !_minhaColuna){
+            colunas = EQUIPE.map(buildColuna).join('');
+          } else {
+            // Só a coluna do usuário, em largura total
+            var minhosLeads = dist[_minhaColuna]||[];
+            colunas = '<div style="width:100%;">' + buildColuna(_minhaColuna) + '</div>';
+          }
+          return '<div style="display:flex;gap:12px;flex-wrap:wrap;">' + colunas + '</div>';
+        })());
 
   // Guarda distribuição atual em memória para salvar depois
   window._adDistAtual = dist;
