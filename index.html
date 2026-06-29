@@ -1167,6 +1167,109 @@ function copiarTelefoneKanban(ev,tel){
     document.body.removeChild(ta);done();
   }
 }
+function abrirDetalheKanban(key){
+  var e=kanbanData[key];
+  if(!e) return;
+
+  // Resolve followup data for this meeting (if any)
+  var fuData=null;
+  Object.keys(followups||{}).forEach(function(fid){
+    var f=followups[fid];
+    if(f && (f.meetingId===key || (f.tel && f.tel===(e.telefone||'').replace(/\D/g,'')) ) && !fuData){
+      // prefer meetings attached to this kanban key
+      var mtg=meetings[fid];
+      if(mtg && mtg.kanbanKey===key) fuData=f;
+    }
+  });
+  // fallback: any followup whose tel matches
+  if(!fuData){
+    var tel0=(e.telefone||'').replace(/\D/g,'');
+    Object.values(followups||{}).forEach(function(f){
+      if(!fuData && f.tel && f.tel.replace(/\D/g,'')===tel0) fuData=f;
+    });
+  }
+
+  function row(icon,label,val,extra){
+    if(!val&&val!==0) return '';
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<i class="ti ti-'+icon+'" style="color:var(--purple3);margin-top:1px;flex-shrink:0;font-size:15px;"></i>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;">'+label+'</div>'+
+        '<div style="font-size:13px;color:var(--white);word-break:break-word;">'+(extra||val)+'</div>'+
+      '</div></div>';
+  }
+
+  var leadTag=getLeadTag(e.faturamento);
+  var _statusLabel={'novo':'Novo Lead','contatado':'Contatado','reuniao':'Reunião Agendada',
+    'recuperacao':'Recuperação','fechado':'Fechado','arquivado':'Arquivado'}[e.status||'novo']||(e.status||'Novo Lead');
+
+  var _fuHtml='';
+  if(fuData){
+    var _res={'venda':'✅ Venda','retorno':'🔄 Retorno','perdida':'❌ Venda Perdida','noshow':'👻 No-show'}[fuData.resultado]||(fuData.resultado||'');
+    _fuHtml='<div style="margin-top:16px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.18);border-radius:10px;">'+
+      '<div style="font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--muted);margin-bottom:8px;">RESULTADO DA REUNIÃO</div>'+
+      '<div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:6px;">'+_res+'</div>'+
+      (fuData.plano?'<div style="font-size:12px;color:var(--muted);">Plano: <span style="color:var(--white);">'+fuData.plano+'</span></div>':'')+
+      (fuData.duracao?'<div style="font-size:12px;color:var(--muted);">Duração: <span style="color:var(--white);">'+fuData.duracao+' meses</span></div>':'')+
+      (fuData.contrato?'<div style="font-size:12px;color:var(--muted);">Contrato: <span style="color:#fde047;font-weight:700;">R$ '+fuData.contrato.toLocaleString('pt-BR')+'</span></div>':'')+
+      (fuData.mensalidade?'<div style="font-size:12px;color:var(--muted);">Mensalidade: <span style="color:#fde047;">R$ '+fuData.mensalidade.toLocaleString('pt-BR')+'</span></div>':'')+
+      (fuData.motivo?'<div style="font-size:12px;color:var(--muted);">Motivo: <span style="color:var(--white);">'+fuData.motivo+'</span></div>':'')+
+      (fuData.dt?'<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+fuData.dt+'</div>':'')+
+    '</div>';
+  }
+
+  var _criadoEm='';
+  if(e._createdAt){ try{ _criadoEm=new Date(e._createdAt).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(ex){} }
+
+  var html='<div class="modal-ov active" id="modal-detalhe-kanban" data-dynamic="1" onclick="if(event.target===this)closeModal(\'modal-detalhe-kanban\')" style="z-index:3000;">'+
+    '<div class="modal-box" style="max-width:480px;max-height:85vh;overflow-y:auto;">'+
+      '<div class="modal-hd">'+
+        '<div class="modal-title"><i class="ti ti-user-circle"></i> Detalhes do Lead</div>'+
+        '<button class="modal-close" onclick="closeModal(\'modal-detalhe-kanban\')"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      // Header
+      '<div style="padding:14px 0 6px;">'+
+        '<div style="font-size:18px;font-weight:800;color:var(--white);margin-bottom:4px;">'+
+          (e.nome||'(sem nome)')+
+          (leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;font-size:11px;">'+leadTag.label+'</span>':'')+
+        '</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">'+
+          '<span style="font-size:11px;padding:3px 8px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);">'+_statusLabel+'</span>'+
+          (_criadoEm?'<span style="font-size:11px;color:var(--muted);">Cadastrado em: '+_criadoEm+'</span>':'')+
+        '</div>'+
+      '</div>'+
+      // Rows
+      row('building','Empresa',e.empresa)+
+      row('phone','Telefone',e.telefone,
+        e.telefone?'<span style="font-family:monospace;">'+e.telefone+'</span>'+
+          ' <button onclick="navigator.clipboard.writeText(\''+e.telefone+'\').catch(function(){})" style="background:none;border:none;color:var(--purple3);cursor:pointer;padding:0 4px;font-size:13px;" title="Copiar"><i class="ti ti-copy"></i></button>'+
+          ' <a href="'+waLink(e.telefone)+'" target="_blank" style="color:var(--green);font-size:12px;text-decoration:none;" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i> WA</a>':null
+      )+
+      row('currency-dollar','Faturamento',e.faturamento)+
+      row('ad-2','Anúncio (Ad)',e.ad)+
+      row('speakerphone','Campanha',e.campanha)+
+      row('map-pin','Cidade / Estado',e.cidade?(e.cidade+(e.estado?' – '+e.estado:'')):null)+
+      row('source-code','Origem',e.origem)+
+      row('id-badge-2','CNPJ',e.cnpj)+
+      row('user','Responsável (Closer)',e.responsavel)+
+      row('users','SDR',e.sdrName||e.sdr)+
+      row('calendar-event','Reunião',e.meetingDisplay,
+        e.meetingDisplay?(e.meetingDisplay+(e.responsavel?' · '+e.responsavel:'')+
+          (e.meetLink?' <a href="'+e.meetLink+'" target="_blank" style="color:var(--cyan);margin-left:6px;font-size:12px;"><i class="ti ti-video"></i> Meet</a>':'')):null
+      )+
+      row('calendar-due','Retorno',e.retornoDisplay,e.retornoDisplay?'<span style="color:var(--amber);">'+e.retornoDisplay+'</span>':null)+
+      row('note','Observações',e.obs)+
+      _fuHtml+
+      '<div style="display:flex;gap:8px;margin-top:18px;">'+
+        '<button class="btn" style="flex:1;padding:9px;font-size:13px;" onclick="closeModal(\'modal-detalhe-kanban\');abrirAgendarReuniao(\''+key+'\')"><i class="ti ti-calendar-event"></i> Agendar</button>'+
+        '<button class="btn" style="flex:1;padding:9px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid var(--border);" onclick="closeModal(\'modal-detalhe-kanban\');abrirEditarLead(\''+key+'\')"><i class="ti ti-edit"></i> Editar</button>'+
+      '</div>'+
+    '</div></div>';
+
+  var old=document.getElementById('modal-detalhe-kanban');
+  if(old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
 function abrirEditarLead(key){
   var e=kanbanData[key];
   if(!e) return;
@@ -1565,16 +1668,19 @@ function kanbanCardHtml(e,idx){
   var leadTag=getLeadTag(e.faturamento);
   var _searchKey=((e.nome||'')+' '+(e.empresa||'')+' '+(e.telefone||'')).toLowerCase();
   return '<div class="kanban-card" draggable="true" data-search="'+_searchKey+'" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
-    '<div class="kanban-card-name">'+nome+(leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;">'+leadTag.label+'</span>':'')+'</div>'+
-    (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
-    (e.telefone?'<div class="kanban-card-sub kanban-tel" title="Clique para copiar o telefone" onclick="copiarTelefoneKanban(event,\''+e.telefone+'\')"><i class="ti ti-phone"></i> '+e.telefone+' <i class="ti ti-copy" style="opacity:.5;"></i></div>'+
+    '<div onclick="abrirDetalheKanban(\''+e._key+'\')" style="cursor:pointer;" title="Ver detalhes do lead">'+
+      '<div class="kanban-card-name" style="display:flex;align-items:center;justify-content:space-between;">'+
+        '<span>'+nome+(leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;">'+leadTag.label+'</span>':'')+'</span>'+
+        '<i class="ti ti-info-circle" style="font-size:14px;color:var(--muted);opacity:.6;flex-shrink:0;margin-left:4px;"></i>'+
+      '</div>'+
+      (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
+      (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
+      (e.ad?'<div class="kanban-card-sub" style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+e.ad+'"><i class="ti ti-ad-2"></i> '+e.ad+'</div>':'')+
+      (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+(e.responsavel?' ('+e.responsavel+')':'')+'</div>':'')+
+      (e.retornoDisplay?'<div class="kanban-card-sub" style="color:var(--amber);"><i class="ti ti-calendar-due"></i> Retorno: '+e.retornoDisplay+'</div>':'')+
+    '</div>'+
+    (e.telefone?'<div class="kanban-card-sub kanban-tel" style="margin-top:4px;" title="Clique para copiar o telefone" onclick="copiarTelefoneKanban(event,\''+e.telefone+'\')"><i class="ti ti-phone"></i> '+e.telefone+' <i class="ti ti-copy" style="opacity:.5;"></i></div>'+
       '<a class="kanban-card-sub" href="'+waLink(e.telefone)+'" target="_blank" title="Abrir no WhatsApp" onclick="event.stopPropagation()" style="color:var(--green);text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
-    (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
-    (e.ad?'<div class="kanban-card-sub" style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+e.ad+'"><i class="ti ti-ad-2"></i> '+e.ad+'</div>':'')+
-    (e.cidade?'<div class="kanban-card-sub"><i class="ti ti-map-pin"></i> '+e.cidade+'</div>':'')+
-    (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+(e.responsavel?' ('+e.responsavel+')':'')+'</div>':'')+
-    (e.meetLink?'<div class="kanban-card-sub"><a href="'+e.meetLink+'" target="_blank" style="color:var(--cyan);"><i class="ti ti-video"></i> Abrir Meet</a></div>':'')+
-    (e.retornoDisplay?'<div class="kanban-card-sub" style="color:var(--amber);"><i class="ti ti-calendar-due"></i> Retorno: '+e.retornoDisplay+'</div>':'')+
     '<div class="kanban-card-actions">'+actions+'</div></div>';
 }
 
