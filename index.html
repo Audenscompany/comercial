@@ -3984,6 +3984,33 @@ function renderLigar(){
         '<td>'+sb+'</td><td>'+btn+'</td></tr>';
     }).join('')+'</tbody></table></div></div></div>';
 }
+// Converte URL do Google Docs/Drive para formato embeddable (sem exigir login)
+function normalizeDocUrl(url){
+  if(!url) return url;
+  url = url.trim();
+
+  // Google Docs: /document/d/ID/edit ou /document/d/ID/view → /document/d/ID/preview
+  var docsMatch = url.match(/docs\.google\.com\/document\/d\/([^\/\?]+)/);
+  if(docsMatch){
+    return 'https://docs.google.com/document/d/'+docsMatch[1]+'/preview';
+  }
+
+  // Google Drive file: /file/d/ID/view → /file/d/ID/preview
+  var driveMatch = url.match(/drive\.google\.com\/file\/d\/([^\/\?]+)/);
+  if(driveMatch){
+    return 'https://drive.google.com/file/d/'+driveMatch[1]+'/preview';
+  }
+
+  // Google Slides
+  var slidesMatch = url.match(/docs\.google\.com\/presentation\/d\/([^\/\?]+)/);
+  if(slidesMatch){
+    return 'https://docs.google.com/presentation/d/'+slidesMatch[1]+'/preview';
+  }
+
+  // Outros: retorna como está
+  return url;
+}
+
 // ===== ASSINATURA DE CONTRATO (pagina publica via ?sign=<id>, sem login) =====
 async function renderSignPage(id){
   var el=document.getElementById('sign-content');
@@ -3996,12 +4023,30 @@ async function renderSignPage(id){
     }
     window._signData=data;window._signId=id;
     if(data.status==='assinado'){ renderSignedView(id,data); return; }
-    var pdfEmbed=data.pdfUrl?('<iframe src="'+data.pdfUrl+'" style="width:100%;height:420px;border:1px solid var(--border);border-radius:10px;background:#fff;margin-bottom:18px;" allow="autoplay"></iframe>'):'';
+    var _embedUrl = data.pdfUrl ? normalizeDocUrl(data.pdfUrl) : '';
+    var pdfEmbed = _embedUrl
+      ? '<div style="margin-bottom:18px;">'+
+          '<iframe id="sign-iframe" src="'+_embedUrl+'" '+
+            'style="width:100%;height:440px;border:1px solid rgba(255,255,255,0.1);border-radius:10px;background:#fff;" '+
+            'allow="autoplay" onload="this.dataset.loaded=\'1\'" '+
+            'onerror="document.getElementById(\'sign-iframe-err\').style.display=\'\'">'+
+          '</iframe>'+
+          '<div id="sign-iframe-err" style="display:none;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:12px 16px;margin-top:8px;font-size:13px;color:#f87171;">'+
+            '⚠️ Não foi possível exibir o documento aqui. '+
+            '<a href="'+_embedUrl+'" target="_blank" style="color:var(--purple3);font-weight:700;">Abrir documento em nova aba →</a>'+
+          '</div>'+
+          '<div style="text-align:right;margin-top:6px;">'+
+            '<a href="'+_embedUrl+'" target="_blank" style="font-size:12px;color:var(--purple3);text-decoration:none;">'+
+              '<i class="ti ti-external-link"></i> Abrir em nova aba'+
+            '</a>'+
+          '</div>'+
+        '</div>'
+      : '';
     el.innerHTML=
       '<div class="cb" style="padding:24px;">'+
         '<div style="text-align:center;margin-bottom:18px;">'+
           '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:28px;letter-spacing:4px;">AUDENS</div>'+
-          '<div style="color:var(--muted);font-size:13px;">Assinatura Eletronica de Contrato</div>'+
+          '<div style="color:var(--muted);font-size:13px;">Assinatura Eletrônica de Contrato</div>'+
         '</div>'+
         '<div style="margin-bottom:14px;"><b>Cliente:</b> '+(data.cliente||'')+'</div>'+
         (data.contratoNome?'<div style="margin-bottom:14px;"><b>Documento:</b> '+data.contratoNome+'</div>':'')+
@@ -4029,7 +4074,7 @@ function renderSignedView(id,data){
       '<i class="ti ti-circle-check" style="font-size:42px;color:var(--green);"></i>'+
       '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;margin-top:10px;">Documento assinado</div>'+
       '<div style="color:var(--muted);font-size:13px;margin-top:6px;">Assinado por '+(data.signerName||data.cliente||'')+' em '+dt+'</div>'+
-      (data.pdfUrl?'<a href="'+data.pdfUrl+'" target="_blank" class="btn btn-outline" style="margin-top:16px;display:inline-flex;"><i class="ti ti-file-text"></i> Ver documento</a>':'')+
+      (data.pdfUrl?'<a href="'+normalizeDocUrl(data.pdfUrl)+'" target="_blank" class="btn btn-outline" style="margin-top:16px;display:inline-flex;"><i class="ti ti-file-text"></i> Ver documento</a>':'')+
     '</div>';
 }
 async function confirmarAssinatura(id){
@@ -5222,7 +5267,12 @@ function abrirModalNovaAssinatura(){
         '</div>'+
         '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase;">Contrato</div>'+
         '<label class="f-label">Nome do documento</label><input class="f-input" id="na-contrato" placeholder="Ex: Contrato Audens - Plano Premium" style="margin-bottom:12px;">'+
-        '<label class="f-label">Link do PDF (Google Drive, etc.)</label><input class="f-input" id="na-pdf" placeholder="https://..." style="margin-bottom:0;">'+
+        '<label class="f-label">Link do documento (Google Docs / Drive / PDF)</label>'+
+        '<input class="f-input" id="na-pdf" placeholder="https://docs.google.com/..." style="margin-bottom:6px;">'+
+        '<div style="background:rgba(253,224,71,0.07);border:1px solid rgba(253,224,71,0.25);border-radius:6px;padding:8px 12px;font-size:11px;color:#fde047;font-family:\'Barlow Condensed\',sans-serif;line-height:1.5;">'+
+          '⚠️ Para Google Docs/Drive: o documento deve estar compartilhado como <strong>"Qualquer pessoa com o link pode visualizar"</strong>. '+
+          'O sistema converte automaticamente o link para o formato correto.'+
+        '</div>'+
         '<div class="login-err" id="na-err"></div>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
@@ -5246,7 +5296,7 @@ async function salvarNovaAssinatura(){
   var valor=parseFloat(document.getElementById('na-valor').value)||0;
   var vencimento=document.getElementById('na-vencimento').value;
   var contratoNome=document.getElementById('na-contrato').value.trim();
-  var pdfUrl=document.getElementById('na-pdf').value.trim();
+  var pdfUrl=normalizeDocUrl(document.getElementById('na-pdf').value.trim());
   var errEl=document.getElementById('na-err');
   var btn=document.getElementById('na-save-btn');
   errEl.textContent='';
@@ -5601,6 +5651,27 @@ function renderFollowupBody(){
           '<div><label class="f-label">Vencimento</label><input class="f-input" type="text" id="fu-vencimento" placeholder="Ex: todo dia 10 / toda quarta-feira / dias 15 e 30" style="margin-bottom:0;"></div>'+
         '</div>'+
         '<div id="fu-bonus-preview" style="padding:10px 12px;background:rgba(253,224,71,0.08);border:1px solid rgba(253,224,71,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#fde047;margin-top:10px;"></div>'+
+        '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
+          '<button type="button" id="fu-seg-loja-btn" onclick="fuToggleSegLoja()" style="width:100%;padding:9px;background:rgba(123,47,255,0.1);border:1px dashed rgba(123,47,255,0.35);border-radius:8px;color:var(--purple3);font-size:12px;font-weight:600;cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:.5px;">'+
+            '+ CLIENTE TEM 2 LOJAS (registrar 2ª venda com CNPJ diferente)'+
+          '</button>'+
+          '<div id="fu-seg-loja-fields" style="display:none;margin-top:12px;padding:14px;background:rgba(123,47,255,0.06);border:1px solid rgba(123,47,255,0.18);border-radius:10px;">'+
+            '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--purple3);margin-bottom:12px;font-family:\'Barlow Condensed\',sans-serif;">2ª LOJA</div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
+              '<div><label class="f-label">Nome / Empresa da 2ª loja</label><input class="f-input" type="text" id="fu-seg-empresa" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+
+              '<div><label class="f-label">CNPJ da 2ª loja</label><input class="f-input" type="text" id="fu-seg-cnpj" placeholder="00.000.000/0001-00" style="margin-bottom:0;"></div>'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
+              '<div><label class="f-label">Plano</label><select class="f-input" id="fu-seg-plano" style="margin-bottom:0;"><option value="marketplaces">Marketplaces</option><option value="premium">Premium</option><option value="elite">Elite</option></select></div>'+
+              '<div><label class="f-label">Duração (meses)</label><select class="f-input" id="fu-seg-duracao" style="margin-bottom:0;"><option value="3">3 meses</option><option value="6" selected>6 meses</option></select></div>'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
+              '<div><label class="f-label">Valor Total do Contrato (R$)</label><input class="f-input" type="number" id="fu-seg-contrato" placeholder="0" style="margin-bottom:0;"></div>'+
+              '<div><label class="f-label">Mensalidade (R$) — se MMR</label><input class="f-input" type="number" id="fu-seg-mensalidade" placeholder="0 (se TCV)" style="margin-bottom:0;"></div>'+
+            '</div>'+
+            '<div style="margin-top:8px;font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;">A 2ª venda herda Data de Início, Tipo de Valor, Frequência e Vencimento da 1ª loja.</div>'+
+          '</div>'+
+        '</div>'+
       '</div>'+
       '<div id="fu-retorno-fields" style="display:none;margin-bottom:16px;">'+
         '<label class="f-label">Quando sera o retorno?</label>'+
@@ -5627,6 +5698,20 @@ function renderFollowupBody(){
 }
 // Mostra/esconde o campo de mensalidade dependendo do tipo de valor (TCV x MMR)
 // TCV: duracao só 3 ou 6 meses (select). MMR: duracao livre (input numérico).
+function fuToggleSegLoja(){
+  var fields = document.getElementById('fu-seg-loja-fields');
+  var btn    = document.getElementById('fu-seg-loja-btn');
+  if(!fields) return;
+  var open = fields.style.display !== 'none';
+  fields.style.display = open ? 'none' : 'block';
+  if(btn){
+    btn.textContent = open
+      ? '+ CLIENTE TEM 2 LOJAS (registrar 2ª venda com CNPJ diferente)'
+      : '− Remover 2ª loja';
+    btn.style.borderStyle = open ? 'dashed' : 'solid';
+    btn.style.background  = open ? 'rgba(123,47,255,0.1)' : 'rgba(123,47,255,0.18)';
+  }
+}
 function toggleMensalidadeField(){
   var tipo=document.getElementById('fu-tipo-valor');
   var wrap=document.getElementById('fu-mensalidade-wrap');
@@ -6172,6 +6257,76 @@ function saveFollowup(){
         kanbanKey:kk2||'',
         ativo:true
       }).catch(function(e){console.warn('Firebase contrato:',e);});
+    })();
+    // ── 2ª LOJA: registra segunda venda se o toggle estiver ativo ──────────
+    (function(){
+      var segFields = document.getElementById('fu-seg-loja-fields');
+      if(!segFields || segFields.style.display==='none') return;
+      var segCnpj      = (document.getElementById('fu-seg-cnpj')?document.getElementById('fu-seg-cnpj').value.trim():'');
+      var segEmpresa   = (document.getElementById('fu-seg-empresa')?document.getElementById('fu-seg-empresa').value.trim():'');
+      var segPlano     = (document.getElementById('fu-seg-plano')?document.getElementById('fu-seg-plano').value:'') || plano;
+      var segDuracao   = parseInt(document.getElementById('fu-seg-duracao')?document.getElementById('fu-seg-duracao').value:duracao,10)||duracao;
+      var segContrato  = parseFloat(document.getElementById('fu-seg-contrato')?document.getElementById('fu-seg-contrato').value:0)||0;
+      var segMens      = parseFloat(document.getElementById('fu-seg-mensalidade')?document.getElementById('fu-seg-mensalidade').value:0)||0;
+      if(!segCnpj && !segContrato){ return; } // nada preenchido — ignora
+      var segNome = segEmpresa || (leadInfo&&leadInfo.empresa?leadInfo.empresa+' (2)':_fuMeeting.nome+' (2)');
+      // Gera contrato .docx para a 2ª loja (abre nova aba/download)
+      setTimeout(function(){
+        generateContratoDocx({
+          plano:segPlano,
+          nomeCliente:segNome,
+          cnpjCliente:segCnpj,
+          telefone:_fuMeeting.tel,
+          duracaoMeses:segDuracao,
+          dataInicio:dataInicio,
+          tipoValor:tipoValor,
+          valorTotal:segContrato,
+          valorParcela:segMens,
+          frequencia:frequencia,
+          vencimento:vencimento
+        });
+      }, 800); // pequeno delay para o primeiro docx terminar
+      // Registra na planilha de Clientes
+      appendClienteRow({
+        nomeCliente:segNome,
+        plano:segPlano,
+        duracao:segDuracao,
+        dataInicio:dataInicio,
+        tipoValor:tipoValor,
+        contrato:segContrato,
+        mensalidade:segMens,
+        origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+        closer:_fuMeeting.responsavel||'',
+        sdr:_fuMeeting.sdr||''
+      });
+      // Cria cobrança Asaas para a 2ª loja
+      setTimeout(function(){
+        criarCobrancaAsaas({nome:segNome,telefone:_fuMeeting.tel,cnpj:segCnpj},
+          {plano:segPlano,duracao:segDuracao,dataInicio:dataInicio,tipoValor:tipoValor,
+           contrato:segContrato,mensalidade:segMens,cnpj:segCnpj}, null);
+      }, 1200);
+      // Salva contrato no Firebase
+      var _p2=segPlano==='premium'?'Plano Premium':segPlano==='elite'?'Plano Elite':'Plano 3';
+      var _suf2=segDuracao>=6?' - Semestral':segDuracao>=3?' - Trimestral':' - Mensal';
+      var _mrr2=tipoValor==='tcv'?Math.round(segContrato/segDuracao):(segMens||segContrato);
+      var _tcv2=tipoValor==='tcv'?segContrato:(_mrr2*segDuracao);
+      saveContrato(null,{
+        cliente:segNome,
+        dataInicio:dataInicio,
+        valorMes:_mrr2,
+        valorVendido:_tcv2,
+        planoDuracao:segDuracao,
+        plano:_p2+_suf2,
+        gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',
+        origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+        closer:_fuMeeting.responsavel||'',
+        sdr:_fuMeeting.sdr||'',
+        kanbanKey:'',
+        ativo:true,
+        _segundaLoja:true,
+        _cnpj:segCnpj,
+        _meetingId:fid
+      }).catch(function(e){console.warn('Firebase contrato 2ª loja:',e);});
     })();
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
