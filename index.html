@@ -7704,16 +7704,8 @@ async function refreshAnaliseAds(){
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
     }
-    // Ads: lê leads e reuniões da planilha (histórico preciso) + Firebase apenas para novos leads
+    // Ads: lê leads, reuniões e clientes da planilha via loadDataHybrid (leads+reuniões+clientes em 3 requests)
     var dataAds=await loadDataHybrid();
-    try{
-      var [_lRaw,_rRaw]=await Promise.all([
-        fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads),
-        fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes)
-      ]);
-      if(_lRaw&&_lRaw.length>1) dataAds.leads=rawToObjs(_lRaw);
-      if(_rRaw&&_rRaw.length>1) dataAds.reunioes=rawToObjs(_rRaw);
-    }catch(_e2){ console.warn('[Ads] Planilha indisponível, usando Firebase',_e2); }
     cont.innerHTML=buildAnaliseAdsHTML(dataAds);
     cont.style.display='block'; loading.style.display='none';
   }catch(e){
