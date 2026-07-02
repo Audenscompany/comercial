@@ -1081,6 +1081,16 @@ async function confirmarAgendamentoReuniao(key){
       if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
       else if(ex)ex.remove();}
   }
+  // Marca o meeting anterior desse lead como reagendado (para sair das Tarefas pendentes)
+  var _prevMids = Object.keys(meetings).filter(function(id){
+    var m=meetings[id];
+    return m.kanbanKey===key && (m.status==='pending'||!m.status) && !followups[id];
+  });
+  _prevMids.forEach(function(pid){
+    meetings[pid].status='reagendado';
+    meetings[pid].reagendamentos=(meetings[pid].reagendamentos||0)+1;
+    saveMeetingFB(pid, meetings[pid]);
+  });
   // Cria a tarefa de follow-up pos-reuniao para o responsavel (Realizada / No-show / Venda / Retorno)
   var mid='km_'+key+'_'+Date.now();
   var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
@@ -6571,17 +6581,45 @@ function renderTarefas(){
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Tarefas</div><div class="page-sub">Follow-ups pendentes</div></div><span class="badge b-red">'+pend.length+' pendentes</span></div>'+
   '<div class="cb">'+pend.map(function(m){
-    return '<div style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--border);">'+
+    return '<div id="tarefa-row-'+m.id+'" style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--border);">'+
       '<div style="width:40px;height:40px;background:rgba(239,68,68,0.12);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--red);"><i class="ti ti-user"></i></div>'+
       '<div style="flex:1;"><div style="font-weight:600;font-size:14px;">'+m.nome+'</div>'+
       '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);margin-top:2px;">'+m.dtDisplay+' - Resp: <span style="color:var(--purple3);">'+m.responsavel+'</span></div>'+
       (m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-family:\'Barlow Condensed\',sans-serif;font-size:11px;"><i class="ti ti-video"></i> Meet</a>':'')+
       '</div>'+
-      '<button class="btn btn-task" onclick="openFollowup(meetings[\''+m.id+'\'])"><i class="ti ti-check"></i> Resultado</button>'+
+      '<div style="display:flex;gap:8px;align-items:center;">'+
+        '<button class="btn btn-task" onclick="openFollowup(meetings[\''+m.id+'\'])"><i class="ti ti-check"></i> Resultado</button>'+
+        '<button title="Dispensar (reunião reagendada)" onclick="dispensarTarefa(\''+m.id+'\')" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px 10px;color:var(--muted);cursor:pointer;font-size:13px;" onmouseover="this.style.background=\'rgba(239,68,68,0.12)\';this.style.color=\'var(--red)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.05)\';this.style.color=\'var(--muted)\'"><i class="ti ti-x"></i></button>'+
+      '</div>'+
     '</div>';
   }).join('')+'</div></div>';
 }
 
+function dispensarTarefa(mid){
+  if(!meetings[mid]) return;
+  // Marca como reagendado para sair do getPendingFollowups
+  meetings[mid].status = 'reagendado';
+  meetings[mid]._dispensadoEm = Date.now();
+  saveMeetingFB(mid, meetings[mid]);
+  // Remove a linha da UI sem recarregar a página
+  var row = document.getElementById('tarefa-row-'+mid);
+  if(row){
+    row.style.transition='opacity .25s';
+    row.style.opacity='0';
+    setTimeout(function(){
+      row.remove();
+      // Atualiza badge do menu
+      var pend=getPendingFollowups();
+      var badge=document.querySelector('[data-page-btn="tarefas"] .nav-badge, #nav-tarefas .nav-badge');
+      if(badge){ if(pend.length>0) badge.textContent=pend.length; else badge.remove(); }
+      // Se não sobrou nenhuma, mostra empty state
+      var cb=document.querySelector('.cb');
+      if(cb && getPendingFollowups().length===0){
+        cb.innerHTML='<div class="empty-st"><i class="ti ti-check"></i><p>Nenhuma tarefa pendente</p></div>';
+      }
+    }, 280);
+  }
+}
 // ===== HISTORICO =====
 function renderHistorico(){return renderHistBase(Object.values(calls).sort(function(a,b){return(b.data||'').localeCompare(a.data||'');}),'Historico Geral');}
 function renderMeuHist(){var myName=(CU&&CU.name)||'';var myCalls=Object.values(calls).filter(function(c){return !myName||!c.responsavel||(c.responsavel||'').toLowerCase().includes(myName.toLowerCase());});return renderHistBase(myCalls.sort(function(a,b){return(b.data||'').localeCompare(a.data||'');}),'Meu Historico');}
@@ -11987,24 +12025,36 @@ async function calcSDRFromFirebase(nivelIdx, month){
     result.incentivReun=result.reunioesComp*lv.incentivReun;
     result.ssIncentiv=result.ssReun*30;
     result.ssTotal=result.incentivReun+result.ssIncentiv+result.ssComm;
-    // Bônus de equipe: usa Google Sheets como fonte de verdade (mesma da página de Metas)
-    // Firebase pode ter entradas duplicadas; Sheets reflete o número real de contratos do mês
-    try{
-      var _cliRaw=await fetchSheetVals(SHEETS_IDS.clientes,SHEETS_GIDS.clientes);
-      if(_cliRaw&&_cliRaw.length>1){
-        var _cliH=_cliRaw[0].map(function(h){return (h||'').toString().toUpperCase().trim();});
-        var _iDC=_cliH.findIndex(function(h){return h.includes('DATA')&&(h.includes('NÍCIO')||h.includes('NICIO'));});
-        if(_iDC<0) _iDC=_cliH.findIndex(function(h){return h.includes('DATA');});
-        if(_iDC>=0){
-          var _sc=0;
-          _cliRaw.slice(1).forEach(function(row){
-            var _d=parseBRDate((row[_iDC]||'').toString());
-            if(_d&&dateToMonthStr(_d)===month) _sc++;
-          });
-          if(_sc>0) totalEquipeContratosSDR=_sc;
-        }
-      }
-    }catch(_e3){}
+    // Bônus de equipe: conta fechamentos via followups+meetings (já em memória, sem API call extra)
+    // Exclui _segundaLoja (mesmo cliente, 2 CNPJs) e deduplica por meetingId para evitar duplicatas do Firebase
+    var _fbTeamSales=new Set();
+    Object.values(followups||{}).forEach(function(f){
+      if(f.resultado!=='venda'&&f.venda!=='sim') return;
+      var _mid=f.meetingId;
+      if(!_mid||_fbTeamSales.has(_mid)) return;
+      var _m=meetings[_mid];
+      if(!_m||_m._retorno||_m._hidden) return;
+      var _bd=new Date(_m.dtISO||(_m.scheduledAt||0));
+      if(dateToMonthStr(_bd)!==month) return;
+      _fbTeamSales.add(_mid);
+    });
+    // Se não tiver dados suficientes nos followups, usa Firebase contratos deduplicado
+    if(_fbTeamSales.size>0){
+      totalEquipeContratosSDR=_fbTeamSales.size;
+    } else {
+      // Fallback: Firebase contratos deduplicado por kanbanKey (exclui 2ª loja)
+      var _seen2=new Set();
+      totalEquipeContratosSDR=0;
+      contratos.forEach(function(c){
+        var cm=c.dataInicio?c.dataInicio.substring(0,7):null;
+        if(!cm||cm!==month) return;
+        if(c._segundaLoja) return;
+        var _k=c.kanbanKey||(c.cliente||'').toLowerCase().trim();
+        if(_k&&_seen2.has(_k)) return;
+        if(_k) _seen2.add(_k);
+        totalEquipeContratosSDR++;
+      });
+    }
     result.bonusEquipe=totalEquipeContratosSDR>=20?500+Math.floor((totalEquipeContratosSDR-20)/5)*250:0;
     result.totalEquipe=totalEquipeContratosSDR;
     var totalBrutoSDR=result.base+result.bonusMeta+result.acelerador+result.comissaoVendas+result.bonusEquipe;
