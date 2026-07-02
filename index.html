@@ -11959,9 +11959,9 @@ async function calcSDRFromFirebase(nivelIdx, month){
         var comm=Math.round(mrr*0.25);
         result.ssVendas++;
         result.ssComm+=comm;
-        result.vendaDetalhes.push({cliente:cliente,mrr:mrr,tipo:'Social Selling',comm:comm,acima:true});
+        result.vendaDetalhes.push({cliente:cliente,mrr:mrr,tipo:'Social Selling',comm:comm,acima:true,_fbId:c.id});
       } else {
-        _vendaItems.push({cliente:cliente,mrr:mrr});
+        _vendaItems.push({cliente:cliente,mrr:mrr,_fbId:c.id});
       }
     });
 
@@ -11975,7 +11975,7 @@ async function calcSDRFromFirebase(nivelIdx, month){
       var acima=result.vendas>=threshold&&i>=naoSSAbaixo;
       var comm=acima?Math.round(item.mrr*pct):0;
       if(acima) result.comissaoVendas+=comm;
-      result.vendaDetalhes.push({cliente:item.cliente,mrr:item.mrr,tipo:'Tráfego',comm:comm,acima:acima});
+      result.vendaDetalhes.push({cliente:item.cliente,mrr:item.mrr,tipo:'Tráfego',comm:comm,acima:acima,_fbId:item._fbId});
     });
 
     var meta=lv.meta;
@@ -11987,7 +11987,24 @@ async function calcSDRFromFirebase(nivelIdx, month){
     result.incentivReun=result.reunioesComp*lv.incentivReun;
     result.ssIncentiv=result.ssReun*30;
     result.ssTotal=result.incentivReun+result.ssIncentiv+result.ssComm;
-    // Bônus de equipe: ≥20 contratos=R$500, +R$250 a cada 5 acima de 20
+    // Bônus de equipe: usa Google Sheets como fonte de verdade (mesma da página de Metas)
+    // Firebase pode ter entradas duplicadas; Sheets reflete o número real de contratos do mês
+    try{
+      var _cliRaw=await fetchSheetVals(SHEETS_IDS.clientes,SHEETS_GIDS.clientes);
+      if(_cliRaw&&_cliRaw.length>1){
+        var _cliH=_cliRaw[0].map(function(h){return (h||'').toString().toUpperCase().trim();});
+        var _iDC=_cliH.findIndex(function(h){return h.includes('DATA')&&(h.includes('NÍCIO')||h.includes('NICIO'));});
+        if(_iDC<0) _iDC=_cliH.findIndex(function(h){return h.includes('DATA');});
+        if(_iDC>=0){
+          var _sc=0;
+          _cliRaw.slice(1).forEach(function(row){
+            var _d=parseBRDate((row[_iDC]||'').toString());
+            if(_d&&dateToMonthStr(_d)===month) _sc++;
+          });
+          if(_sc>0) totalEquipeContratosSDR=_sc;
+        }
+      }
+    }catch(_e3){}
     result.bonusEquipe=totalEquipeContratosSDR>=20?500+Math.floor((totalEquipeContratosSDR-20)/5)*250:0;
     result.totalEquipe=totalEquipeContratosSDR;
     var totalBrutoSDR=result.base+result.bonusMeta+result.acelerador+result.comissaoVendas+result.bonusEquipe;
@@ -12107,8 +12124,9 @@ function buildVendaDetalhesHtml(items, title){
   var hasComm=items.some(function(i){return i.comm>0;});
   var rows=items.map(function(item){
     var tipoColor=item.tipo==='Cold Call 25%'?'var(--amber)':item.tipo==='Social Selling'?'var(--cyan)':'var(--muted)';
+    var editBtn=item._fbId?'<button onclick="corrigirMrrContrato(\''+item._fbId+'\',\''+esc(item.cliente)+'\','+item.mrr+')" title="Corrigir valor" style="background:none;border:none;color:rgba(255,255,255,0.25);cursor:pointer;padding:0 4px;font-size:12px;" onmouseover="this.style.color=\'var(--amber)\'" onmouseout="this.style.color=\'rgba(255,255,255,0.25)\'"><i class="ti ti-edit"></i></button>':'';
     return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
-      '<td style="padding:7px 12px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--white);opacity:'+(item.acima?1:0.55)+';">'+esc(item.cliente)+'</td>'+
+      '<td style="padding:7px 12px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--white);opacity:'+(item.acima?1:0.55)+';">'+esc(item.cliente)+editBtn+'</td>'+
       '<td style="padding:7px 12px;font-size:11px;color:'+tipoColor+';font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;text-transform:uppercase;">'+esc(item.tipo)+'</td>'+
       '<td style="padding:7px 12px;font-size:12px;color:var(--white);text-align:right;font-family:\'DM Mono\',monospace;opacity:'+(item.acima?1:0.55)+';">R$'+(item.mrr||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+'</td>'+
       (hasComm?'<td style="padding:7px 12px;font-size:13px;font-weight:700;text-align:right;font-family:\'Bebas Neue\',sans-serif;color:'+(item.acima&&item.comm>0?'#4ade80':'var(--muted)')+';">'+(item.acima&&item.comm>0?'+ R$'+item.comm.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—')+'</td>':'') +
@@ -12134,6 +12152,21 @@ function buildVendaDetalhesHtml(items, title){
   '</div>';
 }
 
+async function corrigirMrrContrato(fbId, nomeCliente, mrrAtual){
+  var novoMrr = prompt('Corrigir MRR de "'+nomeCliente+'"\nValor atual: R$'+mrrAtual+'\n\nNovo valor mensal (MRR) em R$:');
+  if(novoMrr===null) return;
+  var v = parseFloat((novoMrr||'').replace(/[^\d,\.]/g,'').replace(',','.'));
+  if(!v||v<=0){ alert('Valor inválido.'); return; }
+  if(!confirm('Confirmar: MRR de "'+nomeCliente+'" → R$'+v.toLocaleString('pt-BR',{minimumFractionDigits:2})+'?')) return;
+  try{
+    if(!fbDb) initFirebase();
+    await fbDb.ref('contratos/'+fbId).update({valorMes:v, updatedAt:Date.now()});
+    _contratosCache = null; // força recarregar
+    alert('Valor corrigido! Clique em Calcular novamente para atualizar.');
+  }catch(e){
+    alert('Erro ao salvar: '+e.message);
+  }
+}
 function buildPromoProgressHtml(history,lv,currentMonth){
   if(!history||history.length===0) return '';
   var hitCount=history.filter(function(m){return m.hit;}).length;
