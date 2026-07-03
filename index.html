@@ -10325,7 +10325,7 @@ function renderReunioesPersonal(){
           '<td><span style="font-size:11px;font-family:var(--font-bc),sans-serif;color:'+origemCol+';">'+esc(origemLabel)+'</span></td>'+
           '<td style="font-size:12px;color:var(--cyan);">'+(sdrLabel||'—')+'</td>'+
           '<td style="font-size:11px;color:var(--purple3);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+(adVal?esc(adVal):'')+'">'+(adVal?esc(adVal):'<span style="color:var(--border2);">—</span>')+'</td>'+
-          '<td>'+(m.responsavel||'—')+'</td>'+
+          '<td style="white-space:nowrap;">'+(m.responsavel||'—')+' <button onclick="trocarCloserReuniao(\''+m.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0 3px;vertical-align:middle;" title="Trocar closer"><i class="ti ti-edit" style="font-size:11px;"></i></button></td>'+
           '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;"><i class="ti ti-video"></i> Abrir</a>':'—')+'</td>'+
           '<td style="white-space:nowrap;">'+
             '<button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 10px;" title="Editar"><i class="ti ti-edit"></i></button>'+
@@ -10342,6 +10342,45 @@ function renderReunioesPersonal(){
     reunHojeHtml+
     createForm + fbHtml + sheetsHtml +
   '</div>';
+}
+
+// ===== TROCAR CLOSER (sem WA, sem mudar data) =====
+function trocarCloserReuniao(mid){
+  var m=meetings[mid]; if(!m) return;
+  var closers=['Lucas','Gustavo','João'];
+  var html='<div class="modal-ov active" id="modal-trocar-closer" onclick="if(event.target===this)document.getElementById(\'modal-trocar-closer\').remove()">'+
+    '<div class="modal-box" style="max-width:300px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-user-edit" style="color:var(--purple3);margin-right:6px;"></i>Trocar Closer</div>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-trocar-closer\').remove()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Reunião com <b>'+esc(m.nome||'lead')+'</b></div>'+
+        '<label class="f-label">Closer Responsável</label>'+
+        '<select id="tc-closer" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
+          closers.map(function(c){return'<option'+(m.responsavel===c?' selected':'')+'>'+c+'</option>';}).join('')+
+        '</select>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="confirmarTrocarCloser(\''+mid+'\')"><i class="ti ti-check"></i> Salvar</button>'+
+        '<button class="btn btn-outline" onclick="document.getElementById(\'modal-trocar-closer\').remove()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function confirmarTrocarCloser(mid){
+  var novoCloser=(document.getElementById('tc-closer')||{}).value||'';
+  if(!novoCloser) return;
+  var m=meetings[mid]; if(!m) return;
+  var anterior=m.responsavel||'—';
+  m.responsavel=novoCloser;
+  try{
+    await saveMeetingFB(mid, m);
+    showSheetToast('Closer: '+anterior+' → '+novoCloser);
+  }catch(e){ showSheetToast('Erro ao salvar: '+e.message, true); }
+  var mo=document.getElementById('modal-trocar-closer'); if(mo) mo.remove();
+  var pgEl=document.getElementById('content');
+  if(pgEl&&pgEl.getAttribute('data-page')==='reunioes') showPage('reunioes');
 }
 
 // ===== EDITAR REUNIÃO =====
