@@ -6864,12 +6864,14 @@ function buildDashComHTML(data){
     return inRange(d);
   });
   // DEBUG TEMPORÁRIO — remover após diagnóstico
-  console.log('[DASH DEBUG] reunioes.rows total:', data.reunioes.rows.length, '| reunioesF (filtradas para período):', reunioesF.length, '| period:', period);
-  if(data.reunioes.rows.length>0){
-    console.log('[DASH DEBUG] Colunas da 1ª linha:', Object.keys(data.reunioes.rows[0]).filter(function(k){return k.length<40;}).slice(0,15));
-    var _amostra=data.reunioes.rows.slice(0,3).map(function(r){return{DATA_AG:r['DATA DE AGENDAMENTO']||r['Data de Agendamento']||r['DATA']||r['Data']||'—',STATUS:r['STATUS']||r['STATUS REUNIÃO']||'—'};});
-    console.log('[DASH DEBUG] Amostra das primeiras 3 linhas:', JSON.stringify(_amostra));
-  }
+  console.warn('[DASH DEBUG] meetings em memória:', Object.keys(meetings).length,
+    '| sheetReuni:', data.reunioes.rows.length - (data.reunioes._fbCount||0),
+    '| fbExtraReuni (estimado):', data.reunioes._fbCount||'?',
+    '| reunioesF filtradas para', period+':', reunioesF.length);
+  // Mostra quantos meetings do Firebase têm dtISO em julho
+  var _fbComDtISO=Object.values(meetings).filter(function(m){return m.dtISO&&m.dtISO.startsWith('2026-07');}).length;
+  var _fbSemDtISO=Object.values(meetings).filter(function(m){return !m.dtISO;}).length;
+  console.warn('[DASH DEBUG] meetings Firebase: com dtISO em Jul/2026='+_fbComDtISO+' | sem dtISO='+_fbSemDtISO+' | total='+Object.keys(meetings).length);
   var clientesF=data.clientes.rows.filter(function(r){
     var d=parseBRDate(col(r,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
     return inRange(d);
