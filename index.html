@@ -1433,8 +1433,16 @@ async function enviarLinkAssinaturaWA(telefone, nome, link){
 }
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
+var _waConfirmSentAt = {}; // tel → timestamp — evita duplicatas em < 5 min
 async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink){
   if(!telefone){console.warn('[WA] Confirmação não enviada: lead sem telefone (nome='+nome+')');return;}
+  var _tel=(telefone||'').replace(/\D/g,'');
+  var _now=Date.now();
+  if(_waConfirmSentAt[_tel] && _now-_waConfirmSentAt[_tel] < 5*60*1000){
+    console.warn('[WA] Dedup: confirmação já enviada para',nome,'há menos de 5 min — ignorando duplicata.');
+    return;
+  }
+  _waConfirmSentAt[_tel]=_now;
   try{
     var payload={telefone:telefone, nome:nome, meetingDisplay:meetingDisplay};
     if(responsavel) payload.responsavel=responsavel;
@@ -1446,7 +1454,11 @@ async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, respon
     });
     if(!resp.ok) console.warn('[WA] /agendar retornou',resp.status,'para',nome);
     else console.log('[WA] Confirmação enviada para',nome,telefone);
-  }catch(e){console.error('enviarConfirmacaoReuniaoWA error',e);}
+  }catch(e){
+    // Em caso de erro, remove o timestamp para permitir nova tentativa
+    delete _waConfirmSentAt[_tel];
+    console.error('enviarConfirmacaoReuniaoWA error',e);
+  }
 }
 
 // ===== LEMBRETE DE VÉSPERA (21h) — notifica SDR e closers via WhatsApp =====
