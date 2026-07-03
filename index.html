@@ -3033,10 +3033,11 @@ function meetingsToReunioesRows(){
 // Converte lista de meetings (Firebase) em linhas de reunioes
 function _meetingObjsToRows(arr){
   return arr.map(function(m){
-    // Usa dtISO (data real da reunião) em vez de scheduledAt (timestamp de criação)
-    var meetingTs=m.dtISO?(new Date(m.dtISO)).getTime():(m.scheduledAt||Date.now());
-    var bd=new Date(meetingTs);
-    var ds=bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
+    // Usa dtISO (data real da reunião) primeiro, depois scheduledAt
+    // Se nenhum existir, deixa vazio para não contaminar métricas do mês atual
+    var meetingTs=m.dtISO?(new Date(m.dtISO)).getTime():(m.scheduledAt||0);
+    var bd=meetingTs?new Date(meetingTs):null;
+    var ds=bd?bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear():'';
     var tel=(m.tel||'').replace(/\D/g,'');
     var fu=followups[m.id];
     var st;
@@ -3187,8 +3188,9 @@ async function loadDataHybrid(){
       // Deduplicação por telefone + dia: não inclui se já existe na planilha
       var tel=(m.tel||'').replace(/\D/g,'');
       if(tel){
-        // Usa dtISO (data real da reunião) para deduplicação, igual à planilha
-        var bd=new Date(m.dtISO||(m.scheduledAt||Date.now()));
+        var _ts=m.dtISO?(new Date(m.dtISO)).getTime():(m.scheduledAt||0);
+        if(!_ts) return true; // sem data, não tem como deduplicar — inclui
+        var bd=new Date(_ts);
         var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
         if(sheetReunKeys.has(dk)) return false;
       }
