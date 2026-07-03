@@ -2985,9 +2985,11 @@ function kanbanToLeadsRows(){
 // Status derivado de meetings.status + followups[id].resultado
 function meetingsToReunioesRows(){
   return Object.values(meetings).filter(function(m){ return !m._hidden; }).map(function(m){
-    var bookTs = m.scheduledAt || Date.now();
-    var bd = new Date(bookTs);
-    var bookDateStr = bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear();
+    // Usa dtISO (data real da reunião) em vez de scheduledAt (timestamp de criação)
+    // Se nenhum existir, deixa vazio para não contaminar métricas do mês atual
+    var bookTs = m.dtISO ? new Date(m.dtISO).getTime() : (m.scheduledAt || 0);
+    var bd = bookTs ? new Date(bookTs) : null;
+    var bookDateStr = bd ? bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear() : '';
     var tel = (m.tel||'').replace(/\D/g,'');
     var fu = followups[m.id];
     var statusStr;
