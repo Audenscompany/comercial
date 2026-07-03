@@ -2985,10 +2985,8 @@ function kanbanToLeadsRows(){
 // Status derivado de meetings.status + followups[id].resultado
 function meetingsToReunioesRows(){
   return Object.values(meetings).filter(function(m){ return !m._hidden; }).map(function(m){
-    // Usa dtISO (data real da reunião) em vez de scheduledAt (timestamp de criação)
-    // Se nenhum existir, deixa vazio para não contaminar métricas do mês atual
-    var bookTs = m.dtISO ? new Date(m.dtISO).getTime() : (m.scheduledAt || 0);
-    var bd = bookTs ? new Date(bookTs) : null;
+    // Usa APENAS dtISO (data real da reunião) — scheduledAt é timestamp de criação, não data da reunião
+    var bd = m.dtISO ? new Date(m.dtISO) : null;
     var bookDateStr = bd ? bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear() : '';
     var tel = (m.tel||'').replace(/\D/g,'');
     var fu = followups[m.id];
@@ -3033,10 +3031,10 @@ function meetingsToReunioesRows(){
 // Converte lista de meetings (Firebase) em linhas de reunioes
 function _meetingObjsToRows(arr){
   return arr.map(function(m){
-    // Usa dtISO (data real da reunião) primeiro, depois scheduledAt
-    // Se nenhum existir, deixa vazio para não contaminar métricas do mês atual
-    var meetingTs=m.dtISO?(new Date(m.dtISO)).getTime():(m.scheduledAt||0);
-    var bd=meetingTs?new Date(meetingTs):null;
+    // Usa APENAS dtISO (data real da reunião agendada)
+    // scheduledAt é quando foi criado no sistema — não é a data da reunião
+    // Sem dtISO = reunião incompleta → data vazia → não entra nas métricas mensais
+    var bd=m.dtISO?new Date(m.dtISO):null;
     var ds=bd?bd.getDate()+'/'+(bd.getMonth()+1)+'/'+bd.getFullYear():'';
     var tel=(m.tel||'').replace(/\D/g,'');
     var fu=followups[m.id];
