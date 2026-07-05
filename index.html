@@ -3136,6 +3136,21 @@ async function loadDataHybrid(){
   sheetLeads=_dedupedLeads;
 
   var sheetReuni=rawToObjs(reunioesRaw).rows;
+  // DEBUG — remover após diagnóstico
+  console.warn('[LOAD DEBUG] reunioesRaw linhas brutas:', reunioesRaw.length,
+    '| sheetReuni após rawToObjs:', sheetReuni.length,
+    '| SHEETS_IDS.reunioes:', SHEETS_IDS.reunioes, '| GID:', SHEETS_GIDS.reunioes);
+  if(reunioesRaw.length>0){
+    console.warn('[LOAD DEBUG] Headers reunioes:', (reunioesRaw[0]||[]).join(' | '));
+    var _sr0=sheetReuni[0]||{};
+    console.warn('[LOAD DEBUG] Primeira linha dados:', JSON.stringify(Object.entries(_sr0).filter(function(e){return e[1];}).slice(0,8)));
+    // Contar quantas têm data em Jul/2026
+    var _julCount=sheetReuni.filter(function(r){
+      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'');
+      return d&&d.getFullYear()===2026&&d.getMonth()===6;
+    }).length;
+    console.warn('[LOAD DEBUG] Linhas com data em Jul/2026:', _julCount, '| total sheetReuni:', sheetReuni.length);
+  }
 
   // Leads do Firebase que não estão na planilha (match por telefone)
   var sheetTels=new Set(sheetLeads.map(function(l){
