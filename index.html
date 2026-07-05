@@ -3092,8 +3092,11 @@ function buildFbStatusMap(){
   return map;
 }
 
-// Híbrido: Google Sheets como fonte primária (dados completos), Firebase complementa com entradas novas
+// Híbrido: Planilha = histórico (antes de hoje). Firebase = fonte de verdade a partir de hoje.
 async function loadDataHybrid(){
+  // Cutoff: início de hoje. Dados de hoje em diante vêm APENAS do Firebase.
+  var _cutoff=new Date(); _cutoff.setHours(0,0,0,0);
+
   var [leadsRaw, reunioesRaw, clientesRaw] = await Promise.all([
     fetchSheetVals(SHEETS_IDS.leads, SHEETS_GIDS.leads),
     fetchSheetVals(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes),
@@ -3134,16 +3137,26 @@ async function loadDataHybrid(){
     }
   });
   sheetLeads=_dedupedLeads;
-
-  var sheetReuni=rawToObjs(reunioesRaw).rows;
-  // Filtra linhas sem telefone válido — planilha tem ~11k linhas de fórmula/placeholder
-  // sem telefone que inflavam o dashboard. Só conta linhas com telefone real (≥10 dígitos).
-  sheetReuni=sheetReuni.filter(function(r){
-    var tel=(col(r,['Telefone','TELEFONE','telefone','FONE'])||'').replace(/\D/g,'');
-    return tel.length>=10;
+  // Planilha de leads: apenas registros anteriores a hoje
+  sheetLeads=sheetLeads.filter(function(l){
+    var d=parseBRDate(col(l,['Data','DATA','data'])||'');
+    if(!d) return true; // sem data → mantém (histórico sem data conhecida)
+    return d<_cutoff;
   });
 
-  // Leads do Firebase que não estão na planilha (match por telefone)
+  var sheetReuni=rawToObjs(reunioesRaw).rows;
+  // Filtra: apenas reuniões com telefone válido (≥10 dígitos) E data anterior a hoje
+  // A planilha tem ~11k linhas de fórmula sem dados reais; Firebase é fonte de verdade a partir de hoje.
+  sheetReuni=sheetReuni.filter(function(r){
+    var tel=(col(r,['Telefone','TELEFONE','telefone','FONE'])||'').replace(/\D/g,'');
+    if(tel.length<10) return false;
+    var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'');
+    if(!d) return false;
+    return d<_cutoff;
+  });
+
+  // Leads do Firebase: todos os novos (não presentes na planilha por telefone)
+  // A planilha agora só tem leads de antes de hoje, então novos leads do Firebase entram aqui
   var sheetTels=new Set(sheetLeads.map(function(l){
     return (col(l,['Telefone','TELEFONE','telefone'])||'').replace(/\D/g,'');
   }).filter(Boolean));
@@ -3182,19 +3195,20 @@ async function loadDataHybrid(){
     return tel+'_'+d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();
   }).filter(Boolean));
 
-  // Reuniões do Firebase: só inclui se não tem sheetRow E não é duplicata por tel+dia
-  // _retorno:true = reunião de retorno, não conta como nova reunião para métricas SDR
+  // Reuniões do Firebase:
+  // - Hoje em diante: Firebase é fonte de verdade — inclui SEMPRE (ignora sheetRow)
+  // - Histórico: inclui só se não está na planilha (sem sheetRow e sem duplicata tel+dia)
   var fbExtraReuni=_meetingObjsToRows(
     Object.values(meetings).filter(function(m){
       if(m._hidden) return false;
-      if(m._retorno) return false; // retorno não conta como nova reunião
-      if(m.sheetRow) return false; // já tem linha na planilha
-      // Deduplicação por telefone + dia: não inclui se já existe na planilha
+      if(m._retorno) return false;
+      var bd=m.dtISO?new Date(m.dtISO):null;
+      // Hoje em diante: Firebase é fonte de verdade
+      if(bd&&bd>=_cutoff) return true;
+      // Histórico: não duplica com planilha
+      if(m.sheetRow) return false;
       var tel=(m.tel||'').replace(/\D/g,'');
-      if(tel){
-        var _ts=m.dtISO?(new Date(m.dtISO)).getTime():(m.scheduledAt||0);
-        if(!_ts) return true; // sem data, não tem como deduplicar — inclui
-        var bd=new Date(_ts);
+      if(tel&&bd){
         var dk=tel+'_'+bd.getFullYear()+'-'+bd.getMonth()+'-'+bd.getDate();
         if(sheetReunKeys.has(dk)) return false;
       }
