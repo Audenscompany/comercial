@@ -4431,6 +4431,7 @@ function stopDashComListeners(){
 async function loadFinanceiroData(){
   if(!_finPeriod) _finPeriod=getCurrentPeriod();
   var period=_finPeriod;
+  try{
   var pp=period.split('/');
   var month=parseInt(pp[0]);
   var year=parseInt(pp[1]);
@@ -4440,11 +4441,18 @@ async function loadFinanceiroData(){
   var firstDate=new Date(firstISO+'T00:00:00');
   var lastDate=new Date(lastISO+'T23:59:59');
   // Busca tudo do Firebase (inclui recebimentos Asaas já sincronizados)
+  // Timeout de 15s para não ficar travado em caso de erro de permissão ou rede
+  function fbGetSafe(path){
+    return Promise.race([
+      fbGet(path),
+      new Promise(function(_,rej){setTimeout(function(){rej(new Error('Timeout: '+path));},15000);})
+    ]).catch(function(e){console.warn('[Fin] fbGet falhou para',path,e.message);return null;});
+  }
   var [clientesRaw,saidasRaw,entradasRaw,recebimentosRaw]=await Promise.all([
-    fbGet('clientes'),
-    fbGet('financeiro/saidas'),
-    fbGet('financeiro/entradas_manuais'),
-    fbGet('financeiro/recebimentos')
+    fbGetSafe('clientes'),
+    fbGetSafe('financeiro/saidas'),
+    fbGetSafe('financeiro/entradas_manuais'),
+    fbGetSafe('financeiro/recebimentos')
   ]);
   // Pagamentos Asaas do mês filtrados do Firebase
   var confStatuses=['CONFIRMED','RECEIVED','RECEIVED_IN_CASH'];
@@ -4604,6 +4612,14 @@ async function loadFinanceiroData(){
   '</div>';
   var body=document.getElementById('fin-body');
   if(body) body.innerHTML=catHTML+txTable;
+  }catch(e){
+    console.error('[Financeiro] Erro ao carregar dados:',e);
+    var _kpis=document.getElementById('fin-kpis');
+    var _body=document.getElementById('fin-body');
+    var _errMsg='<div style="padding:24px;color:var(--red);font-family:Barlow Condensed,sans-serif;font-size:13px;display:flex;align-items:center;gap:8px;"><i class="ti ti-alert-triangle"></i> Erro ao carregar dados financeiros: '+e.message+'. <button class="btn btn-outline" style="padding:4px 12px;font-size:12px;margin-left:8px;" onclick="loadFinanceiroData()">Tentar novamente</button></div>';
+    if(_kpis) _kpis.innerHTML='';
+    if(_body) _body.innerHTML=_errMsg;
+  }
 }
 function openModalLancamento(tipo){
   var isEntrada=tipo==='entrada';
