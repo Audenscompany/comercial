@@ -3136,21 +3136,12 @@ async function loadDataHybrid(){
   sheetLeads=_dedupedLeads;
 
   var sheetReuni=rawToObjs(reunioesRaw).rows;
-  // DEBUG — remover após diagnóstico
-  console.warn('[LOAD DEBUG] reunioesRaw linhas brutas:', reunioesRaw.length,
-    '| sheetReuni após rawToObjs:', sheetReuni.length,
-    '| SHEETS_IDS.reunioes:', SHEETS_IDS.reunioes, '| GID:', SHEETS_GIDS.reunioes);
-  if(reunioesRaw.length>0){
-    console.warn('[LOAD DEBUG] Headers reunioes:', (reunioesRaw[0]||[]).join(' | '));
-    var _sr0=sheetReuni[0]||{};
-    console.warn('[LOAD DEBUG] Primeira linha dados:', JSON.stringify(Object.entries(_sr0).filter(function(e){return e[1];}).slice(0,8)));
-    // Contar quantas têm data em Jul/2026
-    var _julCount=sheetReuni.filter(function(r){
-      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'])||'');
-      return d&&d.getFullYear()===2026&&d.getMonth()===6;
-    }).length;
-    console.warn('[LOAD DEBUG] Linhas com data em Jul/2026:', _julCount, '| total sheetReuni:', sheetReuni.length);
-  }
+  // Filtra linhas sem telefone válido — planilha tem ~11k linhas de fórmula/placeholder
+  // sem telefone que inflavam o dashboard. Só conta linhas com telefone real (≥10 dígitos).
+  sheetReuni=sheetReuni.filter(function(r){
+    var tel=(col(r,['Telefone','TELEFONE','telefone','FONE'])||'').replace(/\D/g,'');
+    return tel.length>=10;
+  });
 
   // Leads do Firebase que não estão na planilha (match por telefone)
   var sheetTels=new Set(sheetLeads.map(function(l){
@@ -6878,15 +6869,6 @@ function buildDashComHTML(data){
     var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
     return inRange(d);
   });
-  // DEBUG TEMPORÁRIO — remover após diagnóstico
-  console.warn('[DASH DEBUG] meetings em memória:', Object.keys(meetings).length,
-    '| sheetReuni:', data.reunioes.rows.length - (data.reunioes._fbCount||0),
-    '| fbExtraReuni (estimado):', data.reunioes._fbCount||'?',
-    '| reunioesF filtradas para', period+':', reunioesF.length);
-  // Mostra quantos meetings do Firebase têm dtISO em julho
-  var _fbComDtISO=Object.values(meetings).filter(function(m){return m.dtISO&&m.dtISO.startsWith('2026-07');}).length;
-  var _fbSemDtISO=Object.values(meetings).filter(function(m){return !m.dtISO;}).length;
-  console.warn('[DASH DEBUG] meetings Firebase: com dtISO em Jul/2026='+_fbComDtISO+' | sem dtISO='+_fbSemDtISO+' | total='+Object.keys(meetings).length);
   var clientesF=data.clientes.rows.filter(function(r){
     var d=parseBRDate(col(r,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
     return inRange(d);
