@@ -3421,6 +3421,7 @@ function buildNav(){
       {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'}
     ]},
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
+    {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var closerDef=[
@@ -3533,7 +3534,8 @@ function showPage(id){
     'reativacao':renderReativacao,'kanban':renderKanban,
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro,
-    'contratos':renderContratos,'audens-day':renderAudensDay
+    'contratos':renderContratos,'audens-day':renderAudensDay,
+    'audens-command':renderAudensCommand
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -3546,6 +3548,7 @@ function showPage(id){
     if(id==='asaas') setTimeout(loadAsaasPage,50);
     if(id==='contratos') setTimeout(loadContratosPage,50);
     if(id==='audens-day') setTimeout(loadAudensDay,50);
+    if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='financeiro') setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -14023,6 +14026,508 @@ async function _execImport(reImport){
     console.error('Import error',e);
     showSheetToast('Erro ao importar: '+e.message,true);
   }
+}
+
+// ===== AUDENS COMMAND =====
+var _acJarvisHistory = [];
+var _acSpeechRecog = null;
+var _acListening = false;
+
+function renderAudensCommand(){
+  if(!CU||CU.role!=='gestor') return '<div style="padding:40px;text-align:center;color:var(--muted);">Acesso restrito.</div>';
+  return '<div id="ac-wrap" style="padding:20px 24px;max-width:1200px;margin:0 auto;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">'+
+      '<div>'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:28px;letter-spacing:4px;color:var(--purple3);text-transform:uppercase;display:flex;align-items:center;gap:10px;">'+
+          '<i class="ti ti-brain" style="font-size:24px;"></i> AUDENS COMMAND</div>'+
+        '<div id="ac-subtitle" style="color:var(--muted);font-size:13px;margin-top:4px;">Inicializando sistema...</div>'+
+      '</div>'+
+      '<button class="btn btn-outline" style="font-size:12px;gap:6px;" onclick="showAcSettings()"><i class="ti ti-settings"></i> Configurar IA</button>'+
+    '</div>'+
+    '<div id="ac-loading" style="padding:60px;text-align:center;color:var(--muted);">'+
+      '<div style="font-size:40px;margin-bottom:16px;">⚡</div>'+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:16px;letter-spacing:3px;">CARREGANDO DADOS...</div>'+
+    '</div>'+
+    '<div id="ac-content" style="display:none;">'+
+      '<div style="display:grid;grid-template-columns:1fr 320px;gap:16px;margin-bottom:16px;">'+
+        '<div id="ac-executiva" class="card" style="padding:20px;"></div>'+
+        '<div id="ac-acoes" class="card" style="padding:20px;"></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 300px;gap:16px;margin-bottom:16px;">'+
+        '<div id="ac-alertas" class="card" style="padding:20px;"></div>'+
+        '<div id="ac-funil" class="card" style="padding:20px;"></div>'+
+      '</div>'+
+      '<div id="ac-chat-section" class="card" style="padding:20px;"></div>'+
+    '</div>'+
+    // Settings modal
+    '<div id="ac-settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">'+
+      '<div class="card" style="padding:28px;width:460px;max-width:92vw;border:1px solid var(--purple);">'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:18px;letter-spacing:2px;margin-bottom:6px;color:var(--purple3);">⚙ CONFIGURAR IA DO JARVIS</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">As chaves ficam salvas apenas no seu navegador, nunca no código.</div>'+
+        '<div style="margin-bottom:14px;">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Claude API Key <span style="color:var(--muted)">(anthropic.com/settings/keys)</span></label>'+
+          '<input id="ac-claude-key" type="password" class="input-field" placeholder="sk-ant-api03-..." style="width:100%;box-sizing:border-box;"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px;">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">ElevenLabs API Key <span style="color:var(--muted)">(elevenlabs.io/settings/api-keys)</span></label>'+
+          '<input id="ac-eleven-key" type="password" class="input-field" placeholder="sk_..." style="width:100%;box-sizing:border-box;"/>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Deixe em branco para usar voz do sistema (gratuita, menos natural)</div>'+
+        '</div>'+
+        '<div style="margin-bottom:20px;">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">ElevenLabs Voice ID <span style="color:var(--muted)">(opcional)</span></label>'+
+          '<input id="ac-eleven-voice" type="text" class="input-field" placeholder="21m00Tcm4TlvDq8ikWAM" style="width:100%;box-sizing:border-box;"/>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Encontre IDs em elevenlabs.io/voice-library · Padrão: Rachel</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:10px;">'+
+          '<button class="btn" onclick="saveAcSettings()" style="flex:1;background:var(--purple);border-color:var(--purple);">Salvar</button>'+
+          '<button class="btn btn-outline" onclick="closeAcSettings()">Cancelar</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+function showAcSettings(){
+  var modal=document.getElementById('ac-settings-modal');
+  if(!modal) return;
+  var ck=document.getElementById('ac-claude-key');
+  var ek=document.getElementById('ac-eleven-key');
+  var ev=document.getElementById('ac-eleven-voice');
+  if(ck) ck.value=localStorage.getItem('audens_claude_key')||'';
+  if(ek) ek.value=localStorage.getItem('audens_elevenlabs_key')||'';
+  if(ev) ev.value=localStorage.getItem('audens_elevenlabs_voice')||'';
+  modal.style.display='flex';
+}
+function closeAcSettings(){
+  var modal=document.getElementById('ac-settings-modal');
+  if(modal) modal.style.display='none';
+}
+function saveAcSettings(){
+  var ck=(document.getElementById('ac-claude-key')||{}).value||'';
+  var ek=(document.getElementById('ac-eleven-key')||{}).value||'';
+  var ev=(document.getElementById('ac-eleven-voice')||{}).value||'';
+  if(ck) localStorage.setItem('audens_claude_key',ck.trim());
+  if(ek) localStorage.setItem('audens_elevenlabs_key',ek.trim());
+  localStorage.setItem('audens_elevenlabs_voice',ev.trim());
+  closeAcSettings();
+  showSheetToast('Configurações do Jarvis salvas!',false);
+}
+
+async function loadAudensCommand(){
+  var loading=document.getElementById('ac-loading');
+  var content=document.getElementById('ac-content');
+  var subtitle=document.getElementById('ac-subtitle');
+  if(!loading||!content) return;
+  try {
+    // Aguarda dados carregarem
+    var attempts=0;
+    while((!allLeads||!allLeads.length) && attempts<20){ await new Promise(r=>setTimeout(r,400)); attempts++; }
+
+    var now=new Date();
+    var hora=now.getHours();
+    var saudacao=hora<12?'Bom dia':hora<18?'Boa tarde':'Boa noite';
+    var todayLabel=now.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+    if(subtitle) subtitle.textContent=saudacao+', Lucas · '+todayLabel;
+
+    var _cutoff=new Date(); _cutoff.setHours(0,0,0,0);
+    var todayISO=now.toISOString().split('T')[0];
+
+    // Leads de hoje
+    var leadsHoje=allLeads.filter(function(l){
+      var d=parseBRDate(col(l,['Data','DATA','data'])||''); return d&&d>=_cutoff;
+    });
+    var leadsHojeAlto=leadsHoje.filter(function(l){ return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento'])||'')>=40000; });
+
+    // Kanban ativos
+    var kbArr=Object.values(kanbanData);
+    var kbAtivos=kbArr.filter(function(k){ return k.etapa&&k.etapa!=='arquivado'; });
+
+    // Contagem por etapa
+    var stageCount={};
+    KANBAN_COLS.forEach(function(c){ stageCount[c.id]=0; });
+    kbArr.forEach(function(k){ var e=k.etapa||'novo'; if(stageCount[e]!==undefined) stageCount[e]++; });
+
+    // Reuniões hoje
+    var reunHoje=Object.values(meetings).filter(function(m){ return m.dtISO&&m.dtISO.startsWith(todayISO); });
+    var reunFeitas=reunHoje.filter(function(m){ return getMeetingStatus(m)==='done'; });
+    var reunNoShow=reunHoje.filter(function(m){ return getMeetingStatus(m)==='noshow'; });
+    var reunPend=reunHoje.filter(function(m){ return getMeetingStatus(m)==='pending'; });
+
+    // Leads sem contato há mais de 24h com faturamento alto (kanban etapa novo/qualificado)
+    var now_ms=Date.now();
+    var leadsQuentes=kbArr.filter(function(k){
+      if(k.etapa==='arquivado'||k.etapa==='fechado') return false;
+      var fat=parseFaturamentoValue(k.faturamento||'');
+      if(fat<40000) return false;
+      var lastContact=k.updatedAt||k.createdAt||0;
+      var horas=(now_ms-lastContact)/3600000;
+      return horas>24;
+    });
+
+    // Propostas sem follow-up
+    var propostasSemFU=kbArr.filter(function(k){
+      if(k.etapa!=='proposta') return false;
+      var hasFU=Object.values(followups).some(function(f){ return f.leadKey===k._key||f.tel===k.telefone; });
+      return !hasFU;
+    });
+
+    // Metas
+    var metaMensal=goals&&goals.metaMensal?goals.metaMensal:0;
+
+    // Gerar alertas
+    var alertas=acGerarAlertas({leadsHoje,leadsHojeAlto,leadsQuentes,propostasSemFU,reunHoje,reunPend,reunNoShow,stageCount,metaMensal,kbAtivos});
+
+    // Render seções
+    document.getElementById('ac-executiva').innerHTML=acRenderExecutiva({leadsHoje:leadsHoje.length,leadsHojeAlto:leadsHojeAlto.length,leadsAtivos:kbAtivos.length,reunHoje:reunHoje.length,reunFeitas:reunFeitas.length,reunNoShow:reunNoShow.length,reunPend:reunPend.length,stageCount,metaMensal});
+    document.getElementById('ac-alertas').innerHTML=acRenderAlertas(alertas);
+    document.getElementById('ac-funil').innerHTML=acRenderFunil(stageCount,kbAtivos.length);
+    document.getElementById('ac-acoes').innerHTML=acRenderAcoes(alertas);
+    document.getElementById('ac-chat-section').innerHTML=acRenderChat();
+
+    loading.style.display='none';
+    content.style.display='block';
+    acInitChat();
+
+  } catch(e){
+    console.error('[AUDENS COMMAND]',e);
+    if(loading) loading.innerHTML='<div style="color:var(--red);padding:20px;text-align:center;">Erro: '+e.message+'<br><button class="btn btn-outline" style="margin-top:12px;" onclick="loadAudensCommand()">Tentar novamente</button></div>';
+  }
+}
+
+function acGerarAlertas(d){
+  var alertas=[];
+  // CRÍTICO: leads quentes sem contato
+  d.leadsQuentes.slice(0,3).forEach(function(k){
+    var horas=Math.round((Date.now()-(k.updatedAt||k.createdAt||0))/3600000);
+    alertas.push({tipo:'CRÍTICO',cor:'#ef4444',icone:'ti-alert-triangle',titulo:'Lead '+k.nome+' sem contato há '+horas+'h',detalhe:'Faturamento: '+(k.faturamento||'alto')+' · Etapa: '+(k.etapa||'novo'),acao:'Abrir Lead',fn:"showPage('kanban')"});
+  });
+  // CRÍTICO: reuniões hoje pendentes de resultado
+  if(d.reunPend.length>0){
+    alertas.push({tipo:'CRÍTICO',cor:'#ef4444',icone:'ti-calendar-exclamation',titulo:d.reunPend.length+' reuni'+(d.reunPend.length>1?'ões':'ão')+' hoje aguardando resultado',detalhe:'Lance o resultado para manter o funil atualizado',acao:'Ver Reuniões',fn:"showPage('reunioes')"});
+  }
+  // CRÍTICO: muitos no-shows
+  if(d.reunNoShow.length>=2){
+    alertas.push({tipo:'CRÍTICO',cor:'#ef4444',icone:'ti-user-x',titulo:d.reunNoShow.length+' no-shows hoje',detalhe:'Taxa acima do normal — verificar qualidade dos leads agendados',acao:'Analisar',fn:"showPage('reunioes')"});
+  }
+  // ATENÇÃO: propostas sem follow-up
+  if(d.propostasSemFU.length>0){
+    alertas.push({tipo:'ATENÇÃO',cor:'#f59e0b',icone:'ti-file-alert',titulo:d.propostasSemFU.length+' proposta'+(d.propostasSemFU.length>1?'s':'')+' sem follow-up',detalhe:d.propostasSemFU.map(function(k){return k.nome;}).slice(0,3).join(', '),acao:'Ver Kanban',fn:"showPage('kanban')"});
+  }
+  // OPORTUNIDADE: leads qualificados hoje
+  if(d.leadsHojeAlto.length>0){
+    alertas.push({tipo:'OPORTUNIDADE',cor:'#10b981',icone:'ti-stars',titulo:d.leadsHojeAlto.length+' lead'+(d.leadsHojeAlto.length>1?'s':'')+' qualificado'+(d.leadsHojeAlto.length>1?'s':'')+' hoje (R$40k+)',detalhe:'Contato imediato aumenta conversão em até 3x',acao:'Ver Funil',fn:"showPage('kanban')"});
+  }
+  // DECISÃO: meta mensal
+  if(d.metaMensal>0){
+    var fechados=d.stageCount['fechado']||0;
+    var pct=Math.round(fechados/d.metaMensal*100);
+    var daysLeft=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate()-new Date().getDate();
+    if(pct<60&&daysLeft<15){
+      alertas.push({tipo:'DECISÃO',cor:'#8b5cf6',icone:'ti-target',titulo:'Meta mensal a '+pct+'% com '+daysLeft+' dias restantes',detalhe:'Necessário acelerar fechamentos — revisar pipeline',acao:'Ver Dashboard',fn:"showPage('dash-comercial')"});
+    }
+  }
+  return alertas;
+}
+
+function acRenderExecutiva(d){
+  var lines=[];
+  if(d.leadsHoje>0) lines.push('<b>'+d.leadsHoje+'</b> lead'+(d.leadsHoje>1?'s':'')+' chegaram hoje'+(d.leadsHojeAlto>0?', <b style="color:var(--purple3)">'+d.leadsHojeAlto+' qualificados</b> (R$40k+)':''));
+  lines.push('<b>'+d.leadsAtivos+'</b> leads ativos no funil');
+  if(d.reunHoje>0) lines.push('<b>'+d.reunHoje+'</b> reuni'+(d.reunHoje>1?'ões':'ão')+' hoje — <b style="color:var(--green)">'+d.reunFeitas+' feitas</b>'+(d.reunNoShow>0?', <b style="color:var(--red)">'+d.reunNoShow+' no-show</b>':'')+(d.reunPend>0?', <b style="color:var(--amber)">'+d.reunPend+' pendentes</b>':''));
+  else lines.push('Nenhuma reunião agendada para hoje');
+  var proposta=d.stageCount['proposta']||0;
+  if(proposta>0) lines.push('<b>'+proposta+'</b> proposta'+(proposta>1?'s':'')+' em aberto no funil');
+  return '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;">Visão Executiva</div>'+
+    '<div style="line-height:1.9;font-size:14px;color:var(--white);">'+lines.map(function(l){return '<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);"><i class="ti ti-point-filled" style="color:var(--purple);margin-top:4px;font-size:10px;flex-shrink:0;"></i><span>'+l+'</span></div>';}).join('')+'</div>';
+}
+
+function acRenderAlertas(alertas){
+  if(!alertas.length) return '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;">Alertas</div><div style="color:var(--green);font-size:13px;padding:16px 0;">✓ Nenhum alerta crítico no momento</div>';
+  var ordemTipo={'CRÍTICO':0,'ATENÇÃO':1,'OPORTUNIDADE':2,'DECISÃO':3};
+  alertas=alertas.slice().sort(function(a,b){return (ordemTipo[a.tipo]||9)-(ordemTipo[b.tipo]||9);});
+  return '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;">Alertas que Exigem Atenção</div>'+
+    alertas.map(function(a){
+      return '<div style="border:1px solid '+a.cor+'33;border-left:3px solid '+a.cor+';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:'+a.cor+'0d;">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'+
+          '<span style="font-family:var(--font-bn),sans-serif;font-size:10px;letter-spacing:1px;color:'+a.cor+';background:'+a.cor+'22;padding:2px 7px;border-radius:4px;">'+a.tipo+'</span>'+
+          '<span style="font-size:13px;font-weight:600;color:var(--white);">'+a.titulo+'</span>'+
+        '</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+a.detalhe+'</div>'+
+        '<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;height:auto;" onclick="'+a.fn+'">'+a.acao+'</button>'+
+      '</div>';
+    }).join('');
+}
+
+function acRenderFunil(stageCount, totalAtivos){
+  var stages=[
+    {id:'novo',label:'Novos'},
+    {id:'qualificado',label:'Qualificados'},
+    {id:'reuniao',label:'Reunião Agd.'},
+    {id:'proposta',label:'Proposta'},
+    {id:'recuperacao',label:'Recuperação'},
+    {id:'fechado',label:'Fechados'}
+  ];
+  // Encontra maior queda proporcional
+  var maxDropIdx=-1, maxDrop=0;
+  for(var i=0;i<stages.length-1;i++){
+    var curr=stageCount[stages[i].id]||0;
+    var next=stageCount[stages[i+1].id]||0;
+    if(curr>0){
+      var drop=(curr-next)/curr;
+      if(drop>maxDrop){maxDrop=drop;maxDropIdx=i;}
+    }
+  }
+  var html='<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;">Gargalo do Funil</div>';
+  html+=stages.map(function(s,i){
+    var cnt=stageCount[s.id]||0;
+    var maxCnt=stageCount[stages[0].id]||1;
+    var pct=Math.round(cnt/maxCnt*100);
+    var isGargalo=(i===maxDropIdx+1&&maxDropIdx>=0);
+    return '<div style="margin-bottom:5px;">'+
+      '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;color:'+(isGargalo?'#ef4444':'var(--muted)')+'">'+
+        '<span>'+(isGargalo?'⚠ ':'')+s.label+'</span><span>'+cnt+'</span>'+
+      '</div>'+
+      '<div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+(isGargalo?'#ef4444':'var(--purple)')+';border-radius:3px;transition:width .4s;"></div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  if(maxDropIdx>=0){
+    var dropPct=Math.round(maxDrop*100);
+    html+='<div style="margin-top:10px;padding:8px 10px;background:#ef444415;border:1px solid #ef444430;border-radius:6px;font-size:12px;color:#ef4444;">'+
+      '⚠ Maior queda: <b>'+stages[maxDropIdx].label+' → '+stages[maxDropIdx+1].label+'</b> ('+dropPct+'% de perda)'+
+    '</div>';
+  }
+  return html;
+}
+
+function acRenderAcoes(alertas){
+  var acoes=alertas.slice(0,5);
+  var html='<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;">O Que Fazer Agora</div>';
+  if(!acoes.length){
+    return html+'<div style="color:var(--green);font-size:13px;padding:8px 0;">✓ Tudo em dia por aqui</div>';
+  }
+  html+=acoes.map(function(a,i){
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="width:22px;height:22px;border-radius:50%;background:var(--pglow);border:1px solid var(--purple);display:flex;align-items:center;justify-content:center;font-family:var(--font-bn),sans-serif;font-size:11px;color:var(--purple3);flex-shrink:0;">'+(i+1)+'</div>'+
+      '<div>'+
+        '<div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:2px;">'+a.titulo+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);">'+a.detalhe+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return html;
+}
+
+function acRenderChat(){
+  var hasClaudeKey=!!localStorage.getItem('audens_claude_key');
+  return '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;">'+
+    '<span><i class="ti ti-robot"></i> JARVIS — Assistente de IA</span>'+
+    (hasClaudeKey?'<span style="color:var(--green);font-size:11px;">● IA Conectada</span>':'<span style="color:var(--amber);font-size:11px;cursor:pointer;" onclick="showAcSettings()">⚠ Configure sua Claude API Key</span>')+
+  '</div>'+
+  '<div id="ac-chat-msgs" style="min-height:160px;max-height:380px;overflow-y:auto;margin-bottom:14px;display:flex;flex-direction:column;gap:10px;">'+
+    '<div class="ac-msg ac-msg-jarvis">'+
+      '<div style="font-size:11px;color:var(--purple3);margin-bottom:4px;font-family:var(--font-bn),sans-serif;letter-spacing:1px;">JARVIS</div>'+
+      '<div style="font-size:13px;color:var(--white);line-height:1.6;">Olá, Lucas. Estou online e com acesso aos dados do CRM. Pode me perguntar sobre leads, reuniões, financeiro ou pedir uma análise do funil. Como posso ajudar?</div>'+
+    '</div>'+
+  '</div>'+
+  '<div style="display:flex;gap:8px;align-items:flex-end;">'+
+    '<textarea id="ac-chat-input" class="input-field" placeholder="Pergunte ao Jarvis..." style="flex:1;resize:none;height:44px;padding:10px 12px;font-size:13px;line-height:1.4;" onkeydown="acChatKeydown(event)"></textarea>'+
+    '<button id="ac-mic-btn" class="btn btn-outline" onclick="acToggleMic()" title="Falar com Jarvis" style="height:44px;width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-microphone"></i></button>'+
+    '<button class="btn" onclick="acSendMessage()" style="height:44px;width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--purple);border-color:var(--purple);"><i class="ti ti-send"></i></button>'+
+  '</div>';
+}
+
+function acInitChat(){
+  _acJarvisHistory=[];
+}
+
+function acChatKeydown(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();acSendMessage();}
+}
+
+function acBuildContext(){
+  var now=new Date();
+  var todayISO=now.toISOString().split('T')[0];
+  var _cutoff=new Date(); _cutoff.setHours(0,0,0,0);
+
+  var leadsHoje=allLeads.filter(function(l){ var d=parseBRDate(col(l,['Data','DATA','data'])||''); return d&&d>=_cutoff; }).length;
+  var leadsAlto=allLeads.filter(function(l){ return parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento'])||'')>=40000; }).length;
+  var kbArr=Object.values(kanbanData);
+  var stageCount={};
+  KANBAN_COLS.forEach(function(c){ stageCount[c.id]=0; });
+  kbArr.forEach(function(k){ var e=k.etapa||'novo'; if(stageCount[e]!==undefined) stageCount[e]++; });
+  var reunHoje=Object.values(meetings).filter(function(m){ return m.dtISO&&m.dtISO.startsWith(todayISO); });
+  var reunFeitas=reunHoje.filter(function(m){ return getMeetingStatus(m)==='done'; }).length;
+  var reunNoShow=reunHoje.filter(function(m){ return getMeetingStatus(m)==='noshow'; }).length;
+
+  return 'Você é o Jarvis, assistente de IA da Audens Company. Responda sempre em português brasileiro de forma direta e estruturada.\n'+
+    'Quando relevante, use este formato: VEREDITO → DADOS → AÇÃO RECOMENDADA.\n\n'+
+    '=== DADOS DO CRM AGORA ===\n'+
+    'Data: '+now.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+'\n'+
+    'Leads hoje: '+leadsHoje+' ('+leadsAlto+' qualificados R$40k+)\n'+
+    'Funil: Novos='+stageCount['novo']+' | Qualificados='+stageCount['qualificado']+' | Reunião Agd.='+stageCount['reuniao']+' | Proposta='+stageCount['proposta']+' | Recuperação='+stageCount['recuperacao']+' | Fechados='+stageCount['fechado']+'\n'+
+    'Reuniões hoje: '+reunHoje.length+' total, '+reunFeitas+' feitas, '+reunNoShow+' no-show\n'+
+    'Meta mensal: '+(goals&&goals.metaMensal?goals.metaMensal:0)+' leads\n';
+}
+
+async function acSendMessage(){
+  var input=document.getElementById('ac-chat-input');
+  if(!input) return;
+  var text=input.value.trim();
+  if(!text) return;
+  input.value='';
+
+  // Mostra mensagem do usuário
+  acAddMsg('user',text);
+
+  // Mostra "digitando..."
+  var thinkId='ac-think-'+Date.now();
+  acAddMsg('jarvis','<span style="color:var(--muted);font-style:italic;">Analisando dados...</span>',thinkId);
+
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  if(!claudeKey){
+    document.getElementById(thinkId).innerHTML='<div style="color:var(--amber);font-size:13px;">Configure sua Claude API Key em "Configurar IA" para ativar o Jarvis com IA.</div>';
+    return;
+  }
+
+  _acJarvisHistory.push({role:'user',content:text});
+
+  try {
+    var systemPrompt=acBuildContext();
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-api-key':claudeKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-haiku-4-5',
+        max_tokens:1024,
+        system:systemPrompt,
+        messages:_acJarvisHistory.slice(-10)
+      })
+    });
+    if(!resp.ok){
+      var err=await resp.json().catch(function(){return {};});
+      throw new Error(err.error&&err.error.message?err.error.message:'Erro '+resp.status);
+    }
+    var data=await resp.json();
+    var answer=(data.content&&data.content[0]&&data.content[0].text)||'Sem resposta';
+    _acJarvisHistory.push({role:'assistant',content:answer});
+
+    // Formata a resposta (negrito para VEREDITO:, DADOS:, etc.)
+    var formatted=answer
+      .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
+      .replace(/(VEREDITO|DADOS|AÇÃO RECOMENDADA|INTERPRETAÇÃO|RISCO|COMO MEDIR):/g,'<span style="color:var(--purple3);font-family:var(--font-bn),sans-serif;letter-spacing:1px;">$1:</span>')
+      .replace(/\n/g,'<br>');
+
+    var thinkEl=document.getElementById(thinkId);
+    if(thinkEl) thinkEl.innerHTML=formatted;
+
+    // Voz
+    acSpeak(answer);
+
+  } catch(e){
+    var thinkEl2=document.getElementById(thinkId);
+    if(thinkEl2) thinkEl2.innerHTML='<span style="color:var(--red);">Erro: '+e.message+'</span>';
+  }
+}
+
+function acAddMsg(role, html, id){
+  var msgs=document.getElementById('ac-chat-msgs');
+  if(!msgs) return;
+  var isUser=role==='user';
+  var div=document.createElement('div');
+  div.className='ac-msg ac-msg-'+(isUser?'user':'jarvis');
+  if(id) div.id=id;
+  div.style.cssText='padding:10px 14px;border-radius:10px;max-width:90%;font-size:13px;line-height:1.6;'+(isUser?'align-self:flex-end;background:var(--pglow);border:1px solid var(--purple);color:var(--white);':'align-self:flex-start;background:var(--card2);border:1px solid var(--border);color:var(--white);');
+  if(!isUser){
+    var label=document.createElement('div');
+    label.style.cssText='font-size:10px;color:var(--purple3);margin-bottom:4px;font-family:var(--font-bn),sans-serif;letter-spacing:1px;';
+    label.textContent='JARVIS';
+    div.appendChild(label);
+  }
+  var content=document.createElement('div');
+  content.innerHTML=html;
+  div.appendChild(content);
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+  return div;
+}
+
+async function acSpeak(text){
+  // ElevenLabs TTS
+  var elevenKey=localStorage.getItem('audens_elevenlabs_key');
+  var voiceId=localStorage.getItem('audens_elevenlabs_voice')||'21m00Tcm4TlvDq8ikWAM'; // Rachel
+  if(elevenKey){
+    try{
+      // Limita a 500 chars para TTS (resumo da resposta)
+      var ttsText=text.replace(/\*\*/g,'').replace(/#{1,3}\s/g,'');
+      if(ttsText.length>500) ttsText=ttsText.substring(0,497)+'...';
+      var r=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voiceId,{
+        method:'POST',
+        headers:{'xi-api-key':elevenKey,'content-type':'application/json','accept':'audio/mpeg'},
+        body:JSON.stringify({text:ttsText,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.5,similarity_boost:0.75}})
+      });
+      if(r.ok){
+        var blob=await r.blob();
+        var url=URL.createObjectURL(blob);
+        var audio=new Audio(url);
+        audio.play();
+        audio.onended=function(){ URL.revokeObjectURL(url); };
+        return;
+      }
+    }catch(e){ console.warn('[Jarvis TTS ElevenLabs]',e); }
+  }
+  // Fallback: SpeechSynthesis do browser
+  if('speechSynthesis' in window){
+    var short=text.replace(/\*\*/g,'').replace(/[#*_]/g,'');
+    if(short.length>300) short=short.substring(0,297)+'...';
+    var utt=new SpeechSynthesisUtterance(short);
+    utt.lang='pt-BR'; utt.rate=1.05; utt.pitch=1;
+    var voices=window.speechSynthesis.getVoices();
+    var ptVoice=voices.find(function(v){ return v.lang.startsWith('pt'); });
+    if(ptVoice) utt.voice=ptVoice;
+    window.speechSynthesis.speak(utt);
+  }
+}
+
+function acToggleMic(){
+  var btn=document.getElementById('ac-mic-btn');
+  if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){
+    showSheetToast('Reconhecimento de voz não suportado neste navegador. Use Chrome.',true);
+    return;
+  }
+  if(_acListening){
+    if(_acSpeechRecog) _acSpeechRecog.stop();
+    _acListening=false;
+    if(btn) btn.style.color='';
+    return;
+  }
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  _acSpeechRecog=new SR();
+  _acSpeechRecog.lang='pt-BR';
+  _acSpeechRecog.continuous=false;
+  _acSpeechRecog.interimResults=false;
+  _acSpeechRecog.onstart=function(){
+    _acListening=true;
+    if(btn){ btn.style.color='var(--red)'; btn.innerHTML='<i class="ti ti-microphone-off"></i>'; }
+  };
+  _acSpeechRecog.onresult=function(e){
+    var transcript=e.results[0][0].transcript;
+    var input=document.getElementById('ac-chat-input');
+    if(input) input.value=transcript;
+    acSendMessage();
+  };
+  _acSpeechRecog.onerror=function(e){ console.warn('[Jarvis STT]',e.error); };
+  _acSpeechRecog.onend=function(){
+    _acListening=false;
+    if(btn){ btn.style.color=''; btn.innerHTML='<i class="ti ti-microphone"></i>'; }
+  };
+  _acSpeechRecog.start();
 }
 
 window.addEventListener('load', function(){
