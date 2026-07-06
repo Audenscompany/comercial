@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-database-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-auth-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.2.0/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -387,11 +388,18 @@ function initFirebase(){
   try{
     if(typeof firebase === 'undefined'){
       console.error('Firebase SDK not loaded');
-      // Try to load SDK dynamically
       return false;
     }
     if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(firebaseConfig);
     fbDb = firebase.database();
+    // Sign in anonimamente para que as regras do Firebase que exigem auth != null funcionem
+    if(firebase.auth && firebase.auth().currentUser === null){
+      firebase.auth().signInAnonymously().then(function(){
+        console.log('[Firebase] Signed in anonymously — uid:', firebase.auth().currentUser&&firebase.auth().currentUser.uid);
+      }).catch(function(e){
+        console.warn('[Firebase] signInAnonymously falhou:', e.message, '— usando acesso público');
+      });
+    }
     return true;
   }catch(e){console.error('Firebase init error',e);return false;}
 }
@@ -4441,18 +4449,22 @@ async function loadFinanceiroData(){
   var firstDate=new Date(firstISO+'T00:00:00');
   var lastDate=new Date(lastISO+'T23:59:59');
   // Busca tudo do Firebase (inclui recebimentos Asaas já sincronizados)
-  // Timeout de 15s para não ficar travado em caso de erro de permissão ou rede
-  function fbGetSafe(path){
-    return Promise.race([
-      fbGet(path),
-      new Promise(function(_,rej){setTimeout(function(){rej(new Error('Timeout: '+path));},15000);})
-    ]).catch(function(e){console.warn('[Fin] fbGet falhou para',path,e.message);return null;});
-  }
+  // Aguarda auth do Firebase antes de ler (evita permission_denied quando regras exigem auth != null)
+  await new Promise(function(resolve){
+    if(!firebase||!firebase.auth){resolve();return;}
+    var u=firebase.auth().currentUser;
+    if(u){resolve();return;}
+    var unsub=firebase.auth().onAuthStateChanged(function(user){
+      unsub();resolve();
+    });
+    // timeout de 5s caso auth nunca resolva
+    setTimeout(resolve,5000);
+  });
   var [clientesRaw,saidasRaw,entradasRaw,recebimentosRaw]=await Promise.all([
-    fbGetSafe('clientes'),
-    fbGetSafe('financeiro/saidas'),
-    fbGetSafe('financeiro/entradas_manuais'),
-    fbGetSafe('financeiro/recebimentos')
+    fbGet('clientes'),
+    fbGet('financeiro/saidas'),
+    fbGet('financeiro/entradas_manuais'),
+    fbGet('financeiro/recebimentos')
   ]);
   // Pagamentos Asaas do mês filtrados do Firebase
   var confStatuses=['CONFIRMED','RECEIVED','RECEIVED_IN_CASH'];
