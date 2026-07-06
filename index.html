@@ -14052,7 +14052,10 @@ function renderAudensCommand(){
           '<i class="ti ti-brain" style="font-size:24px;"></i> AUDENS COMMAND</div>'+
         '<div id="ac-subtitle" style="color:var(--muted);font-size:13px;margin-top:4px;">Inicializando sistema...</div>'+
       '</div>'+
-      '<button class="btn btn-outline" style="font-size:12px;gap:6px;" onclick="showAcSettings()"><i class="ti ti-settings"></i> Configurar IA</button>'+
+      '<div style="display:flex;gap:8px;">'+
+        '<button class="btn btn-outline" style="font-size:12px;" onclick="showAcMemoria()"><i class="ti ti-brain"></i> Memória do Jarvis</button>'+
+        '<button class="btn btn-outline" style="font-size:12px;" onclick="showAcSettings()"><i class="ti ti-settings"></i> Configurar IA</button>'+
+      '</div>'+
     '</div>'+
     '<div id="ac-loading" style="padding:60px;text-align:center;color:var(--muted);">'+
       '<div style="font-size:40px;margin-bottom:16px;">⚡</div>'+
@@ -14068,6 +14071,32 @@ function renderAudensCommand(){
         '<div id="ac-funil" class="card" style="padding:20px;"></div>'+
       '</div>'+
       '<div id="ac-chat-section" class="card" style="padding:20px;"></div>'+
+    '</div>'+
+    // Memória modal
+    '<div id="ac-memoria-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">'+
+      '<div class="card" style="padding:28px;width:640px;max-width:94vw;max-height:88vh;overflow-y:auto;border:1px solid var(--purple);">'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:18px;letter-spacing:2px;margin-bottom:6px;color:var(--purple3);"><i class="ti ti-brain"></i> MEMÓRIA DO JARVIS</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:18px;">Ensine o Jarvis como uma reunião deve ser conduzida. Ele vai usar isso como referência em todas as análises de transcrição.</div>'+
+        '<div style="margin-bottom:14px;">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Como uma reunião ideal deve ser conduzida</label>'+
+          '<textarea id="ac-mem-reuniao" class="input-field" style="width:100%;height:220px;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box;" '+
+            'placeholder="Exemplo:\n\n1. ABERTURA (2 min): Apresentar a Audens, confirmar o tempo disponível e criar rapport.\n\n2. DIAGNÓSTICO (10 min): Entender a situação atual do negócio. Perguntas: Qual seu maior desafio hoje? O que já tentou? Qual o impacto disso no faturamento?\n\n3. QUALIFICAÇÃO: Confirmar faturamento, decisor, urgência e orçamento.\n\n4. APRESENTAÇÃO: Mostrar solução focada nos problemas levantados, não no produto.\n\n5. OBJEÇÕES: Nunca rebater direto. Usar: \'Entendo, o que te faz pensar isso?\'\n\n6. FECHAMENTO: Sempre propor próximo passo concreto com data."></textarea>'+
+        '</div>'+
+        '<div style="margin-bottom:14px;">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Objeções comuns e como lidar</label>'+
+          '<textarea id="ac-mem-objecoes" class="input-field" style="width:100%;height:120px;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box;" '+
+            'placeholder="Exemplo:\n- \'Tá caro\': Explorar o custo de não resolver o problema. Perguntar: \'Quanto custa pra você continuar assim?\'\n- \'Preciso pensar\': Entender o que falta. Nunca deixar sem próximo passo.\n- \'Vou falar com sócio\': Tentar incluir o sócio na reunião seguinte."></textarea>'+
+        '</div>'+
+        '<div style="margin-bottom:20px;">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Critérios de um lead qualificado</label>'+
+          '<textarea id="ac-mem-criterios" class="input-field" style="width:100%;height:80px;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box;" '+
+            'placeholder="Exemplo: Faturamento acima de R$40mil/mês, decisor presente, dor clara identificada, budget disponível ou urgência alta."></textarea>'+
+        '</div>'+
+        '<div style="display:flex;gap:10px;">'+
+          '<button class="btn" onclick="saveAcMemoria()" style="flex:1;background:var(--purple);border-color:var(--purple);">Salvar Memória</button>'+
+          '<button class="btn btn-outline" onclick="closeAcMemoria()">Cancelar</button>'+
+        '</div>'+
+      '</div>'+
     '</div>'+
     // Settings modal
     '<div id="ac-settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">'+
@@ -14095,6 +14124,43 @@ function renderAudensCommand(){
       '</div>'+
     '</div>'+
   '</div>';
+}
+
+function showAcMemoria(){
+  var modal=document.getElementById('ac-memoria-modal');
+  if(!modal) return;
+  var r=document.getElementById('ac-mem-reuniao');
+  var o=document.getElementById('ac-mem-objecoes');
+  var c=document.getElementById('ac-mem-criterios');
+  if(r) r.value=localStorage.getItem('audens_jarvis_reuniao')||'';
+  if(o) o.value=localStorage.getItem('audens_jarvis_objecoes')||'';
+  if(c) c.value=localStorage.getItem('audens_jarvis_criterios')||'';
+  modal.style.display='flex';
+}
+function closeAcMemoria(){
+  var modal=document.getElementById('ac-memoria-modal');
+  if(modal) modal.style.display='none';
+}
+function saveAcMemoria(){
+  var r=(document.getElementById('ac-mem-reuniao')||{}).value||'';
+  var o=(document.getElementById('ac-mem-objecoes')||{}).value||'';
+  var c=(document.getElementById('ac-mem-criterios')||{}).value||'';
+  localStorage.setItem('audens_jarvis_reuniao',r);
+  localStorage.setItem('audens_jarvis_objecoes',o);
+  localStorage.setItem('audens_jarvis_criterios',c);
+  closeAcMemoria();
+  showSheetToast('Memória do Jarvis salva!',false);
+}
+function acGetMemoria(){
+  var r=localStorage.getItem('audens_jarvis_reuniao')||'';
+  var o=localStorage.getItem('audens_jarvis_objecoes')||'';
+  var c=localStorage.getItem('audens_jarvis_criterios')||'';
+  if(!r&&!o&&!c) return '';
+  var mem='\n=== MEMÓRIA ESTRATÉGICA (use como referência) ===\n';
+  if(r) mem+='METODOLOGIA DE REUNIÃO:\n'+r+'\n\n';
+  if(o) mem+='OBJEÇÕES E COMO LIDAR:\n'+o+'\n\n';
+  if(c) mem+='CRITÉRIOS DE LEAD QUALIFICADO:\n'+c+'\n';
+  return mem;
 }
 
 function showAcSettings(){
@@ -14448,7 +14514,8 @@ function acBuildContext(){
     'Leads hoje: '+leadsHoje+' ('+leadsAlto+' qualificados R$40k+)\n'+
     'Funil: Novos='+stageCount['novo']+' | Qualificados='+stageCount['qualificado']+' | Reunião Agd.='+stageCount['reuniao']+' | Proposta='+stageCount['proposta']+' | Recuperação='+stageCount['recuperacao']+' | Fechados='+stageCount['fechado']+'\n'+
     'Reuniões hoje: '+reunHoje.length+' total, '+reunFeitas+' feitas, '+reunNoShow+' no-show\n'+
-    'Meta mensal: '+(goals&&goals.metaMensal?goals.metaMensal:0)+' leads\n';
+    'Meta mensal: '+(goals&&goals.metaMensal?goals.metaMensal:0)+' leads\n'+
+    acGetMemoria();
 }
 
 async function acSendMessage(){
