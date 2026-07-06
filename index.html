@@ -14341,7 +14341,21 @@ function acRenderChat(){
       '<div style="font-size:13px;color:var(--white);line-height:1.6;">Olá, Lucas. Estou online e com acesso aos dados do CRM. Pode me perguntar sobre leads, reuniões, financeiro ou pedir uma análise do funil. Como posso ajudar?</div>'+
     '</div>'+
   '</div>'+
+  // Painel de análise de reunião (oculto por padrão)
+  '<div id="ac-reun-panel" style="display:none;margin-bottom:12px;border:1px solid var(--purple);border-radius:10px;padding:14px;background:var(--pglow);">'+
+    '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);margin-bottom:8px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;">'+
+      '<span><i class="ti ti-file-text"></i> Colar Transcrição da Reunião</span>'+
+      '<span style="cursor:pointer;color:var(--muted);" onclick="acCloseReunPanel()"><i class="ti ti-x"></i></span>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Cole abaixo a transcrição gerada pelo Google Meet (ou qualquer texto da reunião). O Jarvis vai analisar e dar feedback estruturado.</div>'+
+    '<textarea id="ac-reun-transcript" class="input-field" placeholder="Cole aqui a transcrição da reunião..." style="width:100%;height:140px;resize:vertical;font-size:12px;box-sizing:border-box;"></textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;">'+
+      '<input id="ac-reun-nome" type="text" class="input-field" placeholder="Nome do lead (opcional)" style="flex:1;font-size:12px;"/>'+
+      '<button class="btn" onclick="acAnalisarReuniao()" style="background:var(--purple);border-color:var(--purple);white-space:nowrap;"><i class="ti ti-brain"></i> Analisar</button>'+
+    '</div>'+
+  '</div>'+
   '<div style="display:flex;gap:8px;align-items:flex-end;">'+
+    '<button class="btn btn-outline" onclick="acOpenReunPanel()" title="Analisar reunião" style="height:44px;padding:0 12px;display:flex;align-items:center;gap:6px;font-size:12px;flex-shrink:0;white-space:nowrap;"><i class="ti ti-video"></i> Reunião</button>'+
     '<textarea id="ac-chat-input" class="input-field" placeholder="Pergunte ao Jarvis..." style="flex:1;resize:none;height:44px;padding:10px 12px;font-size:13px;line-height:1.4;" onkeydown="acChatKeydown(event)"></textarea>'+
     '<button id="ac-mic-btn" class="btn btn-outline" onclick="acToggleMic()" title="Falar com Jarvis" style="height:44px;width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-microphone"></i></button>'+
     '<button class="btn" onclick="acSendMessage()" style="height:44px;width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--purple);border-color:var(--purple);"><i class="ti ti-send"></i></button>'+
@@ -14350,6 +14364,62 @@ function acRenderChat(){
 
 function acInitChat(){
   _acJarvisHistory=[];
+}
+
+function acOpenReunPanel(){
+  var p=document.getElementById('ac-reun-panel');
+  if(p){ p.style.display='block'; var t=document.getElementById('ac-reun-transcript'); if(t) t.focus(); }
+}
+function acCloseReunPanel(){
+  var p=document.getElementById('ac-reun-panel');
+  if(p) p.style.display='none';
+}
+async function acAnalisarReuniao(){
+  var transcript=(document.getElementById('ac-reun-transcript')||{}).value||'';
+  var nomeLead=(document.getElementById('ac-reun-nome')||{}).value||'';
+  if(!transcript.trim()){ showSheetToast('Cole a transcrição da reunião antes de analisar.',true); return; }
+  acCloseReunPanel();
+  var prompt='Analise a transcrição desta reunião de vendas'+(nomeLead?' com o lead '+nomeLead:'')+' e me dê um feedback estruturado.\n\n'+
+    'Use exatamente este formato:\n\n'+
+    '**SCORE DA REUNIÃO:** X/10\n\n'+
+    '**PONTOS POSITIVOS:**\n(liste os pontos fortes)\n\n'+
+    '**OBJEÇÕES IDENTIFICADAS:**\n(liste as objeções que o lead levantou)\n\n'+
+    '**NÍVEL DE INTERESSE DO LEAD:** (Alto / Médio / Baixo) — justifique em 1 linha\n\n'+
+    '**O QUE PODERIA TER SIDO MELHOR:**\n(máximo 3 pontos)\n\n'+
+    '**PRÓXIMOS PASSOS RECOMENDADOS:**\n(ações concretas com prazo)\n\n'+
+    '**PROBABILIDADE DE FECHAMENTO:** X%\n\n'+
+    '=== TRANSCRIÇÃO ===\n'+transcript;
+  var input=document.getElementById('ac-chat-input');
+  if(input) input.value='';
+  acAddMsg('user','📋 Analisar transcrição da reunião'+(nomeLead?' — '+nomeLead:''));
+  var thinkId='ac-think-'+Date.now();
+  acAddMsg('jarvis','<span style="color:var(--muted);font-style:italic;">Lendo e analisando a reunião...</span>',thinkId);
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  if(!claudeKey){
+    document.getElementById(thinkId).innerHTML='<div style="color:var(--amber);">Configure sua Claude API Key em "Configurar IA" para usar esta função.</div>';
+    return;
+  }
+  _acJarvisHistory.push({role:'user',content:prompt});
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:2048,system:acBuildContext(),messages:_acJarvisHistory.slice(-10)})
+    });
+    if(!resp.ok){ var err=await resp.json().catch(function(){return{};}); throw new Error(err.error&&err.error.message?err.error.message:'Erro '+resp.status); }
+    var data=await resp.json();
+    var answer=(data.content&&data.content[0]&&data.content[0].text)||'Sem resposta';
+    _acJarvisHistory.push({role:'assistant',content:answer});
+    var formatted=answer
+      .replace(/\*\*(.*?)\*\*/g,'<b style="color:var(--purple3);">$1</b>')
+      .replace(/\n/g,'<br>');
+    var thinkEl=document.getElementById(thinkId);
+    if(thinkEl) thinkEl.innerHTML=formatted;
+    acSpeak('Análise concluída. '+answer.substring(0,200));
+  }catch(e){
+    var thinkEl2=document.getElementById(thinkId);
+    if(thinkEl2) thinkEl2.innerHTML='<span style="color:var(--red);">Erro: '+e.message+'</span>';
+  }
 }
 
 function acChatKeydown(e){
