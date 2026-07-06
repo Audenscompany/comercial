@@ -11980,6 +11980,7 @@ async function calcCloserFromFirebase(nivelIdx, month){
     contratos.forEach(function(c){
       var contMonth=c.dataInicio?c.dataInicio.substring(0,7):null;
       if(!contMonth||contMonth!==month) return;
+      if(c._excluirComissao) return; // Inadimplente — não computa comissão nem meta
       var closerC=normCloserName((c.closer||'').trim());
       var sdrC=normCloserName((c.sdr||'').trim());
       var oriC=(c.origem||'').toLowerCase();
@@ -12100,25 +12101,34 @@ async function calcSDRFromFirebase(nivelIdx, month){
 
     // Contracts from Firebase
     var contratos=await loadContratos();
-    var _vendaItems=[]; // {cliente,mrr} para não-SS
+    var _vendaItems=[]; // {cliente,mrr} para não-SS (ativos)
+    var _vendaItemsExcluidos=[]; // inadimplentes — exibir mas não computar
     var totalEquipeContratosSDR=0; // todos da equipe no mês (para bônus de equipe)
     contratos.forEach(function(c){
       var contMonth=c.dataInicio?c.dataInicio.substring(0,7):null;
       if(!contMonth||contMonth!==month) return;
-      totalEquipeContratosSDR++; // conta todos da equipe independente do SDR
+      var excluido=!!c._excluirComissao;
+      if(!excluido) totalEquipeContratosSDR++; // só ativos contam para equipe
       var sdr=(c.sdr||'').trim().toUpperCase();
       if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
       var ori=(c.origem||'').toUpperCase();
       var mrr=c.valorMes||0;
       var cliente=c.cliente||c.nome||'—';
-      result.vendas++;
       if(ori.includes('SOCIAL')){
-        var comm=Math.round(mrr*0.25);
-        result.ssVendas++;
-        result.ssComm+=comm;
-        result.vendaDetalhes.push({cliente:cliente,mrr:mrr,tipo:'Social Selling',comm:comm,acima:true,_fbId:c.id});
+        if(excluido){
+          result.vendaDetalhes.push({cliente:cliente,mrr:mrr,tipo:'Social Selling',comm:0,acima:false,_fbId:c.id,_excluirComissao:true});
+        } else {
+          var comm=Math.round(mrr*0.25);
+          result.vendas++; result.ssVendas++; result.ssComm+=comm;
+          result.vendaDetalhes.push({cliente:cliente,mrr:mrr,tipo:'Social Selling',comm:comm,acima:true,_fbId:c.id});
+        }
       } else {
-        _vendaItems.push({cliente:cliente,mrr:mrr,_fbId:c.id});
+        if(excluido){
+          _vendaItemsExcluidos.push({cliente:cliente,mrr:mrr,_fbId:c.id,_excluirComissao:true});
+        } else {
+          result.vendas++;
+          _vendaItems.push({cliente:cliente,mrr:mrr,_fbId:c.id});
+        }
       }
     });
 
@@ -12133,6 +12143,10 @@ async function calcSDRFromFirebase(nivelIdx, month){
       var comm=acima?Math.round(item.mrr*pct):0;
       if(acima) result.comissaoVendas+=comm;
       result.vendaDetalhes.push({cliente:item.cliente,mrr:item.mrr,tipo:'Tráfego',comm:comm,acima:acima,_fbId:item._fbId});
+    });
+    // Adiciona inadimplentes ao final (exibição apenas, sem comissão)
+    _vendaItemsExcluidos.forEach(function(item){
+      result.vendaDetalhes.push({cliente:item.cliente,mrr:item.mrr,tipo:'Tráfego',comm:0,acima:false,_fbId:item._fbId,_excluirComissao:true});
     });
 
     var meta=lv.meta;
@@ -12292,17 +12306,23 @@ function buildVendaDetalhesHtml(items, title){
   if(!items||!items.length) return '';
   var hasComm=items.some(function(i){return i.comm>0;});
   var rows=items.map(function(item){
+    var excluido=!!item._excluirComissao;
     var tipoColor=item.tipo==='Cold Call 25%'?'var(--amber)':item.tipo==='Social Selling'?'var(--cyan)':'var(--muted)';
     var editBtn=item._fbId?'<button onclick="corrigirMrrContrato(\''+item._fbId+'\',\''+esc(item.cliente)+'\','+item.mrr+')" title="Corrigir valor" style="background:none;border:none;color:rgba(255,255,255,0.25);cursor:pointer;padding:0 4px;font-size:12px;" onmouseover="this.style.color=\'var(--amber)\'" onmouseout="this.style.color=\'rgba(255,255,255,0.25)\'"><i class="ti ti-edit"></i></button>':'';
-    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
-      '<td style="padding:7px 12px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--white);opacity:'+(item.acima?1:0.55)+';">'+esc(item.cliente)+editBtn+'</td>'+
-      '<td style="padding:7px 12px;font-size:11px;color:'+tipoColor+';font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;text-transform:uppercase;">'+esc(item.tipo)+'</td>'+
-      '<td style="padding:7px 12px;font-size:12px;color:var(--white);text-align:right;font-family:\'DM Mono\',monospace;opacity:'+(item.acima?1:0.55)+';">R$'+(item.mrr||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+'</td>'+
-      (hasComm?'<td style="padding:7px 12px;font-size:13px;font-weight:700;text-align:right;font-family:\'Bebas Neue\',sans-serif;color:'+(item.acima&&item.comm>0?'#4ade80':'var(--muted)')+';">'+(item.acima&&item.comm>0?'+ R$'+item.comm.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—')+'</td>':'') +
-      '<td style="padding:7px 12px;font-size:11px;text-align:center;">'+(item.acima?'<span style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.3);border-radius:4px;padding:2px 8px;">comissão</span>':'<span style="color:var(--muted);font-size:10px;">sem comissão</span>')+'</td>'+
+    var exclBtn=item._fbId?'<button onclick="toggleExcluirComissao(\''+item._fbId+'\',\''+esc(item.cliente)+'\','+excluido+')" title="'+(excluido?'Reativar comissão':'Marcar como inadimplente')+'" style="background:none;border:none;color:'+(excluido?'rgba(248,113,113,0.7)':'rgba(255,255,255,0.2)')+';cursor:pointer;padding:0 4px;font-size:12px;" onmouseover="this.style.color=\''+(excluido?'#f87171':'var(--red)')+'\';" onmouseout="this.style.color=\''+(excluido?'rgba(248,113,113,0.7)':'rgba(255,255,255,0.2)')+'\'"><i class="ti ti-'+(excluido?'circle-check':'ban')+'"></i></button>':'';
+    var nomeHtml=excluido
+      ? '<span style="text-decoration:line-through;opacity:0.45;">'+esc(item.cliente)+'</span> <span style="background:rgba(248,113,113,0.15);color:#f87171;border:1px solid rgba(248,113,113,0.3);border-radius:4px;padding:1px 6px;font-size:10px;letter-spacing:1px;text-transform:uppercase;">inadimplente</span>'
+      : esc(item.cliente);
+    var rowBg=excluido?'background:rgba(248,113,113,0.04);':'';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);'+rowBg+'">'+
+      '<td style="padding:7px 12px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--white);opacity:'+(item.acima&&!excluido?1:0.55)+';">'+nomeHtml+editBtn+exclBtn+'</td>'+
+      '<td style="padding:7px 12px;font-size:11px;color:'+tipoColor+';font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;text-transform:uppercase;opacity:'+(excluido?0.4:1)+';">'+esc(item.tipo)+'</td>'+
+      '<td style="padding:7px 12px;font-size:12px;color:var(--white);text-align:right;font-family:\'DM Mono\',monospace;opacity:'+(item.acima&&!excluido?1:0.45)+';">'+(excluido?'<s>':'')+'R$'+(item.mrr||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+(excluido?'</s>':'')+'</td>'+
+      (hasComm?'<td style="padding:7px 12px;font-size:13px;font-weight:700;text-align:right;font-family:\'Bebas Neue\',sans-serif;color:'+(excluido?'rgba(248,113,113,0.5)':item.acima&&item.comm>0?'#4ade80':'var(--muted)')+';">'+(excluido?'—':item.acima&&item.comm>0?'+ R$'+item.comm.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—')+'</td>':'') +
+      '<td style="padding:7px 12px;font-size:11px;text-align:center;">'+(excluido?'<span style="background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.25);border-radius:4px;padding:2px 8px;">excluído</span>':item.acima?'<span style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.3);border-radius:4px;padding:2px 8px;">comissão</span>':'<span style="color:var(--muted);font-size:10px;">sem comissão</span>')+'</td>'+
     '</tr>';
   }).join('');
-  var totalComm=items.reduce(function(s,i){return s+(i.comm||0);},0);
+  var totalComm=items.reduce(function(s,i){return s+(i._excluirComissao?0:(i.comm||0));},0);
   return '<div style="background:rgba(0,0,0,0.2);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden;">'+
     '<div style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">'+
       '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">'+esc(title)+'</div>'+
@@ -12319,6 +12339,24 @@ function buildVendaDetalhesHtml(items, title){
       '<tbody>'+rows+'</tbody>'+
     '</table>'+
   '</div>';
+}
+
+async function toggleExcluirComissao(fbId, nomeCliente, excluido){
+  var msg = excluido
+    ? 'Reativar comissão de "'+nomeCliente+'"?\nO contrato voltará a ser computado normalmente.'
+    : 'Excluir comissão de "'+nomeCliente+'" por inadimplência?\nO contrato não será computado na comissão.';
+  if(!confirm(msg)) return;
+  try{
+    if(!fbDb) initFirebase();
+    await fbDb.ref('contratos/'+fbId).update({_excluirComissao: excluido?false:true, updatedAt:Date.now()});
+    _contratosCache = null;
+    showSheetToast(excluido?'Comissão reativada!':'Comissão excluída — contrato marcado como inadimplente.', false);
+    // Recarrega a página atual de plano de carreira se estiver aberta
+    var area=document.getElementById('content');
+    if(area&&(area.getAttribute('data-page')==='plano-carreira'||area.getAttribute('data-page')==='contratos')){
+      setTimeout(function(){ showPage(area.getAttribute('data-page')); },300);
+    }
+  }catch(e){ alert('Erro: '+e.message); }
 }
 
 async function corrigirMrrContrato(fbId, nomeCliente, mrrAtual){
