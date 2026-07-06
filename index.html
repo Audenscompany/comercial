@@ -2774,6 +2774,12 @@ async function testSheetsConnection(){
 }
 async function fetchSheetVals(sheetId,gid){
   if(!isGcalConnected()) throw new Error('Token do Google expirado. Reconecte em Configurações.');
+  // TTL cache: retorna dados em memória se foram buscados há menos de 2 minutos
+  var _cacheKey = sheetId+'_'+gid;
+  var _cached = _sheetValsTTLCache[_cacheKey];
+  if(_cached && (Date.now()-_cached.ts) < _SHEETS_TTL_MS){
+    return _cached.data;
+  }
   try{
     // Step 1: get sheet title from GID
     if(!_sheetsMeta[sheetId+'_fetched']){
@@ -2804,7 +2810,9 @@ async function fetchSheetVals(sheetId,gid){
       d=await r2.json();
     }
     if(d.error){throw new Error('Planilha (gid='+gid+'): '+JSON.stringify(d.error.message||d.error));}
-    return d.values||[];
+    var result = d.values||[];
+    _sheetValsTTLCache[_cacheKey] = {data:result, ts:Date.now()};
+    return result;
   }catch(e){console.error('fetchSheetVals error',sheetId,gid,e);throw e;}
 }
 function rawToObjs(raw){
@@ -10958,6 +10966,8 @@ var SDR_COMM_PCT = [10, 11, 12, 14, 15, 16, 18, 19, 20];
 var _careerLevels = {gustavo: 0, joao: 0}; // index into CLOSER_LEVELS / SDR_LEVELS
 var _careerLevelSince = {gustavo: null, joao: null}; // YYYY-MM: mês em que entrou no nível atual
 var _sheetDataCache = {}; // cache fetched sheet data
+var _sheetValsTTLCache = {}; // TTL cache para fetchSheetVals (evita quota exceeded)
+var _SHEETS_TTL_MS = 120000; // 2 minutos
 
 // Load career levels from Firebase
 async function loadCareerLevels(){
@@ -11558,7 +11568,7 @@ async function cancelarContrato(id, motivo, dataCancel){
 }
 
 async function importContratosFromSheet(){
-  _sheetDataCache={}; _sheetsMeta={};
+  _sheetDataCache={}; _sheetValsTTLCache={}; _sheetsMeta={};
   var cliRows = await fetchSheetCached(SHEETS_IDS.clientes,SHEETS_GIDS.clientes,'clientes');
   if(!cliRows||cliRows.length<2) return 0;
   var ch = cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
@@ -12636,7 +12646,7 @@ async function triggerCloserCalc(mode){
     return;
   }
   resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados...</div>';
-  _sheetDataCache = {}; _sheetsMeta = {}; _contratosCache = null; // force refresh
+  _sheetDataCache = {}; _sheetValsTTLCache = {}; _sheetsMeta = {}; _contratosCache = null; // force refresh
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = mode==='gestor' ? (_careerLevels.gustavo||0) : (_careerLevels.gustavo||0);
   var r;
