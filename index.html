@@ -4461,11 +4461,16 @@ async function loadFinanceiroData(){
     setTimeout(resolve,5000);
   });
   var [clientesRaw,saidasRaw,entradasRaw,recebimentosRaw]=await Promise.all([
-    fbGet('clientes'),
-    fbGet('financeiro/saidas'),
-    fbGet('financeiro/entradas_manuais'),
-    fbGet('financeiro/recebimentos')
+    fbGet('clientes').catch(function(e){console.error('[Fin] clientes erro:',e.message);return null;}),
+    fbGet('financeiro/saidas').catch(function(e){console.error('[Fin] saidas erro:',e.message);return null;}),
+    fbGet('financeiro/entradas_manuais').catch(function(e){console.error('[Fin] entradas erro:',e.message);return null;}),
+    fbGet('financeiro/recebimentos').catch(function(e){console.error('[Fin] recebimentos erro:',e.message);return null;})
   ]);
+  console.warn('[Fin DEBUG] auth user:', firebase&&firebase.auth&&firebase.auth().currentUser&&firebase.auth().currentUser.uid);
+  console.warn('[Fin DEBUG] clientes:', clientesRaw===null?'NULL':Object.keys(clientesRaw||{}).length+' itens');
+  console.warn('[Fin DEBUG] saidas:', saidasRaw===null?'NULL (permission_denied?)':Object.keys(saidasRaw||{}).length+' itens');
+  console.warn('[Fin DEBUG] entradas:', entradasRaw===null?'NULL':Object.keys(entradasRaw||{}).length+' itens');
+  console.warn('[Fin DEBUG] recebimentos:', recebimentosRaw===null?'NULL':Object.keys(recebimentosRaw||{}).length+' itens');
   // Pagamentos Asaas do mês filtrados do Firebase
   var confStatuses=['CONFIRMED','RECEIVED','RECEIVED_IN_CASH'];
   var asaasPagamentos=Object.values(recebimentosRaw||{}).filter(function(p){
