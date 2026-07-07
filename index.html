@@ -8793,11 +8793,18 @@ function fmt(v){ return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,
 
 async function gerarContracheque(modo){
   // modo = 'closer' (Gustavo) ou 'sdr' (João)
-  var sel = document.getElementById('closer-auto-gestor-month') || document.getElementById('sdr-auto-gestor-month');
+  // Usa o seletor específico de cada modo para não misturar meses
+  var selId = modo==='closer' ? 'closer-auto-gestor-month' : 'sdr-auto-gestor-month';
+  var sel = document.getElementById(selId);
   var month = sel ? sel.value : getCurrentPeriod();
+  // Normaliza para YYYY-MM (monthOptions → YYYY-MM; getCurrentPeriod → MM/YYYY)
   var mn = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  var parts = month.split('/');
-  var mesLabel = mn[parseInt(parts[0])-1]+' / '+parts[1];
+  if(!month.includes('-')){ // "MM/YYYY" → converte
+    var p2=month.split('/');
+    month = p2[1]+'-'+p2[0].padStart(2,'0');
+  }
+  var yp = month.split('-'); // ["2026","06"]
+  var mesLabel = (mn[parseInt(yp[1])-1]||'?')+' / '+yp[0];
 
   var r;
   try{
