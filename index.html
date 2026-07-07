@@ -11621,29 +11621,45 @@ async function corrigirFirebaseJunho2026(){
       santosMsg=' · Santos tô com fome não encontrado no Firebase';
     }
 
-    // 2. Adicionar contratos faltantes
+    // 2. Garantir contratos de junho/2026 com SDR João
     var paraAdicionar=[
-      {cliente:'Max Pizza e Hamburguer', dataInicio:'2026-06-24', valorMes:1500, valorVendido:1500, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Social Selling', closer:'Lucas', sdr:'João', ativo:true},
-      {cliente:'Food Truck do Gordinho',  dataInicio:'2026-06-30', valorMes:2000, valorVendido:2000, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Gustavo', sdr:'João', ativo:true},
-      {cliente:'Carnivoros Burguer',       dataInicio:'2026-06-29', valorMes:1500, valorVendido:1500, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Lucas',   sdr:'João', ativo:true},
-      {cliente:'Carnivurus Burguer Caruaru',dataInicio:'2026-06-29', valorMes:1500, valorVendido:1500, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Lucas',   sdr:'João', ativo:true}
+      {cliente:'Max Pizza e Hamburguer',    dataInicio:'2026-06-24', valorMes:1500, valorVendido:1500, planoDuracao:1, dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Social Selling', closer:'Lucas',   sdr:'João', ativo:true},
+      {cliente:'Food Truck do Gordinho',    dataInicio:'2026-06-30', valorMes:2000, valorVendido:2000, planoDuracao:1, dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Gustavo', sdr:'João', ativo:true},
+      {cliente:'Carnivoros Burguer',        dataInicio:'2026-06-29', valorMes:1500, valorVendido:1500, planoDuracao:1, dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Lucas',   sdr:'João', ativo:true},
+      {cliente:'Carnivurus Burguer Caruaru',dataInicio:'2026-06-29', valorMes:1500, valorVendido:1500, planoDuracao:1, dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Lucas',   sdr:'João', ativo:true}
     ];
-    var batch={}, adicionados=0;
+    var batch={}, updateBatch={}, adicionados=0, atualizados=0;
     paraAdicionar.forEach(function(c){
       var nm=c.cliente.toLowerCase();
-      var jaExiste=existentes.some(function(e){
-        return (e.cliente||'').toLowerCase()===nm&&(e.dataInicio||'').startsWith('2026-06');
+      // Procura por nome similar (ignora acentos e capitalização) E mês junho/2026
+      var encontrado=existentes.find(function(e){
+        var enm=(e.cliente||'').toLowerCase().trim();
+        var mesOk=(e.dataInicio||'').startsWith('2026-06');
+        return mesOk && (enm===nm || enm.replace(/[^a-z0-9]/g,'')=== nm.replace(/[^a-z0-9]/g,''));
       });
-      if(!jaExiste){
+      if(!encontrado){
+        // Não existe: cria
         var key=fbDb.ref('contratos').push().key;
         batch[key]=Object.assign({},c,{createdAt:Date.now()});
         adicionados++;
+      } else if((encontrado.sdr||'').toLowerCase()!=='joão'){
+        // Existe mas SDR errado: corrige
+        updateBatch[encontrado._fbId]={sdr:'João', updatedAt:Date.now()};
+        atualizados++;
       }
+      // Se encontrado E sdr=='João': já OK, pula
     });
-    if(Object.keys(batch).length>0) await fbDb.ref('contratos').update(batch);
+    var ops=[];
+    if(Object.keys(batch).length>0) ops.push(fbDb.ref('contratos').update(batch));
+    for(var fid in updateBatch) ops.push(fbDb.ref('contratos/'+fid).update(updateBatch[fid]));
+    if(ops.length>0) await Promise.all(ops);
 
     _contratosCache=null;
-    showSheetToast(adicionados+' contratos adicionados'+santosMsg, false);
+    var msgs=[];
+    if(adicionados>0) msgs.push(adicionados+' adicionados');
+    if(atualizados>0) msgs.push(atualizados+' SDR corrigidos');
+    if(msgs.length===0) msgs.push('nenhuma diferença encontrada');
+    showSheetToast('Firebase corrigido: '+msgs.join(', ')+santosMsg, false);
     setTimeout(function(){ showPage('contratos'); },400);
   }catch(e){
     alert('Erro ao corrigir Firebase: '+e.message+'\n\nVerifique se as regras do Firebase estão corretas (sem expiração).');
