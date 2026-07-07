@@ -11681,7 +11681,7 @@ async function calcCloserFromSheets(nivelIdx, month){
         }
       });
     }
-    result.incentivReun = result.reunioes * 30;
+    result.incentivReun = 0; // Closer não tem incentivo R$30/reunião
 
     if(cliRows && cliRows.length > 1){
       var ch = cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
@@ -11988,7 +11988,7 @@ async function calcCloserFromFirebase(nivelIdx, month){
         if(normCloserName(sdrR)==='Gustavo'&&oriR.includes('cold')&&isRealizada(status)&&rowMonth===month) result.reunColdCall++;
       });
     }
-    result.incentivReun=result.reunioes*30;
+    result.incentivReun=0; // Closer não tem incentivo R$30/reunião
     result.incentivColdCall=result.reunColdCall*30;
 
     // Contracts from Firebase
@@ -12722,7 +12722,7 @@ async function triggerCloserCalc(mode){
       '<div style="background:var(--bg2);border:1px solid '+(atingiu?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Contratos fechados</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(atingiu?'#4ade80':'var(--amber)')+';">'+r.contratos+'</div><div style="font-size:11px;color:var(--muted);">meta: '+lv.meta+(atingiu?' ✓':' (falta '+(lv.meta-r.contratos)+')')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.bonusMeta?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Bônus Meta</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.bonusMeta?'#4ade80':'var(--muted)')+';">R$'+r.bonusMeta.toLocaleString('pt-BR')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.comissaoContratos?'rgba(123,47,255,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão contratos</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoContratos?'var(--purple3)':'var(--muted)')+';">R$'+r.comissaoContratos.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+' acima × R$'+r.comissaoUnit+'</div></div>'+
-      '<div style="background:var(--bg2);border:1px solid '+(r.reunioes?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Reuniões realizadas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.reunioes?'var(--cyan)':'var(--muted)')+';">'+r.reunioes+'</div><div style="font-size:11px;color:var(--muted);">R$'+r.incentivReun.toLocaleString('pt-BR')+' (×R$30)</div></div>'+
+      '<div style="background:var(--bg2);border:1px solid '+(r.reunioes?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Reuniões realizadas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.reunioes?'var(--cyan)':'var(--muted)')+';">'+r.reunioes+'</div><div style="font-size:11px;color:var(--muted);">contagem do mês</div></div>'+
       ((r.comissaoColdCall||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px;"><div class="m-lbl">Comissão 25% Cold Call</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--amber);">R$'+(r.comissaoColdCall||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div><div style="font-size:11px;color:var(--muted);">R$'+(r.mrrColdCall||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+' vendidos × 25%</div></div>':'')+
       ((r.bonusEquipe||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.4);border-radius:8px;padding:12px;"><div class="m-lbl" style="color:#fde047;">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">R$'+(r.bonusEquipe||0).toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+' contratos equipe</div></div>':'<div style="background:var(--bg2);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px;opacity:0.5;"><div class="m-lbl">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--muted);">R$0</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+'/20 contratos</div></div>')+
     '</div>'+
