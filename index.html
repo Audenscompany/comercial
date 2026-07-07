@@ -11842,7 +11842,9 @@ async function calcSDRFromSheets(nivelIdx, month){
     trafegoReun: 0,  // só tráfego — base do acelerador
     vendas: 0, comissaoVendas: 0,
     ssReun: 0, ssIncentiv: 0, ssVendas: 0, ssComm: 0, ssTotal: 0,
-    total: 0, totalSDR: 0, grandTotal: 0, error: null};
+    total: 0, totalSDR: 0, grandTotal: 0,
+    vendaDetalhes: [], // [{cliente,mrr,tipo,comm,acima}] — sem _fbId nessa fonte
+    error: null};
   try{
     var reunRows = await fetchSheetCached(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, 'reunioes');
     var cliRows = await fetchSheetCached(SHEETS_IDS.clientes, SHEETS_GIDS.clientes, 'clientes');
@@ -11912,7 +11914,11 @@ async function calcSDRFromSheets(nivelIdx, month){
         if(origem2.includes('SOCIAL')){
           // Social Selling: comissão de 25% do MRR, sem threshold próprio
           result.ssVendas++;
-          result.ssComm += mrr * 0.25;
+          var ssComm2=Math.round(mrr*0.25);
+          result.ssComm += ssComm2;
+          result.vendaDetalhes.push({cliente:(row[ch.findIndex(function(h){return h.includes('CLIENTE');})]||'—').trim(),mrr:mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
+        } else {
+          result.vendaDetalhes.push({cliente:(row[ch.findIndex(function(h){return h.includes('CLIENTE');})]||'—').trim(),mrr:mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
         }
       });
     }
@@ -11928,6 +11934,17 @@ async function calcSDRFromSheets(nivelIdx, month){
     result.incentivReun = result.reunioesComp * lv.incentivReun;
     var vendasEfetivas = Math.max(0, result.vendas - (threshold - 1));
     result.comissaoVendas = vendasEfetivas > 0 ? vendasEfetivas * lv.commVenda : 0;
+    // Atualiza acima/comm nos itens Tráfego agora que threshold é conhecido
+    var pctSDR=(SDR_COMM_PCT[nivelIdx]||10)/100;
+    var naoSSIdx=0;
+    result.vendaDetalhes.forEach(function(d){
+      if(d._pending){
+        delete d._pending;
+        d.acima = result.vendas>=threshold && naoSSIdx>=(Math.max(0,threshold-1-result.ssVendas));
+        d.comm = d.acima ? Math.round(d.mrr*pctSDR) : 0;
+        naoSSIdx++;
+      }
+    });
     result.ssIncentiv = result.ssReun * 30;
     result.ssTotal = result.incentivReun + result.ssIncentiv + result.ssComm;
     var totalBrutoSDR = result.base + result.bonusMeta + result.acelerador + result.comissaoVendas;
@@ -12770,7 +12787,11 @@ async function triggerSDRCalc(mode){
       r = await calcSDRFromSheets(nivelIdx, month);
     }
   }
-  catch(e){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e.message+'</div>'; return; }
+  catch(e){
+    // Firebase indisponível (regras expiradas?) — usa planilha como fallback
+    try{ r = await calcSDRFromSheets(nivelIdx, month); }
+    catch(e2){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e2.message+'</div>'; return; }
+  }
   if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = SDR_LEVELS[nivelIdx];
   var atingiu = r.agendamentos >= lv.meta;
