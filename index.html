@@ -692,6 +692,14 @@ async function saveMeetingFB(mid, meetingObj){
   }catch(e){ console.error('saveMeetingFB error',e); }
 }
 
+// Save single followup directly to Firebase (atomic — avoids bulk-set race conditions)
+async function saveFollowupFB(fid, fuData){
+  try{
+    if(!fbDb && !initFirebase()) return;
+    await fbDb.ref('followups/'+fid).set(fuData);
+  }catch(e){ console.error('saveFollowupFB error',e); }
+}
+
 // ===== SAVE LIGACAO TO FIREBASE =====
 async function saveLigacaoFB(lead, callData, meetingDisplay){
   var row = {
@@ -6304,6 +6312,7 @@ function saveFollowup(){
       bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:todayStr()};
     meetings[fid].status='noshow';
     saveMeetingFB(fid, meetings[fid]);
+    saveFollowupFB(fid, followups[fid]);
     updateReuniaoSheetStatus(fid,'NO-SHOW');
     saveAll();closeModal('modal-followup');
     // Envia o lead para o fluxo de recontato de no-shows
@@ -6348,6 +6357,7 @@ function saveFollowup(){
     dt:todayStr()};
   meetings[fid].status='done';
   saveMeetingFB(fid, meetings[fid]);
+  saveFollowupFB(fid, followups[fid]);
   updateReuniaoSheetStatus(fid, venda?'VENDA':choice==='retorno'?'RETORNO':'PERDIDA');
   if(choice==='retorno'){
     var lead=allLeads.find(function(l){return l.telefone===_fuMeeting.tel;});if(lead)lead._requeue=true;
@@ -6546,6 +6556,7 @@ function saveFollowupEdit(){
       bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:old.dt||todayStr()};
     meetings[fid].status='noshow';
     saveMeetingFB(fid, meetings[fid]);
+    saveFollowupFB(fid, followups[fid]);
     updateReuniaoSheetStatus(fid,'NO-SHOW');
     saveAll();closeModal('modal-followup');
     showSheetToast('Resultado atualizado.', false);
@@ -6583,6 +6594,7 @@ function saveFollowupEdit(){
     dt:old.dt||todayStr()};
   meetings[fid].status='done';
   saveMeetingFB(fid, meetings[fid]);
+  saveFollowupFB(fid, followups[fid]);
   updateReuniaoSheetStatus(fid, venda?'VENDA':choice==='retorno'?'RETORNO':'PERDIDA');
   saveAll();closeModal('modal-followup');
   if(venda){
