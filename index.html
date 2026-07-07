@@ -187,6 +187,7 @@ tbody tr:hover td{background:var(--pglow2);}
 .gcal-status.connected{background:rgba(34,197,94,0.1);color:#4ade80;border:1px solid rgba(34,197,94,0.3);}
 .gcal-status.disconnected{background:rgba(245,158,11,0.1);color:var(--amber);border:1px solid rgba(245,158,11,0.3);}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes ac-pulse{0%,100%{opacity:1;}50%{opacity:0.55;}}
 .kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;scrollbar-width:none;-ms-overflow-style:none;}
 .kanban-board::-webkit-scrollbar{display:none;}
 .kanban-col{flex:0 0 270px;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:75vh;}
@@ -14351,6 +14352,8 @@ Se a transcrição não separar claramente vendedor e cliente, informe essa limi
 Analise apenas a condução comercial, os dados levantados, o nível de qualificação e o avanço real da oportunidade.`;
 var _acSpeechRecog = null;
 var _acListening = false;
+var _acTranscribeRecog = null;
+var _acTranscribing = false;
 
 function renderAudensCommand(){
   if(!CU||CU.role!=='gestor') return '<div style="padding:40px;text-align:center;color:var(--muted);">Acesso restrito.</div>';
@@ -14719,13 +14722,20 @@ function acRenderChat(){
   // Painel de análise de reunião (oculto por padrão)
   '<div id="ac-reun-panel" style="display:none;margin-bottom:12px;border:1px solid var(--purple);border-radius:10px;padding:14px;background:var(--pglow);">'+
     '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);margin-bottom:8px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;">'+
-      '<span><i class="ti ti-file-text"></i> Colar Transcrição da Reunião</span>'+
+      '<span><i class="ti ti-file-text"></i> Transcrição da Reunião</span>'+
       '<span style="cursor:pointer;color:var(--muted);" onclick="acCloseReunPanel()"><i class="ti ti-x"></i></span>'+
     '</div>'+
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Cole abaixo a transcrição gerada pelo Google Meet (ou qualquer texto da reunião). O Jarvis vai analisar e dar feedback estruturado.</div>'+
-    '<textarea id="ac-reun-transcript" class="input-field" placeholder="Cole aqui a transcrição da reunião..." style="width:100%;height:140px;resize:vertical;font-size:12px;box-sizing:border-box;"></textarea>'+
+    '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">'+
+      '<button id="ac-transcribe-btn" class="btn btn-outline" onclick="acToggleTranscrever()" style="font-size:12px;display:flex;align-items:center;gap:5px;white-space:nowrap;"><i class="ti ti-microphone"></i> Transcrever ao Vivo</button>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.4;">Clique para transcrever em tempo real, ou cole o texto abaixo.</div>'+
+    '</div>'+
+    '<div style="position:relative;">'+
+      '<textarea id="ac-reun-transcript" class="input-field" placeholder="Cole aqui a transcrição, ou use o botão acima para transcrever ao vivo..." style="width:100%;height:140px;resize:vertical;font-size:12px;box-sizing:border-box;"></textarea>'+
+      '<div id="ac-reun-interim" style="position:absolute;bottom:8px;left:8px;right:8px;font-size:11px;color:var(--purple3);font-style:italic;pointer-events:none;opacity:0.7;"></div>'+
+    '</div>'+
     '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;">'+
       '<input id="ac-reun-nome" type="text" class="input-field" placeholder="Nome do lead (opcional)" style="flex:1;font-size:12px;"/>'+
+      '<button class="btn btn-outline" onclick="acLimparTranscricao()" style="font-size:12px;white-space:nowrap;"><i class="ti ti-trash"></i></button>'+
       '<button class="btn" onclick="acAnalisarReuniao()" style="background:var(--purple);border-color:var(--purple);white-space:nowrap;"><i class="ti ti-brain"></i> Analisar</button>'+
     '</div>'+
   '</div>'+
@@ -14750,6 +14760,12 @@ function acOpenReunPanel(){
   if(p){ p.style.display='block'; var t=document.getElementById('ac-reun-transcript'); if(t) t.focus(); }
 }
 function acCloseReunPanel(){
+  // Stop transcription if running
+  if(_acTranscribing){
+    _acTranscribing=false;
+    if(_acTranscribeRecog) try{_acTranscribeRecog.stop();}catch(e){}
+    _acUpdateTranscribeBtn(false);
+  }
   var p=document.getElementById('ac-reun-panel');
   if(p) p.style.display='none';
 }
@@ -14953,6 +14969,98 @@ async function acSpeak(text){
     if(ptVoice) utt.voice=ptVoice;
     window.speechSynthesis.speak(utt);
   }
+}
+
+function acLimparTranscricao(){
+  var t=document.getElementById('ac-reun-transcript');
+  if(t) t.value='';
+  var p=document.getElementById('ac-reun-interim');
+  if(p) p.textContent='';
+}
+
+function _acUpdateTranscribeBtn(active){
+  var btn=document.getElementById('ac-transcribe-btn');
+  if(!btn) return;
+  if(active){
+    btn.innerHTML='<i class="ti ti-player-stop"></i> Parar';
+    btn.style.background='rgba(239,68,68,0.15)';
+    btn.style.borderColor='var(--red)';
+    btn.style.color='var(--red)';
+    // Pulse animation
+    btn.style.animation='ac-pulse 1.2s ease-in-out infinite';
+  } else {
+    btn.innerHTML='<i class="ti ti-microphone"></i> Transcrever ao Vivo';
+    btn.style.background='';
+    btn.style.borderColor='';
+    btn.style.color='';
+    btn.style.animation='';
+    var p=document.getElementById('ac-reun-interim');
+    if(p) p.textContent='';
+  }
+}
+
+function acToggleTranscrever(){
+  if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){
+    showSheetToast('Reconhecimento de voz não suportado. Use Google Chrome.',true);
+    return;
+  }
+  if(_acTranscribing){
+    if(_acTranscribeRecog) _acTranscribeRecog.stop();
+    _acTranscribing=false;
+    _acUpdateTranscribeBtn(false);
+    showSheetToast('Transcrição pausada.',false);
+    return;
+  }
+  var textarea=document.getElementById('ac-reun-transcript');
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  _acTranscribeRecog=new SR();
+  _acTranscribeRecog.lang='pt-BR';
+  _acTranscribeRecog.continuous=true;
+  _acTranscribeRecog.interimResults=true;
+  _acTranscribeRecog.maxAlternatives=1;
+
+  _acTranscribeRecog.onstart=function(){
+    _acTranscribing=true;
+    _acUpdateTranscribeBtn(true);
+  };
+
+  _acTranscribeRecog.onresult=function(e){
+    var finalText='';
+    var interimText='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var t=e.results[i][0].transcript;
+      if(e.results[i].isFinal){ finalText+=t+' '; }
+      else { interimText+=t; }
+    }
+    if(finalText && textarea){
+      // Add speaker separator on each sentence
+      var cur=textarea.value;
+      if(cur && !cur.endsWith('\n')) textarea.value=cur+finalText;
+      else textarea.value=cur+finalText;
+      textarea.scrollTop=textarea.scrollHeight;
+    }
+    var prev=document.getElementById('ac-reun-interim');
+    if(prev) prev.textContent=interimText?'…'+interimText:'';
+  };
+
+  _acTranscribeRecog.onerror=function(e){
+    console.warn('[Transcrever]',e.error);
+    // Ignore no-speech (common during silences)
+    if(e.error==='no-speech') return;
+    if(e.error==='aborted') return;
+    showSheetToast('Erro no microfone: '+e.error,true);
+    _acTranscribing=false;
+    _acUpdateTranscribeBtn(false);
+  };
+
+  _acTranscribeRecog.onend=function(){
+    // Auto-restart to maintain continuous transcription
+    if(_acTranscribing){
+      try{ _acTranscribeRecog.start(); }catch(err){ _acTranscribing=false; _acUpdateTranscribeBtn(false); }
+    }
+  };
+
+  _acTranscribeRecog.start();
 }
 
 function acToggleMic(){
