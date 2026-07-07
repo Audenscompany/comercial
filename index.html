@@ -14721,13 +14721,14 @@ function acRenderChat(){
   '</div>'+
   // Painel de análise de reunião (oculto por padrão)
   '<div id="ac-reun-panel" style="display:none;margin-bottom:12px;border:1px solid var(--purple);border-radius:10px;padding:14px;background:var(--pglow);">'+
-    '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);margin-bottom:8px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;">'+
-      '<span><i class="ti ti-file-text"></i> Transcrição da Reunião</span>'+
+    '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);margin-bottom:10px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;">'+
+      '<span style="display:flex;align-items:center;gap:8px;">'+
+        '<i class="ti ti-file-text"></i> Transcrição da Reunião'+
+        '<span id="ac-transcribe-btn" style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);animation:ac-pulse 1.2s ease-in-out infinite;">'+
+          '<i class="ti ti-microphone"></i> GRAVANDO'+
+        '</span>'+
+      '</span>'+
       '<span style="cursor:pointer;color:var(--muted);" onclick="acCloseReunPanel()"><i class="ti ti-x"></i></span>'+
-    '</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">'+
-      '<button id="ac-transcribe-btn" class="btn btn-outline" onclick="acToggleTranscrever()" style="font-size:12px;display:flex;align-items:center;gap:5px;white-space:nowrap;"><i class="ti ti-microphone"></i> Transcrever ao Vivo</button>'+
-      '<div style="font-size:11px;color:var(--muted);line-height:1.4;">Clique para transcrever em tempo real, ou cole o texto abaixo.</div>'+
     '</div>'+
     '<div style="position:relative;">'+
       '<textarea id="ac-reun-transcript" class="input-field" placeholder="Cole aqui a transcrição, ou use o botão acima para transcrever ao vivo..." style="width:100%;height:140px;resize:vertical;font-size:12px;box-sizing:border-box;"></textarea>'+
@@ -14757,7 +14758,16 @@ function acInitChat(){
 
 function acOpenReunPanel(){
   var p=document.getElementById('ac-reun-panel');
-  if(p){ p.style.display='block'; var t=document.getElementById('ac-reun-transcript'); if(t) t.focus(); }
+  if(p){
+    p.style.display='block';
+    // Limpa transcrição anterior e começa gravando automaticamente
+    var t=document.getElementById('ac-reun-transcript');
+    if(t) t.value='';
+    var interim=document.getElementById('ac-reun-interim');
+    if(interim) interim.textContent='';
+    // Auto-start transcription
+    if(!_acTranscribing) acToggleTranscrever();
+  }
 }
 function acCloseReunPanel(){
   // Stop transcription if running
@@ -14770,9 +14780,17 @@ function acCloseReunPanel(){
   if(p) p.style.display='none';
 }
 async function acAnalisarReuniao(){
+  // Para transcrição antes de analisar
+  if(_acTranscribing){
+    _acTranscribing=false;
+    if(_acTranscribeRecog) try{_acTranscribeRecog.stop();}catch(e){}
+    _acUpdateTranscribeBtn(false);
+    // Pequena pausa para garantir que o último trecho foi capturado
+    await new Promise(function(r){setTimeout(r,400);});
+  }
   var transcript=(document.getElementById('ac-reun-transcript')||{}).value||'';
   var nomeLead=(document.getElementById('ac-reun-nome')||{}).value||'';
-  if(!transcript.trim()){ showSheetToast('Cole a transcrição da reunião antes de analisar.',true); return; }
+  if(!transcript.trim()){ showSheetToast('Nenhuma fala capturada ainda. Aguarde e tente novamente.',true); return; }
   acCloseReunPanel();
   // System prompt = playbook completo (documento ou customizado na Memória)
   var playbook = localStorage.getItem('audens_jarvis_reuniao') || AC_JARVIS_PLAYBOOK;
@@ -14979,21 +14997,9 @@ function acLimparTranscricao(){
 }
 
 function _acUpdateTranscribeBtn(active){
-  var btn=document.getElementById('ac-transcribe-btn');
-  if(!btn) return;
-  if(active){
-    btn.innerHTML='<i class="ti ti-player-stop"></i> Parar';
-    btn.style.background='rgba(239,68,68,0.15)';
-    btn.style.borderColor='var(--red)';
-    btn.style.color='var(--red)';
-    // Pulse animation
-    btn.style.animation='ac-pulse 1.2s ease-in-out infinite';
-  } else {
-    btn.innerHTML='<i class="ti ti-microphone"></i> Transcrever ao Vivo';
-    btn.style.background='';
-    btn.style.borderColor='';
-    btn.style.color='';
-    btn.style.animation='';
+  var badge=document.getElementById('ac-transcribe-btn');
+  if(badge) badge.style.display=active?'inline-flex':'none';
+  if(!active){
     var p=document.getElementById('ac-reun-interim');
     if(p) p.textContent='';
   }
