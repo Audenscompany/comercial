@@ -11666,6 +11666,24 @@ async function corrigirFirebaseJunho2026(){
   }
 }
 
+async function diagnosticoFirebaseJunho(){
+  if(!fbDb) initFirebase();
+  try{
+    var snap = await fbDb.ref('contratos').once('value');
+    var val = snap.val()||{};
+    var todos = Object.entries(val).map(function(e){ return Object.assign({},e[1],{_fbId:e[0]}); });
+    var jun = todos.filter(function(c){ return (c.dataInicio||'').startsWith('2026-06'); });
+    if(jun.length===0){
+      alert('DIAGNÓSTICO Firebase jun/2026:\n\nNENHUM contrato com dataInicio iniciando em "2026-06" encontrado.\n\nTotal de contratos no Firebase: '+todos.length+'\n\nPrimeiros 5 dataInicio encontrados:\n'+todos.slice(0,5).map(function(c){return c.cliente+' → "'+c.dataInicio+'"';}).join('\n'));
+      return;
+    }
+    var linhas = jun.map(function(c){
+      return '['+c._fbId.slice(-6)+']\n  cliente: "'+c.cliente+'"\n  dataInicio: "'+c.dataInicio+'"\n  sdr: "'+c.sdr+'"\n  origem: "'+c.origem+'"\n  excluido: '+(!!c._excluirComissao);
+    });
+    alert('DIAGNÓSTICO Firebase jun/2026:\n\n'+jun.length+' contratos encontrados:\n\n'+linhas.join('\n\n'));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
 async function importContratosFromSheet(){
   _sheetDataCache={}; _sheetValsTTLCache={}; _sheetsMeta={};
   var cliRows = await fetchSheetCached(SHEETS_IDS.clientes,SHEETS_GIDS.clientes,'clientes');
@@ -13820,7 +13838,10 @@ function adAtualizarStatusInd(id, status){
 function renderContratos(){
   var isGestor=CU&&CU.role==='gestor';
   var btnFix=isGestor
-    ?'<button onclick="corrigirFirebaseJunho2026()" style="margin-left:auto;background:rgba(255,80,80,0.12);border:1px solid rgba(255,80,80,0.3);color:var(--red,#f87171);border-radius:6px;padding:6px 14px;font-size:12px;font-family:var(--font-bc),sans-serif;cursor:pointer;" title="Adiciona contratos faltantes e marca inadimplentes de jun/2026"><i class="ti ti-database-import"></i> Corrigir Firebase jun/26</button>'
+    ?'<div style="margin-left:auto;display:flex;gap:8px;">'+
+      '<button onclick="diagnosticoFirebaseJunho()" style="background:rgba(80,150,255,0.12);border:1px solid rgba(80,150,255,0.3);color:#60a5fa;border-radius:6px;padding:6px 14px;font-size:12px;font-family:var(--font-bc),sans-serif;cursor:pointer;" title="Mostra o que está no Firebase para junho/2026"><i class="ti ti-bug"></i> Diagnóstico jun/26</button>'+
+      '<button onclick="corrigirFirebaseJunho2026()" style="background:rgba(255,80,80,0.12);border:1px solid rgba(255,80,80,0.3);color:var(--red,#f87171);border-radius:6px;padding:6px 14px;font-size:12px;font-family:var(--font-bc),sans-serif;cursor:pointer;" title="Adiciona contratos faltantes e marca inadimplentes de jun/2026"><i class="ti ti-database-import"></i> Corrigir Firebase jun/26</button>'+
+      '</div>'
     :'';
   return '<div class="page active">'+
     '<div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><div>'+
