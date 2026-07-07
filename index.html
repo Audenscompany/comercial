@@ -8948,8 +8948,8 @@ function buildCCSDR(r, mesLabel, lvNome){
   rowsPad += '<tr class="subtotal-row"><td colspan="4">SUBTOTAL SDR PADRÃO</td><td>'+fmt(totalPadrao)+'</td></tr>';
 
   var rowsSS = '';
-  // incentivReun = reunioes realizadas × R$10 (SDR normal) — ssIncentiv = reunioes SS × R$30
-  if((r.incentivReun||0)>0) rowsSS += '<tr><td><div class="td-label">Incentivo por Reunião <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Reuniões com comparecimento</div></td><td>'+(r.reunioesComp||0)+'</td><td>R$ 10,00</td><td>'+fmt(r.incentivReun||0)+'</td></tr>';
+  // incentivReun = agendamentos acima da meta × R$12 — ssIncentiv = reunioes SS × R$30
+  if((r.incentivReun||0)>0) rowsSS += '<tr><td><div class="td-label">Incentivo por Reunião <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Agendamentos acima da meta</div></td><td>'+(r.agenAcima||Math.max(0,(r.agendamentos||0)-(r.metaReun||25)))+'</td><td>R$ 12,00</td><td>'+fmt(r.incentivReun||0)+'</td></tr>';
   if((r.ssIncentiv||0)>0) rowsSS += '<tr><td><div class="td-label">Bônus Reunião SS <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Reuniões Social Selling</div></td><td>'+(r.ssReun||0)+'</td><td>R$ 30,00</td><td>'+fmt(r.ssIncentiv||0)+'</td></tr>';
   if((r.ssComm||0)>0) rowsSS += '<tr><td><div class="td-label">Comissão SS 25% <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Vendas via Social Selling</div></td><td>'+(r.ssVendas||0)+'</td><td>—</td><td>'+fmt(r.ssComm||0)+'</td></tr>';
   if((r.comissaoVendas||0)>0) rowsSS += '<tr><td><div class="td-label">Comissão por Venda <span class="td-badge badge-ss">SS</span></div></td><td><div class="td-detail">Vendas originadas via prospecção</div></td><td>—</td><td>—</td><td>'+fmt(r.comissaoVendas||0)+'</td></tr>';
@@ -11928,10 +11928,10 @@ async function calcSDRFromSheets(nivelIdx, month){
     var threshold = lv.threshold;
     // Meta: SS + tráfego juntos
     result.bonusMeta = result.agendamentos >= meta ? lv.bonusMeta : 0;
-    // Acelerador: só reuniões de TRÁFEGO acima da meta
-    var agenAcima = result.agendamentos >= meta ? Math.max(0, result.trafegoReun - meta) : 0;
-    result.acelerador = agenAcima * lv.acel;
-    result.incentivReun = result.reunioesComp * lv.incentivReun;
+    // Incentivo: R$X por agendamento ACIMA da meta (SS + tráfego, sem acelerador separado)
+    result.acelerador = 0;
+    result.agenAcima = Math.max(0, result.agendamentos - meta);
+    result.incentivReun = result.agenAcima * lv.incentivReun;
     var vendasEfetivas = Math.max(0, result.vendas - (threshold - 1));
     result.comissaoVendas = vendasEfetivas > 0 ? vendasEfetivas * lv.commVenda : 0;
     // Atualiza acima/comm nos itens Tráfego agora que threshold é conhecido
@@ -12169,10 +12169,10 @@ async function calcSDRFromFirebase(nivelIdx, month){
     var meta=lv.meta;
     // Meta: SS + tráfego juntos
     result.bonusMeta=result.agendamentos>=meta?lv.bonusMeta:0;
-    // Acelerador: só reuniões de TRÁFEGO acima da meta
-    var agenAcima=result.agendamentos>=meta?Math.max(0,result.trafegoReun-meta):0;
-    result.acelerador=agenAcima*lv.acel;
-    result.incentivReun=result.reunioesComp*lv.incentivReun;
+    // Incentivo: R$X por agendamento ACIMA da meta (SS + tráfego, sem acelerador separado)
+    result.acelerador=0;
+    result.agenAcima=Math.max(0,result.agendamentos-meta); // armazena para display
+    result.incentivReun=result.agenAcima*lv.incentivReun;
     result.ssIncentiv=result.ssReun*30;
     result.ssTotal=result.incentivReun+result.ssIncentiv+result.ssComm;
     // Bônus de equipe: conta fechamentos via followups+meetings (já em memória, sem API call extra)
@@ -12802,8 +12802,7 @@ async function triggerSDRCalc(mode){
       '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;"><div class="m-lbl">Base</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--white);">R$'+r.base.toLocaleString('pt-BR')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(atingiu?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Agendamentos</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(atingiu?'#4ade80':'var(--amber)')+';">'+r.agendamentos+'</div><div style="font-size:11px;color:var(--muted);">meta: '+lv.meta+(atingiu?' ✓':' (falta '+(lv.meta-r.agendamentos)+')')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.bonusMeta?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Bônus Meta</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.bonusMeta?'#4ade80':'var(--muted)')+';">R$'+r.bonusMeta.toLocaleString('pt-BR')+'</div></div>'+
-      '<div style="background:var(--bg2);border:1px solid '+(r.acelerador?'rgba(245,158,11,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Acelerador</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.acelerador?'var(--amber)':'var(--muted)')+';">R$'+r.acelerador.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+'×R$'+lv.acel+'/ag.</div></div>'+
-      '<div style="background:var(--bg2);border:1px solid '+(r.incentivReun?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.incentivReun?'var(--cyan)':'var(--muted)')+';">R$'+r.incentivReun.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+r.reunioesComp+'×R$'+lv.incentivReun+'</div></div>'+
+      '<div style="background:var(--bg2);border:1px solid '+(r.incentivReun?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.incentivReun?'var(--cyan)':'var(--muted)')+';">R$'+r.incentivReun.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+' acima×R$'+lv.incentivReun+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.comissaoVendas?'rgba(123,47,255,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão vendas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoVendas?'var(--purple3)':'var(--muted)')+';">R$'+r.comissaoVendas.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">ativa na '+lv.threshold+'ª venda</div></div>'+
       ((r.bonusEquipe||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.4);border-radius:8px;padding:12px;"><div class="m-lbl" style="color:#fde047;">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">R$'+(r.bonusEquipe||0).toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+' contratos equipe</div></div>':'<div style="background:var(--bg2);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px;opacity:0.5;"><div class="m-lbl">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--muted);">R$0</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+'/20 contratos</div></div>')+
     '</div>'+
@@ -12817,7 +12816,7 @@ async function triggerSDRCalc(mode){
       '<div style="background:linear-gradient(135deg,rgba(26,58,107,0.2),rgba(11,110,86,0.1));border:1.5px solid rgba(42,90,160,0.4);border-radius:12px;padding:16px 20px;margin-bottom:14px;">'+
         '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);margin-bottom:10px;">SOCIAL SELLING</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">'+
-          '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--cyan);">'+r.reunioesComp+'×R$'+lv.incentivReun+'=R$'+r.incentivReun+'</div></div>'+
+          '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--cyan);">'+acima+'×R$'+lv.incentivReun+'=R$'+r.incentivReun+'</div></div>'+
           '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Reuniões SS</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--cyan);">'+r.ssReun+'×R$30=R$'+r.ssIncentiv+'</div></div>'+
           '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Comissão SS 25%</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#4ade80;">R$'+r.ssComm.toFixed(0)+'</div></div>'+
           '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:10px;"><div class="m-lbl">Total SS</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--purple3);">R$'+r.ssTotal.toFixed(0)+'</div></div>'+
