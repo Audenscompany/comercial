@@ -12034,7 +12034,7 @@ async function calcSDRFromSheets(nivelIdx, month){
         var mrr = parseMoney(iValMes2>=0?row[iValMes2]||'':'');
         if(!mrr) mrr = parseMoney(iValorV>=0?row[iValorV]||'':'');
 
-        result.vendas++; // Todas as vendas contam para o threshold (SS e não-SS)
+        result.vendas++; // total de vendas (SS + Tráfego) — threshold usa só Tráfego
         if(origem2.includes('SOCIAL')){
           // Social Selling: comissão de 25% do MRR, sem threshold próprio
           result.ssVendas++;
@@ -12056,7 +12056,9 @@ async function calcSDRFromSheets(nivelIdx, month){
     result.acelerador = 0;
     result.agenAcima = Math.max(0, result.agendamentos - meta);
     result.incentivReun = result.agenAcima * lv.incentivReun;
-    var vendasEfetivas = Math.max(0, result.vendas - (threshold - 1));
+    // SS NÃO conta para threshold de Tráfego — usa apenas vendas de Tráfego
+    var trafegoVendas = result.vendas - result.ssVendas;
+    var vendasEfetivas = Math.max(0, trafegoVendas - (threshold - 1));
     result.comissaoVendas = vendasEfetivas > 0 ? vendasEfetivas * lv.commVenda : 0;
     // Atualiza acima/comm nos itens Tráfego agora que threshold é conhecido
     var pctSDR=(SDR_COMM_PCT[nivelIdx]||10)/100;
@@ -12064,7 +12066,7 @@ async function calcSDRFromSheets(nivelIdx, month){
     result.vendaDetalhes.forEach(function(d){
       if(d._pending){
         delete d._pending;
-        d.acima = result.vendas>=threshold && naoSSIdx>=(Math.max(0,threshold-1-result.ssVendas));
+        d.acima = trafegoVendas>=threshold && naoSSIdx>=(threshold-1);
         d.comm = d.acima ? Math.round(d.mrr*pctSDR) : 0;
         naoSSIdx++;
       }
@@ -12274,13 +12276,12 @@ async function calcSDRFromFirebase(nivelIdx, month){
     });
 
     // Commission: % of valorMes for each non-SS venda above threshold
+    // SS NÃO conta para o threshold de Tráfego — canais independentes
     var threshold=lv.threshold;
     var sorted=_vendaItems.slice().sort(function(a,b){return a.mrr-b.mrr;});
-    var ssCount=result.ssVendas;
-    // Quantas não-SS precisam ser "queimadas" antes de começar a comissão
-    var naoSSAbaixo=Math.max(0,threshold-1-ssCount);
+    var trafegoCount=_vendaItems.length; // apenas Tráfego para o threshold
     sorted.forEach(function(item,i){
-      var acima=result.vendas>=threshold&&i>=naoSSAbaixo;
+      var acima=trafegoCount>=threshold&&i>=(threshold-1);
       var comm=acima?Math.round(item.mrr*pct):0;
       if(acima) result.comissaoVendas+=comm;
       result.vendaDetalhes.push({cliente:item.cliente,mrr:item.mrr,tipo:'Tráfego',comm:comm,acima:acima,_fbId:item._fbId});
