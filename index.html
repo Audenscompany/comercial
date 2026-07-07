@@ -11567,6 +11567,57 @@ async function cancelarContrato(id, motivo, dataCancel){
   });
 }
 
+async function corrigirFirebaseJunho2026(){
+  if(!confirm('Isso vai:\n• Marcar "Santos tô com fome" como inadimplente (excluído da comissão)\n• Adicionar os 4 contratos faltantes de junho/2026\n\nContinuar?')) return;
+  if(!fbDb) initFirebase();
+  try{
+    showSheetToast('Corrigindo Firebase...', false);
+    var snap = await fbDb.ref('contratos').once('value');
+    var val = snap.val()||{};
+    var existentes = Object.entries(val).map(function(e){ return Object.assign({},e[1],{_fbId:e[0]}); });
+
+    // 1. Marcar Santos tô com fome como inadimplente
+    var santos = existentes.find(function(c){
+      var nm=(c.cliente||'').toLowerCase();
+      return nm.includes('santos')&&nm.includes('fome')&&(c.dataInicio||'').startsWith('2026-06');
+    });
+    var santosMsg='';
+    if(santos&&!santos._excluirComissao){
+      await fbDb.ref('contratos/'+santos._fbId).update({_excluirComissao:true, updatedAt:Date.now()});
+      santosMsg=' · Santos marcado como inadimplente';
+    } else if(!santos){
+      santosMsg=' · Santos tô com fome não encontrado no Firebase';
+    }
+
+    // 2. Adicionar contratos faltantes
+    var paraAdicionar=[
+      {cliente:'Max Pizza e Hamburguer', dataInicio:'2026-06-24', valorMes:1500, valorVendido:1500, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Social Selling', closer:'Lucas', sdr:'João', ativo:true},
+      {cliente:'Food Truck do Gordinho',  dataInicio:'2026-06-30', valorMes:2000, valorVendido:2000, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Gustavo', sdr:'João', ativo:true},
+      {cliente:'Carnivoros Burguer',       dataInicio:'2026-06-29', valorMes:1500, valorVendido:1500, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Lucas',   sdr:'João', ativo:true},
+      {cliente:'Carnivurus Burguer Caruaru',dataInicio:'2026-06-29', valorMes:1500, valorVendido:1500, planoDuracao:1, gestor:'Lucas', dataCancelamento:null, motivoCancelamento:null, plano:'Plano Premium - Recorrente', origem:'Tráfego Pago',   closer:'Lucas',   sdr:'João', ativo:true}
+    ];
+    var batch={}, adicionados=0;
+    paraAdicionar.forEach(function(c){
+      var nm=c.cliente.toLowerCase();
+      var jaExiste=existentes.some(function(e){
+        return (e.cliente||'').toLowerCase()===nm&&(e.dataInicio||'').startsWith('2026-06');
+      });
+      if(!jaExiste){
+        var key=fbDb.ref('contratos').push().key;
+        batch[key]=Object.assign({},c,{createdAt:Date.now()});
+        adicionados++;
+      }
+    });
+    if(Object.keys(batch).length>0) await fbDb.ref('contratos').update(batch);
+
+    _contratosCache=null;
+    showSheetToast(adicionados+' contratos adicionados'+santosMsg, false);
+    setTimeout(function(){ showPage('contratos'); },400);
+  }catch(e){
+    alert('Erro ao corrigir Firebase: '+e.message+'\n\nVerifique se as regras do Firebase estão corretas (sem expiração).');
+  }
+}
+
 async function importContratosFromSheet(){
   _sheetDataCache={}; _sheetValsTTLCache={}; _sheetsMeta={};
   var cliRows = await fetchSheetCached(SHEETS_IDS.clientes,SHEETS_GIDS.clientes,'clientes');
@@ -13719,11 +13770,15 @@ function adAtualizarStatusInd(id, status){
 
 // ===== CONTRATOS PAGE =====
 function renderContratos(){
+  var isGestor=CU&&CU.role==='gestor';
+  var btnFix=isGestor
+    ?'<button onclick="corrigirFirebaseJunho2026()" style="margin-left:auto;background:rgba(255,80,80,0.12);border:1px solid rgba(255,80,80,0.3);color:var(--red,#f87171);border-radius:6px;padding:6px 14px;font-size:12px;font-family:var(--font-bc),sans-serif;cursor:pointer;" title="Adiciona contratos faltantes e marca inadimplentes de jun/2026"><i class="ti ti-database-import"></i> Corrigir Firebase jun/26</button>'
+    :'';
   return '<div class="page active">'+
-    '<div class="page-header"><div>'+
+    '<div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><div>'+
       '<div class="page-title">Contratos</div>'+
       '<div class="page-sub">Base de dados Firebase · Cálculo automático</div>'+
-    '</div></div>'+
+    '</div>'+btnFix+'</div>'+
     '<div id="contratos-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando...</div>'+
   '</div>';
 }
