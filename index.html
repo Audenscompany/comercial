@@ -12658,6 +12658,7 @@ function buildGestorCloserView(){
   var nivelIdx = _careerLevels.gustavo||0;
   var lv = CLOSER_LEVELS[nivelIdx];
   var month = currentMonthStr();
+  var gustavoSince = _careerLevelSince.gustavo || '';
   var html = '<div class="cb" style="margin-bottom:16px;border-color:rgba(123,47,255,0.4);">'+
     '<div class="cb-hd"><div class="cb-title"><i class="ti ti-settings" style="color:var(--purple3);margin-right:6px;"></i>Definir Nível do Gustavo</div></div>'+
     '<div style="padding:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">'+
@@ -12665,6 +12666,12 @@ function buildGestorCloserView(){
       '<select id="gestor-closer-nivel" onchange="saveCareerLevel(\'gustavo\',parseInt(this.value));setTimeout(function(){showPage(\'plano-carreira\');},500);" style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;color:var(--white);font-family:\'Barlow Condensed\',sans-serif;font-size:14px;font-weight:600;outline:none;">'+
       CLOSER_LEVELS.map(function(l,i){return'<option value="'+i+'"'+(i===nivelIdx?' selected':'')+'>Closer '+l.tier+' '+l.n+'</option>';}).join('')+
       '</select></div>'+
+      '<div><label class="f-label">Nível desde (mês)</label>'+
+      '<div style="display:flex;gap:6px;align-items:center;">'+
+        '<input type="month" id="gestor-closer-since" value="'+gustavoSince+'" style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--white);font-family:\'Barlow Condensed\',sans-serif;font-size:14px;outline:none;">'+
+        '<button class="btn btn-outline" style="padding:9px 14px;font-size:12px;" onclick="saveCareerLevelSince(\'gustavo\',document.getElementById(\'gestor-closer-since\').value)"><i class="ti ti-check"></i></button>'+
+      '</div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:4px;">Meses anteriores não entram na progressão</div></div>'+
       '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;">'+
         '<div class="m-lbl">Salário Base</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;color:var(--white);">R$'+lv.base.toLocaleString('pt-BR')+'</div>'+
       '</div>'+
