@@ -3686,11 +3686,12 @@ async function syncReunioesFBFromSheet(){
       }
       if(!m){ skipped++; return; }
 
-      // "REALIZADA" = reunião aconteceu mas resultado ainda não foi registrado no CRM → pending
-      // Catch-all: só marca 'done' se o CRM já tem followup gravado; senão mantém pending
+      // REALIZADA: se já tem followup no CRM → 'done'; senão → 'pending' para registrar resultado
+      // AGENDADA/PENDENTE: sempre 'pending' (reunião ainda não aconteceu)
       var newSt = (stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW') ? 'noshow'
-               : (stSheet==='AGENDADA'||stSheet==='PENDENTE'||stSheet==='REALIZADA'||stSheet==='REALIZADO') ? 'pending'
                : (stSheet==='REAGENDADO') ? 'reagendado'
+               : (stSheet==='REALIZADA'||stSheet==='REALIZADO') ? (followups[m.id] ? 'done' : 'pending')
+               : (stSheet==='AGENDADA'||stSheet==='PENDENTE') ? 'pending'
                : (followups[m.id] ? 'done' : 'pending');
       if(m.status !== newSt){
         meetings[m.id].status = newSt;
