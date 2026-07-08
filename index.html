@@ -14967,7 +14967,7 @@ function acRenderChat(){
           '<i class="ti ti-wand"></i> Transcrever'+
         '</button>'+
       '</div>'+
-      '<div style="font-size:10px;color:var(--muted);margin-top:4px;">No Drive: clique com botão direito na gravação → Compartilhar → "Qualquer pessoa com o link"</div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:4px;">No Drive: clique com botão direito na gravação → <strong style="color:var(--white);">Compartilhar → "Qualquer pessoa com o link pode ver"</strong>. Para arquivos muito grandes, prefira o Upload direto.</div>'+
     '</div>'+
     '<div id="ac-upload-progress" style="display:none;margin-bottom:10px;padding:10px 12px;background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.2);border-radius:8px;">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'+
@@ -15266,8 +15266,8 @@ function acTranscreverDriveLink(){
   if(!asmKey){ showSheetToast('Configure sua AssemblyAI API Key nas configurações do Jarvis.',true); return; }
   var fileId=acExtractDriveId(raw.trim());
   if(!fileId){ showSheetToast('Link do Drive inválido. Use o link de compartilhamento da gravação.',true); return; }
-  // URL de download direto do Drive (arquivo precisa estar como "Qualquer pessoa com o link")
-  var directUrl='https://drive.google.com/uc?export=download&id='+fileId+'&confirm=t';
+  // Endpoint moderno do Drive que bypassa a página de confirmação de vírus para arquivos grandes
+  var directUrl='https://drive.usercontent.google.com/download?id='+fileId+'&export=download&authuser=0&confirm=t';
   // Oculta o campo de link e inicia
   var box=document.getElementById('ac-drive-input');
   if(box) box.style.display='none';
@@ -15391,7 +15391,11 @@ async function acTranscreverComUrl(audioUrl, asmKey, setProgressFn, startPct){
         return;
       }
       if(pollData.status==='error'){
-        throw new Error(pollData.error||'Erro desconhecido na transcrição');
+        var errMsg=pollData.error||'Erro desconhecido';
+        if(errMsg.toLowerCase().includes('html')||errMsg.toLowerCase().includes('text/html')||errMsg.toLowerCase().includes('transcoding')){
+          throw new Error('O Drive retornou uma página HTML em vez do arquivo. Tente: baixe o arquivo do Drive e use "Upload arquivo" diretamente.');
+        }
+        throw new Error(errMsg);
       }
     }
     throw new Error('Timeout: transcrição demorou mais de 15 minutos');
