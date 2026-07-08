@@ -665,6 +665,9 @@ function startRealtimeSync(){
     if(cfg.sheets_gids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,cfg.sheets_gids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
     if(cfg.gcalClientId){ gcalClientId=cfg.gcalClientId; localStorage.setItem('audens_gcal_id',gcalClientId); }
     if(cfg.maps_key){ if(!localStorage.getItem('audens_maps_key')) localStorage.setItem('audens_maps_key',cfg.maps_key); }
+    if(cfg.claude_key){ localStorage.setItem('audens_claude_key',cfg.claude_key); }
+    if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
+    if(cfg.eleven_voice !== undefined){ localStorage.setItem('audens_elevenlabs_voice',cfg.eleven_voice); }
   });
 
   // Sync gcal_token in realtime (per usuario)
@@ -14528,6 +14531,14 @@ function saveAcSettings(){
   if(ck) localStorage.setItem('audens_claude_key',ck.trim());
   if(ek) localStorage.setItem('audens_elevenlabs_key',ek.trim());
   localStorage.setItem('audens_elevenlabs_voice',ev.trim());
+  // Salva no Firebase para sincronizar com outros dispositivos
+  if(fbDb||initFirebase()){
+    var cfg={};
+    if(ck) cfg.claude_key=ck.trim();
+    if(ek) cfg.eleven_key=ek.trim();
+    cfg.eleven_voice=ev.trim();
+    fbDb.ref('config').update(cfg);
+  }
   closeAcSettings();
   showSheetToast('Configurações do Jarvis salvas!',false);
 }
