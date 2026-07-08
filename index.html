@@ -728,6 +728,9 @@ function startRealtimeSync(){
     if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
     if(cfg.eleven_voice !== undefined){ localStorage.setItem('audens_elevenlabs_voice',cfg.eleven_voice); }
     if(cfg.assembly_key){ localStorage.setItem('audens_assembly_key',cfg.assembly_key); }
+    if(cfg.zapi_instance){ localStorage.setItem('audens_zapi_instance',cfg.zapi_instance); }
+    if(cfg.zapi_token){ localStorage.setItem('audens_zapi_token',cfg.zapi_token); }
+    if(cfg.zapi_security){ localStorage.setItem('audens_zapi_security',cfg.zapi_security); }
     if(cfg.nav_permissions){
       // Firebase não permite '.' nas chaves — decodifica de volta para email
       var raw=cfg.nav_permissions;
@@ -14814,12 +14817,28 @@ function renderAudensCommand(){
           '<input id="ac-eleven-voice" type="text" class="input-field" placeholder="21m00Tcm4TlvDq8ikWAM" style="width:100%;box-sizing:border-box;"/>'+
           '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Encontre IDs em elevenlabs.io/voice-library · Padrão: Rachel</div>'+
         '</div>'+
-        '<div style="margin-bottom:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07);">'+
+        '<div style="margin-bottom:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07);">'+
           '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">AssemblyAI API Key <span style="color:var(--muted)">(assemblyai.com/app/account)</span></label>'+
           '<input id="ac-assembly-key" type="password" class="input-field" placeholder="Sua chave AssemblyAI..." style="width:100%;box-sizing:border-box;"/>'+
           '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Para transcrever gravações do Meet de qualquer duração</div>'+
         '</div>'+
-        '<div style="display:flex;gap:10px;">'+
+        '<div style="margin-bottom:0;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07);">'+
+          '<div style="font-size:12px;font-weight:800;color:var(--purple3);margin-bottom:10px;letter-spacing:1px;text-transform:uppercase;">Z-API — WhatsApp SDR</div>'+
+          '<div style="margin-bottom:10px;">'+
+            '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Instance ID <span style="color:var(--muted)">(Painel Z-API → Instâncias)</span></label>'+
+            '<input id="ac-zapi-instance" type="text" class="input-field" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="width:100%;box-sizing:border-box;"/>'+
+          '</div>'+
+          '<div style="margin-bottom:10px;">'+
+            '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Token <span style="color:var(--muted)">(Painel Z-API → Instância → Token)</span></label>'+
+            '<input id="ac-zapi-token" type="password" class="input-field" placeholder="Seu token Z-API..." style="width:100%;box-sizing:border-box;"/>'+
+          '</div>'+
+          '<div style="margin-bottom:0;">'+
+            '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Security Token <span style="color:var(--muted)">(Painel Z-API → Instância → Security)</span></label>'+
+            '<input id="ac-zapi-security" type="password" class="input-field" placeholder="Seu security token..." style="width:100%;box-sizing:border-box;"/>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Necessário para chamadas do navegador. Configurado em Z-API → Segurança.</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:10px;margin-top:20px;">'+
           '<button class="btn" onclick="saveAcSettings()" style="flex:1;background:var(--purple);border-color:var(--purple);">Salvar</button>'+
           '<button class="btn btn-outline" onclick="closeAcSettings()">Cancelar</button>'+
         '</div>'+
@@ -14872,10 +14891,16 @@ function showAcSettings(){
   var ek=document.getElementById('ac-eleven-key');
   var ev=document.getElementById('ac-eleven-voice');
   var ak=document.getElementById('ac-assembly-key');
+  var zi=document.getElementById('ac-zapi-instance');
+  var zt=document.getElementById('ac-zapi-token');
+  var zs=document.getElementById('ac-zapi-security');
   if(ck) ck.value=localStorage.getItem('audens_claude_key')||'';
   if(ek) ek.value=localStorage.getItem('audens_elevenlabs_key')||'';
   if(ev) ev.value=localStorage.getItem('audens_elevenlabs_voice')||'';
   if(ak) ak.value=localStorage.getItem('audens_assembly_key')||'';
+  if(zi) zi.value=localStorage.getItem('audens_zapi_instance')||'';
+  if(zt) zt.value=localStorage.getItem('audens_zapi_token')||'';
+  if(zs) zs.value=localStorage.getItem('audens_zapi_security')||'';
   modal.style.display='flex';
 }
 function closeAcSettings(){
@@ -14887,10 +14912,16 @@ function saveAcSettings(){
   var ek=(document.getElementById('ac-eleven-key')||{}).value||'';
   var ev=(document.getElementById('ac-eleven-voice')||{}).value||'';
   var ak=(document.getElementById('ac-assembly-key')||{}).value||'';
+  var zi=(document.getElementById('ac-zapi-instance')||{}).value||'';
+  var zt=(document.getElementById('ac-zapi-token')||{}).value||'';
+  var zs=(document.getElementById('ac-zapi-security')||{}).value||'';
   if(ck) localStorage.setItem('audens_claude_key',ck.trim());
   if(ek) localStorage.setItem('audens_elevenlabs_key',ek.trim());
   localStorage.setItem('audens_elevenlabs_voice',ev.trim());
   if(ak) localStorage.setItem('audens_assembly_key',ak.trim());
+  if(zi) localStorage.setItem('audens_zapi_instance',zi.trim());
+  if(zt) localStorage.setItem('audens_zapi_token',zt.trim());
+  if(zs) localStorage.setItem('audens_zapi_security',zs.trim());
   // Salva no Firebase para sincronizar com outros dispositivos
   if(fbDb||initFirebase()){
     var cfg={};
@@ -14898,6 +14929,9 @@ function saveAcSettings(){
     if(ek) cfg.eleven_key=ek.trim();
     cfg.eleven_voice=ev.trim();
     if(ak) cfg.assembly_key=ak.trim();
+    if(zi) cfg.zapi_instance=zi.trim();
+    if(zt) cfg.zapi_token=zt.trim();
+    if(zs) cfg.zapi_security=zs.trim();
     fbDb.ref('config').update(cfg);
   }
   closeAcSettings();
@@ -15170,8 +15204,40 @@ function acRenderChat(){
       '<button class="btn" onclick="acAnalisarReuniao()" style="background:var(--purple);border-color:var(--purple);white-space:nowrap;"><i class="ti ti-brain"></i> Analisar</button>'+
     '</div>'+
   '</div>'+
+  // WhatsApp SDR panel (hidden by default)
+  '<div id="ac-wpp-panel" style="display:none;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.25);border-radius:12px;padding:14px;margin-bottom:10px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+      '<div style="display:flex;align-items:center;gap:8px;"><i class="ti ti-brand-whatsapp" style="color:#25d366;font-size:16px;"></i><span style="font-size:13px;font-weight:800;color:var(--white);">Analisar Conversa WhatsApp SDR</span></div>'+
+      '<button onclick="acCloseWppPanel()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;">×</button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">'+
+      '<input id="ac-wpp-phone" type="text" class="input-field" placeholder="Telefone do lead (55849...)" style="font-size:12px;"/>'+
+      '<input id="ac-wpp-lead" type="text" class="input-field" placeholder="Nome do lead (opcional)" style="font-size:12px;"/>'+
+      '<select id="ac-wpp-sdr" class="input-field" style="font-size:12px;">'+
+        '<option value="">Selecionar SDR...</option>'+
+      '</select>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">'+
+      '<select id="ac-wpp-resultado" class="input-field" style="font-size:12px;flex:1;">'+
+        '<option value="agendou">✅ Agendou reunião</option>'+
+        '<option value="nao_agendou">❌ Não agendou</option>'+
+        '<option value="em_andamento">⏳ Conversa em andamento</option>'+
+        '<option value="retorno">🔄 Ficou de pensar / retorno</option>'+
+      '</select>'+
+      '<button class="btn" onclick="zapiCarregarConversa()" style="background:rgba(16,185,129,0.2);border-color:rgba(16,185,129,0.4);color:#10b981;font-size:12px;white-space:nowrap;">'+
+        '<i class="ti ti-download"></i> Buscar no Z-API'+
+      '</button>'+
+    '</div>'+
+    '<textarea id="ac-wpp-texto" class="input-field" placeholder="OU cole aqui a conversa exportada do WhatsApp (Menu → Mais → Exportar conversa)..." style="width:100%;height:160px;resize:vertical;font-size:11px;box-sizing:border-box;font-family:monospace;line-height:1.5;"></textarea>'+
+    '<div id="ac-wpp-preview" style="display:none;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;margin-top:8px;font-size:11px;line-height:1.6;color:var(--muted);font-family:monospace;"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px;">'+
+      '<button class="btn" onclick="acAnalisarWhatsApp()" style="flex:1;background:#10b981;border-color:#10b981;font-size:13px;"><i class="ti ti-brain"></i> Analisar conversa com Jarvis</button>'+
+      '<button class="btn btn-outline" onclick="document.getElementById(\'ac-wpp-texto\').value=\'\';document.getElementById(\'ac-wpp-preview\').style.display=\'none\';" style="font-size:12px;"><i class="ti ti-trash"></i></button>'+
+    '</div>'+
+  '</div>'+
   '<div style="display:flex;gap:8px;align-items:flex-end;">'+
     '<button class="btn btn-outline" onclick="acOpenReunPanel()" title="Analisar reunião" style="height:44px;padding:0 12px;display:flex;align-items:center;gap:6px;font-size:12px;flex-shrink:0;white-space:nowrap;"><i class="ti ti-video"></i> Reunião</button>'+
+    '<button class="btn btn-outline" onclick="acOpenWppPanel()" title="Analisar conversa WhatsApp SDR" style="height:44px;padding:0 12px;display:flex;align-items:center;gap:6px;font-size:12px;flex-shrink:0;white-space:nowrap;background:rgba(16,185,129,0.1);border-color:rgba(16,185,129,0.35);color:#10b981;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</button>'+
     '<textarea id="ac-chat-input" class="input-field" placeholder="Pergunte ao Jarvis..." style="flex:1;resize:none;height:44px;padding:10px 12px;font-size:13px;line-height:1.4;" onkeydown="acChatKeydown(event)"></textarea>'+
     '<button id="ac-mic-btn" class="btn btn-outline" onclick="acToggleMic()" title="Falar com Jarvis" style="height:44px;width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-microphone"></i></button>'+
     '<button class="btn" onclick="acSendMessage()" style="height:44px;width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--purple);border-color:var(--purple);"><i class="ti ti-send"></i></button>'+
@@ -15209,6 +15275,198 @@ function acCloseReunPanel(){
   var p=document.getElementById('ac-reun-panel');
   if(p) p.style.display='none';
 }
+// ===== WHATSAPP SDR ANALYSIS =====
+var AC_SDR_PLAYBOOK=`Você é o Jarvis Comercial da Audens Company, especialista em análise de conversas de prospecção via WhatsApp.
+Sua missão é avaliar a conversa do SDR (prospector) com um potencial cliente, identificar o que foi feito bem, o que foi feito errado, e entregar um diagnóstico direto e acionável.
+Uma boa conversa de SDR deve: despertar interesse sem revelar o produto inteiro; qualificar o perfil mínimo (faturamento, decisor, dor); criar urgência e curiosidade suficientes para o lead aceitar uma reunião; conduzir o lead naturalmente até o agendamento com data e hora confirmada; tratar objeções de forma assertiva, sem pressionar ou recuar.
+
+== CRITÉRIOS DE AVALIAÇÃO ==
+1. ABERTURA (0-10): O SDR se apresentou corretamente? Contextualizou o motivo do contato? Evitou apresentar tudo de cara?
+2. QUALIFICAÇÃO (0-10): Identificou faturamento, porte, dor ou gargalo do negócio? Fez as perguntas certas?
+3. GERAÇÃO DE INTERESSE (0-10): Conseguiu despertar curiosidade pelo que a Audens faz? Criou valor antes de marcar a reunião?
+4. TRATAMENTO DE OBJEÇÕES (0-10): Como lidou com "não tenho tempo", "já tenho alguém", "não é o momento"? Cedeu facilmente ou argumentou bem?
+5. PROPOSTA DE PRÓXIMO PASSO (0-10): A sugestão de reunião foi clara, com objetivo definido e urgência? Ou foi vaga e sem comprometimento?
+6. FOLLOW-UP E PERSISTÊNCIA (0-10): Voltou após ausência de resposta? Soube o momento certo de insistir sem incomodar?
+7. COMUNICAÇÃO (0-10): Tom profissional, linguagem clara, sem erros grotescos, mensagens no tamanho certo?
+8. RESULTADO (0-10): Agendou? Chegou perto de agendar? Manteve a porta aberta? Ou fechou a conversa sem avanço?
+
+== FORMATO DE SAÍDA ==
+Entregue uma análise detalhada com:
+- Nota final de 0 a 100
+- Classificação: Excelente (85-100) / Bom (70-84) / Regular (45-69) / Fraco (<45)
+- Notas individuais para cada critério (como acima)
+- Para cada critério: o que aconteceu na conversa (evidência real), e a ação corretiva
+- Pontos fortes (máximo 3)
+- Falhas críticas com impacto e como corrigir
+- Script de melhoria: como deveriam ter sido 2 ou 3 momentos-chave da conversa
+
+Ao final, inclua o JSON estruturado entre as tags <AVALIACAO_SDR_JSON> e </AVALIACAO_SDR_JSON>:
+{
+  "notaFinal": number,
+  "classificacao": string,
+  "criterios": [{"id": 1-8, "nome": string, "nota": number, "max": 10, "descricao": string, "evidencia": string, "acao": string}],
+  "pontosFortes": [string, string],
+  "falhas": [{"titulo": string, "impacto": string, "correcao": string}],
+  "acoesPrioritarias": [string],
+  "diagnostico": {"resumo": string, "resultado": string}
+}`;
+
+function acOpenWppPanel(){
+  var p=document.getElementById('ac-wpp-panel');
+  if(p){
+    p.style.display='block';
+    // Preenche select de SDRs
+    var sel=document.getElementById('ac-wpp-sdr');
+    if(sel){
+      sel.innerHTML='<option value="">Selecionar SDR...</option>';
+      Object.entries(USERS).filter(function(e){return e[1].funcao==='sdr'||e[1].funcao==='bdr';}).forEach(function(e){
+        var opt=document.createElement('option');
+        opt.value=e[0]; opt.textContent=e[1].name;
+        sel.appendChild(opt);
+      });
+      // Também adiciona gestores e closers para análise
+      Object.entries(USERS).filter(function(e){return e[1].funcao!=='sdr'&&e[1].funcao!=='bdr';}).forEach(function(e){
+        var opt=document.createElement('option');
+        opt.value=e[0]; opt.textContent=e[1].name+' ('+e[1].funcao+')';
+        sel.appendChild(opt);
+      });
+    }
+  }
+}
+function acCloseWppPanel(){
+  var p=document.getElementById('ac-wpp-panel');
+  if(p) p.style.display='none';
+}
+async function zapiCarregarConversa(){
+  var phone=(document.getElementById('ac-wpp-phone')||{}).value||'';
+  var instanceId=localStorage.getItem('audens_zapi_instance');
+  var token=localStorage.getItem('audens_zapi_token');
+  var security=localStorage.getItem('audens_zapi_security');
+  if(!instanceId||!token){ alert('Configure o Z-API em Configurações (⚙ no Jarvis) antes de buscar.'); return; }
+  if(!phone){ alert('Informe o telefone do lead.'); return; }
+  var tel=phone.replace(/\D/g,'');
+  var btn=event&&event.target;
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader ti-spin"></i> Buscando...';}
+  try{
+    var url='https://api.z-api.io/instances/'+instanceId+'/token/'+token+'/chat-messages/'+tel+'?page=1&pageSize=100';
+    var headers={'Content-Type':'application/json'};
+    if(security) headers['Client-Token']=security;
+    var r=await fetch(url,{headers:headers});
+    if(!r.ok){ var err=await r.text(); throw new Error('Z-API retornou '+r.status+': '+err); }
+    var data=await r.json();
+    var msgs=Array.isArray(data)?data:(data.value||data.messages||data.data||[]);
+    if(!msgs||msgs.length===0){ showSheetToast('Nenhuma mensagem encontrada para esse número.',true); return; }
+    // Z-API retorna do mais novo para o mais antigo, reverter
+    msgs=msgs.slice().reverse();
+    // Formata para texto legível
+    var sdrName='SDR';
+    var selSdr=document.getElementById('ac-wpp-sdr');
+    if(selSdr&&selSdr.value&&USERS[selSdr.value]) sdrName=USERS[selSdr.value].name.split(' ')[0];
+    var leadName=(document.getElementById('ac-wpp-lead')||{}).value||'Lead';
+    var linhas=msgs.map(function(m){
+      var who=m.fromMe?sdrName:leadName;
+      var texto=m.text?m.text.message:(m.body||m.message||'[mídia]');
+      var ts=m.momment||m.timestamp||m.createdAt||0;
+      var hora=ts?new Date(ts*1000<1e12?ts*1000:ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
+      return '['+hora+'] '+who+': '+texto;
+    }).join('\n');
+    var ta=document.getElementById('ac-wpp-texto');
+    var prev=document.getElementById('ac-wpp-preview');
+    if(ta) ta.value=linhas;
+    if(prev){
+      prev.style.display='block';
+      prev.innerHTML='<div style="font-size:10px;color:var(--purple3);margin-bottom:6px;">'+msgs.length+' mensagens carregadas da Z-API ✓</div>'+
+        linhas.split('\n').map(function(l){
+          var fromMe=l.indexOf(sdrName+':')>-1;
+          return '<div style="margin-bottom:3px;color:'+(fromMe?'var(--white)':'var(--muted)')+';text-align:'+(fromMe?'right':'left')+';">'+esc(l)+'</div>';
+        }).join('');
+    }
+    showSheetToast(msgs.length+' mensagens carregadas!',false);
+  }catch(e){
+    showSheetToast('Erro ao buscar Z-API: '+e.message,true);
+    console.error('[Z-API]',e);
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-download"></i> Buscar no Z-API';}
+  }
+}
+async function acAnalisarWhatsApp(){
+  var texto=(document.getElementById('ac-wpp-texto')||{}).value||'';
+  if(texto.trim().length<50){ alert('Cole ou carregue a conversa antes de analisar.'); return; }
+  var nomeSDR='João';
+  var selSdr=document.getElementById('ac-wpp-sdr');
+  var sdrEmail='';
+  if(selSdr&&selSdr.value&&USERS[selSdr.value]){ nomeSDR=USERS[selSdr.value].name.split(' ')[0]; sdrEmail=selSdr.value; }
+  var nomeLead=(document.getElementById('ac-wpp-lead')||{}).value||'Lead';
+  var resultado=(document.getElementById('ac-wpp-resultado')||{}).value||'nao_agendou';
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  if(!claudeKey){ alert('Configure a Claude API Key em ⚙ Configurações do Jarvis.'); return; }
+  acCloseWppPanel();
+  acAddMsg('user','📱 Analisar conversa WhatsApp do SDR '+nomeSDR+' com '+nomeLead);
+  var loadId='wpp-load-'+Date.now();
+  acAddMsg('assistant','<div id="'+loadId+'" style="color:var(--muted);font-size:13px;"><i class="ti ti-loader ti-spin"></i> Analisando conversa... aguarde</div>');
+  try{
+    var prompt=AC_SDR_PLAYBOOK+
+      '\n\n== CONVERSA PARA ANALISAR ==\n'+
+      'SDR: '+nomeSDR+'\nLead: '+nomeLead+'\nResultado declarado: '+resultado+'\n\n'+
+      texto.substring(0,6000);
+    var body={model:'claude-opus-4-5',max_tokens:4096,messages:[{role:'user',content:prompt}]};
+    var r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify(body)
+    });
+    if(!r.ok) throw new Error('Claude API: '+r.status+' — '+await r.text());
+    var data=await r.json();
+    var answer=(data.content&&data.content[0]&&data.content[0].text)||'';
+    // Extrai JSON estruturado
+    var jsonMatch=answer.match(/<AVALIACAO_SDR_JSON>([\s\S]*?)<\/AVALIACAO_SDR_JSON>/);
+    var sdrEval=null;
+    var displayAnswer=answer.replace(/<AVALIACAO_SDR_JSON>[\s\S]*?<\/AVALIACAO_SDR_JSON>/g,'').trim();
+    if(jsonMatch){
+      try{
+        sdrEval=JSON.parse(jsonMatch[1].trim());
+        sdrEval._nomeLead=nomeLead;
+        sdrEval._nomeSDR=nomeSDR;
+        sdrEval._sdrEmail=sdrEmail;
+        sdrEval._resultado=resultado;
+        sdrEval._tipo='sdr';
+      }catch(ex){ console.warn('[SDR JSON parse]',ex); }
+    }
+    var el=document.getElementById(loadId);
+    if(el){
+      el.outerHTML='<div class="ac-msg ac-msg-ai">'+
+        '<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;">'+esc(displayAnswer).replace(/\n/g,'<br>')+'</div>'+
+        (sdrEval?'<button onclick="acSalvarAvaliacaoSDR()" style="margin-top:14px;padding:8px 18px;border-radius:10px;border:1px solid #10b981;background:rgba(16,185,129,0.15);color:#10b981;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-device-floppy"></i> Salvar Avaliação do SDR</button>':'')+'</div>';
+    }
+    window._lastWppEvaluation=sdrEval;
+  }catch(e){
+    var el2=document.getElementById(loadId);
+    if(el2) el2.outerHTML='<div class="ac-msg ac-msg-ai" style="color:var(--red);">Erro: '+e.message+'</div>';
+  }
+}
+function acSalvarAvaliacaoSDR(){
+  var ev=window._lastWppEvaluation;
+  if(!ev){ alert('Nenhuma avaliação para salvar.'); return; }
+  var id='aval_sdr_'+Date.now();
+  var sdrEmail=ev._sdrEmail||Object.keys(USERS).find(function(k){return USERS[k].funcao==='sdr';})||'';
+  var sdrNome=ev._nomeSDR||(sdrEmail&&USERS[sdrEmail]?USERS[sdrEmail].name:'SDR');
+  var record={
+    id:id, tipo:'sdr',
+    closerEmail:sdrEmail, closerNome:sdrNome,
+    date:new Date().toISOString().split('T')[0],
+    timestamp:Date.now(),
+    lead:ev._nomeLead||'Lead', resultado:ev._resultado||'nao_agendou',
+    notaFinal:ev.notaFinal||0, classificacao:ev.classificacao||'',
+    criterios:ev.criterios||[], pontosFortes:ev.pontosFortes||[],
+    falhas:ev.falhas||[], acoesPrioritarias:ev.acoesPrioritarias||[],
+    diagnostico:ev.diagnostico||{}, segmento:'WhatsApp SDR'
+  };
+  _avaliacoes[id]=record;
+  if(fbDb||initFirebase()) fbDb.ref('avaliacoes/'+id).set(record);
+  window._lastWppEvaluation=null;
+  showSheetToast('✅ Avaliação do SDR '+sdrNome+' salva! Veja em Avaliação Closers.',false);
+}
+
 async function acAnalisarReuniao(){
   // Para transcrição antes de analisar
   if(_acTranscribing){
@@ -15516,10 +15774,12 @@ function loadAvaliacoes(){
 function renderAvaliacoes(){
   if(!window._avalDetailTab) window._avalDetailTab='overview';
   if(!window._avalCritSel) window._avalCritSel=1;
-  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].funcao!=='sdr'; });
-  var closers=closerEntries.map(function(e){ return {email:e[0],name:e[1].name,funcao:e[1].funcao}; });
+  // Inclui todos os usuários (closers, gestores E SDRs — SDRs agora têm avaliações de WhatsApp)
+  var closerEntries=Object.entries(USERS);
+  var closers=closerEntries.map(function(e){ return {email:e[0],name:e[1].name,funcao:e[1].funcao||'closer'}; });
   if(!_avalCurrentCloser&&closers.length>0) _avalCurrentCloser=closers[0].email;
   var avalArr=Object.values(_avaliacoes).filter(function(a){ return !_avalCurrentCloser||a.closerEmail===_avalCurrentCloser; }).sort(function(a,b){ return b.timestamp-a.timestamp; });
+  var isSdrView=(closers.find(function(u){return u.email===_avalCurrentCloser;})||{}).funcao==='sdr';
   var closerNome=(closers.find(function(u){return u.email===_avalCurrentCloser;})||{name:'Closer'}).name;
   // Aggregate stats
   var totalAval=avalArr.length;
@@ -15535,7 +15795,9 @@ function renderAvaliacoes(){
   // Closer pills
   var closerPillsHtml=closers.map(function(u){
     var active=_avalCurrentCloser===u.email;
-    return '<button onclick="_avalCurrentCloser=\''+u.email+'\';_avalSelectedId=null;showPage(\'avaliacoes\')" style="padding:7px 16px;border-radius:999px;border:1px solid;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;'+(active?'background:var(--purple);border-color:var(--purple);color:#fff;':'background:none;border-color:var(--border);color:var(--muted);')+'">'+u.name+'</button>';
+    var isSdr=u.funcao==='sdr'||u.funcao==='bdr';
+    var badge=isSdr?'<span style="font-size:9px;background:rgba(16,185,129,0.25);color:#10b981;padding:1px 5px;border-radius:4px;margin-left:4px;">SDR</span>':'';
+    return '<button onclick="_avalCurrentCloser=\''+u.email+'\';_avalSelectedId=null;showPage(\'avaliacoes\')" style="padding:7px 16px;border-radius:999px;border:1px solid;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:4px;'+(active?(isSdr?'background:#10b981;border-color:#10b981;color:#fff;':'background:var(--purple);border-color:var(--purple);color:#fff;'):'background:none;border-color:var(--border);color:var(--muted);')+'">'+u.name+badge+'</button>';
   }).join('');
   // Main tabs
   var mainTabs=[{id:'geral',label:'Visão Geral'},{id:'reunioes',label:'Por Reunião'},{id:'criterios',label:'Critérios'}];
@@ -15549,7 +15811,7 @@ function renderAvaliacoes(){
   var classClr=mediaNota>=85?'#10b981':mediaNota>=70?'#c084fc':mediaNota>=45?'#f59e0b':'#ef4444';
   if(_avalCurrentTab==='geral'){
     var kpiCards=[
-      {label:'Reuniões analisadas',value:String(totalAval),icon:'ti-video'},
+      {label:isSdrView?'Conversas analisadas':'Reuniões analisadas',value:String(totalAval),icon:isSdrView?'ti-brand-whatsapp':'ti-video'},
       {label:'Nota média',value:mediaNota+'/100',icon:'ti-chart-bar'},
       {label:'Melhor critério',value:melhorCrit?melhorCrit.nome.split(' ').slice(0,3).join(' '):'—',icon:'ti-trophy'},
       {label:'Precisa melhorar',value:piorCrit?piorCrit.nome.split(' ').slice(0,3).join(' '):'—',icon:'ti-alert-triangle'}
@@ -15568,7 +15830,7 @@ function renderAvaliacoes(){
         '<div style="display:flex;flex-direction:column;align-items:center;">'+_avalGaugeSVG(mediaNota)+'<div style="font-size:12px;font-weight:800;color:'+classClr+';margin-top:4px;">'+classLabel+'</div></div>'+
         '<div><div style="font-size:14px;font-weight:900;color:var(--white);">'+closerNome+' — Média Geral</div>'+
         '<div style="font-size:32px;font-weight:900;color:var(--white);margin:4px 0;">'+mediaNota+'<span style="font-size:16px;color:var(--muted);">/100</span></div>'+
-        '<div style="font-size:13px;color:var(--muted);">Baseado em <b style="color:var(--white);">'+totalAval+'</b> reunião(ões) analisada(s) pelo Jarvis.</div></div>'+
+        '<div style="font-size:13px;color:var(--muted);">Baseado em <b style="color:var(--white);">'+totalAval+'</b> '+(isSdrView?'conversa(s) WhatsApp':'reunião(ões)')+' analisada(s) pelo Jarvis.</div></div>'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:14px;">'+kpiCards+'</div>'+
       (critArr.length?'<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;"><div style="font-size:13px;font-weight:800;color:var(--white);margin-bottom:14px;">Critérios — Média de todas as reuniões</div><div style="display:flex;flex-direction:column;gap:12px;">'+critBarsH+'</div></div>':'')+
@@ -15577,7 +15839,7 @@ function renderAvaliacoes(){
     if(_avalSelectedId&&_avaliacoes[_avalSelectedId]){
       tabContent=_renderAvalDetail(_avaliacoes[_avalSelectedId]);
     } else if(avalArr.length===0){
-      tabContent='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:48px;text-align:center;color:var(--muted);">Nenhuma avaliação salva ainda. Analise uma reunião no Jarvis e clique em <strong style="color:var(--white);">Salvar Avaliação</strong>.</div>';
+      tabContent='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:48px;text-align:center;color:var(--muted);">'+(isSdrView?'Nenhuma avaliação de WhatsApp salva ainda. Use o botão <strong style="color:#10b981;">WhatsApp</strong> no Jarvis e clique em <strong style="color:var(--white);">Salvar Avaliação do SDR</strong>.':'Nenhuma avaliação salva ainda. Analise uma reunião no Jarvis e clique em <strong style="color:var(--white);">Salvar Avaliação</strong>.')+'</div>';
     } else {
       tabContent='<div style="display:flex;flex-direction:column;gap:10px;">'+
         avalArr.map(function(a){
