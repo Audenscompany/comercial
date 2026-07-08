@@ -670,7 +670,12 @@ function startRealtimeSync(){
     if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
     if(cfg.eleven_voice !== undefined){ localStorage.setItem('audens_elevenlabs_voice',cfg.eleven_voice); }
     if(cfg.assembly_key){ localStorage.setItem('audens_assembly_key',cfg.assembly_key); }
-    if(cfg.nav_permissions){ _navPermissions=cfg.nav_permissions; }
+    if(cfg.nav_permissions){
+      // Firebase não permite '.' nas chaves — decodifica de volta para email
+      var raw=cfg.nav_permissions;
+      _navPermissions={};
+      Object.keys(raw).forEach(function(k){ _navPermissions[k.replace(/\|/g,'.').replace(/~/g,'@')]=raw[k]; });
+    }
   });
 
   // Sync gcal_token in realtime (per usuario)
@@ -9503,7 +9508,6 @@ function navPermClearAll(email){
 function saveNavPermissions(email){
   var toSave=_navPermTemp[email];
   if(!toSave){
-    // Nenhuma alteração foi feita — salva o estado atual
     var def=_navPermissions[email]||(USERS[email]&&USERS[email].funcao==='sdr'
       ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
       :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr']);
@@ -9512,10 +9516,12 @@ function saveNavPermissions(email){
   _navPermissions[email]=toSave;
   delete _navPermTemp[email];
   if(fbDb||initFirebase()){
-    var update={};
-    update['nav_permissions/'+email.replace(/\./g,'_')]=toSave;
-    // Também guarda com o email como chave (lendo de volta, substituimos _ por .)
-    fbDb.ref('config/nav_permissions').set(_navPermissions);
+    // Sanitiza keys para Firebase: '.' → '|', '@' → '~'
+    var fbSafe={};
+    Object.keys(_navPermissions).forEach(function(e){
+      fbSafe[e.replace(/\./g,'|').replace(/@/g,'~')]=_navPermissions[e];
+    });
+    fbDb.ref('config/nav_permissions').set(fbSafe);
   }
   showSheetToast('Permissões de '+USERS[email].name+' salvas!',false);
   showPage('config');
