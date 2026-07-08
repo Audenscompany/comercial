@@ -664,6 +664,7 @@ function startRealtimeSync(){
     if(cfg.sheets_ids){ SHEETS_IDS=Object.assign(SHEETS_IDS,cfg.sheets_ids); localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS)); }
     if(cfg.sheets_gids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,cfg.sheets_gids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
     if(cfg.gcalClientId){ gcalClientId=cfg.gcalClientId; localStorage.setItem('audens_gcal_id',gcalClientId); }
+    if(cfg.maps_key){ if(!localStorage.getItem('audens_maps_key')) localStorage.setItem('audens_maps_key',cfg.maps_key); }
   });
 
   // Sync gcal_token in realtime (per usuario)
@@ -15144,67 +15145,128 @@ function bdrStatusColor(s){
 
 function renderBDR(){
   var mapsKey=localStorage.getItem('audens_maps_key')||'';
-  var total=Object.keys(bdrLeads).length;
+  var allArr=Object.values(bdrLeads);
+  var total=allArr.length;
+  var statusList=['novo','tentando','em_contato','reuniao','convertido','descartado'];
+  var counts={};
+  statusList.forEach(function(s){ counts[s]=allArr.filter(function(l){return l.status===s;}).length; });
+
+  // KPI cards
+  var kpiCards=[
+    {label:'Total',val:total,icon:'ti-list',color:'var(--purple3)',bg:'rgba(123,47,255,0.08)',border:'rgba(123,47,255,0.2)'},
+    {label:'Novos',val:counts['novo'],icon:'ti-sparkles',color:'var(--cyan)',bg:'rgba(0,212,255,0.06)',border:'rgba(0,212,255,0.18)'},
+    {label:'Tentando',val:counts['tentando'],icon:'ti-phone-calling',color:'var(--amber)',bg:'rgba(245,158,11,0.06)',border:'rgba(245,158,11,0.18)'},
+    {label:'Em contato',val:counts['em_contato'],icon:'ti-messages',color:'#a78bfa',bg:'rgba(167,139,250,0.06)',border:'rgba(167,139,250,0.18)'},
+    {label:'Reunião',val:counts['reuniao'],icon:'ti-calendar-event',color:'#38bdf8',bg:'rgba(56,189,248,0.06)',border:'rgba(56,189,248,0.18)'},
+    {label:'Convertidos',val:counts['convertido'],icon:'ti-trophy',color:'var(--green)',bg:'rgba(34,197,94,0.06)',border:'rgba(34,197,94,0.18)'},
+  ];
+  var kpiHtml='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px;">'+
+    kpiCards.map(function(k){
+      return '<div style="background:'+k.bg+';border:1px solid '+k.border+';border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+          '<i class="ti '+k.icon+'" style="font-size:16px;color:'+k.color+';opacity:0.8;"></i>'+
+          '<span style="font-size:22px;font-weight:700;color:var(--white);letter-spacing:-0.5px;">'+(k.val||0)+'</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--muted);font-weight:500;margin-top:2px;">'+k.label+'</div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+
+  // API key banner
+  var keyBanner=!mapsKey?
+    '<div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.3);border-radius:12px;padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">'+
+      '<div style="width:36px;height:36px;border-radius:10px;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+
+        '<i class="ti ti-key" style="font-size:18px;color:var(--amber);"></i>'+
+      '</div>'+
+      '<div style="flex:1;min-width:180px;">'+
+        '<div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:3px;">Configure sua Google Maps API Key</div>'+
+        '<div style="font-size:11px;color:var(--muted);line-height:1.5;">Necessária para buscar negócios. Crie em <a href="https://console.cloud.google.com" target="_blank" style="color:var(--cyan);">console.cloud.google.com</a> e ative a <strong style="color:var(--white);">Places API (New)</strong>.</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;width:100%;max-width:340px;">'+
+        '<input id="bdr-maps-key-input" class="input-field" placeholder="Cole sua Maps API Key aqui..." style="font-size:12px;flex:1;"/>'+
+        '<button class="btn" onclick="bdrSalvarKey()" style="background:var(--amber);border-color:var(--amber);color:#000;font-weight:700;white-space:nowrap;flex-shrink:0;"><i class="ti ti-check"></i> Salvar</button>'+
+      '</div>'+
+    '</div>'
+  :'<div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:10px;padding:10px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;">'+
+    '<div style="display:flex;align-items:center;gap:8px;">'+
+      '<div style="width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0;"></div>'+
+      '<span style="font-size:12px;color:var(--green);font-weight:500;">Google Maps conectado</span>'+
+    '</div>'+
+    '<button onclick="localStorage.removeItem(\'audens_maps_key\');showPage(\'bdr\')" style="background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:7px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;">Trocar chave</button>'+
+  '</div>';
+
+  // Search panel
+  var searchPanel='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:18px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">'+
+      '<div style="width:32px;height:32px;border-radius:9px;background:rgba(0,212,255,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+
+        '<i class="ti ti-map-pin" style="font-size:15px;color:var(--cyan);"></i>'+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:13px;font-weight:600;color:var(--white);">Buscar no Google Maps</div>'+
+        '<div style="font-size:11px;color:var(--muted);">Encontre negócios por segmento e cidade</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'+
+      '<div style="flex:1;min-width:160px;">'+
+        '<label class="f-label">Segmento</label>'+
+        '<input id="bdr-tipo" class="input-field" placeholder="ex: pizzaria, hamburgueria..." onkeydown="if(event.key===\'Enter\')bdrBuscar()"/>'+
+      '</div>'+
+      '<div style="flex:1;min-width:160px;">'+
+        '<label class="f-label">Cidade / Região</label>'+
+        '<input id="bdr-cidade" class="input-field" placeholder="ex: São Paulo, SP" onkeydown="if(event.key===\'Enter\')bdrBuscar()"/>'+
+      '</div>'+
+      '<button class="btn" onclick="bdrBuscar()" style="background:linear-gradient(135deg,var(--cyan),#0097b2);border:none;color:#000;height:40px;padding:0 24px;white-space:nowrap;font-weight:700;font-size:13px;letter-spacing:0.3px;flex-shrink:0;">'+
+        '<i class="ti ti-search" style="margin-right:6px;"></i>Buscar'+
+      '</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap;">'+
+      ['🍕 Pizzaria','🍔 Hamburgueria','🍧 Açaíteria','🍽️ Restaurante','🥙 Esfiharia','☕ Cafeteria','🍣 Japonês'].map(function(s){
+        var nome=s.split(' ').slice(1).join(' ');
+        return '<button onclick="document.getElementById(\'bdr-tipo\').value=\''+nome+'\';bdrBuscar()" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:var(--muted);font-size:11px;padding:4px 11px;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.borderColor=\'var(--cyan)\';this.style.color=\'var(--cyan)\';" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\';this.style.color=\'var(--muted)\';">'+s+'</button>';
+      }).join('')+
+    '</div>'+
+    '<div id="bdr-search-results" style="margin-top:16px;"></div>'+
+  '</div>';
+
+  // Filter pills for lead list
+  var allCnt=total;
+  var filterPills='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">'+
+    '<button onclick="bdrFiltrar(\'\')" style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;background:'+(!_bdrFilter?'var(--purple)':'rgba(255,255,255,0.05)')+';border:1px solid '+(!_bdrFilter?'var(--purple)':'rgba(255,255,255,0.1)')+';color:'+(!_bdrFilter?'#fff':'var(--muted)')+';"> Todos <span style="opacity:0.65;">'+allCnt+'</span></button>'+
+    statusList.map(function(s){
+      var cnt=counts[s]||0;
+      var active=_bdrFilter===s;
+      var col=bdrStatusColor(s);
+      return '<button onclick="bdrFiltrar(\''+s+'\')" style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;background:'+(active?col+'22':'rgba(255,255,255,0.04)')+';border:1px solid '+(active?col+'88':'rgba(255,255,255,0.08)')+';color:'+(active?col:'var(--muted)')+';white-space:nowrap;">'+
+        bdrStatusLabel(s)+(cnt?' <span style="opacity:0.65;">'+cnt+'</span>':'')+
+      '</button>';
+    }).join('')+
+  '</div>';
+
+  // My list panel
+  var listPanel='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 22px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">'+
+      '<div style="width:32px;height:32px;border-radius:9px;background:rgba(123,47,255,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+
+        '<i class="ti ti-building-store" style="font-size:15px;color:var(--purple3);"></i>'+
+      '</div>'+
+      '<div style="flex:1;">'+
+        '<div style="font-size:13px;font-weight:600;color:var(--white);">Minha Lista BDR</div>'+
+        '<div style="font-size:11px;color:var(--muted);">'+total+' leads no pipeline</div>'+
+      '</div>'+
+    '</div>'+
+    filterPills+
+    '<div id="bdr-leads-list">'+bdrRenderLeads(_bdrFilter)+'</div>'+
+  '</div>';
+
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
       '<div class="page-title"><i class="ti ti-building-store" style="color:var(--cyan);margin-right:8px;"></i>BDR — Prospecção Ativa</div>'+
-      '<div class="page-sub">Busque negócios no Google Maps e gerencie sua lista de abordagens</div>'+
+      '<div class="page-sub">Pipeline de abordagem ativa com Google Maps e histórico de contatos</div>'+
     '</div></div>'+
     '<div class="cb">'+
-      // API key banner
-      (!mapsKey?
-        '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.35);border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'+
-          '<i class="ti ti-key" style="color:var(--amber);font-size:20px;flex-shrink:0;"></i>'+
-          '<div style="flex:1;min-width:200px;"><div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:2px;">Configure sua Google Maps API Key</div>'+
-          '<div style="font-size:11px;color:var(--muted);">Necessária para buscar negócios automaticamente. Crie em <a href="https://console.cloud.google.com" target="_blank" style="color:var(--cyan);">console.cloud.google.com</a> e ative a Places API.</div></div>'+
-          '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">'+
-            '<input id="bdr-maps-key-input" class="input-field" placeholder="Cole sua Maps API Key..." style="font-size:12px;width:240px;"/>'+
-            '<button class="btn" onclick="bdrSalvarKey()" style="background:var(--amber);border-color:var(--amber);color:#000;font-size:12px;white-space:nowrap;"><i class="ti ti-check"></i> Salvar</button>'+
-          '</div>'+
-        '</div>'
-      :'<div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">'+
-        '<span style="font-size:12px;color:var(--green);"><i class="ti ti-check"></i> Google Maps conectado</span>'+
-        '<button onclick="localStorage.removeItem(\'audens_maps_key\');showPage(\'bdr\')" style="background:transparent;border:none;color:var(--muted);font-size:11px;cursor:pointer;">Trocar chave</button>'+
-      '</div>')+
-      // Search panel
-      '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:18px;">'+
-        '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);margin-bottom:14px;text-transform:uppercase;"><i class="ti ti-search"></i> Buscar Negócios</div>'+
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'+
-          '<div style="flex:1;min-width:150px;">'+
-            '<label class="f-label">Tipo de negócio</label>'+
-            '<input id="bdr-tipo" class="input-field" placeholder="ex: pizzaria, hamburgueria, açaíteria" onkeydown="if(event.key===\'Enter\')bdrBuscar()"/>'+
-          '</div>'+
-          '<div style="flex:1;min-width:150px;">'+
-            '<label class="f-label">Cidade / Região</label>'+
-            '<input id="bdr-cidade" class="input-field" placeholder="ex: São Paulo, SP" onkeydown="if(event.key===\'Enter\')bdrBuscar()"/>'+
-          '</div>'+
-          '<button class="btn" onclick="bdrBuscar()" style="background:var(--cyan);border-color:var(--cyan);color:#000;height:40px;padding:0 22px;white-space:nowrap;font-weight:600;"><i class="ti ti-search"></i> Buscar</button>'+
-        '</div>'+
-        // Quick segments
-        '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">'+
-          ['Pizzaria','Hamburgueria','Açaíteria','Restaurante','Lanchonete','Esfiharia'].map(function(s){
-            return '<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;" onclick="document.getElementById(\'bdr-tipo\').value=\''+s+'\';bdrBuscar()">'+s+'</button>';
-          }).join('')+
-        '</div>'+
-        '<div id="bdr-search-results" style="margin-top:16px;"></div>'+
-      '</div>'+
-      // My list panel
-      '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;">'+
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'+
-          '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);text-transform:uppercase;">'+
-            '<i class="ti ti-list"></i> Minha Lista BDR'+
-            '<span style="color:var(--muted);font-size:11px;font-family:var(--font-main);text-transform:none;margin-left:8px;">'+total+' leads</span>'+
-          '</div>'+
-          '<div style="display:flex;gap:5px;flex-wrap:wrap;">'+
-            '<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;" onclick="bdrFiltrar(\'\')">Todos</button>'+
-            ['novo','tentando','em_contato','reuniao','convertido','descartado'].map(function(s){
-              var cnt=Object.values(bdrLeads).filter(function(l){return l.status===s;}).length;
-              return cnt>0?'<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;color:'+bdrStatusColor(s)+';border-color:'+bdrStatusColor(s)+'80;" onclick="bdrFiltrar(\''+s+'\')">'+bdrStatusLabel(s)+' <span style="opacity:0.6;">'+cnt+'</span></button>':'';
-            }).join('')+
-          '</div>'+
-        '</div>'+
-        '<div id="bdr-leads-list">'+bdrRenderLeads('')+'</div>'+
-      '</div>'+
+      kpiHtml+
+      keyBanner+
+      searchPanel+
+      listPanel+
     '</div>'+
   '</div>';
 }
@@ -15313,51 +15375,70 @@ function bdrAdicionarLead(idx,tipo,cidade){
 
 function bdrFiltrar(status){
   _bdrFilter=status;
-  var ll=document.getElementById('bdr-leads-list');
-  if(ll) ll.innerHTML=bdrRenderLeads(status);
+  showPage('bdr');
 }
 
 function bdrRenderLeads(filter){
   var leads=Object.values(bdrLeads).filter(function(l){return !filter||l.status===filter;});
   leads.sort(function(a,b){return (b.addedAt||0)-(a.addedAt||0);});
-  if(!leads.length) return '<div style="text-align:center;padding:40px 20px;color:var(--muted);">'+
-    '<i class="ti ti-building-store" style="font-size:36px;display:block;margin-bottom:10px;opacity:0.2;"></i>'+
-    (filter?'Nenhum lead com status "'+bdrStatusLabel(filter)+'".':'Use a busca acima para adicionar negócios à sua lista.')+
+  if(!leads.length) return '<div style="text-align:center;padding:52px 20px;color:var(--muted);">'+
+    '<div style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">'+
+      '<i class="ti ti-building-store" style="font-size:26px;opacity:0.25;"></i>'+
+    '</div>'+
+    '<div style="font-size:14px;font-weight:500;margin-bottom:6px;color:rgba(255,255,255,0.3);">'+(filter?'Nenhum lead com status "'+bdrStatusLabel(filter)+'"':'Lista vazia')+'</div>'+
+    '<div style="font-size:12px;color:rgba(255,255,255,0.18);">'+(filter?'Tente outro filtro.':'Use a busca acima para adicionar negócios.')+'</div>'+
   '</div>';
   var statusOpts=['novo','tentando','em_contato','reuniao','convertido','descartado'];
-  return '<div>'+leads.map(function(l){
-    var selHtml='<select class="f-select" style="font-size:11px;padding:3px 8px;height:30px;min-width:110px;color:'+bdrStatusColor(l.status)+';border-color:'+bdrStatusColor(l.status)+'60;" onchange="bdrAtualizarStatus(\''+l.id+'\',this.value)">'+
-      statusOpts.map(function(s){return '<option value="'+s+'"'+(s===l.status?' selected':'')+'>'+bdrStatusLabel(s)+'</option>';}).join('')+'</select>';
+  return '<div style="display:flex;flex-direction:column;gap:10px;">'+leads.map(function(l){
+    var col=bdrStatusColor(l.status);
     var hist=l.historico||[];
-    return '<div style="padding:14px 4px;border-bottom:1px solid rgba(255,255,255,0.05);">'+
-      '<div style="display:flex;align-items:flex-start;gap:10px;">'+
-        '<div style="width:9px;height:9px;border-radius:50%;background:'+bdrStatusColor(l.status)+';margin-top:4px;flex-shrink:0;box-shadow:0 0 6px '+bdrStatusColor(l.status)+'80;"></div>'+
+    var selHtml='<select style="background:rgba(255,255,255,0.04);border:1px solid '+col+'55;border-radius:8px;color:'+col+';font-size:11px;font-weight:600;padding:4px 8px;height:30px;min-width:120px;cursor:pointer;outline:none;" onchange="bdrAtualizarStatus(\''+l.id+'\',this.value)">'+
+      statusOpts.map(function(s){return '<option value="'+s+'"'+(s===l.status?' selected':'')+' style="background:#1a1a2e;color:var(--white);">'+bdrStatusLabel(s)+'</option>';}).join('')+'</select>';
+    return '<div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-left:3px solid '+col+';border-radius:12px;padding:16px 18px;transition:background 0.15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.025)\'">'+
+      // Header row: name + status badge
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap;">'+
         '<div style="flex:1;min-width:0;">'+
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">'+
-            '<span style="font-weight:600;font-size:13px;">'+l.nome+'</span>'+
-            (l.segmento?'<span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:1px 7px;border-radius:10px;text-transform:capitalize;">'+l.segmento+'</span>':'')+
-            (l.cidade?'<span style="font-size:11px;color:var(--muted);">'+l.cidade+'</span>':'')+
+          '<div style="font-size:14px;font-weight:700;color:var(--white);margin-bottom:4px;line-height:1.3;">'+l.nome+'</div>'+
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+            (l.segmento?'<span style="font-size:10px;font-weight:500;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);padding:2px 8px;border-radius:12px;text-transform:capitalize;">'+l.segmento+'</span>':'')+
+            (l.cidade?'<span style="font-size:11px;color:var(--muted);"><i class="ti ti-map-pin" style="font-size:10px;margin-right:2px;"></i>'+l.cidade+'</span>':'')+
+            (l.telefone?'<span style="font-size:11px;color:var(--cyan);font-weight:500;"><i class="ti ti-phone" style="font-size:10px;margin-right:2px;"></i>'+l.telefone+'</span>':'')+
           '</div>'+
-          (l.telefone?'<div style="font-size:12px;color:var(--cyan);margin-bottom:6px;">'+l.telefone+'</div>':'')+
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">'+
-            selHtml+
-            '<input class="input-field" placeholder="Observação rápida..." value="'+(l.obs||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;')+'" style="font-size:11px;padding:4px 8px;height:30px;flex:1;min-width:140px;" onblur="bdrSalvarObs(\''+l.id+'\',this.value)"/>'+
-          '</div>'+
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
-            '<button onclick="bdrRegistrarHistorico(\''+l.id+'\')" title="Registrar contato" style="height:28px;padding:0 10px;background:rgba(123,47,255,0.1);border:1px solid rgba(123,47,255,0.25);border-radius:7px;color:var(--purple3);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-history"></i> Registrar</button>'+
-            (l.telefone?'<a href="https://wa.me/55'+l.telefone.replace(/\D/g,'')+'" target="_blank" title="WhatsApp" style="height:28px;padding:0 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);border-radius:7px;color:var(--green);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
-            (l.website?'<a href="'+l.website+'" target="_blank" title="Site" style="height:28px;padding:0 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--muted);font-size:11px;display:inline-flex;align-items:center;gap:4px;text-decoration:none;"><i class="ti ti-world"></i> Site</a>':'')+
-            '<button onclick="bdrRemover(\''+l.id+'\')" title="Remover" style="height:28px;padding:0 10px;background:transparent;border:1px solid rgba(255,255,255,0.07);border-radius:7px;color:var(--muted);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin-left:auto;"><i class="ti ti-trash"></i></button>'+
-          '</div>'+
-          // History
-          (hist.length?'<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:8px;border-left:2px solid var(--purple);">'+
-            hist.slice(-3).reverse().map(function(h){
-              return '<div style="font-size:11px;color:var(--muted);line-height:1.5;"><span style="color:var(--purple3);">'+h.dt+'</span> — '+h.obs+'</div>';
-            }).join('')+
-            (hist.length>3?'<div style="font-size:10px;color:var(--muted);margin-top:2px;">+'+( hist.length-3)+' registros anteriores</div>':'')+
-          '</div>':'')+
         '</div>'+
+        selHtml+
       '</div>'+
+      // Obs field
+      '<div style="margin-bottom:10px;">'+
+        '<input class="input-field" placeholder="Adicionar observação..." value="'+(l.obs||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;')+'" style="font-size:12px;padding:7px 12px;height:34px;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.08);" onblur="bdrSalvarObs(\''+l.id+'\',this.value)"/>'+
+      '</div>'+
+      // Action buttons
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'+
+        '<button onclick="bdrRegistrarHistorico(\''+l.id+'\')" style="height:32px;padding:0 14px;background:rgba(123,47,255,0.12);border:1px solid rgba(123,47,255,0.3);border-radius:8px;color:var(--purple3);font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;">'+
+          '<i class="ti ti-clock-plus" style="font-size:13px;"></i> Registrar contato'+
+        '</button>'+
+        (l.telefone?'<a href="https://wa.me/55'+l.telefone.replace(/\D/g,'')+'" target="_blank" style="height:32px;padding:0 14px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.28);border-radius:8px;color:var(--green);font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;text-decoration:none;">'+
+          '<i class="ti ti-brand-whatsapp" style="font-size:14px;"></i> WhatsApp'+
+        '</a>':'')+
+        (l.website?'<a href="'+l.website+'" target="_blank" style="height:32px;padding:0 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--muted);font-size:12px;display:inline-flex;align-items:center;gap:5px;text-decoration:none;">'+
+          '<i class="ti ti-world" style="font-size:13px;"></i> Site'+
+        '</a>':'')+
+        '<button onclick="bdrRemover(\''+l.id+'\')" title="Remover lead" style="height:32px;width:32px;background:transparent;border:1px solid rgba(255,255,255,0.07);border-radius:8px;color:rgba(255,255,255,0.2);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin-left:auto;transition:all 0.15s;" onmouseover="this.style.borderColor=\'var(--red)\';this.style.color=\'var(--red)\';" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.07)\';this.style.color=\'rgba(255,255,255,0.2)\';"><i class="ti ti-trash"></i></button>'+
+      '</div>'+
+      // Contact history
+      (hist.length?
+        '<div style="margin-top:12px;padding:10px 14px;background:rgba(0,0,0,0.15);border-radius:10px;border-left:2px solid '+col+'55;">'+
+          '<div style="font-size:10px;font-weight:600;color:'+col+';letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;">'+
+            '<i class="ti ti-history" style="margin-right:4px;"></i>Histórico'+
+          '</div>'+
+          hist.slice(-3).reverse().map(function(h){
+            return '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'+
+              '<span style="font-size:11px;color:'+col+';white-space:nowrap;font-weight:500;flex-shrink:0;">'+h.dt+'</span>'+
+              '<span style="font-size:11px;color:var(--muted);line-height:1.5;">'+h.obs+'</span>'+
+            '</div>';
+          }).join('')+
+          (hist.length>3?'<div style="font-size:10px;color:rgba(255,255,255,0.2);margin-top:6px;text-align:right;">+ '+(hist.length-3)+' registros anteriores</div>':'')+
+        '</div>'
+      :'')+
     '</div>';
   }).join('')+'</div>';
 }
