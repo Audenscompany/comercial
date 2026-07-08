@@ -617,6 +617,21 @@ function startRealtimeSync(){
     }
   });
 
+  // Sync BDR leads em tempo real
+  fbDb.ref('bdr_leads').on('value', function(snap){
+    var fb=snap.val()||{};
+    var prev=JSON.stringify(bdrLeads);
+    bdrLeads=fb;
+    if(JSON.stringify(bdrLeads)!==prev){
+      localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+      var area=document.getElementById('content');
+      if(area&&area.getAttribute('data-page')==='bdr'){
+        var ll=document.getElementById('bdr-leads-list');
+        if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
+      }
+    }
+  });
+
   // Sync daily_map por usuário — cada um tem sua própria chave
   var _userDailyRef = 'daily_map/'+(CU?CU.name.toLowerCase().replace(/\s+/g,'_'):'default');
   fbDb.ref(_userDailyRef).on('value', function(snap){
@@ -1851,6 +1866,9 @@ var KANBAN_FAT_DESTAQUE=40000;
 var KANBAN_TASK_FAT_MIN=20000;
 // Estado das tarefas de cadencia (SDR)
 var sdrTarefas={};
+var bdrLeads={};
+var _bdrSearchResults=[];
+var _bdrFilter='';
 // Cadencia de contato (sem e-mail), baseada na planilha "Cadencia de Inbound"
 // "Periodo seguinte" = mesmo dia util, periodo da tarde
 var CADENCIA_SDR=[
@@ -2020,6 +2038,7 @@ function loadStorage(){
     var aak=localStorage.getItem('audens_asaas_key');if(aak)asaasApiKey=aak;
     var aae=localStorage.getItem('audens_asaas_env');if(aae)asaasEnv=aae;
     var aabt=localStorage.getItem('audens_asaas_bt');if(aabt)asaasBillingType=aabt;
+    var bdr=localStorage.getItem('audens_bdr_leads');if(bdr)bdrLeads=JSON.parse(bdr);
   }catch(e){}
 }
 function saveAll(){
@@ -3439,6 +3458,7 @@ function buildNav(){
     ]},
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
+    {id:'bdr',icon:'ti-building-store',label:'BDR'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var closerDef=[
@@ -3452,6 +3472,7 @@ function buildNav(){
       {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
     ]},
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
+    {id:'bdr',icon:'ti-building-store',label:'BDR'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var sdrDef=[
@@ -3552,7 +3573,7 @@ function showPage(id){
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro,
     'contratos':renderContratos,'audens-day':renderAudensDay,
-    'audens-command':renderAudensCommand
+    'audens-command':renderAudensCommand,'bdr':renderBDR
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -15111,6 +15132,279 @@ function acToggleMic(){
     if(btn){ btn.style.color=''; btn.innerHTML='<i class="ti ti-microphone"></i>'; }
   };
   _acSpeechRecog.start();
+}
+
+// ===== BDR — Prospecção Ativa =====
+function bdrStatusLabel(s){
+  return {novo:'Novo',tentando:'Tentando',em_contato:'Em Contato',reuniao:'Reunião',convertido:'Convertido',descartado:'Descartado'}[s]||s;
+}
+function bdrStatusColor(s){
+  return {novo:'var(--muted)',tentando:'var(--amber)',em_contato:'var(--cyan)',reuniao:'var(--purple3)',convertido:'var(--green)',descartado:'var(--red)'}[s]||'var(--muted)';
+}
+
+function renderBDR(){
+  var mapsKey=localStorage.getItem('audens_maps_key')||'';
+  var total=Object.keys(bdrLeads).length;
+  return '<div class="page active">'+
+    '<div class="page-header"><div>'+
+      '<div class="page-title"><i class="ti ti-building-store" style="color:var(--cyan);margin-right:8px;"></i>BDR — Prospecção Ativa</div>'+
+      '<div class="page-sub">Busque negócios no Google Maps e gerencie sua lista de abordagens</div>'+
+    '</div></div>'+
+    '<div class="cb">'+
+      // API key banner
+      (!mapsKey?
+        '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.35);border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'+
+          '<i class="ti ti-key" style="color:var(--amber);font-size:20px;flex-shrink:0;"></i>'+
+          '<div style="flex:1;min-width:200px;"><div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:2px;">Configure sua Google Maps API Key</div>'+
+          '<div style="font-size:11px;color:var(--muted);">Necessária para buscar negócios automaticamente. Crie em <a href="https://console.cloud.google.com" target="_blank" style="color:var(--cyan);">console.cloud.google.com</a> e ative a Places API.</div></div>'+
+          '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">'+
+            '<input id="bdr-maps-key-input" class="input-field" placeholder="Cole sua Maps API Key..." style="font-size:12px;width:240px;"/>'+
+            '<button class="btn" onclick="bdrSalvarKey()" style="background:var(--amber);border-color:var(--amber);color:#000;font-size:12px;white-space:nowrap;"><i class="ti ti-check"></i> Salvar</button>'+
+          '</div>'+
+        '</div>'
+      :'<div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">'+
+        '<span style="font-size:12px;color:var(--green);"><i class="ti ti-check"></i> Google Maps conectado</span>'+
+        '<button onclick="localStorage.removeItem(\'audens_maps_key\');showPage(\'bdr\')" style="background:transparent;border:none;color:var(--muted);font-size:11px;cursor:pointer;">Trocar chave</button>'+
+      '</div>')+
+      // Search panel
+      '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:18px;">'+
+        '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);margin-bottom:14px;text-transform:uppercase;"><i class="ti ti-search"></i> Buscar Negócios</div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'+
+          '<div style="flex:1;min-width:150px;">'+
+            '<label class="f-label">Tipo de negócio</label>'+
+            '<input id="bdr-tipo" class="input-field" placeholder="ex: pizzaria, hamburgueria, açaíteria" onkeydown="if(event.key===\'Enter\')bdrBuscar()"/>'+
+          '</div>'+
+          '<div style="flex:1;min-width:150px;">'+
+            '<label class="f-label">Cidade / Região</label>'+
+            '<input id="bdr-cidade" class="input-field" placeholder="ex: São Paulo, SP" onkeydown="if(event.key===\'Enter\')bdrBuscar()"/>'+
+          '</div>'+
+          '<button class="btn" onclick="bdrBuscar()" style="background:var(--cyan);border-color:var(--cyan);color:#000;height:40px;padding:0 22px;white-space:nowrap;font-weight:600;"><i class="ti ti-search"></i> Buscar</button>'+
+        '</div>'+
+        // Quick segments
+        '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">'+
+          ['Pizzaria','Hamburgueria','Açaíteria','Restaurante','Lanchonete','Esfiharia'].map(function(s){
+            return '<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;" onclick="document.getElementById(\'bdr-tipo\').value=\''+s+'\';bdrBuscar()">'+s+'</button>';
+          }).join('')+
+        '</div>'+
+        '<div id="bdr-search-results" style="margin-top:16px;"></div>'+
+      '</div>'+
+      // My list panel
+      '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'+
+          '<div style="font-family:var(--font-bn),sans-serif;font-size:12px;letter-spacing:1px;color:var(--purple3);text-transform:uppercase;">'+
+            '<i class="ti ti-list"></i> Minha Lista BDR'+
+            '<span style="color:var(--muted);font-size:11px;font-family:var(--font-main);text-transform:none;margin-left:8px;">'+total+' leads</span>'+
+          '</div>'+
+          '<div style="display:flex;gap:5px;flex-wrap:wrap;">'+
+            '<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;" onclick="bdrFiltrar(\'\')">Todos</button>'+
+            ['novo','tentando','em_contato','reuniao','convertido','descartado'].map(function(s){
+              var cnt=Object.values(bdrLeads).filter(function(l){return l.status===s;}).length;
+              return cnt>0?'<button class="btn btn-outline" style="font-size:11px;padding:3px 10px;color:'+bdrStatusColor(s)+';border-color:'+bdrStatusColor(s)+'80;" onclick="bdrFiltrar(\''+s+'\')">'+bdrStatusLabel(s)+' <span style="opacity:0.6;">'+cnt+'</span></button>':'';
+            }).join('')+
+          '</div>'+
+        '</div>'+
+        '<div id="bdr-leads-list">'+bdrRenderLeads('')+'</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+function bdrSalvarKey(){
+  var k=(document.getElementById('bdr-maps-key-input')||{}).value||'';
+  if(!k.trim()){showSheetToast('Cole a API Key antes de salvar.',true);return;}
+  localStorage.setItem('audens_maps_key',k.trim());
+  if(fbDb||initFirebase()) fbDb.ref('config/maps_key').set(k.trim());
+  showSheetToast('Google Maps API Key salva!',false);
+  showPage('bdr');
+}
+
+async function bdrBuscar(){
+  var tipo=(document.getElementById('bdr-tipo')||{}).value||'';
+  var cidade=(document.getElementById('bdr-cidade')||{}).value||'';
+  if(!tipo.trim()||!cidade.trim()){showSheetToast('Informe o tipo de negócio e a cidade.',true);return;}
+  var mapsKey=localStorage.getItem('audens_maps_key')||'';
+  if(!mapsKey){showSheetToast('Configure sua Google Maps API Key primeiro.',true);return;}
+  var res=document.getElementById('bdr-search-results');
+  if(res) res.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:inline-block;margin-right:6px;"></i>Buscando '+tipo+' em '+cidade+'...</div>';
+  try{
+    var resp=await fetch('https://places.googleapis.com/v1/places:searchText',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-Goog-Api-Key':mapsKey,
+        'X-Goog-FieldMask':'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount'
+      },
+      body:JSON.stringify({textQuery:tipo+' '+cidade,languageCode:'pt-BR',maxResultCount:20,regionCode:'BR'})
+    });
+    var data=await resp.json();
+    if(data.error){
+      if(res) res.innerHTML='<div style="color:var(--red);font-size:13px;"><i class="ti ti-alert-circle"></i> Erro: '+data.error.message+'</div>';
+      return;
+    }
+    _bdrSearchResults=data.places||[];
+    if(!_bdrSearchResults.length){
+      if(res) res.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0;">Nenhum resultado para "'+tipo+' '+cidade+'".</div>';
+      return;
+    }
+    var existingIds=Object.values(bdrLeads).map(function(l){return l.placeId;});
+    var html='<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+_bdrSearchResults.length+' resultados · <span style="color:var(--white);">'+tipo+'</span> em <span style="color:var(--white);">'+cidade+'</span></div>'+
+      '<div style="display:flex;flex-direction:column;gap:6px;">'+
+      _bdrSearchResults.map(function(p,i){
+        var nome=(p.displayName&&p.displayName.text)||'?';
+        var tel=p.nationalPhoneNumber||'';
+        var end=(p.formattedAddress||'').split(',').slice(0,3).join(',');
+        var site=p.websiteUri||'';
+        var rating=p.rating?('⭐ '+p.rating+(p.userRatingCount?' ('+p.userRatingCount+')':'')):'';
+        var jaAdded=existingIds.indexOf(p.id)>-1;
+        return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;">'+
+          '<div style="flex:1;min-width:0;">'+
+            '<div style="font-weight:600;font-size:13px;margin-bottom:3px;">'+nome+'</div>'+
+            '<div style="font-size:11px;color:var(--muted);line-height:1.5;">'+
+              (tel?'<span style="color:var(--cyan);margin-right:8px;">'+tel+'</span>':'')+
+              end+(rating?'<span style="margin-left:8px;">'+rating+'</span>':'')+
+              (site?'<a href="'+site+'" target="_blank" style="color:var(--purple3);margin-left:8px;font-size:10px;">site <i class="ti ti-external-link" style="font-size:9px;"></i></a>':'')+
+            '</div>'+
+          '</div>'+
+          (jaAdded
+            ?'<span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0;"><i class="ti ti-check"></i> Na lista</span>'
+            :'<button class="btn btn-outline" style="font-size:12px;white-space:nowrap;padding:5px 14px;flex-shrink:0;" onclick="bdrAdicionarLead('+i+',\''+tipo.toLowerCase()+'\',\''+cidade+'\')"><i class="ti ti-plus"></i> Adicionar</button>'
+          )+
+        '</div>';
+      }).join('')+'</div>';
+    if(res) res.innerHTML=html;
+  }catch(e){
+    if(res) res.innerHTML='<div style="color:var(--red);font-size:13px;"><i class="ti ti-alert-circle"></i> Erro: '+e.message+'</div>';
+    console.error('[BDR]',e);
+  }
+}
+
+function bdrAdicionarLead(idx,tipo,cidade){
+  var p=_bdrSearchResults[idx];
+  if(!p) return;
+  var id='bdr_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  var lead={
+    id:id,placeId:p.id||'',
+    nome:(p.displayName&&p.displayName.text)||'',
+    telefone:p.nationalPhoneNumber||'',
+    endereco:p.formattedAddress||'',
+    website:p.websiteUri||'',
+    segmento:tipo||'',cidade:cidade||'',
+    status:'novo',obs:'',historico:[],
+    addedAt:Date.now(),addedBy:CU?CU.name:'Gustavo'
+  };
+  bdrLeads[id]=lead;
+  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id).set(lead);
+  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  showSheetToast(lead.nome+' adicionado à lista BDR!',false);
+  // Atualiza botão na lista de resultados
+  var btns=document.querySelectorAll('#bdr-search-results button');
+  btns.forEach(function(btn){
+    if(btn.getAttribute('onclick')&&btn.getAttribute('onclick').includes('bdrAdicionarLead('+idx+',')){
+      btn.outerHTML='<span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0;"><i class="ti ti-check"></i> Na lista</span>';
+    }
+  });
+  // Atualiza lista de leads
+  var ll=document.getElementById('bdr-leads-list');
+  if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
+  // Atualiza contador
+  var pg=document.querySelector('.page-title');
+  if(pg&&pg.textContent.includes('BDR')) showPage('bdr');
+}
+
+function bdrFiltrar(status){
+  _bdrFilter=status;
+  var ll=document.getElementById('bdr-leads-list');
+  if(ll) ll.innerHTML=bdrRenderLeads(status);
+}
+
+function bdrRenderLeads(filter){
+  var leads=Object.values(bdrLeads).filter(function(l){return !filter||l.status===filter;});
+  leads.sort(function(a,b){return (b.addedAt||0)-(a.addedAt||0);});
+  if(!leads.length) return '<div style="text-align:center;padding:40px 20px;color:var(--muted);">'+
+    '<i class="ti ti-building-store" style="font-size:36px;display:block;margin-bottom:10px;opacity:0.2;"></i>'+
+    (filter?'Nenhum lead com status "'+bdrStatusLabel(filter)+'".':'Use a busca acima para adicionar negócios à sua lista.')+
+  '</div>';
+  var statusOpts=['novo','tentando','em_contato','reuniao','convertido','descartado'];
+  return '<div>'+leads.map(function(l){
+    var selHtml='<select class="f-select" style="font-size:11px;padding:3px 8px;height:30px;min-width:110px;color:'+bdrStatusColor(l.status)+';border-color:'+bdrStatusColor(l.status)+'60;" onchange="bdrAtualizarStatus(\''+l.id+'\',this.value)">'+
+      statusOpts.map(function(s){return '<option value="'+s+'"'+(s===l.status?' selected':'')+'>'+bdrStatusLabel(s)+'</option>';}).join('')+'</select>';
+    var hist=l.historico||[];
+    return '<div style="padding:14px 4px;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<div style="display:flex;align-items:flex-start;gap:10px;">'+
+        '<div style="width:9px;height:9px;border-radius:50%;background:'+bdrStatusColor(l.status)+';margin-top:4px;flex-shrink:0;box-shadow:0 0 6px '+bdrStatusColor(l.status)+'80;"></div>'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">'+
+            '<span style="font-weight:600;font-size:13px;">'+l.nome+'</span>'+
+            (l.segmento?'<span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:1px 7px;border-radius:10px;text-transform:capitalize;">'+l.segmento+'</span>':'')+
+            (l.cidade?'<span style="font-size:11px;color:var(--muted);">'+l.cidade+'</span>':'')+
+          '</div>'+
+          (l.telefone?'<div style="font-size:12px;color:var(--cyan);margin-bottom:6px;">'+l.telefone+'</div>':'')+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">'+
+            selHtml+
+            '<input class="input-field" placeholder="Observação rápida..." value="'+(l.obs||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;')+'" style="font-size:11px;padding:4px 8px;height:30px;flex:1;min-width:140px;" onblur="bdrSalvarObs(\''+l.id+'\',this.value)"/>'+
+          '</div>'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
+            '<button onclick="bdrRegistrarHistorico(\''+l.id+'\')" title="Registrar contato" style="height:28px;padding:0 10px;background:rgba(123,47,255,0.1);border:1px solid rgba(123,47,255,0.25);border-radius:7px;color:var(--purple3);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-history"></i> Registrar</button>'+
+            (l.telefone?'<a href="https://wa.me/55'+l.telefone.replace(/\D/g,'')+'" target="_blank" title="WhatsApp" style="height:28px;padding:0 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);border-radius:7px;color:var(--green);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
+            (l.website?'<a href="'+l.website+'" target="_blank" title="Site" style="height:28px;padding:0 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--muted);font-size:11px;display:inline-flex;align-items:center;gap:4px;text-decoration:none;"><i class="ti ti-world"></i> Site</a>':'')+
+            '<button onclick="bdrRemover(\''+l.id+'\')" title="Remover" style="height:28px;padding:0 10px;background:transparent;border:1px solid rgba(255,255,255,0.07);border-radius:7px;color:var(--muted);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin-left:auto;"><i class="ti ti-trash"></i></button>'+
+          '</div>'+
+          // History
+          (hist.length?'<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:8px;border-left:2px solid var(--purple);">'+
+            hist.slice(-3).reverse().map(function(h){
+              return '<div style="font-size:11px;color:var(--muted);line-height:1.5;"><span style="color:var(--purple3);">'+h.dt+'</span> — '+h.obs+'</div>';
+            }).join('')+
+            (hist.length>3?'<div style="font-size:10px;color:var(--muted);margin-top:2px;">+'+( hist.length-3)+' registros anteriores</div>':'')+
+          '</div>':'')+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('')+'</div>';
+}
+
+function bdrAtualizarStatus(id,status){
+  if(!bdrLeads[id]) return;
+  bdrLeads[id].status=status;
+  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id+'/status').set(status);
+  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  // Update dot color inline
+  var area=document.getElementById('content');
+  if(area&&area.getAttribute('data-page')==='bdr'){
+    var ll=document.getElementById('bdr-leads-list');
+    if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
+  }
+}
+
+function bdrSalvarObs(id,obs){
+  if(!bdrLeads[id]||bdrLeads[id].obs===obs) return;
+  bdrLeads[id].obs=obs;
+  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id+'/obs').set(obs);
+  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+}
+
+function bdrRegistrarHistorico(id){
+  if(!bdrLeads[id]) return;
+  var obs=window.prompt('O que aconteceu nesse contato?');
+  if(!obs||!obs.trim()) return;
+  if(!bdrLeads[id].historico) bdrLeads[id].historico=[];
+  var entry={dt:todayStr(),obs:obs.trim(),status:bdrLeads[id].status,por:CU?CU.name:'Gustavo'};
+  bdrLeads[id].historico.push(entry);
+  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id+'/historico').set(bdrLeads[id].historico);
+  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  var ll=document.getElementById('bdr-leads-list');
+  if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
+  showSheetToast('Contato registrado!',false);
+}
+
+function bdrRemover(id){
+  if(!bdrLeads[id]) return;
+  if(!confirm('Remover "'+bdrLeads[id].nome+'" da lista BDR?')) return;
+  delete bdrLeads[id];
+  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id).remove();
+  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  var ll=document.getElementById('bdr-leads-list');
+  if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
+  showSheetToast('Lead removido.',false);
 }
 
 window.addEventListener('load', function(){
