@@ -3507,13 +3507,62 @@ function buildNav(){
   var _baseDef=CU.role==='gestor'?gestorDef:(CU.funcao==='sdr'?sdrDef:closerDef);
   // Aplica permissões customizadas (se gestor tiver definido para este usuário)
   var _allowed=CU.role!=='gestor'&&_navPermissions&&_navPermissions[CU.email]?_navPermissions[CU.email]:null;
-  var def=!_allowed?_baseDef:_baseDef.map(function(item){
-    if(item.group){
-      var filteredItems=item.items.filter(function(sub){ return _allowed.indexOf(sub.id)>-1; });
-      return filteredItems.length?Object.assign({},item,{items:filteredItems}):null;
-    }
-    return (item.id==='config'||_allowed.indexOf(item.id)>-1)?item:null;
-  }).filter(Boolean);
+  var def;
+  if(!_allowed){
+    def=_baseDef;
+  } else {
+    // Mapa completo de todos os itens de nav possíveis (para poder adicionar itens fora do baseDef)
+    var _allNavItems={
+      'tarefas':{id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
+      'ligar':{id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
+      'dash-comercial':{id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
+      'analise-ads':{id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
+      'reunioes':{id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
+      'calendario':{id:'calendario',icon:'ti-calendar',label:'Calendario'},
+      'meu-hist':{id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
+      'audens-day':{id:'audens-day',icon:'ti-star',label:'Audens Day'},
+      'bdr':{id:'bdr',icon:'ti-building-store',label:'BDR'},
+      'minhas-tarefas':{id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
+      'sdr-hoje':{id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
+      'sdr-reunioes':{id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
+      'sdr-registrar':{id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
+      'kanban':{id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+      'reativacao':{id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
+      'desempenho-sdr':{id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
+      'financeiro':{id:'financeiro',icon:'ti-report-money',label:'Financeiro'},
+      'contratos':{id:'contratos',icon:'ti-file-invoice',label:'Contratos'},
+      'assinaturas':{id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
+      'plano-carreira':{id:'plano-carreira',icon:'ti-award',label:'Plano de Carreira'},
+      'asaas':{id:'asaas',icon:'ti-cash',label:'Cobrancas Asaas'},
+      'leads':{id:'leads',icon:'ti-upload',label:'Importar Leads'},
+      'historico':{id:'historico',icon:'ti-history',label:'Historico Geral'},
+      'dashboard':{id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
+      'tarefas-dia':{id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'}
+    };
+    // Grupos para organizar na sidebar quando há permissões customizadas
+    var _navGroups=[
+      {group:'SDR',icon:'ti-report-analytics',items:['minhas-tarefas','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','desempenho-sdr']},
+      {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
+      {group:'Cold Call',icon:'ti-phone-call',items:['leads','historico','dashboard','tarefas-dia']}
+    ];
+    var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','reunioes','calendario','meu-hist','audens-day','bdr'];
+    def=[];
+    // Primeiro itens de topo nível permitidos
+    _topLevel.forEach(function(id){
+      if(_allowed.indexOf(id)>-1&&_allNavItems[id]) def.push(_allNavItems[id]);
+    });
+    // Depois grupos (mostra grupo apenas se pelo menos 1 item estiver permitido)
+    _navGroups.forEach(function(g){
+      var allowedInGroup=g.items.filter(function(id){ return _allowed.indexOf(id)>-1&&_allNavItems[id]; });
+      if(allowedInGroup.length>1){
+        def.push({group:g.group,icon:g.icon,items:allowedInGroup.map(function(id){ return _allNavItems[id]; })});
+      } else if(allowedInGroup.length===1){
+        def.push(_allNavItems[allowedInGroup[0]]);
+      }
+    });
+    // Configurações sempre no final
+    def.push({id:'config',icon:'ti-settings',label:'Configuracoes'});
+  }
 
   function navItemHtml(i,sub){
     var cls='nav-item'+(sub?' nav-sub':'');
