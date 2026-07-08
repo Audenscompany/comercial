@@ -621,6 +621,59 @@ function startRealtimeSync(){
   // Carregar avaliações de closers
   fbDb.ref('avaliacoes').once('value', function(snap){
     if(snap.val()) Object.assign(_avaliacoes, snap.val());
+    // Seed de avaliação inicial (Léo — 2026-07-08) — roda uma vez
+    if(!snap.val()||!snap.val()['aval_leo_20260708']){
+      var _seedAval={
+        id:'aval_leo_20260708',
+        closerEmail:'lucas@audens.com',closerNome:'Lucas',
+        date:'2026-07-08',timestamp:1783500000000,
+        lead:'Léo',segmento:'Lanchonete / Cachorro-quente / Food Truck + Loja física',
+        notaFinal:54,classificacao:'B — Boa, mas incompleta',
+        problemaPrincipal:'Dependência total de iFood/99; empréstimo de R$25k/mês descontado na fonte; recebível 100% preso; cardápio próprio faturando ~R$5k',
+        desejoPrincipal:'Reduzir dependência de marketplace, ter previsibilidade financeira, liberar recebível',
+        proximoPasso:'Frágil — vendedor disse que liga amanhã; sem horário confirmado, sem compromisso concreto do cliente',
+        criterios:[
+          {id:1,nome:'Abertura e controle da reunião',nota:2,max:6,descricao:'Reunião sem alinhamento de agenda, objetivo ou liderança formal. Vendedor falou de si antes de entender o cliente.',evidencia:'Vendedor apresentou próprio Instagram, hamburguerias e faturamentos nos primeiros minutos.',acao:'Abrir com agenda clara, autorização para perguntas e objetivo antes de qualquer apresentação.'},
+          {id:2,nome:'Diagnóstico factual do negócio',nota:7,max:14,descricao:'Dados parciais levantados (faturamento por canal, empréstimo, taxas), mas faltaram pedidos/mês, ticket médio, margem, custos totais e líquido real.',evidencia:'Cliente revelou empréstimo e taxas espontaneamente, sem condução por perguntas precisas.',acao:'Usar checklist de diagnóstico financeiro completo antes de avançar para apresentação.'},
+          {id:3,nome:'Exploração da dor e consequência',nota:6,max:14,descricao:'Dor apareceu (recebível preso, pensou em fechar), mas vendedor nunca aprofundou — nunca perguntou custo, tempo de problema ou impacto futuro.',evidencia:'"Até em fechar a loja eu já pensei" — dito espontaneamente enquanto vendedor já estava em modo de apresentação.',acao:'Fazer cliente verbalizar custo de não agir, prazo de risco e impacto pessoal/financeiro.'},
+          {id:4,nome:'Meta, desejo e urgência',nota:5,max:10,descricao:'Meta identificada (R$100k no próprio), mas superficialmente — sem perguntar por que esse valor, em quanto tempo e o que muda ao chegar lá.',evidencia:'"Se eu chegasse a R$100k no cardápio, para mim já era soltar fogos" — declarado sem aprofundamento.',acao:'Conectar a meta a prazo, motivo e urgência antes de qualquer apresentação.'},
+          {id:5,nome:'Qualificação de decisão e investimento',nota:3,max:10,descricao:'Vendedor nunca perguntou quem decide ou qual o papel do sócio. Sócio emergiu apenas como objeção no final.',evidencia:'"Só vou sentar com meu sócio e escolher a melhor oferta" — vendedor foi pego de surpresa.',acao:'Mapear decisores, processo de compra e capacidade de investimento antes da proposta.'},
+          {id:6,nome:'Escuta e condução consultiva',nota:4,max:10,descricao:'Vendedor falou significativamente mais que o cliente. Desvios para operação própria e cases antes de concluir diagnóstico básico.',evidencia:'Trecho extenso sobre Brand, Cardápio Web, Repediu e cases antes de completar diagnóstico.',acao:'Aplicar proporção 70/30: cliente fala mais, vendedor conduz com perguntas precisas.'},
+          {id:7,nome:'Apresentação da solução personalizada',nota:4,max:10,descricao:'Solução apresentada como lista genérica de entregáveis sem resumo do diagnóstico e sem conexão ao problema específico do Léo.',evidencia:'"A gente cuida dos seus anúncios, GMB, 6 criativos, cardápio digital, social media..." — lista sem ancoragem.',acao:'Antes da proposta, resumir diagnóstico e conectar cada item ao problema específico identificado.'},
+          {id:8,nome:'Prova, autoridade e posicionamento',nota:3,max:5,descricao:'Cases com números concretos foram apresentados, mas usados para impressionar e não para conectar com a dor do Léo. Excesso de dados próprios.',evidencia:'"Mês passado bateu R$466 mil... abri outra pizzaria mês passado."',acao:'Usar cases como ponte para dor do lead, não como vitrine: "esse cliente tinha o mesmo problema que você."'},
+          {id:9,nome:'Investimento e objeções',nota:5,max:10,descricao:'Preço claro e flexibilidade de pagamento bem manejada. Mas objeção do sócio foi aceita sem investigar o que estava por trás.',evidencia:'"Tô fechado... só vou sentar com meu sócio." — vendedor aceitou sem qualificar a objeção real.',acao:'Perguntar o que o sócio precisa entender e qual dúvida específica impede a decisão hoje.'},
+          {id:10,nome:'Fechamento e próximo passo',nota:3,max:11,descricao:'Próximo passo vago: "Vou te chamar amanhã." Sem horário confirmado, sem compromisso do cliente, sem reunião com sócio proposta.',evidencia:'"Só agendar aqui para não esquecer e te chamar amanhã." — vendedor dependente de própria iniciativa.',acao:'Sair com horário marcado, sócio incluído na próxima reunião e critério de decisão definido.'}
+        ],
+        pontosFortes:[
+          'Levantou dados financeiros críticos de forma natural — empréstimo, taxas do iFood e cardápio próprio sem parecer interrogatório.',
+          'Identificou o fit rapidamente: dependência de marketplace como problema central, argumento de tráfego para canal próprio coerente.',
+          'Usou cases com números concretos (Ponta Grossa, Burgerland, ROAS 27-28x).',
+          'Flexibilidade no formato de pagamento — adaptou boleto, parcelamento e prazo sem travar.',
+          'Criou conexão genuína — cliente disse sentir mais transparência e identificação do que nas outras reuniões da semana.'
+        ],
+        falhas:[
+          {titulo:'Apresentação própria antes do diagnóstico completo',impacto:'Vendedor pareceu querer impressionar antes de entender o cliente, reduzindo autoridade consultiva.',correcao:'Começar perguntando sobre a operação do cliente antes de mostrar qualquer coisa sobre a própria empresa.'},
+          {titulo:'Sócio decisor não mapeado antes da proposta',impacto:'Decisão saiu da reunião vulnerável à concorrência — cliente foi comparar com outras reuniões da semana.',correcao:'Perguntar no início quem decide e propor reunião com sócio antes de apresentar preço.'},
+          {titulo:'Fechamento sem compromisso concreto',impacto:'Lead ficou no controle do timing. Vendedor dependente de follow-up solto sem horário ou critério definido.',correcao:'Bloquear horário de próximo contato, incluir sócio e definir critério de decisão antes de encerrar.'}
+        ],
+        acoesPrioritarias:[
+          'Criar script de abertura padrão: agenda, objetivo, permissão para perguntas — antes de qualquer apresentação.',
+          'Criar checklist obrigatório de diagnóstico: faturamento, pedidos, ticket, margem, custos, líquido, equipe e decisores.',
+          'Adicionar bloco de dor: perda mensal, tempo de problema, risco em 6 meses e impacto pessoal.',
+          'Antes de apresentar preço, confirmar decisores, processo de compra e capacidade de investimento.',
+          'Nunca encerrar sem horário marcado, decisor confirmado e compromisso concreto do lead.'
+        ],
+        diagnostico:{
+          ondeEsta:'Léo opera lanchonete de cachorro-quente com food trucks há 10 anos. Fatura ~R$260-270k/mês mas está asfixiado: R$25k de empréstimo descontado pelo iFood, R$13k de taxa de entrega própria, R$16-18k em promoções. Cardápio próprio faz só R$5k/mês. Zero tráfego há 1,5 ano.',
+          ondeQuerChegar:'R$100k/mês no cardápio próprio. Liberar recebível preso no iFood. Reduzir dependência de marketplace. Ter previsibilidade financeira.',
+          impedimentos:'Ausência de aquisição ativa para canal próprio. Nenhum CRM ou retenção. Conteúdo fraco. Marketing delegado a funcionários sem supervisão estratégica.',
+          risco:'Modelo insustentável. Com R$25k de parcela + taxas do iFood + entrega, o maior canal opera no zero ou negativo. Tendência de aprofundamento da crise de caixa.',
+          solucao:'Tráfego para cardápio próprio, CRM/Repediu com base existente, social media com foco em vídeo de produto, redução estruturada da dependência de marketplace.'
+        }
+      };
+      _avaliacoes['aval_leo_20260708']=_seedAval;
+      fbDb.ref('avaliacoes/aval_leo_20260708').set(_seedAval);
+    }
   });
 
   // Sync BDR leads em tempo real
