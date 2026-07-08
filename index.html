@@ -668,6 +668,7 @@ function startRealtimeSync(){
     if(cfg.claude_key){ localStorage.setItem('audens_claude_key',cfg.claude_key); }
     if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
     if(cfg.eleven_voice !== undefined){ localStorage.setItem('audens_elevenlabs_voice',cfg.eleven_voice); }
+    if(cfg.assembly_key){ localStorage.setItem('audens_assembly_key',cfg.assembly_key); }
   });
 
   // Sync gcal_token in realtime (per usuario)
@@ -14459,10 +14460,15 @@ function renderAudensCommand(){
           '<input id="ac-eleven-key" type="password" class="input-field" placeholder="sk_..." style="width:100%;box-sizing:border-box;"/>'+
           '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Deixe em branco para usar voz do sistema (gratuita, menos natural)</div>'+
         '</div>'+
-        '<div style="margin-bottom:20px;">'+
+        '<div style="margin-bottom:14px;">'+
           '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">ElevenLabs Voice ID <span style="color:var(--muted)">(opcional)</span></label>'+
           '<input id="ac-eleven-voice" type="text" class="input-field" placeholder="21m00Tcm4TlvDq8ikWAM" style="width:100%;box-sizing:border-box;"/>'+
           '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Encontre IDs em elevenlabs.io/voice-library · Padrão: Rachel</div>'+
+        '</div>'+
+        '<div style="margin-bottom:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07);">'+
+          '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">AssemblyAI API Key <span style="color:var(--muted)">(assemblyai.com/app/account)</span></label>'+
+          '<input id="ac-assembly-key" type="password" class="input-field" placeholder="Sua chave AssemblyAI..." style="width:100%;box-sizing:border-box;"/>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Para transcrever gravações do Meet de qualquer duração</div>'+
         '</div>'+
         '<div style="display:flex;gap:10px;">'+
           '<button class="btn" onclick="saveAcSettings()" style="flex:1;background:var(--purple);border-color:var(--purple);">Salvar</button>'+
@@ -14516,9 +14522,11 @@ function showAcSettings(){
   var ck=document.getElementById('ac-claude-key');
   var ek=document.getElementById('ac-eleven-key');
   var ev=document.getElementById('ac-eleven-voice');
+  var ak=document.getElementById('ac-assembly-key');
   if(ck) ck.value=localStorage.getItem('audens_claude_key')||'';
   if(ek) ek.value=localStorage.getItem('audens_elevenlabs_key')||'';
   if(ev) ev.value=localStorage.getItem('audens_elevenlabs_voice')||'';
+  if(ak) ak.value=localStorage.getItem('audens_assembly_key')||'';
   modal.style.display='flex';
 }
 function closeAcSettings(){
@@ -14529,15 +14537,18 @@ function saveAcSettings(){
   var ck=(document.getElementById('ac-claude-key')||{}).value||'';
   var ek=(document.getElementById('ac-eleven-key')||{}).value||'';
   var ev=(document.getElementById('ac-eleven-voice')||{}).value||'';
+  var ak=(document.getElementById('ac-assembly-key')||{}).value||'';
   if(ck) localStorage.setItem('audens_claude_key',ck.trim());
   if(ek) localStorage.setItem('audens_elevenlabs_key',ek.trim());
   localStorage.setItem('audens_elevenlabs_voice',ev.trim());
+  if(ak) localStorage.setItem('audens_assembly_key',ak.trim());
   // Salva no Firebase para sincronizar com outros dispositivos
   if(fbDb||initFirebase()){
     var cfg={};
     if(ck) cfg.claude_key=ck.trim();
     if(ek) cfg.eleven_key=ek.trim();
     cfg.eleven_voice=ev.trim();
+    if(ak) cfg.assembly_key=ak.trim();
     fbDb.ref('config').update(cfg);
   }
   closeAcSettings();
@@ -14771,10 +14782,25 @@ function acRenderChat(){
           '<i class="ti ti-microphone"></i> GRAVANDO'+
         '</span>'+
       '</span>'+
-      '<span style="cursor:pointer;color:var(--muted);" onclick="acCloseReunPanel()"><i class="ti ti-x"></i></span>'+
+      '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<label id="ac-upload-label" title="Transcrever gravação do Meet (MP4, MP3, M4A...)" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 10px;border-radius:7px;background:rgba(123,47,255,0.12);border:1px solid rgba(123,47,255,0.3);color:var(--purple3);text-transform:none;letter-spacing:0;">'+
+          '<i class="ti ti-upload"></i> Upload gravação'+
+          '<input id="ac-audio-file" type="file" accept="audio/*,video/*,.mp4,.mp3,.m4a,.wav,.ogg,.webm" style="display:none;" onchange="acHandleAudioUpload(this)"/>'+
+        '</label>'+
+        '<span style="cursor:pointer;color:var(--muted);" onclick="acCloseReunPanel()"><i class="ti ti-x"></i></span>'+
+      '</div>'+
+    '</div>'+
+    '<div id="ac-upload-progress" style="display:none;margin-bottom:10px;padding:10px 12px;background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.2);border-radius:8px;">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'+
+        '<i id="ac-upload-icon" class="ti ti-loader" style="color:var(--purple3);animation:spin 1s linear infinite;font-size:14px;"></i>'+
+        '<span id="ac-upload-status" style="font-size:12px;color:var(--purple3);font-weight:500;">Enviando arquivo...</span>'+
+      '</div>'+
+      '<div style="background:rgba(255,255,255,0.06);border-radius:4px;height:4px;overflow:hidden;">'+
+        '<div id="ac-upload-bar" style="height:4px;background:linear-gradient(90deg,var(--purple),var(--cyan));border-radius:4px;width:0%;transition:width 0.3s;"></div>'+
+      '</div>'+
     '</div>'+
     '<div style="position:relative;">'+
-      '<textarea id="ac-reun-transcript" class="input-field" placeholder="Cole aqui a transcrição, ou use o botão acima para transcrever ao vivo..." style="width:100%;height:140px;resize:vertical;font-size:12px;box-sizing:border-box;"></textarea>'+
+      '<textarea id="ac-reun-transcript" class="input-field" placeholder="Cole aqui a transcrição, ou grave ao vivo, ou faça upload da gravação do Meet..." style="width:100%;height:140px;resize:vertical;font-size:12px;box-sizing:border-box;"></textarea>'+
       '<div id="ac-reun-interim" style="position:absolute;bottom:8px;left:8px;right:8px;font-size:11px;color:var(--purple3);font-style:italic;pointer-events:none;opacity:0.7;"></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;">'+
@@ -15037,6 +15063,111 @@ function acLimparTranscricao(){
   if(t) t.value='';
   var p=document.getElementById('ac-reun-interim');
   if(p) p.textContent='';
+}
+
+function acHandleAudioUpload(input){
+  var file=input.files&&input.files[0];
+  if(!file) return;
+  var asmKey=localStorage.getItem('audens_assembly_key')||'';
+  if(!asmKey){
+    showSheetToast('Configure sua AssemblyAI API Key nas configurações do Jarvis.',true);
+    input.value='';
+    return;
+  }
+  // Para gravação ao vivo antes de processar o arquivo
+  if(_acTranscribing){
+    _acTranscribing=false;
+    if(_acTranscribeRecog) try{_acTranscribeRecog.stop();}catch(e){}
+    _acUpdateTranscribeBtn(false);
+  }
+  acTranscreverAssemblyAI(file, asmKey);
+  input.value=''; // reset para permitir reupload do mesmo arquivo
+}
+
+async function acTranscreverAssemblyAI(file, asmKey){
+  var progBox=document.getElementById('ac-upload-progress');
+  var progBar=document.getElementById('ac-upload-bar');
+  var progStatus=document.getElementById('ac-upload-status');
+  var progIcon=document.getElementById('ac-upload-icon');
+  var textarea=document.getElementById('ac-reun-transcript');
+
+  function setProgress(pct, msg, done, err){
+    if(progBox) progBox.style.display='block';
+    if(progBar) progBar.style.width=pct+'%';
+    if(progStatus) progStatus.textContent=msg;
+    if(progIcon){
+      progIcon.className=done?'ti ti-check':(err?'ti ti-alert-circle':'ti ti-loader');
+      progIcon.style.animation=done||err?'none':'spin 1s linear infinite';
+      progIcon.style.color=done?'var(--green)':(err?'var(--red)':'var(--purple3)');
+    }
+    if(progStatus) progStatus.style.color=done?'var(--green)':(err?'var(--red)':'var(--purple3)');
+  }
+
+  try{
+    // 1. Upload do arquivo para AssemblyAI
+    setProgress(10,'Enviando arquivo para AssemblyAI...',false,false);
+    var uploadResp=await fetch('https://api.assemblyai.com/v2/upload',{
+      method:'POST',
+      headers:{'authorization':asmKey,'content-type':'application/octet-stream'},
+      body:file
+    });
+    if(!uploadResp.ok) throw new Error('Upload falhou: '+uploadResp.status);
+    var uploadData=await uploadResp.json();
+    var audioUrl=uploadData.upload_url;
+    if(!audioUrl) throw new Error('URL de upload não retornada');
+
+    // 2. Inicia transcrição
+    setProgress(30,'Iniciando transcrição... (pode levar alguns minutos para arquivos longos)',false,false);
+    var transcriptResp=await fetch('https://api.assemblyai.com/v2/transcript',{
+      method:'POST',
+      headers:{'authorization':asmKey,'content-type':'application/json'},
+      body:JSON.stringify({audio_url:audioUrl,language_code:'pt',punctuate:true,format_text:true})
+    });
+    if(!transcriptResp.ok) throw new Error('Erro ao iniciar transcrição: '+transcriptResp.status);
+    var transcriptData=await transcriptResp.json();
+    var tid=transcriptData.id;
+    if(!tid) throw new Error('ID de transcrição não retornado');
+
+    // 3. Polling até completar
+    var elapsed=0;
+    var maxWait=600000; // 10 min
+    var interval=5000;
+    while(elapsed<maxWait){
+      await new Promise(function(r){setTimeout(r,interval);});
+      elapsed+=interval;
+      var pct=Math.min(30+Math.floor(elapsed/maxWait*65),94);
+      var mins=Math.floor(elapsed/60000);
+      var secs=Math.floor((elapsed%60000)/1000);
+      setProgress(pct,'Transcrevendo... '+mins+'m'+secs+'s | aguardando AssemblyAI',false,false);
+
+      var pollResp=await fetch('https://api.assemblyai.com/v2/transcript/'+tid,{
+        headers:{'authorization':asmKey}
+      });
+      var pollData=await pollResp.json();
+
+      if(pollData.status==='completed'){
+        setProgress(100,'Transcrição concluída!',true,false);
+        var text=pollData.text||'';
+        if(textarea){
+          if(textarea.value.trim()) textarea.value+='\n\n'+text;
+          else textarea.value=text;
+          textarea.scrollTop=textarea.scrollHeight;
+        }
+        setTimeout(function(){ if(progBox) progBox.style.display='none'; },3000);
+        return;
+      }
+      if(pollData.status==='error'){
+        throw new Error('AssemblyAI erro: '+(pollData.error||'desconhecido'));
+      }
+      // status === 'queued' ou 'processing' → continua polling
+    }
+    throw new Error('Timeout: transcrição demorou mais de 10 minutos');
+
+  }catch(e){
+    setProgress(100,'Erro: '+e.message,false,true);
+    console.error('[AssemblyAI]',e);
+    setTimeout(function(){ if(progBox) progBox.style.display='none'; },6000);
+  }
 }
 
 function _acUpdateTranscribeBtn(active){
