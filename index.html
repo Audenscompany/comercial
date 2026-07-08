@@ -5489,6 +5489,11 @@ async function loadAssinaturas(){
       var asaasBtn = !r.asaasStatus
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(139,92,246,0.15);color:var(--purple3);border:1px solid rgba(139,92,246,0.3);" onclick="abrirModalAsaasAssinatura(\''+id+'\')" title="Criar cobrança no Asaas"><i class="ti ti-credit-card"></i> Asaas</button>'
         : '';
+      // Botão "Marcar Venda" — aparece só para contratos assinados que ainda não registraram followup como venda
+      var jaTemVenda=r._vendaRegistrada===true;
+      var marcarVendaBtn=(r.status==='assinado'&&!jaTemVenda)
+        ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarContratoComoVenda(\''+id+'\')" title="Registrar venda no CRM"><i class="ti ti-trophy"></i> Marcar venda</button>'
+        : (jaTemVenda?'<span style="font-size:11px;color:#10b981;font-weight:700;"><i class="ti ti-check"></i> Venda ✓</span>':'');
       return '<tr>'+
         '<td>'+esc(r.cliente||'-')+'</td>'+
         '<td>'+esc(r.telefone||'-')+'</td>'+
@@ -5497,7 +5502,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+marcarVendaBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -5515,6 +5520,51 @@ async function apagarAssinatura(id, nomeCliente){
   }catch(e){
     alert('Erro ao apagar: '+e.message);
   }
+}
+async function marcarContratoComoVenda(id){
+  if(!confirm('Registrar esta venda no CRM? Isso vai contar a venda para o closer da reunião mais recente deste lead.')) return;
+  var r;
+  try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro ao buscar contrato: '+e.message); return; }
+  if(!r){ alert('Contrato não encontrado.'); return; }
+  var telRaw=(r.telefone||'').replace(/\D/g,'');
+  // Encontra meeting correspondente por telefone (mais recente sem followup de venda)
+  var match=null;
+  Object.values(meetings).forEach(function(m){
+    var mTel=(m.tel||'').replace(/\D/g,'');
+    if(mTel===telRaw||mTel.endsWith(telRaw)||telRaw.endsWith(mTel)){
+      if(!match||((m.dtISO||'')>(match.dtISO||''))) match=m;
+    }
+  });
+  if(!match){ alert('Não encontrei uma reunião para o telefone '+r.telefone+'.\nVerifique se o lead está no sistema com esse número.'); return; }
+  var fid=match.id;
+  var vd=r.vendaData||{};
+  var mensBase=parseFloat(vd.mensalidade)||0;
+  var closerNome=match.responsavel||'';
+  var fuData={
+    meetingId:fid,tel:match.tel,nome:match.nome,
+    comparecimento:'sim',venda:'sim',resultado:'venda',
+    plano:vd.plano||'',duracao:parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||0,
+    dataInicio:vd.dataInicio||'',tipoValor:vd.tipoValor||'mensalidade',
+    contrato:parseFloat(vd.contrato)||0,mensalidade:mensBase,
+    frequencia:vd.frequencia||'mensal',vencimento:vd.dataInicio||'',
+    bonusComp:BONUS_COMP,bonusVenda:mensBase*BONUS_VENDA_PCT,
+    motivo:'',retornoData:'',retornoTime:'',
+    dt:new Date().toISOString().split('T')[0],
+    _fromContrato:id
+  };
+  followups[fid]=fuData;
+  meetings[fid].status='done';
+  saveMeetingFB(fid, meetings[fid]);
+  saveFollowupFB(fid, fuData);
+  // Marca o contrato como venda registrada
+  fbDb.ref('assinaturas/'+id).update({_vendaRegistrada:true});
+  // Move kanban card pra fechado
+  if(match.kanbanKey) moveKanbanCard(match.kanbanKey,'fechado');
+  updateReuniaoSheetStatus(fid,'VENDA');
+  saveAll();
+  showSheetToast('✅ Venda de '+match.nome+' registrada para '+closerNome+'!');
+  loadAssinaturas();
+  showPage('dash');
 }
 async function abrirModalAsaasAssinatura(id){
   var data=(await fbGet('assinaturas/'+id))||{};
