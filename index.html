@@ -457,6 +457,8 @@ function startRealtimeSync(){
     var fbMeetings = snap.val();
     if(!fbMeetings) return;
     var prev = JSON.stringify(meetings);
+    // Sincroniza deleções: remove do objeto local reuniões que não existem mais no Firebase
+    Object.keys(meetings).forEach(function(k){ if(!fbMeetings[k]) delete meetings[k]; });
     Object.assign(meetings, fbMeetings);
     if(JSON.stringify(meetings) !== prev){
       saveAll();
@@ -5574,6 +5576,24 @@ async function marcarContratoComoVenda(id){
   saveFollowupFB(fid, fuData);
   // Marca o contrato como venda registrada
   fbDb.ref('assinaturas/'+id).update({_vendaRegistrada:true});
+  // Cria entrada na coleção contratos (usada para cálculo de bônus/comissão)
+  var _planoDurMCV=parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||1;
+  var _planoNomeMCV=(vd.plano||'').toLowerCase();
+  var _planoLblMCV=_planoNomeMCV==='premium'?'Plano Premium':_planoNomeMCV==='elite'?'Plano Elite':'Plano '+(_planoNomeMCV||'');
+  var _planoSufMCV=_planoDurMCV>=6?' - Semestral':_planoDurMCV>=3?' - Trimestral':' - Mensal';
+  var _mrrMCV=(vd.tipoValor||'')==='tcv'?Math.round((parseFloat(vd.contrato)||0)/_planoDurMCV):(mensBase||parseFloat(vd.contrato)||0);
+  var _tcvMCV=(vd.tipoValor||'')==='tcv'?(parseFloat(vd.contrato)||0):(_mrrMCV*_planoDurMCV);
+  var leadInfoMCV=match.kanbanKey?kanbanData[match.kanbanKey]:null;
+  saveContrato(null,{
+    cliente:r.cliente||match.nome,
+    dataInicio:vd.dataInicio||new Date().toISOString().split('T')[0],
+    valorMes:_mrrMCV,valorVendido:_tcvMCV,planoDuracao:_planoDurMCV,
+    plano:_planoLblMCV+_planoSufMCV,
+    gestor:(leadInfoMCV&&leadInfoMCV.gestor)?leadInfoMCV.gestor:'',
+    origem:(leadInfoMCV&&leadInfoMCV.origem)?leadInfoMCV.origem:(match.origem||''),
+    closer:closerNome,sdr:match.sdr||'',
+    kanbanKey:match.kanbanKey||'',ativo:true,_fromAssinatura:id
+  }).catch(function(e){console.warn('Firebase contrato (marcarVenda):',e);});
   // Move kanban card pra fechado
   if(match.kanbanKey) moveKanbanCard(match.kanbanKey,'fechado');
   updateReuniaoSheetStatus(fid,'VENDA');
@@ -6844,8 +6864,11 @@ function saveFollowupEdit(){
       frequencia:frequencia,
       vencimento:vencimento
     });
-    // Registra na planilha só na primeira vez (evita duplicar linha)
-    if(old.venda!=='sim'){
+    // Registra na planilha:
+    // - primeira vez (old.venda!=='sim'), OU
+    // - venda veio de marcarContratoComoVenda (old._fromContrato) que não adiciona linha na planilha
+    var _isFirstTimeSheet = old.venda!=='sim' || old._fromContrato;
+    if(_isFirstTimeSheet){
       appendClienteRow({
         nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
         plano:plano,
@@ -6858,7 +6881,7 @@ function saveFollowupEdit(){
         closer:_fuMeeting.responsavel||'',
         sdr:_fuMeeting.sdr||''
       });
-      // Salva contrato no Firebase (apenas na primeira vez)
+      // Salva contrato no Firebase (apenas na primeira vez ou se veio de marcarContratoComoVenda)
       (function(){
         var _planoDur=duracao||1;
         var _planoNome=plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
@@ -6880,6 +6903,9 @@ function saveFollowupEdit(){
           ativo:true
         }).catch(function(e){console.warn('Firebase contrato:',e);});
       })();
+      // Remove _fromContrato para que re-edições futuras não dupliquem a linha
+      followups[fid]._fromContrato=null;
+      saveFollowupFB(fid, followups[fid]);
     }
     // Cria no Asaas se ainda não foi criado (verifica pelo asaasChargeId no kanban)
     var jaTemAsaas=kk2&&kanbanData[kk2]&&kanbanData[kk2].asaasChargeId;
