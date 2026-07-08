@@ -3661,10 +3661,12 @@ async function syncReunioesFBFromSheet(){
       }
       if(!m){ skipped++; return; }
 
+      // "REALIZADA" = reunião aconteceu mas resultado ainda não foi registrado no CRM → pending
+      // Catch-all: só marca 'done' se o CRM já tem followup gravado; senão mantém pending
       var newSt = (stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW') ? 'noshow'
-               : (stSheet==='AGENDADA'||stSheet==='PENDENTE') ? 'pending'
+               : (stSheet==='AGENDADA'||stSheet==='PENDENTE'||stSheet==='REALIZADA'||stSheet==='REALIZADO') ? 'pending'
                : (stSheet==='REAGENDADO') ? 'reagendado'
-               : 'done';
+               : (followups[m.id] ? 'done' : 'pending');
       if(m.status !== newSt){
         meetings[m.id].status = newSt;
         saveMeetingFB(m.id, meetings[m.id]);
@@ -3684,10 +3686,17 @@ function migrateStaleStatuses(){
   _migratedStatuses = true;
   var fixed = 0;
   Object.values(meetings).forEach(function(m){
+    // 1) pending/sem-status com followup → atualiza para done/noshow
     if((m.status==='pending'||!m.status) && followups[m.id]){
       var fu = followups[m.id];
       var newSt = fu.resultado==='noshow' ? 'noshow' : 'done';
       meetings[m.id].status = newSt;
+      saveMeetingFB(m.id, meetings[m.id]);
+      fixed++;
+    }
+    // 2) marcado como 'done' pelo sheet-sync mas sem followup no CRM → volta para pending
+    else if(m.status==='done' && !followups[m.id]){
+      meetings[m.id].status = 'pending';
       saveMeetingFB(m.id, meetings[m.id]);
       fixed++;
     }
