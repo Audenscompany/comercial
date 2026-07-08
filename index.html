@@ -310,6 +310,7 @@ var USERS={
 };
 var CLOSERS=['Lucas','Gustavo'];
 var SDR_USERS=['João'];
+var _navPermissions={}; // {email: [pageId, ...]} — permissões customizadas por usuário
 var BONUS_COMP=30,BONUS_VENDA_PCT=0.25;
 // Tempo apos o horario marcado da reuniao em que o follow-up (Realizada/No-show) passa a ficar pendente
 var MEETING_DURATION_MS=60*60*1000;
@@ -669,6 +670,7 @@ function startRealtimeSync(){
     if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
     if(cfg.eleven_voice !== undefined){ localStorage.setItem('audens_elevenlabs_voice',cfg.eleven_voice); }
     if(cfg.assembly_key){ localStorage.setItem('audens_assembly_key',cfg.assembly_key); }
+    if(cfg.nav_permissions){ _navPermissions=cfg.nav_permissions; }
   });
 
   // Sync gcal_token in realtime (per usuario)
@@ -3497,7 +3499,16 @@ function buildNav(){
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
 
-  var def=CU.role==='gestor'?gestorDef:(CU.funcao==='sdr'?sdrDef:closerDef);
+  var _baseDef=CU.role==='gestor'?gestorDef:(CU.funcao==='sdr'?sdrDef:closerDef);
+  // Aplica permissões customizadas (se gestor tiver definido para este usuário)
+  var _allowed=CU.role!=='gestor'&&_navPermissions&&_navPermissions[CU.email]?_navPermissions[CU.email]:null;
+  var def=!_allowed?_baseDef:_baseDef.map(function(item){
+    if(item.group){
+      var filteredItems=item.items.filter(function(sub){ return _allowed.indexOf(sub.id)>-1; });
+      return filteredItems.length?Object.assign({},item,{items:filteredItems}):null;
+    }
+    return (item.id==='config'||_allowed.indexOf(item.id)>-1)?item:null;
+  }).filter(Boolean);
 
   function navItemHtml(i,sub){
     var cls='nav-item'+(sub?' nav-sub':'');
@@ -9349,9 +9360,165 @@ function renderConfig(){
           }).join('')+
         '</div>'+
       '</div>'+
-    '</div>'
+    '</div>'+
+    // ===== CONTROLE DE ACESSO =====
+    renderNavPermissionsPanel()
   :'')+
   '</div></div></div>';
+}
+
+// ===== CONTROLE DE ACESSO (permissões por usuário) =====
+var _ALL_PAGES=[
+  {id:'tarefas',label:'Tarefas',icon:'ti-bell',grupo:'Geral'},
+  {id:'dash-comercial',label:'Dashboard Comercial',icon:'ti-chart-bar',grupo:'Geral'},
+  {id:'analise-ads',label:'Análise de Ads',icon:'ti-ad-2',grupo:'Geral'},
+  {id:'reunioes',label:'Reuniões',icon:'ti-calendar-check',grupo:'Geral'},
+  {id:'calendario',label:'Calendário',icon:'ti-calendar',grupo:'Geral'},
+  {id:'audens-day',label:'Audens Day',icon:'ti-star',grupo:'Geral'},
+  {id:'bdr',label:'BDR',icon:'ti-building-store',grupo:'Geral'},
+  {id:'ligar',label:'Leads de Hoje',icon:'ti-phone',grupo:'Closer'},
+  {id:'meu-hist',label:'Meu Histórico',icon:'ti-list-check',grupo:'Closer'},
+  {id:'assinaturas',label:'Assinaturas',icon:'ti-signature',grupo:'Closer'},
+  {id:'plano-carreira',label:'Plano de Carreira',icon:'ti-award',grupo:'Closer'},
+  {id:'minhas-tarefas',label:'Minhas Tarefas (SDR)',icon:'ti-checkbox',grupo:'SDR'},
+  {id:'sdr-hoje',label:'Reuniões do Dia (SDR)',icon:'ti-calendar-day',grupo:'SDR'},
+  {id:'sdr-reunioes',label:'Todas as Reuniões (SDR)',icon:'ti-calendar-check',grupo:'SDR'},
+  {id:'sdr-registrar',label:'Registrar Reunião (SDR)',icon:'ti-plus',grupo:'SDR'},
+  {id:'kanban',label:'Funil de Leads',icon:'ti-layout-kanban',grupo:'SDR'},
+  {id:'reativacao',label:'Reativação',icon:'ti-rotate-clockwise-2',grupo:'SDR'},
+  {id:'desempenho-sdr',label:'Desempenho SDR',icon:'ti-report-analytics',grupo:'Relatórios'},
+  {id:'financeiro',label:'Financeiro',icon:'ti-report-money',grupo:'Relatórios'},
+  {id:'contratos',label:'Contratos',icon:'ti-file-invoice',grupo:'Relatórios'},
+  {id:'asaas',label:'Cobranças Asaas',icon:'ti-cash',grupo:'Relatórios'},
+  {id:'leads',label:'Importar Leads',icon:'ti-upload',grupo:'Cold Call'},
+  {id:'historico',label:'Histórico Geral',icon:'ti-history',grupo:'Cold Call'},
+  {id:'dashboard',label:'Dashboard Cold Call',icon:'ti-phone',grupo:'Cold Call'},
+  {id:'tarefas-dia',label:'Tarefas do Dia',icon:'ti-checkbox',grupo:'Cold Call'},
+];
+
+function renderNavPermissionsPanel(){
+  var nonGestorUsers=Object.keys(USERS).filter(function(e){ return USERS[e].role!=='gestor'; });
+  if(!nonGestorUsers.length) return '';
+
+  var grupos=['Geral','Closer','SDR','Relatórios','Cold Call'];
+  var grupoColors={Geral:'var(--purple3)',Closer:'var(--cyan)',SDR:'var(--amber)',Relatórios:'#a78bfa','Cold Call':'var(--green)'};
+
+  return '<div class="cb" style="margin-top:16px;border-color:rgba(123,47,255,0.35);">'+
+    '<div class="cb-hd" style="background:rgba(123,47,255,0.07);">'+
+      '<div class="cb-title"><i class="ti ti-shield-check" style="color:var(--purple3);margin-right:6px;"></i>Controle de Acesso — Abas por Usuário</div>'+
+    '</div>'+
+    '<div style="padding:20px;">'+
+      '<div class="info-note" style="margin-bottom:18px;"><i class="ti ti-info-circle"></i> Selecione quais abas cada usuário pode ver. As alterações são aplicadas no próximo login do usuário. <strong style="color:var(--white);">Configurações</strong> sempre fica visível.</div>'+
+      '<div style="display:grid;gap:20px;">'+
+        nonGestorUsers.map(function(email){
+          var u=USERS[email];
+          var allowed=_navPermissions[email]||null;
+          var roleLabel=u.funcao==='sdr'?'SDR':'Closer';
+          // Se não tem permissão customizada, considera que tem tudo (padrão do role)
+          var defaultPages=u.funcao==='sdr'
+            ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
+            :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
+          // Usa estado temporário se houver alterações não salvas
+          var currentAllowed=(_navPermTemp[email]!==undefined?_navPermTemp[email]:(allowed||defaultPages));
+
+          return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">'+
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">'+
+              '<div>'+
+                '<div style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:16px;color:var(--white);">'+u.name+'</div>'+
+                '<div style="font-size:11px;color:var(--muted);margin-top:1px;">'+email+' · <span style="color:var(--cyan);">'+roleLabel+'</span></div>'+
+              '</div>'+
+              '<div style="display:flex;gap:8px;">'+
+                '<button onclick="navPermSelectAll(\''+email+'\')" style="font-size:11px;padding:4px 12px;border-radius:7px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--muted);cursor:pointer;">Todas</button>'+
+                '<button onclick="navPermClearAll(\''+email+'\')" style="font-size:11px;padding:4px 12px;border-radius:7px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--muted);cursor:pointer;">Nenhuma</button>'+
+                '<button onclick="saveNavPermissions(\''+email+'\')" style="font-size:12px;padding:5px 16px;border-radius:8px;background:var(--purple);border:1px solid var(--purple);color:#fff;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:5px;">'+
+                  '<i class="ti ti-check"></i> Salvar'+
+                '</button>'+
+              '</div>'+
+            '</div>'+
+            grupos.map(function(g){
+              var pagesInGroup=_ALL_PAGES.filter(function(p){ return p.grupo===g; });
+              if(!pagesInGroup.length) return '';
+              return '<div style="margin-bottom:12px;">'+
+                '<div style="font-size:10px;font-weight:700;color:'+grupoColors[g]+';letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">'+g+'</div>'+
+                '<div style="display:flex;flex-wrap:wrap;gap:6px;">'+
+                  pagesInGroup.map(function(p){
+                    var checked=currentAllowed.indexOf(p.id)>-1;
+                    return '<label id="navperm-label-'+email.replace(/[@.]/g,'_')+'-'+p.id+'" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;cursor:pointer;background:'+(checked?'rgba(123,47,255,0.12)':'rgba(255,255,255,0.03)')+';border:1px solid '+(checked?'rgba(123,47,255,0.35)':'rgba(255,255,255,0.08)')+';transition:all 0.15s;" onclick="navPermToggle(\''+email+'\',\''+p.id+'\',this)">'+
+                      '<div id="navperm-dot-'+email.replace(/[@.]/g,'_')+'-'+p.id+'" style="width:7px;height:7px;border-radius:50%;background:'+(checked?'var(--purple3)':'rgba(255,255,255,0.15)')+';flex-shrink:0;transition:all 0.15s;"></div>'+
+                      '<i class="ti '+p.icon+'" style="font-size:12px;color:'+(checked?'var(--purple3)':'var(--muted)')+';transition:all 0.15s;" id="navperm-icon-'+email.replace(/[@.]/g,'_')+'-'+p.id+'"></i>'+
+                      '<span style="font-size:12px;color:'+(checked?'var(--white)':'var(--muted)')+';transition:all 0.15s;" id="navperm-txt-'+email.replace(/[@.]/g,'_')+'-'+p.id+'">'+p.label+'</span>'+
+                    '</label>';
+                  }).join('')+
+                '</div>'+
+              '</div>';
+            }).join('')+
+          '</div>';
+        }).join('')+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+// Estado temporário dos toggles (antes de salvar)
+var _navPermTemp={};
+
+function navPermToggle(email, pageId, labelEl){
+  var key=email+'|'+pageId;
+  // Inicializa com estado atual se ainda não tem modificação
+  if(!_navPermTemp[email]){
+    var allowed=_navPermissions[email];
+    var defaultPages=USERS[email]&&USERS[email].funcao==='sdr'
+      ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
+      :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
+    _navPermTemp[email]=(allowed||defaultPages).slice();
+  }
+  var idx=_navPermTemp[email].indexOf(pageId);
+  var nowActive=idx===-1;
+  if(nowActive) _navPermTemp[email].push(pageId);
+  else _navPermTemp[email].splice(idx,1);
+  // Atualiza visual do label
+  var safeEmail=email.replace(/[@.]/g,'_');
+  var dot=document.getElementById('navperm-dot-'+safeEmail+'-'+pageId);
+  var icon=document.getElementById('navperm-icon-'+safeEmail+'-'+pageId);
+  var txt=document.getElementById('navperm-txt-'+safeEmail+'-'+pageId);
+  if(labelEl){
+    labelEl.style.background=nowActive?'rgba(123,47,255,0.12)':'rgba(255,255,255,0.03)';
+    labelEl.style.borderColor=nowActive?'rgba(123,47,255,0.35)':'rgba(255,255,255,0.08)';
+  }
+  if(dot) dot.style.background=nowActive?'var(--purple3)':'rgba(255,255,255,0.15)';
+  if(icon) icon.style.color=nowActive?'var(--purple3)':'var(--muted)';
+  if(txt) txt.style.color=nowActive?'var(--white)':'var(--muted)';
+}
+
+function navPermSelectAll(email){
+  _navPermTemp[email]=_ALL_PAGES.map(function(p){ return p.id; });
+  showPage('config'); // re-render para mostrar estado atualizado
+}
+
+function navPermClearAll(email){
+  _navPermTemp[email]=[];
+  showPage('config');
+}
+
+function saveNavPermissions(email){
+  var toSave=_navPermTemp[email];
+  if(!toSave){
+    // Nenhuma alteração foi feita — salva o estado atual
+    var def=_navPermissions[email]||(USERS[email]&&USERS[email].funcao==='sdr'
+      ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
+      :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr']);
+    toSave=def;
+  }
+  _navPermissions[email]=toSave;
+  delete _navPermTemp[email];
+  if(fbDb||initFirebase()){
+    var update={};
+    update['nav_permissions/'+email.replace(/\./g,'_')]=toSave;
+    // Também guarda com o email como chave (lendo de volta, substituimos _ por .)
+    fbDb.ref('config/nav_permissions').set(_navPermissions);
+  }
+  showSheetToast('Permissões de '+USERS[email].name+' salvas!',false);
+  showPage('config');
 }
 
 // ===== TAREFAS DO DIA (TO-DO LIST) — v2 =====
