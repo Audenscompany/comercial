@@ -3824,6 +3824,8 @@ async function syncReunioesFBFromSheet(){
                : (stSheet==='REALIZADA'||stSheet==='REALIZADO') ? (followups[m.id] ? 'done' : 'pending')
                : (stSheet==='AGENDADA'||stSheet==='PENDENTE') ? 'pending'
                : (followups[m.id] ? 'done' : 'pending');
+      // Não sobrescrever 'reagendado' manual com 'pending' do sheet (seria desfazer um dismiss)
+      if(m.status==='reagendado' && newSt==='pending') return;
       if(m.status !== newSt){
         meetings[m.id].status = newSt;
         saveMeetingFB(m.id, meetings[m.id]);
@@ -3862,11 +3864,22 @@ function migrateStaleStatuses(){
 }
 
 function getPendingFollowups(){
-  return Object.values(meetings).filter(function(m){
+  var allMtgs=Object.values(meetings);
+  return allMtgs.filter(function(m){
     var _st=getMeetingStatus(m);
-    return _st!=='done'&&_st!=='noshow'&&_st!=='reagendado'&&!followups[m.id]&&
-      Date.now()>new Date(m.dtISO).getTime()+MEETING_DURATION_MS&&
-      m.responsavel===CU.closer;
+    if(_st==='done'||_st==='noshow'||_st==='reagendado') return false;
+    if(followups[m.id]) return false;
+    if(Date.now()<=new Date(m.dtISO).getTime()+MEETING_DURATION_MS) return false;
+    if(m.responsavel!==CU.closer) return false;
+    // Se existe uma reunião MAIS RECENTE para o mesmo telefone, essa foi reagendada
+    if(m.tel){
+      var mTime=new Date(m.dtISO).getTime();
+      var hasNewer=allMtgs.some(function(m2){
+        return m2.id!==m.id&&m2.tel===m.tel&&new Date(m2.dtISO).getTime()>mTime;
+      });
+      if(hasNewer) return false;
+    }
+    return true;
   });
 }
 function calcStats(df){
