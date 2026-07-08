@@ -618,6 +618,11 @@ function startRealtimeSync(){
     }
   });
 
+  // Carregar avaliações de closers
+  fbDb.ref('avaliacoes').once('value', function(snap){
+    if(snap.val()) Object.assign(_avaliacoes, snap.val());
+  });
+
   // Sync BDR leads em tempo real
   fbDb.ref('bdr_leads').on('value', function(snap){
     var fb=snap.val()||{};
@@ -3471,6 +3476,7 @@ function buildNav(){
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
     {id:'bdr',icon:'ti-building-store',label:'BDR'},
+    {id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var closerDef=[
@@ -3537,7 +3543,8 @@ function buildNav(){
       'leads':{id:'leads',icon:'ti-upload',label:'Importar Leads'},
       'historico':{id:'historico',icon:'ti-history',label:'Historico Geral'},
       'dashboard':{id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
-      'tarefas-dia':{id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'}
+      'tarefas-dia':{id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'},
+      'avaliacoes':{id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'}
     };
     // Grupos para organizar na sidebar quando há permissões customizadas
     var _navGroups=[
@@ -3545,7 +3552,7 @@ function buildNav(){
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
       {group:'Cold Call',icon:'ti-phone-call',items:['leads','historico','dashboard','tarefas-dia']}
     ];
-    var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','reunioes','calendario','meu-hist','audens-day','bdr'];
+    var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
     def=[];
     // Primeiro itens de topo nível permitidos
     _topLevel.forEach(function(id){
@@ -3643,7 +3650,8 @@ function showPage(id){
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro,
     'contratos':renderContratos,'audens-day':renderAudensDay,
-    'audens-command':renderAudensCommand,'bdr':renderBDR
+    'audens-command':renderAudensCommand,'bdr':renderBDR,
+    'avaliacoes':renderAvaliacoes
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -3657,6 +3665,7 @@ function showPage(id){
     if(id==='contratos') setTimeout(loadContratosPage,50);
     if(id==='audens-day') setTimeout(loadAudensDay,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
+    if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='financeiro') setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -9430,6 +9439,7 @@ var _ALL_PAGES=[
   {id:'calendario',label:'Calendário',icon:'ti-calendar',grupo:'Geral'},
   {id:'audens-day',label:'Audens Day',icon:'ti-star',grupo:'Geral'},
   {id:'bdr',label:'BDR',icon:'ti-building-store',grupo:'Geral'},
+  {id:'avaliacoes',label:'Avaliação Closers',icon:'ti-chart-radar',grupo:'Geral'},
   {id:'ligar',label:'Leads de Hoje',icon:'ti-phone',grupo:'Closer'},
   {id:'meu-hist',label:'Meu Histórico',icon:'ti-list-check',grupo:'Closer'},
   {id:'assinaturas',label:'Assinaturas',icon:'ti-signature',grupo:'Closer'},
@@ -14508,6 +14518,11 @@ async function _execImport(reImport){
 
 // ===== AUDENS COMMAND =====
 var _acJarvisHistory = [];
+var _lastJarvisEvaluation = null; // JSON estruturado da última análise de reunião
+var _avaliacoes = {}; // Avaliações carregadas do Firebase
+var _avalCurrentCloser = null; // Closer selecionado no dashboard
+var _avalCurrentTab = 'geral'; // Tab ativa no dashboard
+var _avalSelectedId = null; // Avaliação selecionada na aba Por Reunião
 
 var AC_JARVIS_PLAYBOOK = `Você é o Jarvis Comercial da Audens Company.
 Sua função é analisar transcrições de reuniões comerciais, identificar a qualidade real da condução do vendedor, medir a probabilidade de avanço da oportunidade e entregar um diagnóstico direto, técnico e acionável.
@@ -15103,7 +15118,8 @@ async function acAnalisarReuniao(){
   if(objecoes) systemPrompt += '\n\nOBJEÇÕES ADICIONAIS:\n'+objecoes;
   if(criterios) systemPrompt += '\n\nCRITÉRIOS ADICIONAIS:\n'+criterios;
 
-  var prompt = 'Analise a transcrição abaixo seguindo exatamente o padrão Jarvis Comercial Audens.'+(nomeLead?' Lead: '+nomeLead+'.':'')+'\n\n=== TRANSCRIÇÃO ===\n'+transcript;
+  var jsonInstruction = '\n\n=== INSTRUÇÃO ADICIONAL ===\nAo final de toda a análise textual, inclua um bloco JSON estruturado entre as tags <AVALIACAO_JSON> e </AVALIACAO_JSON> com o seguinte formato exato (não quebre linhas desnecessárias dentro dos campos de texto):\n<AVALIACAO_JSON>\n{"lead":"nome do lead","segmento":"segmento do negócio","notaFinal":75,"classificacao":"B — Boa, mas incompleta","problemaPrincipal":"...","desejoPrincipal":"...","proximoPasso":"...","criterios":[{"id":1,"nome":"Abertura e controle da reunião","nota":4,"max":6,"descricao":"...","evidencia":"...","acao":"..."},{"id":2,"nome":"Diagnóstico factual do negócio","nota":8,"max":14,"descricao":"...","evidencia":"...","acao":"..."},{"id":3,"nome":"Exploração da dor e consequência","nota":7,"max":14,"descricao":"...","evidencia":"...","acao":"..."},{"id":4,"nome":"Meta, desejo e urgência","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":5,"nome":"Qualificação de decisão e investimento","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":6,"nome":"Escuta e condução consultiva","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":7,"nome":"Apresentação da solução personalizada","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":8,"nome":"Prova, autoridade e posicionamento","nota":3,"max":5,"descricao":"...","evidencia":"...","acao":"..."},{"id":9,"nome":"Investimento e objeções","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":10,"nome":"Fechamento e próximo passo","nota":5,"max":11,"descricao":"...","evidencia":"...","acao":"..."}],"pontosFortes":["...","..."],"falhas":[{"titulo":"...","impacto":"...","correcao":"..."}],"acoesPrioritarias":["...","..."],"diagnostico":{"ondeEsta":"...","ondeQuerChegar":"...","impedimentos":"...","risco":"...","solucao":"..."}}\n</AVALIACAO_JSON>\nSubstitua os "..." com informações reais da transcrição. A soma das notas dos critérios deve refletir o desempenho real. O campo notaFinal é a nota geral de 0 a 100.';
+  var prompt = 'Analise a transcrição abaixo seguindo exatamente o padrão Jarvis Comercial Audens.'+(nomeLead?' Lead: '+nomeLead+'.':'')+'\n\n=== TRANSCRIÇÃO ===\n'+transcript+jsonInstruction;
   var input=document.getElementById('ac-chat-input');
   if(input) input.value='';
   acAddMsg('user','📋 Analisar transcrição da reunião'+(nomeLead?' — '+nomeLead:''));
@@ -15125,13 +15141,32 @@ async function acAnalisarReuniao(){
     var data=await resp.json();
     var answer=(data.content&&data.content[0]&&data.content[0].text)||'Sem resposta';
     _acJarvisHistory.push({role:'assistant',content:answer});
-    var formatted=answer
+    // Extrai JSON estruturado da análise
+    var jsonMatch=answer.match(/<AVALIACAO_JSON>([\s\S]*?)<\/AVALIACAO_JSON>/);
+    _lastJarvisEvaluation=null;
+    var displayAnswer=answer.replace(/<AVALIACAO_JSON>[\s\S]*?<\/AVALIACAO_JSON>/g,'').trim();
+    if(jsonMatch){
+      try{
+        _lastJarvisEvaluation=JSON.parse(jsonMatch[1].trim());
+        _lastJarvisEvaluation._nomeLead=nomeLead||_lastJarvisEvaluation.lead||'Lead';
+      }catch(ex){ /* ignora erro de parse */ }
+    }
+    var formatted=displayAnswer
       .replace(/\*\*(.*?)\*\*/g,'<b style="color:var(--purple3);">$1</b>')
       .replace(/^(#{1,3})\s(.+)$/gm, '<div style="font-family:var(--font-bn);font-size:13px;letter-spacing:1px;color:var(--purple3);margin-top:14px;margin-bottom:4px;text-transform:uppercase;">$2</div>')
       .replace(/\n/g,'<br>');
     var thinkEl=document.getElementById(thinkId);
-    if(thinkEl) thinkEl.innerHTML=formatted;
-    acSpeak('Análise concluída. '+answer.substring(0,200));
+    if(thinkEl){
+      thinkEl.innerHTML=formatted;
+      // Botão salvar avaliação
+      if(_lastJarvisEvaluation){
+        var saveBtnDiv=document.createElement('div');
+        saveBtnDiv.style.cssText='margin-top:12px;';
+        saveBtnDiv.innerHTML='<button onclick="acAbrirModalSalvarAvaliacao()" style="background:var(--purple);border:none;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-device-floppy"></i> Salvar Avaliação no Dashboard</button>';
+        thinkEl.appendChild(saveBtnDiv);
+      }
+    }
+    acSpeak('Análise concluída. '+displayAnswer.substring(0,200));
   }catch(e){
     var thinkEl2=document.getElementById(thinkId);
     if(thinkEl2) thinkEl2.innerHTML='<span style="color:var(--red);">Erro: '+e.message+'</span>';
@@ -15253,6 +15288,381 @@ function acAddMsg(role, html, id){
   msgs.appendChild(div);
   msgs.scrollTop=msgs.scrollHeight;
   return div;
+}
+
+// ===== AVALIAÇÕES: SALVAR E DASHBOARD =====
+function acAbrirModalSalvarAvaliacao(){
+  if(!_lastJarvisEvaluation){ showSheetToast('Nenhuma avaliação disponível.',true); return; }
+  // Monta lista de closers (todos que não são gestor/sdr)
+  var closerOpts=USERS.filter(function(u){ return u.role!=='gestor'&&u.funcao!=='sdr'; }).map(function(u){
+    return '<div onclick="acSelCloserModal(this,\''+u.email+'\',\''+u.nome+'\')" data-email="'+u.email+'" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s;" onmouseover="this.style.borderColor=\'var(--purple)\'" onmouseout="this.style.borderColor=this.classList.contains(\'sel\')?\'var(--purple)\':\'var(--border)\'">'+
+      '<div style="width:32px;height:32px;border-radius:50%;background:var(--pglow);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">'+u.nome.charAt(0)+'</div>'+
+      '<div><div style="font-weight:700;font-size:13px;">'+u.nome+'</div><div style="font-size:11px;color:var(--muted);">'+u.funcao+'</div></div>'+
+    '</div>';
+  }).join('');
+  if(!closerOpts) closerOpts='<div style="color:var(--muted);font-size:13px;">Nenhum closer cadastrado.</div>';
+  var ev=_lastJarvisEvaluation;
+  var modal=document.createElement('div');
+  modal.id='aval-save-modal';
+  modal.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);';
+  modal.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:18px;padding:28px;width:min(440px,95vw);display:flex;flex-direction:column;gap:16px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+      '<div style="font-family:var(--font-bn);font-size:16px;letter-spacing:1px;color:var(--purple3);">SALVAR AVALIAÇÃO</div>'+
+      '<button onclick="acFecharModalSalvarAvaliacao()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;">×</button>'+
+    '</div>'+
+    '<div style="background:var(--card2);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);">'+
+      '<b style="color:var(--white);">'+ev._nomeLead+'</b> &nbsp;•&nbsp; Nota: <b style="color:var(--purple3);">'+(ev.notaFinal||'—')+'/100</b> &nbsp;•&nbsp; '+ev.classificacao+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:-8px;">Atribuir esta avaliação ao closer:</div>'+
+    '<div id="aval-closer-list" style="display:flex;flex-direction:column;gap:8px;">'+closerOpts+'</div>'+
+    '<div id="aval-closer-sel" style="font-size:12px;color:var(--muted);min-height:16px;"></div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;">'+
+      '<button onclick="acFecharModalSalvarAvaliacao()" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border);background:none;color:var(--white);font-size:13px;cursor:pointer;">Cancelar</button>'+
+      '<button id="aval-save-btn" onclick="acConfirmarSalvarAvaliacao()" style="padding:9px 18px;border-radius:8px;border:none;background:var(--purple);color:#fff;font-size:13px;font-weight:700;cursor:pointer;opacity:0.5;pointer-events:none;">Salvar</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(modal);
+  // Se só tem 1 closer, seleciona automaticamente
+  var closers=USERS.filter(function(u){ return u.role!=='gestor'&&u.funcao!=='sdr'; });
+  if(closers.length===1) acSelCloserModal(document.querySelector('#aval-closer-list [data-email]'),closers[0].email,closers[0].nome);
+}
+function acSelCloserModal(el,email,nome){
+  document.querySelectorAll('#aval-closer-list [data-email]').forEach(function(d){
+    d.classList.remove('sel');
+    d.style.borderColor='var(--border)';
+    d.style.background='';
+  });
+  el.classList.add('sel');
+  el.style.borderColor='var(--purple)';
+  el.style.background='rgba(139,92,246,0.12)';
+  el.setAttribute('data-sel-email',email);
+  el.setAttribute('data-sel-nome',nome);
+  var selDiv=document.getElementById('aval-closer-sel');
+  if(selDiv) selDiv.textContent='Closer selecionado: '+nome;
+  var saveBtn=document.getElementById('aval-save-btn');
+  if(saveBtn){ saveBtn.style.opacity='1'; saveBtn.style.pointerEvents='auto'; }
+  window._avalSelEmail=email; window._avalSelNome=nome;
+}
+function acFecharModalSalvarAvaliacao(){
+  var m=document.getElementById('aval-save-modal'); if(m) m.remove();
+}
+function acConfirmarSalvarAvaliacao(){
+  if(!window._avalSelEmail||!_lastJarvisEvaluation){ showSheetToast('Selecione um closer.',true); return; }
+  var ev=_lastJarvisEvaluation;
+  var now=new Date();
+  var id='aval_'+now.getTime();
+  var record={
+    id:id,
+    closerEmail:window._avalSelEmail,
+    closerNome:window._avalSelNome,
+    date:now.toISOString().split('T')[0],
+    timestamp:now.getTime(),
+    lead:ev._nomeLead||ev.lead||'Lead',
+    segmento:ev.segmento||'',
+    notaFinal:ev.notaFinal||0,
+    classificacao:ev.classificacao||'',
+    problemaPrincipal:ev.problemaPrincipal||'',
+    desejoPrincipal:ev.desejoPrincipal||'',
+    proximoPasso:ev.proximoPasso||'',
+    criterios:ev.criterios||[],
+    pontosFortes:ev.pontosFortes||[],
+    falhas:ev.falhas||[],
+    acoesPrioritarias:ev.acoesPrioritarias||[],
+    diagnostico:ev.diagnostico||{}
+  };
+  _avaliacoes[id]=record;
+  if(fbDb||initFirebase()){
+    fbDb.ref('avaliacoes/'+id).set(record);
+  }
+  acFecharModalSalvarAvaliacao();
+  _lastJarvisEvaluation=null;
+  showSheetToast('Avaliação de '+window._avalSelNome+' salva! Nota: '+record.notaFinal+'/100',false);
+  window._avalSelEmail=null; window._avalSelNome=null;
+}
+function loadAvaliacoes(){
+  if(!fbDb&&!initFirebase()) return;
+  fbDb.ref('avaliacoes').once('value',function(snap){
+    _avaliacoes={};
+    if(snap.val()) Object.assign(_avaliacoes,snap.val());
+    if(document.getElementById('content').getAttribute('data-page')==='avaliacoes'){
+      document.getElementById('content').innerHTML=renderAvaliacoes();
+      setTimeout(loadAvaliacoesCharts,50);
+    }
+  });
+}
+function renderAvaliacoes(){
+  // Carrega dados do Firebase se ainda não carregou
+  var closers=USERS.filter(function(u){ return u.role!=='gestor'&&u.funcao!=='sdr'; });
+  if(!_avalCurrentCloser&&closers.length>0) _avalCurrentCloser=closers[0].email;
+  // Avaliações do closer selecionado
+  var avalArr=Object.values(_avaliacoes).filter(function(a){ return !_avalCurrentCloser||a.closerEmail===_avalCurrentCloser; }).sort(function(a,b){ return b.timestamp-a.timestamp; });
+  var closerNome=_avalCurrentCloser?(USERS.find(function(u){return u.email===_avalCurrentCloser;})||{nome:'Closer'}).nome:'Todos';
+  // KPIs
+  var totalAval=avalArr.length;
+  var mediaNota=totalAval>0?Math.round(avalArr.reduce(function(s,a){return s+a.notaFinal;},0)/totalAval):0;
+  // Média por critério
+  var critMap={};
+  avalArr.forEach(function(a){
+    (a.criterios||[]).forEach(function(c){
+      if(!critMap[c.id]) critMap[c.id]={nome:c.nome,totalNota:0,totalMax:0,count:0};
+      critMap[c.id].totalNota+=c.nota; critMap[c.id].totalMax+=c.max; critMap[c.id].count++;
+    });
+  });
+  var critArr=Object.values(critMap).sort(function(a,b){ return a.id-b.id; });
+  var melhorCrit=critArr.length>0?critArr.slice().sort(function(a,b){ return (b.totalNota/b.totalMax)-(a.totalNota/a.totalMax); })[0]:null;
+  var piorCrit=critArr.length>0?critArr.slice().sort(function(a,b){ return (a.totalNota/a.totalMax)-(b.totalNota/b.totalMax); })[0]:null;
+  // Gauge SVG
+  function gaugeArc(score){
+    var pct=Math.max(0,Math.min(100,score))/100;
+    var r=54; var cx=70; var cy=70;
+    var startAngle=-Math.PI*0.75; var endAngle=Math.PI*0.75;
+    var totalAngle=endAngle-startAngle;
+    var angle=startAngle+totalAngle*pct;
+    var x1=cx+r*Math.cos(startAngle); var y1=cy+r*Math.sin(startAngle);
+    var x2=cx+r*Math.cos(angle); var y2=cy+r*Math.sin(angle);
+    var large=totalAngle*pct>Math.PI?1:0;
+    var x1b=cx+r*Math.cos(endAngle); var y1b=cy+r*Math.sin(endAngle);
+    var clr=score>=70?'#10b981':score>=45?'#f59e0b':'#ef4444';
+    return '<svg viewBox="0 0 140 110" style="width:140px;height:110px;">'+
+      '<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 1 1 '+x1b+' '+y1b+'" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10" stroke-linecap="round"/>'+
+      (pct>0?'<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 '+large+' 1 '+x2+' '+y2+'" fill="none" stroke="'+clr+'" stroke-width="10" stroke-linecap="round"/>':'')+
+      '<text x="70" y="68" text-anchor="middle" fill="#fff" font-size="26" font-weight="800" font-family="sans-serif">'+score+'</text>'+
+      '<text x="70" y="84" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="10" font-family="sans-serif">/100</text>'+
+    '</svg>';
+  }
+  var classLabel=mediaNota>=85?'Excelente':mediaNota>=70?'Bom':mediaNota>=45?'Regular':'Crítico';
+  var classClr=mediaNota>=85?'#10b981':mediaNota>=70?'#c084fc':mediaNota>=45?'#f59e0b':'#ef4444';
+  var tabs=[
+    {id:'geral',label:'Visão Geral'},
+    {id:'reunioes',label:'Por Reunião'},
+    {id:'criterios',label:'Critérios'}
+  ];
+  var tabHtml=tabs.map(function(t){
+    var active=_avalCurrentTab===t.id;
+    return '<button onclick="_avalCurrentTab=\''+t.id+'\';showPage(\'avaliacoes\')" style="padding:8px 16px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;transition:.15s;'+
+      (active?'background:var(--purple);color:#fff;':'background:none;color:var(--muted);')+'">' +t.label+'</button>';
+  }).join('');
+  var closerPillsHtml=closers.map(function(u){
+    var active=_avalCurrentCloser===u.email;
+    return '<button onclick="_avalCurrentCloser=\''+u.email+'\';showPage(\'avaliacoes\')" style="padding:7px 14px;border-radius:999px;border:1px solid;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;'+
+      (active?'background:var(--purple);border-color:var(--purple);color:#fff;':'background:none;border-color:var(--border);color:var(--muted);')+'">' +u.nome+'</button>';
+  }).join('');
+  // Conteúdo da tab
+  var tabContent='';
+  if(_avalCurrentTab==='geral'){
+    // Visão Geral: gauge + KPIs + evolution chart + criteria summary
+    var kpiCards=[
+      {label:'Reuniões analisadas',value:totalAval,icon:'ti-video'},
+      {label:'Nota média',value:mediaNota+'/100',icon:'ti-chart-bar'},
+      {label:'Melhor critério',value:melhorCrit?melhorCrit.nome.split(' ').slice(0,2).join(' '):'—',icon:'ti-trophy'},
+      {label:'Precisa melhorar',value:piorCrit?piorCrit.nome.split(' ').slice(0,2).join(' '):'—',icon:'ti-alert-triangle'}
+    ].map(function(k){
+      return '<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'+
+          '<i class="ti '+k.icon+'" style="color:var(--purple3);font-size:16px;"></i>'+
+          '<span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;">'+k.label+'</span>'+
+        '</div>'+
+        '<div style="font-size:22px;font-weight:900;color:var(--white);">'+k.value+'</div>'+
+      '</div>';
+    }).join('');
+    var critBars=critArr.map(function(c){
+      var pct=c.totalMax>0?Math.round((c.totalNota/c.totalMax)*100):0;
+      var clr=pct>=70?'#10b981':pct>=45?'#f59e0b':'#ef4444';
+      return '<div style="display:flex;flex-direction:column;gap:4px;">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;">'+
+          '<span style="color:var(--white);font-weight:600;">'+c.nome+'</span>'+
+          '<span style="color:'+clr+';font-weight:800;">'+pct+'%</span>'+
+        '</div>'+
+        '<div style="height:8px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;">'+
+          '<div style="height:100%;width:'+pct+'%;background:'+clr+';border-radius:999px;transition:width .4s;"></div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+    // Evolution chart data (últimas 10 avaliações)
+    var evoData=avalArr.slice(0,10).reverse();
+    var evoHtml='';
+    if(evoData.length>=2){
+      evoHtml='<div id="aval-evo-chart" style="margin-top:0;height:120px;position:relative;"></div>';
+    } else if(evoData.length===1){
+      evoHtml='<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">Adicione mais avaliações para ver a evolução.</div>';
+    } else {
+      evoHtml='<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">Nenhuma avaliação ainda.</div>';
+    }
+    tabContent=
+      '<div style="display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center;background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px;">'+
+        '<div style="display:flex;flex-direction:column;align-items:center;">'+
+          (totalAval>0?gaugeArc(mediaNota):'<div style="width:140px;height:110px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">Sem dados</div>')+
+          '<div style="font-size:12px;font-weight:800;color:'+classClr+';">'+classLabel+'</div>'+
+        '</div>'+
+        '<div>'+
+          '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">'+closerNome+' — Média Geral</div>'+
+          '<div style="font-size:13px;color:var(--muted);">Baseado em <b style="color:var(--white);">'+totalAval+'</b> reunião(ões) analisada(s) pelo Jarvis.</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px;">'+kpiCards+'</div>'+
+      (evoData.length>=2?
+      '<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px;">'+
+        '<div style="font-size:13px;font-weight:800;color:var(--white);margin-bottom:14px;">Evolução das Notas</div>'+
+        evoHtml+
+        '<script>window._evalEvoData='+JSON.stringify(evoData.map(function(a){return{nota:a.notaFinal,lead:a.lead,date:a.date};}))+';setTimeout(renderEvoChart,80);<\/script>'+
+      '</div>':'')+
+      (critArr.length>0?
+      '<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;">'+
+        '<div style="font-size:13px;font-weight:800;color:var(--white);margin-bottom:14px;">Critérios — Média de todas as reuniões</div>'+
+        '<div style="display:flex;flex-direction:column;gap:12px;">'+critBars+'</div>'+
+      '</div>':'');
+  } else if(_avalCurrentTab==='reunioes'){
+    if(avalArr.length===0){
+      tabContent='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:40px;text-align:center;color:var(--muted);">Nenhuma avaliação salva ainda. Analise uma reunião no Jarvis e clique em "Salvar Avaliação".</div>';
+    } else {
+      var selectedAval=_avalSelectedId?_avaliacoes[_avalSelectedId]:null;
+      var listCards=avalArr.map(function(a){
+        var active=_avalSelectedId===a.id;
+        var clr=a.notaFinal>=70?'#10b981':a.notaFinal>=45?'#f59e0b':'#ef4444';
+        return '<div onclick="window._avalSelectedId=\''+a.id+'\';showPage(\'avaliacoes\')" style="background:var(--card2);border:1px solid '+(active?'var(--purple)':' var(--border)')+';border-radius:12px;padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:.15s;">'+
+          '<div>'+
+            '<div style="font-weight:700;font-size:13px;color:var(--white);">'+a.lead+'</div>'+
+            '<div style="font-size:11px;color:var(--muted);">'+a.date+' &nbsp;•&nbsp; '+a.segmento+'</div>'+
+          '</div>'+
+          '<div style="font-size:20px;font-weight:900;color:'+clr+';">'+a.notaFinal+'</div>'+
+        '</div>';
+      }).join('');
+      var detailHtml='';
+      if(selectedAval){
+        var sc=selectedAval;
+        var critDetail=(sc.criterios||[]).map(function(c){
+          var p=c.max>0?Math.round((c.nota/c.max)*100):0;
+          var cl=p>=70?'#10b981':p>=45?'#f59e0b':'#ef4444';
+          return '<div style="display:flex;flex-direction:column;gap:4px;padding:10px 0;border-bottom:1px solid var(--border);">'+
+            '<div style="display:flex;justify-content:space-between;font-size:12px;align-items:center;">'+
+              '<span style="font-weight:700;color:var(--white);">'+c.nome+'</span>'+
+              '<span style="color:'+cl+';font-weight:800;">'+c.nota+'/'+c.max+'</span>'+
+            '</div>'+
+            '<div style="height:6px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;"><div style="height:100%;width:'+p+'%;background:'+cl+';border-radius:999px;"></div></div>'+
+            '<div style="font-size:11px;color:var(--muted);">'+c.acao+'</div>'+
+          '</div>';
+        }).join('');
+        detailHtml='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px;">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+            '<div>'+
+              '<div style="font-size:16px;font-weight:900;color:var(--white);">'+sc.lead+'</div>'+
+              '<div style="font-size:11px;color:var(--muted);">'+sc.date+' &nbsp;•&nbsp; '+sc.segmento+'</div>'+
+            '</div>'+
+            '<div style="text-align:right;">'+
+              '<div style="font-size:26px;font-weight:900;color:var(--purple3);">'+sc.notaFinal+'/100</div>'+
+              '<div style="font-size:11px;color:var(--muted);">'+sc.classificacao+'</div>'+
+            '</div>'+
+          '</div>'+
+          (sc.problemaPrincipal?'<div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:var(--muted);border-left:3px solid var(--purple);">'+sc.problemaPrincipal+'</div>':'')+
+          '<div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;">Critérios</div>'+
+          '<div>'+critDetail+'</div>'+
+          (sc.acoesPrioritarias&&sc.acoesPrioritarias.length?
+            '<div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:4px;">Plano de Ação</div>'+
+            '<ul style="margin:0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:6px;">'+
+              sc.acoesPrioritarias.map(function(a,i){return '<li style="font-size:12px;color:var(--muted);">'+a+'</li>';}).join('')+
+            '</ul>':'')+
+          '<button onclick="acExcluirAvaliacao(\''+sc.id+'\')" style="align-self:flex-end;padding:6px 12px;border-radius:8px;border:1px solid var(--red);background:none;color:var(--red);font-size:11px;cursor:pointer;">Excluir</button>'+
+        '</div>';
+      } else {
+        detailHtml='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:40px;text-align:center;color:var(--muted);font-size:13px;">Selecione uma reunião para ver o detalhe.</div>';
+      }
+      tabContent='<div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start;">'+
+        '<div style="display:flex;flex-direction:column;gap:8px;">'+listCards+'</div>'+
+        detailHtml+
+      '</div>';
+    }
+  } else if(_avalCurrentTab==='criterios'){
+    if(critArr.length===0){
+      tabContent='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:40px;text-align:center;color:var(--muted);">Nenhuma avaliação ainda.</div>';
+    } else {
+      var critCards=critArr.map(function(c){
+        var avgPct=c.totalMax>0?Math.round((c.totalNota/c.totalMax)*100):0;
+        var cl=avgPct>=70?'#10b981':avgPct>=45?'#f59e0b':'#ef4444';
+        var label=avgPct>=70?'Bom':avgPct>=45?'Atenção':'Crítico';
+        // Distribuição por avaliação para este critério
+        var notasByAval=avalArr.map(function(a){
+          var cc=(a.criterios||[]).find(function(x){return x.id===c.id;});
+          return cc?{nota:cc.nota,max:cc.max,lead:a.lead,date:a.date}:null;
+        }).filter(Boolean);
+        var miniTrend=notasByAval.slice(-5).map(function(n){
+          var p=n.max>0?Math.round((n.nota/n.max)*100):0;
+          var tc=p>=70?'#10b981':p>=45?'#f59e0b':'#ef4444';
+          return '<div title="'+n.lead+' ('+n.date+'): '+n.nota+'/'+n.max+'" style="width:10px;height:'+Math.max(4,Math.round(p*0.32))+'px;background:'+tc+';border-radius:2px;align-self:flex-end;"></div>';
+        }).join('');
+        return '<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'+
+            '<div>'+
+              '<div style="font-weight:800;font-size:13px;color:var(--white);">'+c.nome+'</div>'+
+              '<div style="font-size:11px;color:var(--muted);">Média: '+c.totalNota+'/'+c.totalMax+' pts &nbsp;•&nbsp; '+c.count+' reunião(ões)</div>'+
+            '</div>'+
+            '<div style="text-align:right;">'+
+              '<div style="font-size:20px;font-weight:900;color:'+cl+';">'+avgPct+'%</div>'+
+              '<div style="font-size:10px;font-weight:700;color:'+cl+';">'+label+'</div>'+
+            '</div>'+
+          '</div>'+
+          '<div style="height:8px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;margin-bottom:10px;">'+
+            '<div style="height:100%;width:'+avgPct+'%;background:'+cl+';border-radius:999px;"></div>'+
+          '</div>'+
+          (miniTrend?'<div style="display:flex;align-items:flex-end;gap:3px;height:32px;">'+miniTrend+'<span style="font-size:10px;color:var(--muted);margin-left:4px;align-self:center;">últ. reuniões</span></div>':'')+
+        '</div>';
+      }).join('');
+      tabContent='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">'+critCards+'</div>';
+    }
+  }
+  return '<div style="padding:20px;display:flex;flex-direction:column;gap:16px;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">'+
+      '<div>'+
+        '<div style="font-family:var(--font-bn);font-size:20px;letter-spacing:1px;color:var(--white);">AVALIAÇÃO DE CLOSERS</div>'+
+        '<div style="font-size:12px;color:var(--muted);">Análises de reuniões salvas pelo Jarvis</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;">'+closerPillsHtml+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:4px;width:fit-content;">'+tabHtml+'</div>'+
+    tabContent+
+  '</div>';
+}
+function loadAvaliacoesCharts(){
+  renderEvoChart();
+}
+function renderEvoChart(){
+  var canvas=document.getElementById('aval-evo-chart');
+  var evoData=window._evalEvoData;
+  if(!canvas||!evoData||evoData.length<2) return;
+  var w=canvas.offsetWidth||300; var h=120;
+  var pad={t:10,r:10,b:24,l:30};
+  var cw=w-pad.l-pad.r; var ch=h-pad.t-pad.b;
+  var maxV=100; var minV=0;
+  var pts=evoData.map(function(d,i){ return {x:pad.l+i*(cw/(evoData.length-1)),y:pad.t+ch-(d.nota/maxV)*ch,nota:d.nota,lead:d.lead}; });
+  var pathD='M '+pts.map(function(p){return p.x+' '+p.y;}).join(' L ');
+  var svgHTML='<svg width="'+w+'" height="'+h+'" style="overflow:visible;">'+
+    // Grid lines
+    [0,25,50,75,100].map(function(v){
+      var y=pad.t+ch-(v/maxV)*ch;
+      return '<line x1="'+pad.l+'" y1="'+y+'" x2="'+(pad.l+cw)+'" y2="'+y+'" stroke="rgba(255,255,255,0.07)" stroke-dasharray="3,3"/>'+
+             '<text x="'+(pad.l-4)+'" y="'+(y+4)+'" fill="rgba(255,255,255,0.3)" font-size="9" text-anchor="end">'+v+'</text>';
+    }).join('')+
+    // Path
+    '<path d="'+pathD+'" fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+
+    // Dots
+    pts.map(function(p){
+      var clr=p.nota>=70?'#10b981':p.nota>=45?'#f59e0b':'#ef4444';
+      return '<circle cx="'+p.x+'" cy="'+p.y+'" r="4" fill="'+clr+'" stroke="var(--card2)" stroke-width="2">'+
+        '<title>'+p.lead+': '+p.nota+'/100</title></circle>';
+    }).join('')+
+    // X labels (lead names abbreviated)
+    pts.map(function(p,i){
+      var lbl=(p.lead||'').split(' ')[0].substring(0,6);
+      return '<text x="'+p.x+'" y="'+(h-6)+'" fill="rgba(255,255,255,0.35)" font-size="9" text-anchor="middle">'+lbl+'</text>';
+    }).join('')+
+  '</svg>';
+  canvas.innerHTML=svgHTML;
+}
+function acExcluirAvaliacao(id){
+  if(!confirm('Excluir esta avaliação?')) return;
+  delete _avaliacoes[id];
+  if(_avalSelectedId===id) _avalSelectedId=null;
+  if(fbDb||initFirebase()) fbDb.ref('avaliacoes/'+id).remove();
+  showPage('avaliacoes');
 }
 
 async function acSpeak(text){
