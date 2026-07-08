@@ -14291,11 +14291,12 @@ async function _fetchContratosSheet(){
 }
 function _brDateToISO(s){
   if(!s) return '';
-  // Handles "22/06/2026" or "2026-06-22"
+  // Already ISO format (YYYY-MM-DD)
   if(s.includes('-')) return s.split('T')[0];
-  var p=s.split('/');
-  if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
-  return '';
+  // Delegate to parseBRDate which handles "22/jul./25", "22/07/2025", "22/07/25", etc.
+  var d=parseBRDate(s);
+  if(!d||isNaN(d.getTime())) return '';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
 async function loadContratosPage(){
@@ -14387,7 +14388,15 @@ function filtrarContratos(){
   var _s=window._contratosSort||{field:'dataInicio',dir:-1};
   list.sort(function(a,b){
     var av=a[_s.field],bv=b[_s.field];
-    if(_s.field==='valorMes'){ av=av||0; bv=bv||0; return (av-bv)*_s.dir; }
+    if(_s.field==='valorMes'){ av=parseFloat(av)||0; bv=parseFloat(bv)||0; return (av-bv)*_s.dir; }
+    if(_s.field==='dataInicio'){
+      // Always compare as real dates so ISO strings sort correctly regardless of format quirks
+      var da=av?new Date(_brDateToISO(av)+'T00:00:00'):new Date(0);
+      var db=bv?new Date(_brDateToISO(bv)+'T00:00:00'):new Date(0);
+      var ta=isNaN(da.getTime())?0:da.getTime();
+      var tb=isNaN(db.getTime())?0:db.getTime();
+      return (ta-tb)*_s.dir;
+    }
     return ((av||'').toString().localeCompare((bv||'').toString()))*_s.dir;
   });
   var tbody=document.getElementById('ct-tbody');
@@ -14403,7 +14412,7 @@ function filtrarContratos(){
       '<td style="padding:10px;font-family:\'Bebas Neue\',sans-serif;font-size:16px;color:var(--purple3);text-align:right;">R$'+(c.valorMes||0).toLocaleString('pt-BR')+'</td>'+
       '<td style="padding:10px;font-size:13px;">'+esc(c.closer||'—')+'</td>'+
       '<td style="padding:10px;font-size:13px;">'+esc(c.sdr||'—')+'</td>'+
-      '<td style="padding:10px;font-size:12px;color:var(--muted);">'+(c.dataInicio?c.dataInicio.split('-').reverse().join('/'):'—')+'</td>'+
+      '<td style="padding:10px;font-size:12px;color:var(--muted);">'+(function(){var iso=_brDateToISO(c.dataInicio||'');if(!iso)return'—';var d=new Date(iso+'T00:00:00');if(isNaN(d.getTime()))return c.dataInicio||'—';return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'2-digit'});})()+'</td>'+
       '<td style="padding:10px;"><span style="font-family:var(--font-bc),sans-serif;font-size:11px;padding:3px 8px;border-radius:6px;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span>'+
         (c.dataCancelamento?'<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+(c.dataCancelamento.split('-').reverse().join('/'))+'</div>':'')+
       '</td>'+
