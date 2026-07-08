@@ -15347,10 +15347,11 @@ function acAddMsg(role, html, id){
 function acAbrirModalSalvarAvaliacao(){
   if(!_lastJarvisEvaluation){ showSheetToast('Nenhuma avaliação disponível.',true); return; }
   // Monta lista de closers (todos que não são gestor/sdr)
-  var closerOpts=USERS.filter(function(u){ return u.role!=='gestor'&&u.funcao!=='sdr'; }).map(function(u){
-    return '<div onclick="acSelCloserModal(this,\''+u.email+'\',\''+u.nome+'\')" data-email="'+u.email+'" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s;" onmouseover="this.style.borderColor=\'var(--purple)\'" onmouseout="this.style.borderColor=this.classList.contains(\'sel\')?\'var(--purple)\':\'var(--border)\'">'+
-      '<div style="width:32px;height:32px;border-radius:50%;background:var(--pglow);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">'+u.nome.charAt(0)+'</div>'+
-      '<div><div style="font-weight:700;font-size:13px;">'+u.nome+'</div><div style="font-size:11px;color:var(--muted);">'+u.funcao+'</div></div>'+
+  var closerOpts=Object.entries(USERS).filter(function(e){ return e[1].role!=='gestor'&&e[1].funcao!=='sdr'; }).map(function(e){
+    var em=e[0],u=e[1];
+    return '<div onclick="acSelCloserModal(this,\''+em+'\',\''+u.name+'\')" data-email="'+em+'" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s;" onmouseover="this.style.borderColor=\'var(--purple)\'" onmouseout="this.style.borderColor=this.classList.contains(\'sel\')?\'var(--purple)\':\'var(--border)\'">'+
+      '<div style="width:32px;height:32px;border-radius:50%;background:var(--pglow);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">'+u.name.charAt(0)+'</div>'+
+      '<div><div style="font-weight:700;font-size:13px;">'+u.name+'</div><div style="font-size:11px;color:var(--muted);">'+u.funcao+'</div></div>'+
     '</div>';
   }).join('');
   if(!closerOpts) closerOpts='<div style="color:var(--muted);font-size:13px;">Nenhum closer cadastrado.</div>';
@@ -15376,8 +15377,8 @@ function acAbrirModalSalvarAvaliacao(){
   '</div>';
   document.body.appendChild(modal);
   // Se só tem 1 closer, seleciona automaticamente
-  var closers=USERS.filter(function(u){ return u.role!=='gestor'&&u.funcao!=='sdr'; });
-  if(closers.length===1) acSelCloserModal(document.querySelector('#aval-closer-list [data-email]'),closers[0].email,closers[0].nome);
+  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].role!=='gestor'&&e[1].funcao!=='sdr'; });
+  if(closerEntries.length===1) acSelCloserModal(document.querySelector('#aval-closer-list [data-email]'),closerEntries[0][0],closerEntries[0][1].name);
 }
 function acSelCloserModal(el,email,nome){
   document.querySelectorAll('#aval-closer-list [data-email]').forEach(function(d){
@@ -15445,11 +15446,12 @@ function loadAvaliacoes(){
 }
 function renderAvaliacoes(){
   // Carrega dados do Firebase se ainda não carregou
-  var closers=USERS.filter(function(u){ return u.role!=='gestor'&&u.funcao!=='sdr'; });
+  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].role!=='gestor'&&e[1].funcao!=='sdr'; });
+  var closers=closerEntries.map(function(e){ return {email:e[0],name:e[1].name,funcao:e[1].funcao}; });
   if(!_avalCurrentCloser&&closers.length>0) _avalCurrentCloser=closers[0].email;
   // Avaliações do closer selecionado
   var avalArr=Object.values(_avaliacoes).filter(function(a){ return !_avalCurrentCloser||a.closerEmail===_avalCurrentCloser; }).sort(function(a,b){ return b.timestamp-a.timestamp; });
-  var closerNome=_avalCurrentCloser?(USERS.find(function(u){return u.email===_avalCurrentCloser;})||{nome:'Closer'}).nome:'Todos';
+  var closerNome=_avalCurrentCloser?(closers.find(function(u){return u.email===_avalCurrentCloser;})||{name:'Closer'}).name:'Todos';
   // KPIs
   var totalAval=avalArr.length;
   var mediaNota=totalAval>0?Math.round(avalArr.reduce(function(s,a){return s+a.notaFinal;},0)/totalAval):0;
@@ -15498,7 +15500,7 @@ function renderAvaliacoes(){
   var closerPillsHtml=closers.map(function(u){
     var active=_avalCurrentCloser===u.email;
     return '<button onclick="_avalCurrentCloser=\''+u.email+'\';showPage(\'avaliacoes\')" style="padding:7px 14px;border-radius:999px;border:1px solid;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;'+
-      (active?'background:var(--purple);border-color:var(--purple);color:#fff;':'background:none;border-color:var(--border);color:var(--muted);')+'">' +u.nome+'</button>';
+      (active?'background:var(--purple);border-color:var(--purple);color:#fff;':'background:none;border-color:var(--border);color:var(--muted);')+'">' +u.name+'</button>';
   }).join('');
   // Conteúdo da tab
   var tabContent='';
