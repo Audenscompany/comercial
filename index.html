@@ -15347,7 +15347,7 @@ function acAddMsg(role, html, id){
 function acAbrirModalSalvarAvaliacao(){
   if(!_lastJarvisEvaluation){ showSheetToast('Nenhuma avaliação disponível.',true); return; }
   // Monta lista de closers (todos que não são gestor/sdr)
-  var closerOpts=Object.entries(USERS).filter(function(e){ return e[1].role!=='gestor'&&e[1].funcao!=='sdr'; }).map(function(e){
+  var closerOpts=Object.entries(USERS).filter(function(e){ return e[1].funcao!=='sdr'; }).map(function(e){
     var em=e[0],u=e[1];
     return '<div onclick="acSelCloserModal(this,\''+em+'\',\''+u.name+'\')" data-email="'+em+'" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s;" onmouseover="this.style.borderColor=\'var(--purple)\'" onmouseout="this.style.borderColor=this.classList.contains(\'sel\')?\'var(--purple)\':\'var(--border)\'">'+
       '<div style="width:32px;height:32px;border-radius:50%;background:var(--pglow);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">'+u.name.charAt(0)+'</div>'+
@@ -15377,7 +15377,7 @@ function acAbrirModalSalvarAvaliacao(){
   '</div>';
   document.body.appendChild(modal);
   // Se só tem 1 closer, seleciona automaticamente
-  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].role!=='gestor'&&e[1].funcao!=='sdr'; });
+  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].funcao!=='sdr'; });
   if(closerEntries.length===1) acSelCloserModal(document.querySelector('#aval-closer-list [data-email]'),closerEntries[0][0],closerEntries[0][1].name);
 }
 function acSelCloserModal(el,email,nome){
@@ -15434,19 +15434,29 @@ function acConfirmarSalvarAvaliacao(){
   window._avalSelEmail=null; window._avalSelNome=null;
 }
 function loadAvaliacoes(){
+  // Renderiza imediatamente com dados já em memória (evita tela vazia)
+  var area=document.getElementById('content');
+  if(area&&area.getAttribute('data-page')==='avaliacoes'){
+    area.innerHTML=renderAvaliacoes();
+    setTimeout(loadAvaliacoesCharts,50);
+  }
+  // Depois sincroniza com Firebase e re-renderiza se houver novidades
   if(!fbDb&&!initFirebase()) return;
   fbDb.ref('avaliacoes').once('value',function(snap){
-    _avaliacoes={};
+    var prev=JSON.stringify(_avaliacoes);
     if(snap.val()) Object.assign(_avaliacoes,snap.val());
-    if(document.getElementById('content').getAttribute('data-page')==='avaliacoes'){
-      document.getElementById('content').innerHTML=renderAvaliacoes();
-      setTimeout(loadAvaliacoesCharts,50);
+    if(JSON.stringify(_avaliacoes)!==prev){
+      var a2=document.getElementById('content');
+      if(a2&&a2.getAttribute('data-page')==='avaliacoes'){
+        a2.innerHTML=renderAvaliacoes();
+        setTimeout(loadAvaliacoesCharts,50);
+      }
     }
   });
 }
 function renderAvaliacoes(){
   // Carrega dados do Firebase se ainda não carregou
-  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].role!=='gestor'&&e[1].funcao!=='sdr'; });
+  var closerEntries=Object.entries(USERS).filter(function(e){ return e[1].funcao!=='sdr'; });
   var closers=closerEntries.map(function(e){ return {email:e[0],name:e[1].name,funcao:e[1].funcao}; });
   if(!_avalCurrentCloser&&closers.length>0) _avalCurrentCloser=closers[0].email;
   // Avaliações do closer selecionado
