@@ -11773,10 +11773,12 @@ function renderReunioesPersonal(){
   var agPrev=rowsPrev.filter(function(m){var s=getMeetingStatus(m);return s==='pending'||s==='reagendado';}).length;
   var realPrev=cntSt(rowsPrev,'done'), nsPrev=cntSt(rowsPrev,'noshow');
   var totalPrev=rowsPrev.length, taxaPrev=totalPrev>0?Math.round(realPrev/totalPrev*100):0;
-  function calcReceita(arr,mo,yr){var r=0;arr.forEach(function(m){if(!inMonth(m,mo,yr))return;var fu=followups[m.id];if(fu&&getMeetingStatus(m)==='done'&&fu.resultado==='venda')r+=parseFaturamento(fu.faturamento)||0;});return r;}
-  var receita=calcReceita(rows,curM,curY), receitaPrev=calcReceita(rows,prevM,prevY);
-  function calcVendas(arr,mo,yr){return arr.filter(function(m){if(!inMonth(m,mo,yr))return false;var fu=followups[m.id];return fu&&fu.resultado==='venda';}).length;}
-  var vendas=calcVendas(rows,curM,curY), vendasPrev=calcVendas(rowsPrev,prevM,prevY);
+  // Receita — acumulado total (faturamento pode ser number ou string)
+  function _fat(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
+  var receita=0, vendas=0;
+  rows.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendas++;}});
+  var receitaPrev=0, vendasPrev=0;
+  rows.forEach(function(m){if(!inMonth(m,prevM,prevY))return;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
   function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
@@ -11792,7 +11794,7 @@ function renderReunioesPersonal(){
     kpi('check','Realizadas',realizadas,dlt(realizadas,realPrev),'var(--green)')+
     kpi('user-off','No-Show',noshow,dlt(noshow,nsPrev),'var(--red)')+
     kpi('target','Tx. Conv.',taxaConv+'%',dlt(taxaConv,taxaPrev),'var(--cyan)')+
-    kpi('coin','Receita',fmtBRL(receita),dlt(receita,receitaPrev),'var(--purple3)')+
+    kpi('coin','Receita Total',fmtBRL(receita),dlt(receita,receitaPrev),'var(--purple3)')+
     kpi('chart-bar','Ticket Médio',fmtBRL(ticket),dlt(ticket,ticketPrev),'#4ade80')+
   '</div>';
 
@@ -11862,7 +11864,7 @@ function renderReunioesPersonal(){
 
   // ── Performance por Closer ────────────────────────────────────────────
   var clMap={};
-  rows.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=parseFaturamento(fu.faturamento)||0;}}});
+  rows.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);}}});
   var clList=Object.values(clMap).sort(function(a,b){return b.vendas-a.vendas;});
   var avColors=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
   var clRows=clList.length===0
@@ -11875,6 +11877,7 @@ function renderReunioesPersonal(){
           '<div style="flex:1;min-width:0;">'+
             '<div style="font-size:13px;font-weight:700;">'+esc(c.name)+'</div>'+
             '<div style="font-size:11px;color:var(--muted);">'+c.real+' realizadas · '+c.vendas+' vendas</div>'+
+            (c.receita>0?'<div style="font-size:11px;color:'+ac+';font-weight:600;margin-top:1px;">'+fmtBRL(c.receita)+'</div>':'')+
           '</div>'+
           '<div style="text-align:right;">'+
             '<div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:'+ac+';">'+conv+'%</div>'+
@@ -11895,8 +11898,26 @@ function renderReunioesPersonal(){
   });
   var origList=Object.values(origMap).sort(function(a,b){return b.total-a.total;}).slice(0,6);
   var origMax=origList.length>0?origList[0].total:1;
-  var origIconMap={'trafego pago':'ad','tráfego pago':'ad','social selling':'brand-instagram','organico':'leaf','orgânico':'leaf','indicacao':'user-plus','indicação':'user-plus','cold call':'phone','ligacao':'phone','ligação':'phone','evento':'calendar-event','recuperacao':'refresh','recuperação':'refresh'};
-  var origColMap={'trafego pago':'var(--purple3)','tráfego pago':'var(--purple3)','social selling':'var(--cyan)','organico':'#4ade80','orgânico':'#4ade80','indicacao':'var(--green)','indicação':'var(--green)','cold call':'var(--amber)','ligacao':'var(--amber)','ligação':'var(--amber)','evento':'#f97316','recuperacao':'var(--red)','recuperação':'var(--red)'};
+  var origIconMap={
+    'trafego pago':'ad','tráfego pago':'ad','trafego':'ad','tráfego':'ad','ads':'ad','meta':'ad',
+    'social selling':'brand-instagram','ss':'brand-instagram',
+    'organico':'leaf','orgânico':'leaf','organic':'leaf',
+    'indicacao':'user-plus','indicação':'user-plus','indicacoes / outros':'user-plus',
+    'cold call':'phone','coldcall':'phone','ligacao':'phone','ligação':'phone','ligacoes':'phone',
+    'evento':'calendar-event',
+    'recuperacao':'refresh','recuperação':'refresh','retorno':'refresh',
+    'kanban':'layout-kanban','manual':'pencil','outros':'dots-circle-horizontal','bdr':'headset'
+  };
+  var origColMap={
+    'trafego pago':'var(--purple3)','tráfego pago':'var(--purple3)','trafego':'var(--purple3)','tráfego':'var(--purple3)','ads':'var(--purple3)','meta':'var(--purple3)',
+    'social selling':'var(--cyan)','ss':'var(--cyan)',
+    'organico':'#4ade80','orgânico':'#4ade80','organic':'#4ade80',
+    'indicacao':'var(--green)','indicação':'var(--green)','indicacoes / outros':'var(--green)',
+    'cold call':'var(--amber)','coldcall':'var(--amber)','ligacao':'var(--amber)','ligação':'var(--amber)','ligacoes':'var(--amber)',
+    'evento':'#f97316',
+    'recuperacao':'var(--red)','recuperação':'var(--red)','retorno':'var(--red)',
+    'kanban':'var(--purple3)','manual':'var(--muted)','outros':'var(--muted)','bdr':'var(--cyan)'
+  };
   var origRows=origList.length===0
     ?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Sem dados</div>'
     :origList.map(function(o,i){
