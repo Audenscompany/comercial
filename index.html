@@ -3975,6 +3975,14 @@ function calcBonusForCloser(closerName){
   var bonusV=vendas.reduce(function(s,f){return s+(parseFloat(f.mensalidade)||0)*BONUS_VENDA_PCT;},0);
   return{comparecimentos:comps,vendas:vendas.length,bonusComp:comps*BONUS_COMP,bonusVendas:bonusV,total:comps*BONUS_COMP+bonusV,detalhe:vendas};
 }
+// Versão CC: filtra só reuniões cujo tel foi discado via cold call
+function calcBonusCCForCloser(closerName){
+  var callTels=new Set(Object.values(calls).map(function(c){return c.tel;}));
+  var comps=Object.values(followups).filter(function(f){var m=meetings[f.meetingId];return m&&m.responsavel===closerName&&f.comparecimento==='sim'&&callTels.has(m.tel);}).length;
+  var vendas=Object.values(followups).filter(function(f){var m=meetings[f.meetingId];return m&&m.responsavel===closerName&&f.venda==='sim'&&callTels.has(m.tel);});
+  var bonusV=vendas.reduce(function(s,f){return s+(parseFloat(f.mensalidade)||0)*BONUS_VENDA_PCT;},0);
+  return{comparecimentos:comps,vendas:vendas.length,bonusComp:comps*BONUS_COMP,bonusVendas:bonusV,total:comps*BONUS_COMP+bonusV,detalhe:vendas};
+}
 function getDailyKey(){
   var user = CU ? CU.name.toLowerCase().replace(/\s+/g,'_') : 'default';
   return todayStr()+'_'+user;
@@ -4188,11 +4196,14 @@ function renderDashboard(){
   var ligMes=getCallsThisMonth();
   var wdP=getWorkdaysPassed(),wdT=getWorkdaysInMonth();
   var ritmo=wdT>0?Math.round(goals.metaMensal/wdT*wdP):0;
-  var bg=calcBonusForCloser('Gustavo'); // só Gustavo agenda reuniões CC
+  var bg=calcBonusCCForCloser('Gustavo'); // só Gustavo agenda reuniões CC, filtra por callTels
   var last7=getLast7();
-  var compAll=Object.values(followups).filter(function(f){return f.comparecimento==='sim';}).length;
+  // Reuniões CC: tel discado via cold call E responsavel = Gustavo (evita contaminar com outros canais)
+  var _ccTels=new Set(Object.values(calls).map(function(c){return c.tel;}));
+  var ccReunioes=Object.values(meetings).filter(function(m){return !m._retorno&&_ccTels.has(m.tel)&&m.responsavel==='Gustavo';}).length;
+  var compAll=bg.comparecimentos; // usa CC-filtered comparecimentos
   var ticketMedio=bg.vendas?Math.round(rev/bg.vendas):0;
-  var convRV=sAll.reunioes?Math.round(bg.vendas/sAll.reunioes*100):0;
+  var convRV=ccReunioes?Math.round(bg.vendas/ccReunioes*100):0;
   var pctDiaria=goals.metaDiaria?Math.min(100,Math.round(td.total/goals.metaDiaria*100)):0;
   var pctMensal=goals.metaMensal?Math.min(100,Math.round(ligMes/goals.metaMensal*100)):0;
   var colorD=pctDiaria>=100?'#22C55E':pctDiaria>=60?'#F59E0B':'#EF4444';
@@ -4266,9 +4277,9 @@ function renderDashboard(){
     {n:'Leads',v:dl.length,c:'#7C3AED'},
     {n:'Ligações',v:sAll.total,c:'#38BDF8'},
     {n:'Atendidas',v:sAll.atendidas,c:'#A78BFA'},
-    {n:'Reuniões',v:sAll.reunioes,c:'#F59E0B'},
+    {n:'Reuniões CC',v:ccReunioes,c:'#F59E0B'},
     {n:'Comparec.',v:compAll,c:'#FB923C'},
-    {n:'Vendas',v:sAll.vendas,c:'#22C55E'}
+    {n:'Vendas CC',v:bg.vendas,c:'#22C55E'}
   ];
   var funilHtml=funilSteps.map(function(st){
     var pct=funilMax>0?Math.min(100,Math.round(st.v/funilMax*100)):0;
@@ -4335,8 +4346,8 @@ function renderDashboard(){
   '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">'+
     mCard('ti-phone','Ligações',sAll.total,s.pAt+'% atendidas',spk(l7lig,'#7C3AED'),s.total,prev.total,'#7C3AED')+
     mCard('ti-phone-check','Atendidas',sAll.atendidas,s.pAt+'% do total',spk(l7at,'#38BDF8'),s.atendidas,prev.atendidas,'#38BDF8')+
-    mCard('ti-calendar-event','Reuniões',sAll.reunioes,s.pRe+'% dos atendidos',spk(l7re,'#F59E0B'),s.reunioes,prev.reunioes,'#F59E0B')+
-    mCard('ti-users','Comparec.',compAll,sAll.reunioes?Math.round(compAll/sAll.reunioes*100)+'% das reuniões':'—',spk([0,0,0,0,0,0,compAll],'#FB923C'),compAll,prev.comparecimentos,'#FB923C')+
+    mCard('ti-calendar-event','Reuniões CC',ccReunioes,ccReunioes?Math.round(sAll.atendidas/ccReunioes*100)+'% conv. atend.':'—',spk(l7re,'#F59E0B'),s.reunioes,prev.reunioes,'#F59E0B')+
+    mCard('ti-users','Comparec.',compAll,ccReunioes?Math.round(compAll/ccReunioes*100)+'% das reuniões CC':'—',spk([0,0,0,0,0,0,compAll],'#FB923C'),compAll,prev.comparecimentos,'#FB923C')+
     mCard('ti-trophy','Vendas CC',bg.vendas,convRV+'% reunião → venda',spk([0,0,0,0,0,0,bg.vendas],'#22C55E'),bg.vendas,prev.vendas,'#22C55E')+
     mCard('ti-currency-dollar','MRR',mrrFmt,'Receita recorrente',spk([0,0,0,0,0,0,Math.round(rev)],'#34D399'),Math.round(rev),0,'#34D399')+
     mCard('ti-trending-up','Ticket Médio',ticketFmt,'Por venda realizada',spk([0,0,0,0,0,0,ticketMedio],'#A78BFA'),ticketMedio,0,'#A78BFA')+
