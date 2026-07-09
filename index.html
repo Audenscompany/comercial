@@ -736,8 +736,11 @@ function startRealtimeSync(){
     if(cfg.nav_permissions){
       // Firebase não permite '.' nas chaves — decodifica de volta para email
       var raw=cfg.nav_permissions;
+      var prevPerm=JSON.stringify(_navPermissions);
       _navPermissions={};
       Object.keys(raw).forEach(function(k){ _navPermissions[k.replace(/\|/g,'.').replace(/~/g,'@')]=raw[k]; });
+      // Reconstrói nav se as permissões mudaram (Firebase carregou depois do buildNav inicial)
+      if(JSON.stringify(_navPermissions)!==prevPerm) buildNav();
     }
   });
 
@@ -3551,7 +3554,6 @@ function buildNav(){
       {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
     ]},
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
-    {id:'bdr',icon:'ti-building-store',label:'BDR'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var sdrDef=[
