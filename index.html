@@ -4424,7 +4424,8 @@ function renderLigar(){
       var _telFmt = formatTelLigar(l.telefone);
       var _telIsLocal = _telFmt.startsWith('31');
       var _fatTag=getLeadTag(l.faturamento);
-      var _fatBadge=_fatTag?'<span class="badge '+_fatTag.cls+'" style="font-size:9px;padding:1px 5px;margin-left:5px;vertical-align:middle;">'+_fatTag.label+'</span>':'';
+      var _fatValFmt=l.faturamento?(function(){var v=parseFaturamentoValue(l.faturamento);return v>=1000000?'R$'+(v/1000000).toFixed(1).replace('.0','')+'M':v>=1000?'R$'+Math.round(v/1000)+'k':'R$'+v;})():'';
+      var _fatBadge=_fatTag?'<span class="badge '+_fatTag.cls+'" style="font-size:9px;padding:1px 6px;margin-right:4px;vertical-align:middle;">'+(_fatValFmt?_fatValFmt+' · ':'')+_fatTag.label+'</span>':'';
       return '<tr><td style="color:var(--muted);">'+(i+1)+'</td>'+
         '<td style="font-weight:600;">'+_fatBadge+' '+l.nome+(l._requeue?' <span style="font-size:10px;color:var(--amber);">RECONTATO</span>':'')+'</td>'+
         '<td style="font-size:12px;">'+
