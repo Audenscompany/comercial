@@ -4150,6 +4150,31 @@ function renderFunil(s,lh){
       '<div class="prog-wrap"><div class="prog-fill" style="width:'+st.p+'%;background:'+st.c+';"></div></div></div>';
   }).join('');
 }
+function renderChartSVG(days){
+  var W=520,H=140,PL=30,PR=8,PT=6,PB=22;
+  var cW=W-PL-PR,cH=H-PT-PB;
+  var mxL=Math.max.apply(null,days.map(function(d){return d.lig;}).concat([1]));
+  var mxR=Math.max.apply(null,days.map(function(d){return Math.max(d.reunioes,d.at);}).concat([1]));
+  var step=cW/days.length,bW=Math.max(step*0.52,3);
+  var grid=[0,0.5,1].map(function(f){
+    var y=Math.round(PT+cH-f*cH);
+    return '<line x1="'+PL+'" y1="'+y+'" x2="'+(PL+cW)+'" y2="'+y+'" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>'+
+      '<text x="'+(PL-3)+'" y="'+(y+3)+'" text-anchor="end" font-size="8" fill="#374151">'+Math.round(mxL*f)+'</text>';
+  }).join('');
+  var bars=days.map(function(d,i){
+    var x=PL+i*step+(step-bW)/2,bh=Math.max(d.lig/mxL*cH,0),y=PT+cH-bh;
+    var isT=(i===days.length-1);
+    return '<rect x="'+x+'" y="'+y+'" width="'+bW+'" height="'+bh+'" rx="2" fill="#4F46E5" opacity="'+(isT?'0.95':'0.5')+'"/>'+
+      (d.lig?'<text x="'+(x+bW/2)+'" y="'+(y-3)+'" text-anchor="middle" font-size="8" fill="'+(isT?'#A78BFA':'#4B5563')+'">'+d.lig+'</text>':'');
+  }).join('');
+  function pts(key){return days.map(function(d,i){return (PL+i*step+step/2)+','+(Math.round(PT+cH-Math.max(0,d[key]/mxR*cH)));}).join(' ');}
+  var rePts=pts('reunioes'),atPts=pts('at');
+  var reLine='<polyline points="'+rePts+'" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+  var reDots=days.map(function(d,i){var x=PL+i*step+step/2,y=Math.round(PT+cH-Math.max(0,d.reunioes/mxR*cH));return '<circle cx="'+x+'" cy="'+y+'" r="2.5" fill="#F59E0B" stroke="#0F1626" stroke-width="1.5"/>';}).join('');
+  var aLine='<polyline points="'+atPts+'" fill="none" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3,2"/>';
+  var xlbls=days.map(function(d,i){var x=PL+i*step+step/2,isT=(i===days.length-1);return '<text x="'+x+'" y="'+(H-3)+'" text-anchor="middle" font-size="9" fill="'+(isT?'#E2E8F0':'#4B5563')+'" font-weight="'+(isT?700:400)+'">'+d.label+'</text>';}).join('');
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="overflow:visible;">'+grid+bars+reLine+reDots+aLine+xlbls+'</svg>';
+}
 function renderDashboard(){
   var period=_dashPF||'mes';
   var range=getDashRange(period);
@@ -4163,11 +4188,11 @@ function renderDashboard(){
   var ligMes=getCallsThisMonth();
   var wdP=getWorkdaysPassed(),wdT=getWorkdaysInMonth();
   var ritmo=wdT>0?Math.round(goals.metaMensal/wdT*wdP):0;
-  var bg=calcBonusForCloser('Gustavo'),bl=calcBonusForCloser('Lucas');
+  var bg=calcBonusForCloser('Gustavo'); // só Gustavo agenda reuniões CC
   var last7=getLast7();
   var compAll=Object.values(followups).filter(function(f){return f.comparecimento==='sim';}).length;
-  var ticketMedio=sAll.vendas?Math.round(rev/sAll.vendas):0;
-  var convRV=sAll.reunioes?Math.round(sAll.vendas/sAll.reunioes*100):0;
+  var ticketMedio=bg.vendas?Math.round(rev/bg.vendas):0;
+  var convRV=sAll.reunioes?Math.round(bg.vendas/sAll.reunioes*100):0;
   var pctDiaria=goals.metaDiaria?Math.min(100,Math.round(td.total/goals.metaDiaria*100)):0;
   var pctMensal=goals.metaMensal?Math.min(100,Math.round(ligMes/goals.metaMensal*100)):0;
   var colorD=pctDiaria>=100?'#22C55E':pctDiaria>=60?'#F59E0B':'#EF4444';
@@ -4256,23 +4281,8 @@ function renderDashboard(){
         '<div style="height:100%;width:'+pct+'%;background:'+st.c+';border-radius:2px;"></div>'+
       '</div></div>';
   }).join('');
-  // SDR ranking
-  var sdrList=[{nome:'Gustavo',b:bg},{nome:'Lucas',b:bl}];
-  var sdrRows=sdrList.map(function(sdr){
-    var conv=sdr.b.comparecimentos>0?Math.round(sdr.b.vendas/sdr.b.comparecimentos*100):0;
-    var cCol=conv>=30?'#22C55E':conv>=15?'#F59E0B':'#9CA3AF';
-    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
-      '<td style="padding:10px 14px;"><div style="display:flex;align-items:center;gap:8px;">'+
-        '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#38BDF8);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;">'+sdr.nome[0]+'</div>'+
-        '<span style="font-size:13px;color:#E2E8F0;font-weight:600;">'+sdr.nome+'</span></div></td>'+
-      '<td style="padding:10px 14px;text-align:center;font-size:13px;color:#9CA3AF;font-family:\'Barlow Condensed\',sans-serif;font-weight:600;">—</td>'+
-      '<td style="padding:10px 14px;text-align:center;font-size:13px;color:#9CA3AF;font-family:\'Barlow Condensed\',sans-serif;font-weight:600;">—</td>'+
-      '<td style="padding:10px 14px;text-align:center;font-size:14px;color:#F59E0B;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+sdr.b.comparecimentos+'</td>'+
-      '<td style="padding:10px 14px;text-align:center;font-size:14px;color:#22C55E;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+sdr.b.vendas+'</td>'+
-      '<td style="padding:10px 14px;text-align:center;font-size:13px;color:#38BDF8;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+fmtBRL(sdr.b.total)+'</td>'+
-      '<td style="padding:10px 14px;text-align:center;font-size:12px;color:'+cCol+';font-weight:800;">'+conv+'%</td>'+
-    '</tr>';
-  }).join('');
+  // Bônus Gustavo (SDR CC)
+  var bonusBarW=bg.comparecimentos>0?Math.min(100,Math.round(bg.vendas/Math.max(bg.comparecimentos,1)*200)):0;
   var mrrFmt=fmtBRL(rev);
   var ticketFmt=ticketMedio?fmtBRL(ticketMedio):'—';
 
@@ -4323,11 +4333,11 @@ function renderDashboard(){
 
   // ── 8 METRIC CARDS ──
   '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">'+
-    mCard('ti-phone','Ligações',s.total,s.pAt+'% atendidas',spk(l7lig,'#7C3AED'),s.total,prev.total,'#7C3AED')+
-    mCard('ti-phone-check','Atendidas',s.atendidas,s.pAt+'% do total',spk(l7at,'#38BDF8'),s.atendidas,prev.atendidas,'#38BDF8')+
-    mCard('ti-calendar-event','Reuniões',s.reunioes,s.pRe+'% dos atendidos',spk(l7re,'#F59E0B'),s.reunioes,prev.reunioes,'#F59E0B')+
+    mCard('ti-phone','Ligações',sAll.total,s.pAt+'% atendidas',spk(l7lig,'#7C3AED'),s.total,prev.total,'#7C3AED')+
+    mCard('ti-phone-check','Atendidas',sAll.atendidas,s.pAt+'% do total',spk(l7at,'#38BDF8'),s.atendidas,prev.atendidas,'#38BDF8')+
+    mCard('ti-calendar-event','Reuniões',sAll.reunioes,s.pRe+'% dos atendidos',spk(l7re,'#F59E0B'),s.reunioes,prev.reunioes,'#F59E0B')+
     mCard('ti-users','Comparec.',compAll,sAll.reunioes?Math.round(compAll/sAll.reunioes*100)+'% das reuniões':'—',spk([0,0,0,0,0,0,compAll],'#FB923C'),compAll,prev.comparecimentos,'#FB923C')+
-    mCard('ti-trophy','Vendas',sAll.vendas,convRV+'% reunião → venda',spk([0,0,0,0,0,0,sAll.vendas],'#22C55E'),sAll.vendas,prev.vendas,'#22C55E')+
+    mCard('ti-trophy','Vendas CC',bg.vendas,convRV+'% reunião → venda',spk([0,0,0,0,0,0,bg.vendas],'#22C55E'),bg.vendas,prev.vendas,'#22C55E')+
     mCard('ti-currency-dollar','MRR',mrrFmt,'Receita recorrente',spk([0,0,0,0,0,0,Math.round(rev)],'#34D399'),Math.round(rev),0,'#34D399')+
     mCard('ti-trending-up','Ticket Médio',ticketFmt,'Por venda realizada',spk([0,0,0,0,0,0,ticketMedio],'#A78BFA'),ticketMedio,0,'#A78BFA')+
     mCard('ti-percentage','Conv. R→V',convRV+'%','Reunião para venda',spk([0,0,0,0,0,0,convRV],'#F59E0B'),convRV,0,'#F59E0B')+
@@ -4366,24 +4376,20 @@ function renderDashboard(){
     '</div>'+
   '</div>'+
 
-  // ── SDR RANKING ──
-  '<div style="background:#101426;border-radius:12px;border:1px solid rgba(255,255,255,0.06);overflow:hidden;">'+
-    '<div style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">'+
-      '<div style="font-size:13px;font-weight:700;color:#E2E8F0;display:flex;align-items:center;gap:6px;"><i class="ti ti-podium" style="color:#7C3AED;"></i> Ranking de SDRs</div>'+
-      '<span style="font-size:10px;color:#4B5563;">Dados acumulados (todos os fechamentos)</span>'+
+  // ── BÔNUS GUSTAVO ──
+  '<div style="background:#0F1626;border-radius:14px;padding:18px 22px;border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:20px;">'+
+    '<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#38BDF8);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex-shrink:0;">G</div>'+
+    '<div style="flex:1;">'+
+      '<div style="font-size:14px;color:#E2E8F0;font-weight:700;">Gustavo</div>'+
+      '<div style="font-size:11px;color:#6B7280;margin-top:2px;">Cold Call SDR · '+bg.comparecimentos+' comparec. · '+bg.vendas+' vendas · '+fmtBRL(bg.bonusComp)+' comp. + '+fmtBRL(bg.bonusVendas)+' vendas</div>'+
+      '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:8px;">'+
+        '<div style="height:100%;width:'+bonusBarW+'%;background:linear-gradient(90deg,#7C3AED,#38BDF8);border-radius:2px;"></div>'+
+      '</div>'+
     '</div>'+
-    '<table style="width:100%;border-collapse:collapse;">'+
-      '<thead><tr style="background:rgba(255,255,255,0.02);">'+
-        '<th style="padding:8px 14px;text-align:left;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">SDR</th>'+
-        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Ligações</th>'+
-        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Reuniões</th>'+
-        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Comparec.</th>'+
-        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Vendas</th>'+
-        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Bônus</th>'+
-        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Conv.</th>'+
-      '</tr></thead>'+
-      '<tbody>'+sdrRows+'</tbody>'+
-    '</table>'+
+    '<div style="text-align:right;flex-shrink:0;">'+
+      '<div style="font-size:28px;font-weight:800;color:#F1F5F9;font-family:\'Barlow Condensed\',sans-serif;line-height:1;">'+fmtBRL(bg.total)+'</div>'+
+      '<div style="font-size:10px;color:#6B7280;margin-top:3px;">bônus acumulado</div>'+
+    '</div>'+
   '</div>'+
 
   '</div>';
