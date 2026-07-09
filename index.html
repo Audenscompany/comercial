@@ -4087,44 +4087,41 @@ async function loadLeadsFromSheets(){
 }
 
 // ===== DASHBOARD INTERNO =====
-function renderDashboard(){
-  var s=calcStats(),td=calcStats(todayStr()),dl=getDailyLeads()||[];
-  var rev=calcRevenue(),ligMes=getCallsThisMonth();
-  var wdP=getWorkdaysPassed(),wdT=getWorkdaysInMonth(),ritmo=wdT>0?Math.round(goals.metaMensal/wdT*wdP):0;
-  var bg=calcBonusForCloser('Gustavo'),bl=calcBonusForCloser('Lucas');
-  return '<div class="page active">'+
-  '<div class="page-header"><div><div class="page-title">Dashboard</div><div class="page-sub">Operacao Comercial</div></div>'+
-  '<div style="display:flex;gap:10px;">'+
-    '<button class="btn btn-outline" onclick="openMetas()" style="font-size:11px;"><i class="ti ti-target"></i> Metas</button>'+
-    '<div class="date-chip"><i class="ti ti-calendar-event"></i>'+todayStr()+'</div>'+
-  '</div></div>'+
-  '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">METAS</div>'+
-  '<div class="meta-grid">'+renderMetaBlock('Meta Diaria',td.total,goals.metaDiaria,'Hoje')+renderMetaBlock('Meta Mensal',ligMes,goals.metaMensal,'Ritmo: '+ritmo)+'</div>'+
-  '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">ACUMULADO</div>'+
-  '<div class="metrics-grid">'+
-    '<div class="m-card"><div class="m-stripe"></div><i class="ti ti-phone m-ico"></i><div class="m-lbl">Ligacoes</div><div class="m-val">'+s.total+'</div><div class="m-hint">'+s.pAt+'% atendimento</div></div>'+
-    '<div class="m-card"><div class="m-stripe amber"></div><i class="ti ti-calendar-check m-ico"></i><div class="m-lbl">Reunioes</div><div class="m-val">'+s.reunioes+'</div><div class="m-hint">'+s.pRe+'% dos atendidos</div></div>'+
-    '<div class="m-card"><div class="m-stripe green"></div><i class="ti ti-trophy m-ico"></i><div class="m-lbl">Vendas</div><div class="m-val">'+s.vendas+'</div><div class="m-hint">'+s.pVe+'% das reunioes</div></div>'+
-    '<div class="m-card"><div class="m-stripe cyan"></div><i class="ti ti-cash m-ico"></i><div class="m-lbl">MRR</div><div class="m-val" style="font-size:22px;">'+fmtBRL(rev)+'</div></div>'+
-  '</div>'+
-  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">'+
-    '<div class="bonus-card"><div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;color:var(--muted);margin-bottom:6px;">BONUS GUSTAVO</div>'+
-      '<div class="bonus-total">$'+bg.total.toFixed(2)+'</div>'+
-      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);margin-top:6px;">'+bg.comparecimentos+' comparec. $'+bg.bonusComp.toFixed(0)+' · '+bg.vendas+' vendas $'+bg.bonusVendas.toFixed(2)+'</div></div>'+
-    '<div class="bonus-card"><div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;color:var(--muted);margin-bottom:6px;">BONUS LUCAS</div>'+
-      '<div class="bonus-total">$'+bl.total.toFixed(2)+'</div>'+
-      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);margin-top:6px;">'+bl.comparecimentos+' comparec. $'+bl.bonusComp.toFixed(0)+' · '+bl.vendas+' vendas $'+bl.bonusVendas.toFixed(2)+'</div></div>'+
-  '</div>'+
-  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'+
-    '<div class="cb"><div class="cb-hd"><div class="cb-title">Ultimos 7 Dias</div></div><div style="padding:16px 16px 20px;">'+renderBars(getLast7())+'</div></div>'+
-    '<div class="cb"><div class="cb-hd"><div class="cb-title">Funil</div></div><div style="padding:20px;">'+renderFunil(s,dl.length)+'</div></div>'+
-  '</div></div>';
+var _dashPF='mes';
+function setDashPF(p){_dashPF=p;showPage('dashboard');}
+function calcStatsRange(startTs,endTs){
+  function inRange(ds){if(!ds)return false;var p=ds.split('/');if(p.length===3){var t=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0])).getTime();return t>=startTs&&t<=endTs;}return false;}
+  var rows=Object.values(calls).filter(function(r){return inRange(r.data);});
+  var t=rows.length,at=rows.filter(function(r){return r.at==='sim';}).length;
+  var tels=new Set(rows.map(function(r){return r.tel;}));
+  var re=Object.values(meetings).filter(function(m){return !m._retorno&&tels.has(m.tel);}).length;
+  var ve=Object.values(followups).filter(function(f){return f.venda==='sim';}).length;
+  var comp=Object.values(followups).filter(function(f){return f.comparecimento==='sim';}).length;
+  return{total:t,atendidas:at,reunioes:re,vendas:ve,comparecimentos:comp,pAt:t?Math.round(at/t*100):0,pRe:at?Math.round(re/at*100):0,pVe:re?Math.round(ve/re*100):0};
+}
+function getDashRange(period){
+  var now=new Date(),end=new Date(now.getFullYear(),now.getMonth(),now.getDate(),23,59,59,999).getTime(),start;
+  if(period==='hoje'){start=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();}
+  else if(period==='7d'){var d7=new Date(now);d7.setDate(d7.getDate()-6);start=new Date(d7.getFullYear(),d7.getMonth(),d7.getDate()).getTime();}
+  else if(period==='mes'){start=new Date(now.getFullYear(),now.getMonth(),1).getTime();}
+  else{start=0;}
+  return{start:start,end:end};
+}
+function getPrevDashRange(period){
+  var now=new Date(),start,end;
+  if(period==='hoje'){var yd=new Date(now);yd.setDate(yd.getDate()-1);start=new Date(yd.getFullYear(),yd.getMonth(),yd.getDate()).getTime();end=new Date(yd.getFullYear(),yd.getMonth(),yd.getDate(),23,59,59,999).getTime();}
+  else if(period==='7d'){var a=new Date(now);a.setDate(a.getDate()-13);var b=new Date(now);b.setDate(b.getDate()-7);start=new Date(a.getFullYear(),a.getMonth(),a.getDate()).getTime();end=new Date(b.getFullYear(),b.getMonth(),b.getDate(),23,59,59,999).getTime();}
+  else if(period==='mes'){start=new Date(now.getFullYear(),now.getMonth()-1,1).getTime();end=new Date(now.getFullYear(),now.getMonth(),0,23,59,59,999).getTime();}
+  else{start=0;end=0;}
+  return{start:start,end:end};
 }
 function getLast7(){
   var days=[];
   for(var i=6;i>=0;i--){var d=new Date();d.setDate(d.getDate()-i);var str=d.toLocaleDateString('pt-BR');
     var rows=Object.values(calls).filter(function(r){return r.data===str;});
-    days.push({label:d.toLocaleDateString('pt-BR',{weekday:'short'}).slice(0,3).toUpperCase(),lig:rows.length,at:rows.filter(function(r){return r.at==='sim';}).length});}
+    var telsD=new Set(rows.map(function(r){return r.tel;}));
+    var reD=Object.values(meetings).filter(function(m){return !m._retorno&&telsD.has(m.tel);}).length;
+    days.push({label:d.toLocaleDateString('pt-BR',{weekday:'short'}).slice(0,3).toUpperCase(),lig:rows.length,at:rows.filter(function(r){return r.at==='sim';}).length,reunioes:reD});}
   return days;
 }
 function renderBars(days){
@@ -4138,13 +4135,258 @@ function renderBars(days){
   }).join('')+'</div>';
 }
 function renderFunil(s,lh){
-  var steps=[{n:'Leads',v:lh||0,p:100,c:'var(--purple)'},{n:'Ligacoes',v:s.total,p:lh?Math.min(100,Math.round(s.total/lh*100)):0,c:'var(--cyan)'},
-    {n:'Atendidas',v:s.atendidas,p:s.pAt,c:'var(--amber)'},{n:'Reunioes',v:s.reunioes,p:s.pRe,c:'var(--purple3)'},{n:'Vendas',v:s.vendas,p:s.pVe,c:'var(--green)'}];
+  var compA=Object.values(followups).filter(function(f){return f.comparecimento==='sim';}).length;
+  var steps=[
+    {n:'Leads',v:lh||0,p:100,c:'#7C3AED'},
+    {n:'Ligações',v:s.total,p:lh?Math.min(100,Math.round(s.total/lh*100)):0,c:'#38BDF8'},
+    {n:'Atendidas',v:s.atendidas,p:s.pAt,c:'#A78BFA'},
+    {n:'Reuniões',v:s.reunioes,p:s.pRe,c:'#F59E0B'},
+    {n:'Comparec.',v:compA,p:s.reunioes?Math.min(100,Math.round(compA/s.reunioes*100)):0,c:'#FB923C'},
+    {n:'Vendas',v:s.vendas,p:s.pVe,c:'#22C55E'}
+  ];
   return steps.map(function(st){
     return '<div class="funil-step"><div class="funil-row"><span class="funil-name">'+st.n+'</span>'+
       '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;color:'+st.c+';">'+st.v+'</span></div>'+
       '<div class="prog-wrap"><div class="prog-fill" style="width:'+st.p+'%;background:'+st.c+';"></div></div></div>';
   }).join('');
+}
+function renderDashboard(){
+  var period=_dashPF||'mes';
+  var range=getDashRange(period);
+  var prevRange=getPrevDashRange(period);
+  var s=calcStatsRange(range.start,range.end);
+  var prev=calcStatsRange(prevRange.start,prevRange.end);
+  var sAll=calcStats();
+  var td=calcStats(todayStr());
+  var rev=calcRevenue();
+  var dl=getDailyLeads()||[];
+  var ligMes=getCallsThisMonth();
+  var wdP=getWorkdaysPassed(),wdT=getWorkdaysInMonth();
+  var ritmo=wdT>0?Math.round(goals.metaMensal/wdT*wdP):0;
+  var bg=calcBonusForCloser('Gustavo'),bl=calcBonusForCloser('Lucas');
+  var last7=getLast7();
+  var compAll=Object.values(followups).filter(function(f){return f.comparecimento==='sim';}).length;
+  var ticketMedio=sAll.vendas?Math.round(rev/sAll.vendas):0;
+  var convRV=sAll.reunioes?Math.round(sAll.vendas/sAll.reunioes*100):0;
+  var pctDiaria=goals.metaDiaria?Math.min(100,Math.round(td.total/goals.metaDiaria*100)):0;
+  var pctMensal=goals.metaMensal?Math.min(100,Math.round(ligMes/goals.metaMensal*100)):0;
+  var colorD=pctDiaria>=100?'#22C55E':pctDiaria>=60?'#F59E0B':'#EF4444';
+  var colorM=pctMensal>=100?'#22C55E':pctMensal>=60?'#F59E0B':'#EF4444';
+  var statusD=pctDiaria>=100?'✓ Conquistada':pctDiaria>=60?'Em andamento':pctDiaria>=30?'Atenção':'Crítico';
+  var statusM=pctMensal>=100?'✓ Conquistada':pctMensal>=60?'Em andamento':pctMensal>=30?'Atenção':'Crítico';
+  function vPct(c,p){if(!p)return c>0?'+∞%':'—';var v=Math.round((c-p)/p*100);return(v>=0?'+':'')+v+'%';}
+  function vCol(c,p){return(!p&&c>0)||c>p?'#22C55E':c<p?'#EF4444':'#9CA3AF';}
+  function vIcon(c,p){return c>p?'▲':c<p?'▼':'—';}
+  function spk(vals,col){
+    if(!vals||!vals.length)return '';
+    var mx=Math.max.apply(null,vals)||1;
+    var pts=vals.map(function(v,i){return Math.round(i/(vals.length-1||1)*54)+','+(Math.round(26-v/mx*22));}).join(' ');
+    var lx=Math.round((vals.length-1)/(vals.length-1||1)*54),ly=Math.round(26-(vals[vals.length-1]||0)/mx*22);
+    return '<svg width="56" height="28" viewBox="0 0 56 28" style="overflow:visible;display:block;"><polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+lx+'" cy="'+ly+'" r="2.5" fill="'+col+'"/></svg>';
+  }
+  var l7lig=last7.map(function(d){return d.lig;});
+  var l7at=last7.map(function(d){return d.at;});
+  var l7re=last7.map(function(d){return d.reunioes;});
+  var pfs=[['hoje','Hoje'],['7d','7 Dias'],['mes','Mês Atual']];
+  var pfBtns=pfs.map(function(pf){
+    var act=period===pf[0];
+    return '<button onclick="setDashPF(\''+pf[0]+'\')" style="padding:5px 14px;border-radius:6px;border:1px solid '+(act?'#7C3AED':'rgba(255,255,255,0.08)')+';background:'+(act?'rgba(124,58,237,0.25)':'transparent')+';color:'+(act?'#A78BFA':'#6B7280')+';font-size:12px;font-weight:600;cursor:pointer;">'+pf[1]+'</button>';
+  }).join('');
+  function mCard(icon,label,val,hint,sparkHtml,cur,prv,ac){
+    var vc=vCol(cur,prv),vp=vPct(cur,prv),vi=vIcon(cur,prv);
+    return '<div style="background:#101426;border-radius:12px;padding:16px 14px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'+
+        '<div style="background:'+ac+'22;border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+
+          '<i class="ti '+icon+'" style="color:'+ac+';font-size:15px;"></i></div>'+
+        '<div>'+sparkHtml+'</div>'+
+      '</div>'+
+      '<div style="font-size:24px;font-weight:800;color:#F1F5F9;font-family:\'Barlow Condensed\',sans-serif;line-height:1.1;">'+val+'</div>'+
+      '<div style="font-size:10px;color:#6B7280;margin-top:3px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">'+label+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);">'+
+        '<span style="font-size:10px;color:#4B5563;">'+hint+'</span>'+
+        '<span style="font-size:10px;color:'+vc+';font-weight:700;">'+vi+' '+vp+'</span>'+
+      '</div>'+
+    '</div>';
+  }
+  // Alertas
+  var alerts=[];
+  if(pctDiaria<30&&goals.metaDiaria>0)alerts.push({t:'red',i:'ti-alert-triangle',m:'Meta diária crítica: '+pctDiaria+'% concluído. Faltam '+Math.max(0,goals.metaDiaria-td.total)+' ligações hoje.'});
+  if(pctMensal<40&&goals.metaMensal>0&&wdP>5)alerts.push({t:'amber',i:'ti-clock',m:'Ritmo mensal abaixo: esperado '+ritmo+' ligações até hoje, realizado '+ligMes+'.'});
+  if(s.pAt<20&&s.total>10)alerts.push({t:'amber',i:'ti-phone-off',m:'Atendimento baixo: '+s.pAt+'% no período. Revisar horários de ligação.'});
+  if(s.pRe<5&&s.atendidas>20)alerts.push({t:'amber',i:'ti-calendar-x',m:'Conversão em reunião baixa: '+s.pRe+'% dos atendidos marcaram reunião.'});
+  if(!alerts.length)alerts.push({t:'green',i:'ti-circle-check',m:'Operação saudável — '+s.total+' ligações · '+s.atendidas+' atendidas · '+s.reunioes+' reuniões no período.'});
+  var acol={red:'#EF4444',amber:'#F59E0B',green:'#22C55E'};
+  var alertsHtml=alerts.map(function(a){return '<div style="display:flex;align-items:flex-start;gap:9px;padding:9px 12px;border-radius:8px;background:'+acol[a.t]+'18;border:1px solid '+acol[a.t]+'35;margin-bottom:7px;">'+
+    '<i class="ti '+a.i+'" style="color:'+acol[a.t]+';font-size:14px;flex-shrink:0;margin-top:1px;"></i>'+
+    '<span style="font-size:11px;color:#CBD5E1;line-height:1.5;">'+a.m+'</span></div>';}).join('');
+  // Chart bars
+  var mxLig=Math.max.apply(null,l7lig.concat([1]));
+  var chartCols=last7.map(function(d,i){
+    var isT=(i===6);
+    var hL=Math.round(d.lig/mxLig*100)||0;
+    var hA=d.lig>0?Math.round(d.at/d.lig*100):0;
+    return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0;">'+
+      '<div style="font-size:9px;color:'+(isT?'#A78BFA':'#4B5563')+';font-weight:700;min-height:13px;">'+(d.lig||'')+' </div>'+
+      '<div style="width:100%;height:80px;display:flex;align-items:flex-end;justify-content:center;gap:1px;">'+
+        '<div style="flex:1;background:#7C3AED;opacity:'+(isT?'1':'0.5')+';height:'+hL+'%;border-radius:3px 3px 0 0;min-height:'+(d.lig?3:0)+'px;"></div>'+
+        '<div style="flex:1;background:#38BDF8;opacity:'+(isT?'1':'0.65')+';height:'+hA+'%;border-radius:3px 3px 0 0;min-height:'+(d.at?3:0)+'px;"></div>'+
+      '</div>'+
+      '<div style="font-size:10px;color:'+(isT?'#E2E8F0':'#4B5563')+';font-weight:'+(isT?700:400)+';">'+d.label+'</div>'+
+      (d.reunioes?'<div style="font-size:9px;color:#F59E0B;font-weight:700;">'+d.reunioes+'r</div>':'<div style="min-height:13px;"></div>')+
+    '</div>';
+  }).join('');
+  // Funil
+  var funilMax=Math.max(dl.length,sAll.total,1);
+  var funilSteps=[
+    {n:'Leads',v:dl.length,c:'#7C3AED'},
+    {n:'Ligações',v:sAll.total,c:'#38BDF8'},
+    {n:'Atendidas',v:sAll.atendidas,c:'#A78BFA'},
+    {n:'Reuniões',v:sAll.reunioes,c:'#F59E0B'},
+    {n:'Comparec.',v:compAll,c:'#FB923C'},
+    {n:'Vendas',v:sAll.vendas,c:'#22C55E'}
+  ];
+  var funilHtml=funilSteps.map(function(st){
+    var pct=funilMax>0?Math.min(100,Math.round(st.v/funilMax*100)):0;
+    return '<div style="margin-bottom:9px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">'+
+        '<span style="font-size:11px;color:#9CA3AF;font-weight:600;">'+st.n+'</span>'+
+        '<span style="font-size:13px;color:'+st.c+';font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+st.v+'</span>'+
+      '</div>'+
+      '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+st.c+';border-radius:2px;"></div>'+
+      '</div></div>';
+  }).join('');
+  // SDR ranking
+  var sdrList=[{nome:'Gustavo',b:bg},{nome:'Lucas',b:bl}];
+  var sdrRows=sdrList.map(function(sdr){
+    var conv=sdr.b.comparecimentos>0?Math.round(sdr.b.vendas/sdr.b.comparecimentos*100):0;
+    var cCol=conv>=30?'#22C55E':conv>=15?'#F59E0B':'#9CA3AF';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+      '<td style="padding:10px 14px;"><div style="display:flex;align-items:center;gap:8px;">'+
+        '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#38BDF8);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;">'+sdr.nome[0]+'</div>'+
+        '<span style="font-size:13px;color:#E2E8F0;font-weight:600;">'+sdr.nome+'</span></div></td>'+
+      '<td style="padding:10px 14px;text-align:center;font-size:13px;color:#9CA3AF;font-family:\'Barlow Condensed\',sans-serif;font-weight:600;">—</td>'+
+      '<td style="padding:10px 14px;text-align:center;font-size:13px;color:#9CA3AF;font-family:\'Barlow Condensed\',sans-serif;font-weight:600;">—</td>'+
+      '<td style="padding:10px 14px;text-align:center;font-size:14px;color:#F59E0B;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+sdr.b.comparecimentos+'</td>'+
+      '<td style="padding:10px 14px;text-align:center;font-size:14px;color:#22C55E;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+sdr.b.vendas+'</td>'+
+      '<td style="padding:10px 14px;text-align:center;font-size:13px;color:#38BDF8;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+fmtBRL(sdr.b.total)+'</td>'+
+      '<td style="padding:10px 14px;text-align:center;font-size:12px;color:'+cCol+';font-weight:800;">'+conv+'%</td>'+
+    '</tr>';
+  }).join('');
+  var mrrFmt=fmtBRL(rev);
+  var ticketFmt=ticketMedio?fmtBRL(ticketMedio):'—';
+
+  return '<div class="page active" style="background:#060814;">'+
+
+  // ── HEADER ──
+  '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.06);">'+
+    '<div>'+
+      '<div style="font-size:20px;font-weight:800;color:#F1F5F9;letter-spacing:-0.3px;">Dashboard Cold Call</div>'+
+      '<div style="font-size:11px;color:#4B5563;margin-top:3px;">Central de Comando Comercial · Audens Company</div>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+      '<div style="display:flex;gap:3px;background:rgba(255,255,255,0.04);border-radius:8px;padding:3px;">'+pfBtns+'</div>'+
+      '<button class="btn btn-outline" onclick="openMetas()" style="font-size:11px;"><i class="ti ti-target"></i> Metas</button>'+
+      '<div style="font-size:10px;color:#374151;display:flex;align-items:center;gap:3px;"><i class="ti ti-refresh" style="font-size:10px;"></i>'+todayStr()+'</div>'+
+    '</div>'+
+  '</div>'+
+
+  // ── META BLOCKS ──
+  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">'+
+    '<div style="background:#101426;border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-size:10px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Meta Diária</div>'+
+        '<span style="font-size:10px;padding:3px 8px;border-radius:20px;background:'+colorD+'18;color:'+colorD+';font-weight:700;">'+statusD+'</span>'+
+      '</div>'+
+      '<div style="display:flex;align-items:flex-end;gap:5px;margin-bottom:8px;">'+
+        '<span style="font-size:32px;font-weight:800;color:'+colorD+';font-family:\'Barlow Condensed\',sans-serif;line-height:1;">'+td.total+'</span>'+
+        '<span style="font-size:13px;color:#4B5563;margin-bottom:2px;">/ '+goals.metaDiaria+'</span>'+
+      '</div>'+
+      '<div style="height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">'+
+        '<div style="height:100%;width:'+pctDiaria+'%;background:'+colorD+';border-radius:3px;"></div></div>'+
+      '<div style="font-size:10px;color:#4B5563;margin-top:5px;">'+pctDiaria+'% concluído · Hoje</div>'+
+    '</div>'+
+    '<div style="background:#101426;border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-size:10px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Meta Mensal</div>'+
+        '<span style="font-size:10px;padding:3px 8px;border-radius:20px;background:'+colorM+'18;color:'+colorM+';font-weight:700;">'+statusM+'</span>'+
+      '</div>'+
+      '<div style="display:flex;align-items:flex-end;gap:5px;margin-bottom:8px;">'+
+        '<span style="font-size:32px;font-weight:800;color:'+colorM+';font-family:\'Barlow Condensed\',sans-serif;line-height:1;">'+ligMes+'</span>'+
+        '<span style="font-size:13px;color:#4B5563;margin-bottom:2px;">/ '+goals.metaMensal+'</span>'+
+      '</div>'+
+      '<div style="height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">'+
+        '<div style="height:100%;width:'+pctMensal+'%;background:'+colorM+';border-radius:3px;"></div></div>'+
+      '<div style="font-size:10px;color:#4B5563;margin-top:5px;">'+pctMensal+'% concluído · Ritmo esperado: '+ritmo+'</div>'+
+    '</div>'+
+  '</div>'+
+
+  // ── 8 METRIC CARDS ──
+  '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">'+
+    mCard('ti-phone','Ligações',s.total,s.pAt+'% atendidas',spk(l7lig,'#7C3AED'),s.total,prev.total,'#7C3AED')+
+    mCard('ti-phone-check','Atendidas',s.atendidas,s.pAt+'% do total',spk(l7at,'#38BDF8'),s.atendidas,prev.atendidas,'#38BDF8')+
+    mCard('ti-calendar-event','Reuniões',s.reunioes,s.pRe+'% dos atendidos',spk(l7re,'#F59E0B'),s.reunioes,prev.reunioes,'#F59E0B')+
+    mCard('ti-users','Comparec.',compAll,sAll.reunioes?Math.round(compAll/sAll.reunioes*100)+'% das reuniões':'—',spk([0,0,0,0,0,0,compAll],'#FB923C'),compAll,prev.comparecimentos,'#FB923C')+
+    mCard('ti-trophy','Vendas',sAll.vendas,convRV+'% reunião → venda',spk([0,0,0,0,0,0,sAll.vendas],'#22C55E'),sAll.vendas,prev.vendas,'#22C55E')+
+    mCard('ti-currency-dollar','MRR',mrrFmt,'Receita recorrente',spk([0,0,0,0,0,0,Math.round(rev)],'#34D399'),Math.round(rev),0,'#34D399')+
+    mCard('ti-trending-up','Ticket Médio',ticketFmt,'Por venda realizada',spk([0,0,0,0,0,0,ticketMedio],'#A78BFA'),ticketMedio,0,'#A78BFA')+
+    mCard('ti-percentage','Conv. R→V',convRV+'%','Reunião para venda',spk([0,0,0,0,0,0,convRV],'#F59E0B'),convRV,0,'#F59E0B')+
+  '</div>'+
+
+  // ── CHART + FUNIL + ALERTAS ──
+  '<div style="display:grid;grid-template-columns:1.5fr 0.65fr 0.85fr;gap:14px;margin-bottom:18px;">'+
+    // Chart
+    '<div style="background:#101426;border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'+
+        '<div style="font-size:13px;font-weight:700;color:#E2E8F0;">Últimos 7 Dias</div>'+
+        '<div style="display:flex;gap:10px;">'+
+          '<div style="display:flex;align-items:center;gap:4px;"><div style="width:8px;height:8px;border-radius:2px;background:#7C3AED;"></div><span style="font-size:10px;color:#6B7280;">Ligações</span></div>'+
+          '<div style="display:flex;align-items:center;gap:4px;"><div style="width:8px;height:8px;border-radius:2px;background:#38BDF8;"></div><span style="font-size:10px;color:#6B7280;">Atend.</span></div>'+
+          '<div style="display:flex;align-items:center;gap:4px;"><div style="width:8px;height:8px;border-radius:2px;background:#F59E0B;"></div><span style="font-size:10px;color:#6B7280;">Reuniões</span></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:3px;align-items:flex-end;height:130px;">'+chartCols+'</div>'+
+    '</div>'+
+    // Funil
+    '<div style="background:#101426;border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="font-size:13px;font-weight:700;color:#E2E8F0;margin-bottom:12px;">Funil</div>'+
+      funilHtml+
+      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">'+
+        '<span style="font-size:10px;color:#4B5563;">MRR</span>'+
+        '<span style="font-size:14px;color:#34D399;font-weight:800;font-family:\'Barlow Condensed\',sans-serif;">'+mrrFmt+'</span>'+
+      '</div>'+
+    '</div>'+
+    // Alertas
+    '<div style="background:#101426;border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">'+
+        '<i class="ti ti-bell-ringing" style="color:#F59E0B;font-size:14px;"></i>'+
+        '<div style="font-size:13px;font-weight:700;color:#E2E8F0;">Alertas</div>'+
+      '</div>'+
+      alertsHtml+
+    '</div>'+
+  '</div>'+
+
+  // ── SDR RANKING ──
+  '<div style="background:#101426;border-radius:12px;border:1px solid rgba(255,255,255,0.06);overflow:hidden;">'+
+    '<div style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">'+
+      '<div style="font-size:13px;font-weight:700;color:#E2E8F0;display:flex;align-items:center;gap:6px;"><i class="ti ti-podium" style="color:#7C3AED;"></i> Ranking de SDRs</div>'+
+      '<span style="font-size:10px;color:#4B5563;">Dados acumulados (todos os fechamentos)</span>'+
+    '</div>'+
+    '<table style="width:100%;border-collapse:collapse;">'+
+      '<thead><tr style="background:rgba(255,255,255,0.02);">'+
+        '<th style="padding:8px 14px;text-align:left;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">SDR</th>'+
+        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Ligações</th>'+
+        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Reuniões</th>'+
+        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Comparec.</th>'+
+        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Vendas</th>'+
+        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Bônus</th>'+
+        '<th style="padding:8px 14px;text-align:center;font-size:9px;color:#4B5563;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Conv.</th>'+
+      '</tr></thead>'+
+      '<tbody>'+sdrRows+'</tbody>'+
+    '</table>'+
+  '</div>'+
+
+  '</div>';
 }
 function openMetas(){
   document.getElementById('goal-rows').innerHTML=
