@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audens · Indicação de Cliente</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0d0d14;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .card{background:#161622;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:36px 32px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.5);}
+  .logo{display:flex;align-items:center;gap:10px;margin-bottom:28px;}
+  .logo-dot{width:36px;height:36px;background:linear-gradient(135deg,#7b2fff,#a855f7);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:#fff;}
+  .logo-text{font-size:20px;font-weight:700;color:#fff;}
+  .logo-sub{font-size:12px;color:rgba(255,255,255,0.4);margin-top:1px;}
+  h2{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px;}
+  .subtitle{font-size:13px;color:rgba(255,255,255,0.45);margin-bottom:28px;line-height:1.5;}
+  label{display:block;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:6px;}
+  .field{margin-bottom:16px;}
+  input,textarea,select{width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:11px 14px;color:#fff;font-size:14px;outline:none;transition:border-color .2s;font-family:inherit;}
+  input:focus,textarea:focus,select:focus{border-color:rgba(123,47,255,0.6);box-shadow:0 0 0 3px rgba(123,47,255,0.12);}
+  textarea{resize:vertical;min-height:72px;}
+  .btn{width:100%;padding:13px;background:linear-gradient(135deg,#7b2fff,#a855f7);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s;margin-top:6px;}
+  .btn:hover{opacity:.9;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .success{display:none;text-align:center;padding:32px 20px;}
+  .success-icon{font-size:56px;margin-bottom:16px;}
+  .success h3{font-size:22px;font-weight:700;color:#4ade80;margin-bottom:8px;}
+  .success p{font-size:14px;color:rgba(255,255,255,0.5);line-height:1.6;}
+  .success .btn-novo{background:rgba(123,47,255,0.2);border:1px solid rgba(123,47,255,0.4);border-radius:8px;padding:10px 20px;color:#a855f7;font-size:13px;font-weight:600;cursor:pointer;margin-top:20px;display:inline-block;}
+  .error-msg{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:10px 14px;color:#f87171;font-size:13px;margin-bottom:14px;display:none;}
+  .required{color:#f87171;margin-left:2px;}
+  .divider{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:20px 0;}
+  .info-note{background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.2);border-radius:8px;padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:20px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="card">
+  <!-- Logo -->
+  <div class="logo">
+    <div class="logo-dot">A</div>
+    <div><div class="logo-text">Audens</div><div class="logo-sub">Programa de Indicações</div></div>
+  </div>
+
+  <!-- Formulário -->
+  <div id="form-view">
+    <h2>Cadastrar Indicação</h2>
+    <p class="subtitle">Registre aqui as indicações dos nossos clientes. Após salvar, nossa equipe entra em contato.</p>
+
+    <div class="info-note">
+      💡 Preencha com os dados de quem <strong style="color:#c4b5fd;">o cliente indicou</strong> e informe o nome do cliente que fez a indicação.
+    </div>
+
+    <div id="error-msg" class="error-msg"></div>
+
+    <div class="field">
+      <label>Nome do indicado <span class="required">*</span></label>
+      <input id="f-nome" type="text" placeholder="Ex: Carlos Silva" autocomplete="name">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field">
+        <label>Telefone</label>
+        <input id="f-tel" type="tel" placeholder="(92) 9xxxx-xxxx">
+      </div>
+      <div class="field">
+        <label>Empresa</label>
+        <input id="f-empresa" type="text" placeholder="Nome da empresa">
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="field">
+      <label>Quem indicou <span class="required">*</span></label>
+      <select id="f-origem">
+        <option value="">Selecionar...</option>
+        <option>João Victor</option>
+        <option>Yan</option>
+        <option>Elias</option>
+        <option>João Alfer</option>
+        <option>Isabela</option>
+        <option>Emanuel</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Observações</label>
+      <textarea id="f-obs" placeholder="Contexto, necessidade, urgência..."></textarea>
+    </div>
+
+    <button class="btn" id="btn-salvar" onclick="salvarIndicacao()">Salvar Indicação</button>
+  </div>
+
+  <!-- Sucesso -->
+  <div class="success" id="success-view">
+    <div class="success-icon">✅</div>
+    <h3>Indicação salva!</h3>
+    <p>Os dados foram registrados com sucesso.<br>Nossa equipe entrará em contato em breve.</p>
+    <div class="btn-novo" onclick="resetForm()">+ Registrar outra indicação</div>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script>
+var firebaseConfig = {
+  apiKey: "AIzaSyD2CC8Sr5ifpJsy6pW0_o7blFshTCdhf8s",
+  authDomain: "audens-crm.firebaseapp.com",
+  databaseURL: "https://audens-crm-default-rtdb.firebaseio.com",
+  projectId: "audens-crm",
+  storageBucket: "audens-crm.firebasestorage.app",
+  messagingSenderId: "471063273836",
+  appId: "1:471063273836:web:fcf4ee7aeaead3a2d95349"
+};
+
+firebase.initializeApp(firebaseConfig);
+var db = firebase.database();
+
+function showError(msg){
+  var el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(function(){ el.style.display='none'; }, 4000);
+}
+
+function salvarIndicacao(){
+  var nome    = (document.getElementById('f-nome').value||'').trim();
+  var tel     = (document.getElementById('f-tel').value||'').replace(/\D/g,'');
+  var empresa = (document.getElementById('f-empresa').value||'').trim();
+  var origem  = (document.getElementById('f-origem').value||'').trim();
+  var resp    = 'João';
+  var obs     = (document.getElementById('f-obs').value||'').trim();
+
+  if(!nome)   { showError('Por favor, informe o nome do indicado.'); return; }
+  if(!origem) { showError('Por favor, informe o cliente que fez a indicação.'); return; }
+
+  var btn = document.getElementById('btn-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  var id = 'ind_' + Date.now() + '_' + Math.random().toString(36).substring(2,7);
+  var obj = {
+    nomeIndicado: nome,
+    telefone: tel,
+    empresa: empresa,
+    clienteIndicou: origem,
+    responsavel: resp,
+    obs: obs,
+    status: 'novo',
+    createdAt: Date.now(),
+    fonte: 'formulario-externo'
+  };
+
+  db.ref('indicacoes/' + id).set(obj)
+    .then(function(){
+      document.getElementById('form-view').style.display = 'none';
+      document.getElementById('success-view').style.display = 'block';
+    })
+    .catch(function(e){
+      showError('Erro ao salvar: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'Salvar Indicação';
+    });
+}
+
+function resetForm(){
+  ['f-nome','f-tel','f-empresa','f-origem','f-obs'].forEach(function(id){
+    document.getElementById(id).value = '';
+  });
+  var btn = document.getElementById('btn-salvar');
+  btn.disabled = false;
+  btn.textContent = 'Salvar Indicação';
+  document.getElementById('success-view').style.display = 'none';
+  document.getElementById('form-view').style.display = 'block';
+}
+</script>
+</body>
+</html>
