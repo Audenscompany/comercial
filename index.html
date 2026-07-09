@@ -483,7 +483,10 @@ function startRealtimeSync(){
     var newOnes = loaded.filter(function(l){return !existingTels.has((l.telefone||'').replace(/\D/g,''));});
     if(newOnes.length){
       allLeads = allLeads.concat(newOnes);
-      _dailyMap = {};
+      // Só reseta o lote do dia se algum lead novo já é elegível agora (faturamento + 60 dias)
+      // Leads recém-chegados da LP não são elegíveis por 60 dias — não precisa resetar
+      var temElegivelNovo = newOnes.some(function(l){ return isLeadElegivel(l); });
+      if(temElegivelNovo) _dailyMap = {};
       saveAll();
       var area = document.getElementById('content');
       var pg = area ? area.getAttribute('data-page') : null;
@@ -832,7 +835,8 @@ async function loadLeadsFB(){
       var existingTels = new Set(allLeads.map(function(l){return(l.telefone||'').replace(/\D/g,'');}));
       var newOnes = loaded.filter(function(l){return !existingTels.has((l.telefone||'').replace(/\D/g,''));});
       allLeads = allLeads.concat(newOnes);
-      _dailyMap = {};
+      var temElegivelNovo = newOnes.some(function(l){ return isLeadElegivel(l); });
+      if(temElegivelNovo) _dailyMap = {};
       saveAll();
       return true;
     }
@@ -846,7 +850,7 @@ async function syncLeadsToFB(){
   var obj = {};
   allLeads.forEach(function(l, i){
     var key = (l.telefone||'lead_'+i).replace(/\D/g,'').replace(/[.#$\[\]]/g,'_');
-    obj[key] = {nome:l.nome||'',telefone:(l.telefone||'').replace(/\D/g,''),cidade:l.cidade||'',faturamento:l.faturamento||'',_source:l._source||'import'};
+    obj[key] = {nome:l.nome||'',telefone:(l.telefone||'').replace(/\D/g,''),cidade:l.cidade||'',faturamento:l.faturamento||'',_source:l._source||'import',_data:l._data||'',_createdAt:l._createdAt||0};
   });
   try{
     await fbSet('leads', obj);
@@ -1941,6 +1945,8 @@ var FATURAMENTO_OPTS=['até 10 mil','10 mil até 20 mil','20 mil até 40 mil','4
 // usados para disparar mensagens automaticas de WhatsApp (confirmacao de reuniao etc.)
 var RECEBERLEAD_URL='https://receberlead-471063273836.us-central1.run.app';
 var WEBHOOK_SECRET='audens2025xk';
+// URL do webhook externo disparado manualmente ao confirmar uma venda (botão na aba Assinaturas)
+var webhookVendaUrl=localStorage.getItem('webhookVendaUrl')||'';
 // Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card
 var KANBAN_FAT_DESTAQUE=40000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
@@ -2081,6 +2087,44 @@ function getLeadTag(faturamento){
   if(v<20000) return {label:'VDH',cls:'b-red'};
   if(v<40000) return {label:'Marketplaces',cls:'b-amber'};
   return {label:'Assessoria de Marketing',cls:'b-green'};
+}
+// Converte string de data do lead (_data) em timestamp (ms)
+// Suporta DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, MM/DD/YYYY
+function parseLeadDate(str){
+  if(!str) return 0;
+  var s=String(str).trim();
+  // YYYY-MM-DD
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])).getTime();
+  // DD/MM/YYYY ou DD-MM-YYYY
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(m){
+    var d=parseInt(m[1]),mo=parseInt(m[2]),y=parseInt(m[3]);
+    // heurística: se dia > 12, é definitivamente DD/MM
+    if(d>12) return new Date(y,mo-1,d).getTime();
+    // se mês > 12, é MM/DD
+    if(mo>12) return new Date(y,d-1,mo).getTime();
+    // por padrão assume DD/MM (formato BR)
+    return new Date(y,mo-1,d).getTime();
+  }
+  // fallback: Date.parse
+  var ts=Date.parse(s);
+  return isNaN(ts)?0:ts;
+}
+// Retorna true se o lead é elegível para cold call:
+// - faturamento >= 20k (Marketplaces ou Assessoria)
+// - cadastrado há pelo menos 60 dias
+var COLDCALL_MIN_FAT=20000;
+var COLDCALL_MIN_DIAS=60;
+function isLeadElegivel(l){
+  var fat=parseFaturamentoValue(l.faturamento);
+  if(fat<COLDCALL_MIN_FAT) return false;
+  // Tenta extrair data de chegada: _data (campo da planilha), _createdAt (LP webhook, timestamp ms)
+  var ts=parseLeadDate(l._data);
+  if(!ts && l._createdAt) ts=Number(l._createdAt); // LP webhook grava _createdAt em ms
+  if(!ts) return true; // sem data alguma → lead antigo importado, considera elegível
+  var diasDesde=(Date.now()-ts)/(1000*60*60*24);
+  return diasDesde>=COLDCALL_MIN_DIAS;
 }
 var _dragKanbanKey=null;
 var gcalToken=null,gcalClientId='';
@@ -3532,10 +3576,10 @@ function buildNav(){
       {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'}
     ]},
     {group:'Cold Call',icon:'ti-phone-call',items:[
+      {id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
       {id:'leads',icon:'ti-upload',label:'Importar Leads'},
       {id:'historico',icon:'ti-history',label:'Historico Geral'},
-      {id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
-      {id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'}
+      {id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'}
     ]},
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
@@ -3603,17 +3647,17 @@ function buildNav(){
       'assinaturas':{id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
       'plano-carreira':{id:'plano-carreira',icon:'ti-award',label:'Plano de Carreira'},
       'asaas':{id:'asaas',icon:'ti-cash',label:'Cobrancas Asaas'},
+      'ligar':{id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
       'leads':{id:'leads',icon:'ti-upload',label:'Importar Leads'},
       'historico':{id:'historico',icon:'ti-history',label:'Historico Geral'},
       'dashboard':{id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
-      'tarefas-dia':{id:'tarefas-dia',icon:'ti-checkbox',label:'Tarefas do Dia'},
       'avaliacoes':{id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'}
     };
     // Grupos para organizar na sidebar quando há permissões customizadas
     var _navGroups=[
       {group:'SDR',icon:'ti-report-analytics',items:['minhas-tarefas','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','desempenho-sdr']},
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
-      {group:'Cold Call',icon:'ti-phone-call',items:['leads','historico','dashboard','tarefas-dia']}
+      {group:'Cold Call',icon:'ti-phone-call',items:['ligar','leads','historico','dashboard']}
     ];
     var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
     def=[];
@@ -3937,7 +3981,18 @@ function getDailyKey(){
 }
 function getDailyLeads(){
   var key=getDailyKey();
-  if(_dailyMap[key])return _dailyMap[key];
+  if(_dailyMap[key]){
+    // Reaplica filtro de elegibilidade no cache — garante que regras de faturamento/60 dias são respeitadas
+    // mesmo que o lote tenha sido gerado antes das regras serem ativadas
+    var cached=_dailyMap[key];
+    var inelegiveis=cached.filter(function(l){return l.faturamento!==undefined&&!isLeadElegivel(l);});
+    if(inelegiveis.length>0){
+      // Cache contém leads inelegíveis → regenera silenciosamente
+      delete _dailyMap[key];
+    } else {
+      return cached;
+    }
+  }
   // Fallback: chave antiga sem usuário (migração)
   var oldKey=todayStr();
   if(_dailyMap[oldKey]){
@@ -3959,15 +4014,15 @@ function getDailyLeads(){
     // Completar até 50 se ainda não chegou
     if(leadsHoje.length<50){
       var usedSet=new Set(telsHoje.concat(Object.keys(calls)));
-      var extra=allLeads.filter(function(l){return !usedSet.has(l.telefone);}).sort(function(){return Math.random()-.5;}).slice(0,50-leadsHoje.length);
+      var extra=allLeads.filter(function(l){return !usedSet.has(l.telefone)&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);}).slice(0,50-leadsHoje.length);
       leadsHoje=leadsHoje.concat(extra);
     }
     _dailyMap[key]=leadsHoje;saveAll();return leadsHoje;
   }
   if(!checkDay(new Date()).ok)return null;
   var used=new Set(Object.keys(calls));
-  var returns=allLeads.filter(function(l){return l._requeue&&!used.has(l.telefone);});
-  var fresh=allLeads.filter(function(l){return !l._requeue&&!used.has(l.telefone);}).sort(function(){return Math.random()-.5;});
+  var returns=allLeads.filter(function(l){return l._requeue&&!used.has(l.telefone)&&isLeadElegivel(l);});
+  var fresh=allLeads.filter(function(l){return !l._requeue&&!used.has(l.telefone)&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
   var batch=fresh.slice(0,50-returns.length).concat(returns).slice(0,50);
   if(!batch.length)return[];
   _dailyMap[key]=batch;saveAll();return batch;
@@ -4203,15 +4258,25 @@ function mergeAndSave(allParsed,log){
 // ===== LIGAR =====
 var _curCallIdx=null,_callStep=1,_callData={};
 var _extraLeadsTotal=0; // tracks extra leads added today
+var _ligarFatFilter='todos'; // faturamento filter: 'todos' | 'vdh' | 'mkt' | 'assessoria'
 
 // ===== LEADS EXTRAS =====
+function regenerarListaHoje(){
+  if(!confirm('Isso vai apagar o lote de hoje e gerar uma nova lista com as regras atuais (faturamento 20k+ e 60 dias).\n\nLigações já registradas hoje são mantidas. Continuar?')) return;
+  var key=getDailyKey();
+  delete _dailyMap[key];
+  _extraLeadsTotal=0;
+  saveAll();
+  showPage('ligar');
+  showSheetToast('✓ Lista regenerada com as regras de faturamento!',false);
+}
 function gerarLeadsExtras(qtd){
   var hoje = todayStr();
   var dl = getDailyLeads()||[];
   var usedTels = new Set(dl.map(function(l){return (l.telefone||'').replace(/\D/g,'');}));
   // Buscar leads não usados hoje
   var disponiveis = allLeads.filter(function(l){
-    return !usedTels.has((l.telefone||'').replace(/\D/g,''));
+    return !usedTels.has((l.telefone||'').replace(/\D/g,'')) && isLeadElegivel(l);
   });
   if(!disponiveis.length){
     alert('Não há mais leads disponíveis na base.');
@@ -4282,11 +4347,30 @@ function renderLigar(){
     return emptyHtml;
   }
   var dl=getDailyLeads()||[];
+  // Aplica filtro de faturamento (VDH não existe mais na lista)
+  if(_ligarFatFilter==='vdh') _ligarFatFilter='todos';
+  var dlFiltered=dl;
+  if(_ligarFatFilter!=='todos'){
+    dlFiltered=dl.filter(function(l){
+      var v=parseFaturamentoValue(l.faturamento);
+      if(_ligarFatFilter==='vdh') return v>0 && v<20000;
+      if(_ligarFatFilter==='mkt') return v>=20000 && v<40000;
+      if(_ligarFatFilter==='assessoria') return v>=40000;
+      return true;
+    });
+  }
   var done=dl.filter(function(l){return calls[l.telefone];}).length;
   var pct=dl.length?Math.round(done/dl.length*100):0;
+  // Contagens por faixa
+  var _cntMkt=dl.filter(function(l){var v=parseFaturamentoValue(l.faturamento);return v>=20000&&v<40000;}).length;
+  var _cntAss=dl.filter(function(l){var v=parseFaturamentoValue(l.faturamento);return v>=40000;}).length;
   var pendFU=getPendingFollowups();
   return '<div class="page active">'+
-  '<div class="page-header"><div><div class="page-title">Leads de Hoje</div><div class="page-sub">'+todayStr()+'</div></div><div class="date-chip">'+done+'/'+dl.length+'</div></div>'+
+  '<div class="page-header"><div><div class="page-title">Leads de Hoje</div><div class="page-sub">'+todayStr()+'</div></div>'+
+  '<div style="display:flex;align-items:center;gap:10px;">'+
+    '<button class="btn btn-outline" style="font-size:11px;" onclick="regenerarListaHoje()" title="Apaga o lote de hoje e gera um novo com as regras atuais"><i class="ti ti-refresh"></i> Regenerar lista</button>'+
+    '<div class="date-chip">'+done+'/'+dl.length+'</div>'+
+  '</div></div>'+
   (pendFU.length>0?'<div class="task-alert" onclick="showPage(\'tarefas\')">'+
     '<div style="display:flex;align-items:center;gap:14px;">'+
       '<div style="width:44px;height:44px;background:rgba(239,68,68,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--red);"><i class="ti ti-bell-ringing"></i></div>'+
@@ -4298,6 +4382,12 @@ function renderLigar(){
     '<div style="padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
       '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;color:var(--muted);">'+pct+'% concluido</span>'+
       '<div style="width:200px;"><div class="prog-wrap"><div class="prog-fill" style="width:'+pct+'%;background:var(--green);"></div></div></div>'+
+    '</div>'+
+    '<div style="padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+      '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Filtrar por faturamento:</span>'+
+      '<button onclick="_ligarFatFilter=\'todos\';showPage(\'ligar\')" style="padding:4px 12px;font-size:11px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:.5px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:'+(_ligarFatFilter==='todos'?'var(--purple3)':'var(--bg3)')+';color:'+(_ligarFatFilter==='todos'?'#fff':'var(--muted)')+';transition:all .15s;">TODOS ('+dl.length+')</button>'+
+      '<button onclick="_ligarFatFilter=\'assessoria\';showPage(\'ligar\')" style="padding:4px 12px;font-size:11px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:.5px;border-radius:6px;border:1px solid '+(_ligarFatFilter==='assessoria'?'rgba(34,197,94,0.6)':'rgba(34,197,94,0.2)')+';cursor:pointer;background:'+(_ligarFatFilter==='assessoria'?'rgba(34,197,94,0.2)':'transparent')+';color:var(--green);">🔥 ASSESSORIA 40k+ ('+_cntAss+')</button>'+
+      '<button onclick="_ligarFatFilter=\'mkt\';showPage(\'ligar\')" style="padding:4px 12px;font-size:11px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:.5px;border-radius:6px;border:1px solid '+(_ligarFatFilter==='mkt'?'rgba(245,158,11,0.6)':'rgba(245,158,11,0.2)')+';cursor:pointer;background:'+(_ligarFatFilter==='mkt'?'rgba(245,158,11,0.15)':'transparent')+';color:var(--amber);">⚡ MARKETPLACES 20-40k ('+_cntMkt+')</button>'+
     '</div>'+
     // Todos concluídos — mostrar banner de parabéns + botão de mais leads
     (done >= dl.length && dl.length > 0 ?
@@ -4311,7 +4401,7 @@ function renderLigar(){
       '</div>'
     : '')+
     '<div class="t-scroll"><table><thead><tr><th>#</th><th>Nome</th><th>Telefone</th><th>Cidade</th><th>Status</th><th>Acao</th></tr></thead><tbody>'+
-    dl.map(function(l,i){
+    dlFiltered.map(function(l,i){
       var reg=calls[l.telefone];
       var mtg=Object.values(meetings).find(function(m){return m.tel===l.telefone;});
       var fu=mtg?followups[mtg.id]:null;
@@ -4333,8 +4423,10 @@ function renderLigar(){
       else{sb='<span class="badge b-muted">Pendente</span>';btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar</button>';}
       var _telFmt = formatTelLigar(l.telefone);
       var _telIsLocal = _telFmt.startsWith('31');
+      var _fatTag=getLeadTag(l.faturamento);
+      var _fatBadge=_fatTag?'<span class="badge '+_fatTag.cls+'" style="font-size:9px;padding:1px 5px;margin-left:5px;vertical-align:middle;">'+_fatTag.label+'</span>':'';
       return '<tr><td style="color:var(--muted);">'+(i+1)+'</td>'+
-        '<td style="font-weight:600;">'+l.nome+(l._requeue?' <span style="font-size:10px;color:var(--amber);">RECONTATO</span>':'')+'</td>'+
+        '<td style="font-weight:600;">'+l.nome+(l._requeue?' <span style="font-size:10px;color:var(--amber);">RECONTATO</span>':'')+_fatBadge+'</td>'+
         '<td style="font-size:12px;">'+
           '<div style="display:flex;align-items:center;gap:6px;">'+
             '<a href="tel:'+_telFmt+'" style="font-family:monospace;color:var(--purple3);text-decoration:none;letter-spacing:0.5px;" title="Ligar: '+_telFmt+'">'+
@@ -5517,6 +5609,13 @@ async function loadAssinaturas(){
       var marcarVendaBtn=(r.status==='assinado'&&!jaTemVenda)
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarContratoComoVenda(\''+id+'\')" title="Registrar venda no CRM"><i class="ti ti-trophy"></i> Marcar venda</button>'
         : (jaTemVenda?'<span style="font-size:11px;color:#10b981;font-weight:700;"><i class="ti ti-check"></i> Venda ✓</span>':'');
+      // Botão "Enviar p/ sistema" — webhook manual; aparece só após venda registrada
+      var jaDisparou=r._webhookDisparado===true;
+      var webhookBtn=jaTemVenda
+        ? (jaDisparou
+            ? '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;"><i class="ti ti-send"></i> Enviado ao sistema</span>'
+            : '<button id="wh-btn-'+id+'" class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.15);color:var(--purple3);border:1px solid rgba(99,102,241,0.35);" onclick="dispararWebhookVenda(\''+id+'\')" title="Enviar dados do cliente para o sistema externo"><i class="ti ti-send"></i> Enviar p/ sistema</button>')
+        : '';
       return '<tr>'+
         '<td>'+esc(r.cliente||'-')+'</td>'+
         '<td>'+esc(r.telefone||'-')+'</td>'+
@@ -5525,7 +5624,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+marcarVendaBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -5606,6 +5705,83 @@ async function marcarContratoComoVenda(id){
   showSheetToast('✅ Venda de '+match.nome+' registrada para '+closerNome+'!');
   loadAssinaturas();
   showPage('dash');
+}
+async function dispararWebhookVenda(id){
+  if(!webhookVendaUrl){
+    alert('URL do webhook não configurada.\nVá em Configurações > Integrações e cole a URL do seu sistema.');
+    return;
+  }
+  var btn=document.getElementById('wh-btn-'+id);
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Enviando...';}
+  try{
+    var r=await fbGet('assinaturas/'+id);
+    if(!r){throw new Error('Assinatura não encontrada');}
+    var vd=r.vendaData||{};
+    // Encontra reunião e closer
+    var telRaw=(r.telefone||'').replace(/\D/g,'');
+    var match=null;
+    Object.values(meetings).forEach(function(m){
+      var mTel=(m.tel||'').replace(/\D/g,'');
+      if(mTel===telRaw||mTel.endsWith(telRaw)||telRaw.endsWith(mTel)){
+        if(!match||((m.dtISO||'')>(match.dtISO||''))) match=m;
+      }
+    });
+    var planoDur=parseInt(vd.duracaoMeses||vd.duracao)||1;
+    var isTcv=(vd.tipoValor||'')==='tcv';
+    var mensalidade=isTcv?Math.round((parseFloat(vd.contrato)||0)/planoDur):(parseFloat(vd.mensalidade||vd.contrato)||0);
+    var valorTotal=isTcv?(parseFloat(vd.contrato)||0):(mensalidade*planoDur);
+    var payload={
+      evento:'venda_confirmada',
+      timestamp:new Date().toISOString(),
+      assinatura_id:id,
+      cliente:{
+        nome:r.cliente||'',
+        telefone:r.telefone||'',
+        cnpj:(r.cnpj||vd.cnpj||'').replace(/\D/g,''),
+        cnpj_formatado:r.cnpj||vd.cnpj||''
+      },
+      contrato:{
+        nome:r.contratoNome||'',
+        plano:vd.plano||'',
+        duracao_meses:planoDur,
+        tipo_valor:vd.tipoValor||'mensalidade',
+        mensalidade:mensalidade,
+        valor_total:valorTotal,
+        data_inicio:vd.dataInicio||'',
+        vencimento:vd.dataInicio||'',
+        frequencia:vd.frequencia||'mensal',
+        pdf_url:r.pdfUrl||''
+      },
+      assinatura:{
+        status:r.status||'',
+        data_assinatura:r.signedAt?new Date(r.signedAt).toISOString():'',
+        criado_em:r.createdAt?new Date(r.createdAt).toISOString():'',
+        asaas_status:r.asaasStatus||'',
+        asaas_charge_id:r.asaasChargeId||''
+      },
+      comercial:{
+        closer:match?match.responsavel||'':'',
+        sdr:match?match.sdr||'':'',
+        sdr_nome:match?match.sdrName||'':'',
+        origem:match?match.origem||r.origem||'':r.origem||'',
+        data_reuniao:match?match.dtISO||'':''
+      }
+    };
+    var resp=await fetch(webhookVendaUrl,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(!resp.ok) throw new Error('HTTP '+resp.status+' — '+resp.statusText);
+    // Marca que o webhook foi disparado neste contrato
+    fbDb.ref('assinaturas/'+id).update({_webhookDisparado:true,_webhookTs:Date.now()});
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Enviado ✓';btn.style.background='rgba(16,185,129,0.15)';btn.style.color='#10b981';}
+    showSheetToast('✅ Webhook disparado para '+r.cliente+'!');
+  }catch(e){
+    console.error('[Webhook venda]',e);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-send"></i> Enviar p/ sistema';}
+    showSheetToast('❌ Erro ao disparar webhook: '+e.message,true);
+  }
 }
 async function abrirModalAsaasAssinatura(id){
   var data=(await fbGet('assinaturas/'+id))||{};
@@ -9492,9 +9668,22 @@ function renderConfig(){
     '<button class="btn btn-primary" onclick="saveContatosEquipe()"><i class="ti ti-device-floppy"></i> Salvar Contatos</button>'+
   '</div></div>';
 
+  var integracoesHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
+    '<div class="cb-title"><i class="ti ti-webhook" style="color:var(--purple3);margin-right:6px;"></i>Integrações — Webhook de Venda</div>'+
+    '</div><div style="padding:20px;">'+
+    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Quando você clicar em <strong>"Enviar p/ sistema"</strong> na aba Assinaturas, o CRM faz um POST com os dados completos do cliente (nome, CNPJ, plano, valores, datas) para a URL abaixo. O envio é <strong>manual</strong> — só acontece quando você clicar.</div>'+
+    '<label class="f-label">URL do webhook (endpoint POST do seu sistema)</label>'+
+    '<div style="display:flex;gap:8px;margin-bottom:8px;">'+
+      '<input class="f-input" id="cfg-webhook-url" value="'+esc(webhookVendaUrl)+'" placeholder="https://seu-sistema.com/api/webhook/venda" style="margin-bottom:0;font-size:12px;font-family:monospace;flex:1;">'+
+      '<button class="btn btn-primary" onclick="salvarWebhookUrl()" style="white-space:nowrap;"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+    '</div>'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;color:var(--muted);">Payload enviado (JSON):</div>'+
+    '<pre style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--purple3);overflow-x:auto;margin:6px 0 0 0;line-height:1.6;">{\n  "evento": "venda_confirmada",\n  "timestamp": "2025-01-15T14:32:00.000Z",\n  "cliente": { "nome", "telefone", "cnpj" },\n  "contrato": { "plano", "duracao_meses", "mensalidade", "valor_total", "data_inicio", "frequencia" },\n  "assinatura": { "status", "data_assinatura", "asaas_status" },\n  "comercial": { "closer", "sdr", "origem", "data_reuniao" }\n}</pre>'+
+  '</div></div>';
+
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Configuracoes</div></div></div>'+
-  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml+contatosHtml+asaasConfigHtml:'')+
+  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml+contatosHtml+asaasConfigHtml+integracoesHtml:integracoesHtml)+
   '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-brand-google" style="color:var(--cyan);margin-right:6px;"></i>Google Calendar + Sheets</div></div>'+
   '<div style="padding:20px;">'+
     '<div class="gcal-status '+(connected?'connected':'disconnected')+'">'+
@@ -11387,6 +11576,13 @@ function saveContatosEquipe(){
   showSheetToast('✓ Contatos da equipe salvos!',false);
 }
 
+
+function salvarWebhookUrl(){
+  var url=(document.getElementById('cfg-webhook-url').value||'').trim();
+  webhookVendaUrl=url;
+  localStorage.setItem('webhookVendaUrl',url);
+  showSheetToast(url?'✓ URL do webhook salva!':'✓ Webhook desativado.',false);
+}
 
 // ---- CLOSER LEVELS DATA ----
 var CLOSER_LEVELS = [
