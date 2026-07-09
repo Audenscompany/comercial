@@ -17943,5 +17943,81 @@ window.addEventListener('load', function(){
   }, 2000);
 });
 </script>
+<script>
+// ONE-TIME BOOTSTRAP: Salvar avaliação Gustavo × Ney (09/07/2026)
+(function(){
+  var KEY='audens_bootstrap_aval_ney_gustavo_20260709';
+  if(localStorage.getItem(KEY)) return; // já salvo
+  var record={
+    id:'aval_1752105600000',
+    closerEmail:'gustavo@audens.com',
+    closerNome:'Gustavo Pimenta',
+    date:'2026-07-09',
+    timestamp:1752105600000,
+    lead:'Ney',
+    segmento:'Delivery — hamburgueria e pizzaria',
+    notaFinal:52,
+    classificacao:'B — Boa, mas incompleta',
+    problemaPrincipal:'Sem tráfego próprio há ~1 ano, canal próprio zerado, agência atual sem resultados, dependência total do iFood',
+    desejoPrincipal:'Estabilidade financeira, fluxo de caixa saudável, remunerar melhor equipe e crescer para depois investir na pizzaria',
+    proximoPasso:'Ligação segunda-feira às 11h — sem compromisso real do lead',
+    criterios:[
+      {nome:'Abertura e controle da reunião',nota:2,max:6},
+      {nome:'Diagnóstico factual do negócio',nota:5,max:14},
+      {nome:'Exploração da dor e consequência',nota:4,max:14},
+      {nome:'Meta, desejo e urgência',nota:5,max:10},
+      {nome:'Qualificação de decisão e investimento',nota:5,max:10},
+      {nome:'Escuta e condução consultiva',nota:3,max:10},
+      {nome:'Apresentação da solução personalizada',nota:4,max:10},
+      {nome:'Prova, autoridade e posicionamento',nota:3,max:5},
+      {nome:'Investimento e objeções',nota:4,max:10},
+      {nome:'Fechamento e próximo passo',nota:4,max:11}
+    ],
+    pontosFortes:[
+      'Prova social com dados específicos e verificáveis — cliente R$12k→R$190k em 12 meses com taxa de conversão',
+      'Posicionamento como operador do mesmo negócio — autenticidade real, não apenas script',
+      'Identificou o decisor e mapeou as duas operações (hamburgueria + pizzaria) compartilhando estrutura'
+    ],
+    falhas:[
+      'Sem abertura estruturada — sem agenda, sem alinhamento de tempo, sem declaração de intenção consultiva',
+      'Diagnóstico fragmentado e tardio — dados coletados depois da apresentação da solução',
+      'Dor não foi explorada nem ancorada em impacto financeiro real',
+      'Meta coletada superficialmente e fora de sequência (durante apresentação, não no diagnóstico)',
+      'Qualificação financeira só aconteceu após múltiplas recusas de preço (R$9k → R$4k → R$1k)',
+      'Reunião conduzida como pitch monólogo, não como diagnóstico consultivo',
+      'Proposta genérica (pacote Premium) sem personalização ao cenário específico do Ney',
+      'Objeções não tratadas estruturadamente — não perguntou a causa real antes de rebater',
+      'Fechamento fraco — aceitou passivamente o "preciso pensar" sem criar urgência real'
+    ],
+    acoesPrioritarias:[
+      'Sempre fazer abertura estruturada: alinhar agenda, tempo disponível e intenção consultiva antes de qualquer pitch',
+      'Diagnóstico COMPLETO antes de qualquer apresentação — perguntar faturamento, canal próprio vs iFood, orçamento',
+      'Qualificar orçamento disponível ANTES de apresentar qualquer proposta',
+      'Criar urgência real antes de aceitar prazo de espera — o que muda se não começar agora?'
+    ],
+    diagnostico:{
+      empresa:'GMC João Pessoa (hamburgueria) + Buena Pizza',
+      faturamentoAtual:'~R$60.000/mês (hamburgueria ~R$40k iFood, pizzaria ~R$8k)',
+      metaDeclarada:'R$100.000–R$120.000/mês na hamburgueria até final do ano',
+      decisor:'Sim — Ney decide sozinho nas operações de João Pessoa',
+      objecaoPrincipal:'Preço fora da realidade atual + contrato ativo com outra agência (3 semanas) + histórico ruim com agências + aversão a fidelização'
+    }
+  };
+  function tryeSave(){
+    if(!window.fbDb){setTimeout(tryeSave,1000);return;}
+    window.fbDb.ref('avaliacoes/'+record.id).set(record,function(err){
+      if(!err){
+        localStorage.setItem(KEY,'1');
+        if(window._avaliacoes) window._avaliacoes[record.id]=record;
+        if(window.showSheetToast) window.showSheetToast('✅ Avaliação Gustavo × Ney (52/100) salva no dashboard!',false);
+        console.log('[bootstrap] Avaliação salva:',record.id);
+      } else {
+        console.error('[bootstrap] Erro ao salvar avaliação:',err);
+      }
+    });
+  }
+  setTimeout(tryeSave,2000);
+})();
+</script>
 </body>
 </html>
