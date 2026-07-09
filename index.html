@@ -1541,8 +1541,10 @@ async function enviarLinkAssinaturaWA(telefone, nome, link){
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
 var _waConfirmSentAt = {}; // tel → timestamp — evita duplicatas em < 5 min
-async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink){
+async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink, isRetorno){
   if(!telefone){console.warn('[WA] Confirmação não enviada: lead sem telefone (nome='+nome+')');return;}
+  // Retornos recebem mensagem própria via /retorno — nunca /agendar
+  if(isRetorno){console.warn('[WA] Confirmação /agendar ignorada para retorno de '+nome);return;}
   var _tel=(telefone||'').replace(/\D/g,'');
   var _now=Date.now();
   if(_waConfirmSentAt[_tel] && _now-_waConfirmSentAt[_tel] < 5*60*1000){
@@ -1576,6 +1578,7 @@ async function enviarLembreteVespera(){
   var amanhaISO = amanhaD.toISOString().split('T')[0];
   var reunioesAmanha = Object.values(meetings).filter(function(m){
     if(m._hidden) return false;
+    if(m._retorno) return false; // retornos têm fluxo próprio (/retorno), não recebem vespera
     var iso = m.dtISO || m.meetingISO || '';
     return iso && iso.startsWith(amanhaISO);
   }).map(function(m){
@@ -6643,7 +6646,11 @@ function saveFollowup(){
       sdr:_fuMeeting.sdr||'',sdrName:_fuMeeting.sdrName||'',
       meetLink:_fuMeeting.meetLink||'',gcalLink:_fuMeeting.gcalLink||'',
       kanbanKey:_fuMeeting.kanbanKey||'',origem:_fuMeeting.origem||'Retorno',
-      _retorno:true,_retornoDe:fid};
+      // Flags que impedem fluxo de mensagens de reunião nova:
+      // - _retorno: identifica como retorno (não é reunião nova)
+      // - _skipLembretes: servidor /lembretes deve ignorar essa meeting
+      // O lead já recebeu a mensagem via /retorno acima
+      _retorno:true,_retornoDe:fid,_skipLembretes:true};
     meetings[newMid]=newMeeting;
     saveMeetingFB(newMid,newMeeting);
   }
