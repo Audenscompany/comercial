@@ -11820,7 +11820,14 @@ async function loadFunilReunioes(){
   }
 }
 
-// Update renderReunioes to filter by person
+// Filtro de mês global para Reuniões
+var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
+function setReuniaoMesFiltro(val){
+  if(val){var p=val.split('-');_reunMesFiltro={m:parseInt(p[1])-1,y:parseInt(p[0])};}
+  else _reunMesFiltro=null;
+  showPage('reunioes');
+}
+
 function renderReunioesPersonal(){
   var nome = CU.closer || (CU.name||'').split(' ')[0] || CU.name || '';
   var isGestor = CU.role==='gestor';
@@ -11836,12 +11843,13 @@ function renderReunioesPersonal(){
   }
   rows = rows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
 
-  // ── KPIs mês atual vs anterior ──────────────────────────────────────────
+  // ── KPIs mês selecionado vs anterior ──────────────────────────────────────────
   var now=new Date(), curM=now.getMonth(), curY=now.getFullYear();
-  var prevM=curM===0?11:curM-1, prevY=curM===0?curY-1:curY;
+  var filtM=_reunMesFiltro?_reunMesFiltro.m:curM, filtY=_reunMesFiltro?_reunMesFiltro.y:curY;
+  var prevM=filtM===0?11:filtM-1, prevY=filtM===0?filtY-1:filtY;
   function inMonth(m,mo,yr){var d=new Date(m.dtISO||(m.scheduledAt||Date.now()));return d.getMonth()===mo&&d.getFullYear()===yr;}
   function cntSt(arr,st){return arr.filter(function(m){return getMeetingStatus(m)===st;}).length;}
-  var rowsMes=rows.filter(function(m){return inMonth(m,curM,curY);});
+  var rowsMes=rows.filter(function(m){return inMonth(m,filtM,filtY);});
   var rowsPrev=rows.filter(function(m){return inMonth(m,prevM,prevY);});
   var agendadas=rowsMes.filter(function(m){var s=getMeetingStatus(m);return s==='pending'||s==='reagendado';}).length;
   var realizadas=cntSt(rowsMes,'done'), noshow=cntSt(rowsMes,'noshow');
@@ -11849,12 +11857,12 @@ function renderReunioesPersonal(){
   var agPrev=rowsPrev.filter(function(m){var s=getMeetingStatus(m);return s==='pending'||s==='reagendado';}).length;
   var realPrev=cntSt(rowsPrev,'done'), nsPrev=cntSt(rowsPrev,'noshow');
   var totalPrev=rowsPrev.length, taxaPrev=totalPrev>0?Math.round(realPrev/totalPrev*100):0;
-  // Receita — acumulado total (faturamento pode ser number ou string)
+  // Receita — mês selecionado (faturamento pode ser number ou string)
   function _fat(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
   var receita=0, vendas=0;
-  rows.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendas++;}});
+  rowsMes.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendas++;}});
   var receitaPrev=0, vendasPrev=0;
-  rows.forEach(function(m){if(!inMonth(m,prevM,prevY))return;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendasPrev++;}});
+  rowsPrev.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
   function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
@@ -11917,7 +11925,7 @@ function renderReunioesPersonal(){
 
   // ── Performance SDR ───────────────────────────────────────────────────
   var sdrMap={};
-  rows.forEach(function(m){var s=(m.sdrName||m.sdr||'').trim();if(!s)return;var k=s.toLowerCase();if(!sdrMap[k])sdrMap[k]={name:s,total:0,real:0};sdrMap[k].total++;if(getMeetingStatus(m)==='done')sdrMap[k].real++;});
+  rowsMes.forEach(function(m){var s=(m.sdrName||m.sdr||'').trim();if(!s)return;var k=s.toLowerCase();if(!sdrMap[k])sdrMap[k]={name:s,total:0,real:0};sdrMap[k].total++;if(getMeetingStatus(m)==='done')sdrMap[k].real++;});
   var sdrList=Object.values(sdrMap).sort(function(a,b){return b.total-a.total;}).slice(0,6);
   var sdrMax=sdrList.length>0?sdrList[0].total:1;
   var sdrRows=sdrList.length===0
@@ -11940,7 +11948,7 @@ function renderReunioesPersonal(){
 
   // ── Performance por Closer ────────────────────────────────────────────
   var clMap={};
-  rows.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);}}});
+  rowsMes.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);}}});
   var clList=Object.values(clMap).sort(function(a,b){return b.vendas-a.vendas;});
   var avColors=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
   // Mapeia nome do closer para email
@@ -11971,7 +11979,7 @@ function renderReunioesPersonal(){
 
   // ── Qualidade das Origens ─────────────────────────────────────────────
   var origMap={};
-  rows.forEach(function(m){
+  rowsMes.forEach(function(m){
     var o=(m.origem||'Outros').trim();var k=o.toLowerCase();
     if(!origMap[k])origMap[k]={name:o,total:0,real:0};
     origMap[k].total++;if(getMeetingStatus(m)==='done')origMap[k].real++;
@@ -12119,7 +12127,15 @@ function renderReunioesPersonal(){
 
   // ── Header ────────────────────────────────────────────────────────────
   var _mns2=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  var mesLabel=_mns2[curM]+' '+curY;
+  var mesLabel=_mns2[filtM]+' '+filtY;
+  // Seletor de mês — coleta todos os meses disponíveis nos dados
+  var _allMesKeys={};
+  rows.forEach(function(m){var d=new Date(m.dtISO||(m.scheduledAt||Date.now()));var k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');_allMesKeys[k]=1;});
+  var _sortedMesKeys=Object.keys(_allMesKeys).sort().reverse();
+  var _selectedMesKey=filtY+'-'+String(filtM+1).padStart(2,'0');
+  var mesSelect='<select onchange="setReuniaoMesFiltro(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--white);font-size:13px;outline:none;cursor:pointer;">'+
+    _sortedMesKeys.map(function(k){var p=k.split('-');var lbl=_mns2[parseInt(p[1])-1]+' '+p[0];return'<option value="'+k+'"'+(k===_selectedMesKey?' selected':'')+'>'+lbl+'</option>';}).join('')+
+  '</select>';
 
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
@@ -12127,6 +12143,7 @@ function renderReunioesPersonal(){
       '<div class="page-sub">'+(isGestor?'Visão completa · ':'Minhas reuniões · ')+mesLabel+'</div>'+
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;">'+
+      mesSelect+
       '<button class="btn btn-primary" onclick="(function(){var w=document.getElementById(\'rm-form-wrap\');w.style.display=w.style.display===\'none\'?\'block\':\'none\'})()">'+
         '<i class="ti ti-calendar-plus"></i> Nova Reunião</button>'+
       '<button class="btn btn-outline" onclick="(function(){var w=document.getElementById(\'rm-all-wrap\');w.style.display=w.style.display===\'none\'?\'block\':\'none\';})()">'+
