@@ -3607,7 +3607,14 @@ function showMain(){
     }),
     fbGet('config/gcalClientId').then(function(fbCid){
       if(fbCid){ gcalClientId=fbCid; localStorage.setItem('audens_gcal_id',gcalClientId); }
-    })
+    }),
+    // Carrega config do Cockpit do Firebase (compartilhada entre todos os usuários)
+    fbGet('cfg/cockpit').then(function(fbCockpit){
+      if(fbCockpit){
+        if(fbCockpit.url){ webhookVendaUrl=fbCockpit.url; localStorage.setItem('webhookVendaUrl',fbCockpit.url); }
+        if(fbCockpit.secret){ webhookVendaSecret=fbCockpit.secret; localStorage.setItem('webhookVendaSecret',fbCockpit.secret); }
+      }
+    }).catch(function(){})
   ]).then(function(){
     // Load meta token from Firebase
     fbGet('meta_token').then(function(fbMeta){
@@ -5084,6 +5091,35 @@ async function confirmarAssinatura(id){
   }
   window._signData=Object.assign({},window._signData,signData);
   renderSignedView(id,window._signData);
+  // Dispara webhook Cockpit automaticamente após assinatura
+  (async function(){
+    try{
+      var cfg=await fbGet('cfg/cockpit');
+      if(!cfg||!cfg.url) return;
+      var sd=window._signData||{};
+      var vd=sd.vendaData||{};
+      var com=sd.comercial||{};
+      var planoDur=parseInt(vd.duracaoMeses)||1;
+      var isTcv=(vd.tipoValor||'').toLowerCase()==='tcv';
+      var mensalidade=isTcv?Math.round((parseFloat(vd.valorTotal)||0)/planoDur):(parseFloat(vd.mensalidade||vd.valorParcela)||0);
+      var planoRaw=(vd.plano||'').toLowerCase();
+      var planoMapped=planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':
+        (planoRaw==='marketplaces'||planoRaw==='marketplace')?'Marketplace':(vd.plano||'');
+      var wPayload={
+        cliente:{nome:sd.cliente||'',telefone:(sd.telefone||'').replace(/\D/g,''),cnpj:sd.cnpj||vd.cnpj||''},
+        contrato:{data_inicio:vd.dataInicio||'',plano:planoMapped,
+          duracao_meses:planoDur,tipo_valor:isTcv?'TCV':'MRR',mensalidade:mensalidade},
+        comercial:{closer:com.closer||'',sdr_nome:com.sdrNome||'',origem:com.origem||''}
+      };
+      var wHeaders={'Content-Type':'application/json'};
+      if(cfg.secret) wHeaders['Authorization']='Bearer '+cfg.secret;
+      await fetch(cfg.url,{method:'POST',headers:wHeaders,body:JSON.stringify(wPayload)});
+      // Marca no Firebase que o webhook foi disparado
+      if(fbDb||initFirebase()) fbDb.ref('assinaturas/'+id).update({_webhookDisparado:true,_webhookTs:Date.now()});
+    }catch(e){
+      console.warn('[Cockpit webhook] falhou silenciosamente:',e.message);
+    }
+  })();
 }
 
 // ===== FINANCEIRO =====
@@ -7203,8 +7239,24 @@ async function generateContratoDocx(dados){
           contratoNome:nomeArquivo.replace(/\.docx$/i,''),
           pdfUrl:pdfUrl,
           telefone:dados.telefone||'',
+          cnpj:dados.cnpjCliente||'',
           status:'pendente',
-          createdAt:Date.now()
+          createdAt:Date.now(),
+          vendaData:{
+            plano:dados.plano||'',
+            duracaoMeses:dados.duracaoMeses||1,
+            dataInicio:dados.dataInicio||'',
+            tipoValor:dados.tipoValor||'',
+            valorTotal:dados.valorTotal||0,
+            valorParcela:dados.valorParcela||0,
+            mensalidade:dados.valorParcela||0,
+            cnpj:dados.cnpjCliente||''
+          },
+          comercial:{
+            closer:dados.closer||'',
+            sdrNome:dados.sdrNome||'',
+            origem:dados.origem||''
+          }
         });
         var signId=ref&&ref.key;
         if(signId){
@@ -7387,7 +7439,10 @@ function saveFollowup(){
       valorTotal:contrato,
       valorParcela:mensalidade,
       frequencia:frequencia,
-      vencimento:vencimento
+      vencimento:vencimento,
+      closer:_fuMeeting.responsavel||'',
+      sdrNome:_fuMeeting.sdrName||'',
+      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||'')
     });
     // Cria cobrança no Asaas (se API key configurada)
     (function(kk2,leadInfo,vd){
@@ -7453,7 +7508,10 @@ function saveFollowup(){
           valorTotal:segContrato,
           valorParcela:segMens,
           frequencia:frequencia,
-          vencimento:vencimento
+          vencimento:vencimento,
+          closer:_fuMeeting.responsavel||'',
+          sdrNome:_fuMeeting.sdrName||'',
+          origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||'')
         });
       }, 800); // pequeno delay para o primeiro docx terminar
       // Registra na planilha de Clientes
@@ -7578,7 +7636,10 @@ function saveFollowupEdit(){
       valorTotal:contrato,
       valorParcela:mensalidade,
       frequencia:frequencia,
-      vencimento:vencimento
+      vencimento:vencimento,
+      closer:_fuMeeting.responsavel||'',
+      sdrNome:_fuMeeting.sdrName||'',
+      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||'')
     });
     // Registra na planilha:
     // - primeira vez (old.venda!=='sim'), OU
@@ -13037,6 +13098,8 @@ function salvarWebhookConfig(){
   webhookVendaSecret=secret;
   localStorage.setItem('webhookVendaUrl',url);
   localStorage.setItem('webhookVendaSecret',secret);
+  // Salva no Firebase para que a página pública de assinatura (e outros usuários) também acesse
+  if(fbDb||initFirebase()) fbDb.ref('cfg/cockpit').set({url:url,secret:secret});
   showSheetToast('✅ Configurações do Cockpit salvas!',false);
 }
 
