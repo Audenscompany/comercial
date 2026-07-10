@@ -12142,19 +12142,19 @@ function renderReunioesPersonal(){
   rowsPrevAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_mrr(fu);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
-  function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+  function kpi(icon,label,val,delta2,color,kId){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'+
       '<span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+label+'</span>'+
       '<i class="ti ti-'+icon+'" style="font-size:15px;color:'+color+';"></i>'+
     '</div>'+
-    '<div style="font-family:Bebas Neue,sans-serif;font-size:36px;color:'+color+';line-height:1.1;">'+val+'</div>'+
+    '<div '+(kId?'id="'+kId+'"':'')+' style="font-family:Bebas Neue,sans-serif;font-size:36px;color:'+color+';line-height:1.1;">'+val+'</div>'+
     '<div style="margin-top:4px;">'+delta2+'</div>'+
   '</div>';}
   var kpiRow='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;">'+
-    kpi('calendar','Agendadas',agendadas,dlt(agendadas,agPrev),'var(--amber)')+
-    kpi('check','Realizadas',realizadas,dlt(realizadas,realPrev),'var(--green)')+
-    kpi('user-off','No-Show',noshow,dlt(noshow,nsPrev),'var(--red)')+
-    kpi('target','Tx. Conv.',taxaConv+'%',dlt(taxaConv,taxaPrev),'var(--cyan)')+
+    kpi('calendar','Agendadas',agendadas,dlt(agendadas,agPrev),'var(--amber)','_rpAg')+
+    kpi('check','Realizadas',realizadas,dlt(realizadas,realPrev),'var(--green)','_rpReal')+
+    kpi('user-off','No-Show',noshow,dlt(noshow,nsPrev),'var(--red)','_rpNs')+
+    kpi('target','Tx. Conv.',taxaConv+'%',dlt(taxaConv,taxaPrev),'var(--cyan)','_rpConv')+
     kpi('coin','MRR Gerado',fmtBRL(receita),dlt(receita,receitaPrev),'var(--purple3)')+
     kpi('chart-bar','Ticket MRR Médio',fmtBRL(ticket),dlt(ticket,ticketPrev),'#4ade80')+
   '</div>';
@@ -12508,6 +12508,34 @@ function renderReunioesPersonal(){
       '<span style="margin-left:auto;font-size:12px;color:var(--muted);">Conv. geral: <b style="color:var(--purple3);font-size:14px;">'+_fTxVenLead+'%</b> '+(leadsCount?'lead':'agendada')+' → venda</span>'+
     '</div>'+
   '</div>';
+
+  // ── Async: atualiza KPIs com dados reais da planilha (fonte de verdade) ──
+  setTimeout(async function(){
+    try{
+      var shData=await loadDataHybrid();
+      var shRows=(shData.reunioes&&shData.reunioes.rows)||[];
+      var shPer=shRows.filter(function(r){
+        var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+        return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
+      });
+      if(!isGestor){
+        shPer=shPer.filter(function(r){
+          var cl=(col(r,['CLOSER','Closer','closer'])||'').toLowerCase();
+          var sd=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').toLowerCase();
+          var n=nome.toLowerCase();
+          return cl.includes(n)||sd.includes(n);
+        });
+      }
+      var shAg=shPer.length;
+      var shReal=shPer.filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
+      var shNs=shPer.filter(function(r){var s=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();return s==='NO-SHOW'||s==='NO SHOW'||s==='NOSHOW';}).length;
+      var shConv=shAg>0?Math.round(shReal/shAg*100):0;
+      var agEl=document.getElementById('_rpAg');if(agEl)agEl.textContent=shAg;
+      var realEl=document.getElementById('_rpReal');if(realEl)realEl.textContent=shReal;
+      var nsEl=document.getElementById('_rpNs');if(nsEl)nsEl.textContent=shNs;
+      var convEl=document.getElementById('_rpConv');if(convEl)convEl.textContent=shConv+'%';
+    }catch(e){}
+  },100);
 
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
