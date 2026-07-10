@@ -11861,9 +11861,9 @@ function renderReunioesPersonal(){
   // Receita — acumulado total (faturamento pode ser number ou string)
   function _fat(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
   var receita=0, vendas=0;
-  rows.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendas++;}});
+  rows.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.contrato);vendas++;}});
   var receitaPrev=0, vendasPrev=0;
-  rowsPrev.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendasPrev++;}});
+  rowsPrev.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.contrato);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
   function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
@@ -11955,7 +11955,7 @@ function renderReunioesPersonal(){
 
   // ── Performance por Closer ────────────────────────────────────────────
   var clMap={};
-  rowsMes.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);}}});
+  rowsMes.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.contrato);}}});
   var clList=Object.values(clMap).sort(function(a,b){return b.vendas-a.vendas;});
   var avColors=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
   // Mapeia nome do closer para email
