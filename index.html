@@ -12096,7 +12096,7 @@ function renderReunioesPersonal(){
         '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
         '<td style="font-size:12px;">'+(_dtLabel||'—')+'</td>'+
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
-        '<td style="font-size:12px;color:var(--cyan);">'+sdrLabel+'</td>'+
+        '<td style="white-space:nowrap;font-size:12px;color:var(--cyan);">'+sdrLabel+' <button onclick="trocarSDRReuniao(\''+m.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0 3px;" title="Trocar SDR"><i class="ti ti-edit" style="font-size:11px;"></i></button></td>'+
         '<td style="white-space:nowrap;">'+(m.responsavel||'—')+' <button onclick="trocarCloserReuniao(\''+m.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0 3px;" title="Trocar closer"><i class="ti ti-edit" style="font-size:11px;"></i></button></td>'+
         '<td>'+tarefaH+'</td>'+
         '<td>'+(m.meetLink?'<a href="'+m.meetLink+'" target="_blank" style="color:var(--cyan);font-size:12px;">Abrir</a>':'—')+'</td>'+
@@ -12108,7 +12108,7 @@ function renderReunioesPersonal(){
           ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--red);border-color:rgba(239,68,68,0.4);"><i class="ti ti-trash"></i></button>'+
         '</td></tr>';
     }).join('');
-    fbHtml='<div id="rm-all-wrap" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:16px;">'+
+    fbHtml='<div id="rm-all-wrap" style="display:block;background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:16px;">'+
       '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
         '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Todas as Reuniões '+(isGestor?'':'(Minhas)')+'</span>'+
         '<div style="display:flex;align-items:center;gap:8px;"><span class="badge b-amber">'+rows.length+'</span>'+
@@ -12129,8 +12129,8 @@ function renderReunioesPersonal(){
     '<div style="display:flex;align-items:center;gap:8px;">'+
       '<button class="btn btn-primary" onclick="(function(){var w=document.getElementById(\'rm-form-wrap\');w.style.display=w.style.display===\'none\'?\'block\':\'none\'})()">'+
         '<i class="ti ti-calendar-plus"></i> Nova Reunião</button>'+
-      '<button class="btn btn-outline" onclick="(function(){var w=document.getElementById(\'rm-all-wrap\');w.style.display=w.style.display===\'none\'?\'block\':\'none\'})()">'+
-        '<i class="ti ti-list"></i> Todas ('+rows.length+')</button>'+
+      '<button class="btn btn-outline" onclick="(function(){var w=document.getElementById(\'rm-all-wrap\');w.style.display=w.style.display===\'none\'?\'block\':\'none\';})()">'+
+        '<i class="ti ti-list"></i> Ocultar/Mostrar Lista</button>'+
     '</div></div>'+
     createForm+
     kpiRow+
@@ -12178,6 +12178,46 @@ async function confirmarTrocarCloser(mid){
     showSheetToast('Closer: '+anterior+' → '+novoCloser);
   }catch(e){ showSheetToast('Erro ao salvar: '+e.message, true); }
   var mo=document.getElementById('modal-trocar-closer'); if(mo) mo.remove();
+  var pgEl=document.getElementById('content');
+  if(pgEl&&pgEl.getAttribute('data-page')==='reunioes') showPage('reunioes');
+}
+
+// ===== TROCAR SDR =====
+function trocarSDRReuniao(mid){
+  var m=meetings[mid]; if(!m) return;
+  var sdrs=['João','Lucas','Gustavo'];
+  var curSdr=(m.sdrName||m.sdr||'').trim();
+  var html='<div class="modal-ov active" id="modal-trocar-sdr" onclick="if(event.target===this)document.getElementById(\'modal-trocar-sdr\').remove()">'+
+    '<div class="modal-box" style="max-width:300px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-headset" style="color:var(--cyan);margin-right:6px;"></i>Trocar SDR/BDR</div>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-trocar-sdr\').remove()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Reunião com <b>'+esc(m.nome||'lead')+'</b></div>'+
+        '<label class="f-label">SDR/BDR Responsável</label>'+
+        '<select id="ts-sdr" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
+          sdrs.map(function(s){return'<option'+(curSdr.toLowerCase()===s.toLowerCase()?' selected':'')+'>'+s+'</option>';}).join('')+
+        '</select>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="confirmarTrocarSDR(\''+mid+'\')"><i class="ti ti-check"></i> Salvar</button>'+
+        '<button class="btn btn-outline" onclick="document.getElementById(\'modal-trocar-sdr\').remove()">Cancelar</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function confirmarTrocarSDR(mid){
+  var novoSDR=(document.getElementById('ts-sdr')||{}).value||'';
+  if(!novoSDR) return;
+  var m=meetings[mid]; if(!m) return;
+  var anterior=m.sdrName||m.sdr||'—';
+  m.sdrName=novoSDR; m.sdr=novoSDR;
+  try{
+    await saveMeetingFB(mid, m);
+    showSheetToast('SDR: '+anterior+' → '+novoSDR);
+  }catch(e){ showSheetToast('Erro ao salvar: '+e.message, true); }
+  var mo=document.getElementById('modal-trocar-sdr'); if(mo) mo.remove();
   var pgEl=document.getElementById('content');
   if(pgEl&&pgEl.getAttribute('data-page')==='reunioes') showPage('reunioes');
 }
