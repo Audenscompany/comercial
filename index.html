@@ -11865,13 +11865,12 @@ function renderReunioesPersonal(){
   var agPrev=rowsPrev.length;
   var realPrev=cntSt(rowsPrev,'done'), nsPrev=cntSt(rowsPrev,'noshow');
   var totalPrev=rowsPrev.length, taxaPrev=totalPrev>0?Math.round(realPrev/totalPrev*100):0;
-  // Receita: MRR = mensalidade mensal; TCV = valor total do contrato fechado no mês
+  // Receita: mensalidade = usa mensalidade mensal; TCV = soma valor total do contrato
   function _fat(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
   function _mrr(fu){
     if(!fu)return 0;
-    if(fu.tipoValor==='mmr') return _fat(fu.mensalidade)||_fat(fu.contrato);
-    // TCV fechado: soma o valor total do contrato
-    return _fat(fu.contrato);
+    if(fu.tipoValor==='tcv') return _fat(fu.contrato); // TCV: valor total fechado no mês
+    return _fat(fu.mensalidade)||_fat(fu.contrato);    // mensalidade/recorrente: valor mensal
   }
   var rowsMesAll=rows.filter(function(m){return inMonth(m,filtM,filtY);});
   var rowsPrevAll=rows.filter(function(m){return inMonth(m,prevM,prevY);});
