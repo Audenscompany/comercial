@@ -11957,7 +11957,10 @@ function renderReunioesPersonal(){
 
   // ── Performance por Closer ────────────────────────────────────────────
   var clMap={};
+  // Agendadas + realizadas: apenas rowsMes (sem retorno, sem dupla contagem)
   rowsMes.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.contrato);}}});
+  // Vendas via retorno no mesmo mês (não contam como agendadas mas são vendas reais)
+  rows.filter(function(m){return m._retorno&&inMonth(m,filtM,filtY);}).forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.contrato);}});
   var clList=Object.values(clMap).sort(function(a,b){return b.vendas-a.vendas;});
   var avColors=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
   // Mapeia nome do closer para email
@@ -12164,7 +12167,7 @@ function renderReunioesPersonal(){
     }).length;
   }
   var vendasMes=0;
-  rowsMes.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda')vendasMes++;});
+  rowsMesAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda')vendasMes++;});
   var _fBase=leadsCount||agendadas||1;
   var _fTxAgLead=leadsCount>0?Math.round(agendadas/leadsCount*100):100;
   var _fTxReaAg=agendadas>0?Math.round(realizadas/agendadas*100):0;
