@@ -12273,10 +12273,15 @@ function renderReunioesPersonal(){
   }
   var rowsMesAll=rows.filter(function(m){return inMonth(m,filtM,filtY);});
   var rowsPrevAll=rows.filter(function(m){return inMonth(m,prevM,prevY);});
-  var receita=0, vendas=0;
-  rowsMesAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_mrr(fu);vendas++;}});
-  var receitaPrev=0, vendasPrev=0;
-  rowsPrevAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_mrr(fu);vendasPrev++;}});
+  // Vendas e receita: filtra por dataInicio do contrato (igual ao Dashboard Comercial)
+  var receita=0, vendas=0, receitaPrev=0, vendasPrev=0;
+  Object.keys(followups).forEach(function(fid){
+    var fu=followups[fid];if(fu.resultado!=='venda')return;
+    var m2=meetings[fu.meetingId]||meetings[fid];
+    var dt=_vendaDate(fu,m2);if(!dt)return;
+    if(dt.getMonth()===filtM&&dt.getFullYear()===filtY){vendas++;receita+=_mrr(fu);}
+    else if(dt.getMonth()===prevM&&dt.getFullYear()===prevY){vendasPrev++;receitaPrev+=_mrr(fu);}
+  });
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
   function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
@@ -12368,10 +12373,20 @@ function renderReunioesPersonal(){
 
   // ── Performance por Closer ────────────────────────────────────────────
   var clMap={};
-  // Agendadas + realizadas: apenas rowsMes (sem retorno, sem dupla contagem)
-  rowsMes.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_mrr(fu);}}});
-  // Vendas via retorno no mesmo mês (não contam como agendadas mas são vendas reais)
-  rows.filter(function(m){return m._retorno&&inMonth(m,filtM,filtY);}).forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_mrr(fu);}});
+  // Agendadas + realizadas: por data da reunião (sem retorno, sem dupla contagem)
+  rowsMes.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;}});
+  // Vendas: por dataInicio do contrato (igual ao Dashboard Comercial) — independe da data da reunião
+  Object.keys(followups).forEach(function(fid){
+    var fu=followups[fid];if(fu.resultado!=='venda')return;
+    var m2=meetings[fu.meetingId]||meetings[fid];
+    var dt=_vendaDate(fu,m2);
+    if(!dt||dt.getMonth()!==filtM||dt.getFullYear()!==filtY)return;
+    var c=(m2&&(m2.responsavel||'').trim())||'';
+    if(!c)return;
+    var k=c.toLowerCase();
+    if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};
+    clMap[k].vendas++;clMap[k].receita+=_mrr(fu);
+  });
   var clList=Object.values(clMap).sort(function(a,b){return b.vendas-a.vendas;});
   var avColors=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
   // Mapeia nome do closer para email
@@ -12588,8 +12603,7 @@ function renderReunioesPersonal(){
       return d.getMonth()===filtM&&d.getFullYear()===filtY;
     }).length;
   }
-  var vendasMes=0;
-  rowsMesAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda')vendasMes++;});
+  var vendasMes=vendas; // já calculado acima por _vendaDate
   var _fBase=leadsCount||agendadas||1;
   var _fTxAgLead=leadsCount>0?Math.round(agendadas/leadsCount*100):100;
   var _fTxReaAg=agendadas>0?Math.round(realizadas/agendadas*100):0;
