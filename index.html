@@ -18705,7 +18705,7 @@ function renderVendas(){
             '<div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:2px;">Receita acumulada (R$)</div>'+
           '</div>'+
         '</div>'+
-        '<canvas id="vendas-evolucao-chart" height="130"></canvas>'+
+        '<div style="position:relative;height:200px;"><canvas id="vendas-evolucao-chart"></canvas></div>'+
       '</div>'+
       // Meta
       metaPanel+
@@ -18844,32 +18844,41 @@ function _renderVendasTabela(){
 }
 
 function _initVendasChart(labels,data,metaLine,meta){
-  var canvas=document.getElementById('vendas-evolucao-chart');if(!canvas)return;
   function draw(){
+    var canvas=document.getElementById('vendas-evolucao-chart');if(!canvas)return;
     if(window._vendasChart){try{window._vendasChart.destroy();}catch(e){}}
+    // Garante que o canvas preenche o container
+    canvas.style.width='100%';canvas.style.height='100%';
+    var maxY=Math.max(meta, Math.max.apply(null,data.concat(metaLine))||meta);
     window._vendasChart=new Chart(canvas,{
       type:'line',
       data:{
         labels:labels,
         datasets:[
-          {label:'Receita acumulada',data:data,borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.08)',borderWidth:2,pointRadius:2,pointHoverRadius:5,tension:.35,fill:true},
-          {label:'Meta',data:metaLine,borderColor:'rgba(255,255,255,0.15)',borderWidth:1.5,borderDash:[4,4],pointRadius:0,tension:0,fill:false}
+          {label:'Receita acumulada',data:data,borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.1)',borderWidth:2.5,pointRadius:function(ctx){return data[ctx.dataIndex]>0?4:0;},pointBackgroundColor:'#a78bfa',pointHoverRadius:6,tension:.4,fill:true},
+          {label:'Meta',data:metaLine,borderColor:'rgba(255,255,255,0.2)',borderWidth:1.5,borderDash:[5,5],pointRadius:0,tension:0,fill:false}
         ]
       },
       options:{
         responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(15,12,30,0.9)',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,titleColor:'#fff',bodyColor:'rgba(255,255,255,0.6)',callbacks:{label:function(c){return c.dataset.label+': R$ '+Math.round(c.raw).toLocaleString('pt-BR');}}}},
+        animation:{duration:600},
+        plugins:{
+          legend:{display:false},
+          tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(10,8,24,0.92)',borderColor:'rgba(167,139,250,0.3)',borderWidth:1,titleColor:'rgba(255,255,255,0.9)',bodyColor:'rgba(255,255,255,0.6)',padding:10,callbacks:{label:function(c){return c.dataset.label+': R$ '+Math.round(c.raw).toLocaleString('pt-BR');}}}
+        },
         scales:{
-          x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.3)',font:{size:10},maxTicksLimit:8}},
-          y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.3)',font:{size:10},callback:function(v){return v>=1000?'R$'+(v/1000).toFixed(0)+'k':'R$'+v;}}}
+          x:{grid:{color:'rgba(255,255,255,0.04)',drawBorder:false},ticks:{color:'rgba(255,255,255,0.3)',font:{size:10},maxTicksLimit:10}},
+          y:{min:0,suggestedMax:maxY,grid:{color:'rgba(255,255,255,0.04)',drawBorder:false},ticks:{color:'rgba(255,255,255,0.3)',font:{size:10},callback:function(v){return v>=1000?'R$'+(v/1000).toFixed(0)+'k':'R$'+v;}}}
         }
       }
     });
   }
   if(window.Chart){draw();}
   else{
-    var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
-    s.onload=draw;document.head.appendChild(s);
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+    s.onload=function(){setTimeout(draw,100);};
+    document.head.appendChild(s);
   }
 }
 
