@@ -465,7 +465,7 @@ function startRealtimeSync(){
       saveAll();
       var area = document.getElementById('content');
       var pg = area ? area.getAttribute('data-page') : null;
-      if(pg==='reunioes'||pg==='dashboard'||pg==='dash-comercial') showPage(pg);
+      if(pg==='reunioes'||pg==='dashboard'||pg==='dash-comercial'||pg==='visao-geral') showPage(pg);
     }
     // Sync planilha→Firebase uma vez por sessão após meetings carregarem
     setTimeout(syncReunioesFBFromSheet, 2000);
@@ -3630,7 +3630,7 @@ function showMain(){
         if(!ok && isGcalConnected()) loadLeadsFromSheets();
       });
     }
-  }else showPage('dash-comercial');
+  }else showPage('visao-geral');
 }
 function buildNav(){
   var nav=document.getElementById('sidebar-nav');
@@ -3639,6 +3639,7 @@ function buildNav(){
 
   // Definições de navs com suporte a grupos
   var gestorDef=[
+    {id:'visao-geral',icon:'ti-layout-dashboard',label:'Visão Geral'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
@@ -3709,6 +3710,7 @@ function buildNav(){
   } else {
     // Mapa completo de todos os itens de nav possíveis (para poder adicionar itens fora do baseDef)
     var _allNavItems={
+      'visao-geral':{id:'visao-geral',icon:'ti-layout-dashboard',label:'Visão Geral'},
       'tarefas':{id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
       'ligar':{id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
       'dash-comercial':{id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
@@ -3743,7 +3745,7 @@ function buildNav(){
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
       {group:'Cold Call',icon:'ti-phone-call',items:['ligar','leads','historico','dashboard']}
     ];
-    var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','vendas','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
+    var _topLevel=['visao-geral','tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','vendas','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
     def=[];
     // Primeiro itens de topo nível permitidos
     _topLevel.forEach(function(id){
@@ -3832,7 +3834,7 @@ function showPage(id){
   var nel=document.getElementById('nav-'+id);if(nel)nel.classList.add('active');
   if(typeof openNavGroupFor==='function') openNavGroupFor(id);
   var map={
-    dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
+    'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioesPersonal,
     bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
@@ -18405,6 +18407,414 @@ window.addEventListener('load', function(){
   }
   setTimeout(tryeSave,2500);
 })();
+
+// ══════════════════════════════════════════════════════════════
+// VISÃO GERAL — tela inicial executiva
+// ══════════════════════════════════════════════════════════════
+function renderVisaoGeral(){
+  var now=new Date();
+  var todayISO=now.toISOString().slice(0,10);
+  var mesAtual=now.getMonth(), anoAtual=now.getFullYear();
+  var _mns=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var _mnsFull=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  // ── helpers ──────────────────────────────────────────────────
+  function mrrFu(fu){
+    if(!fu)return 0;
+    function fatV(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
+    if(fu.tipoValor==='tcv')return fatV(fu.contrato);
+    return fatV(fu.mensalidade)||fatV(fu.contrato);
+  }
+  function fmtV(n){
+    if(!n&&n!==0)return'R$ 0';
+    if(n>=1000000)return'R$ '+(n/1000000).toFixed(1).replace('.',',')+'M';
+    if(n>=1000)return'R$ '+(n/1000).toFixed(1).replace('.0','').replace('.',',')+' mil';
+    return'R$ '+Math.round(n).toLocaleString('pt-BR');
+  }
+  function dlt(cur,prev){
+    if(!prev)return'';
+    var p=Math.round((cur-prev)/prev*100);
+    var c=p>=0?'#4ade80':'#f87171';
+    return'<span style="font-size:11px;color:'+c+';">'+(p>=0?'↑':'↓')+' '+Math.abs(p)+'% vs mês ant.</span>';
+  }
+
+  // ── reuniões de hoje ─────────────────────────────────────────
+  var reunioesHoje=Object.values(meetings).filter(function(m){
+    return m.dtISO&&m.dtISO.slice(0,10)===todayISO;
+  }).sort(function(a,b){return a.dtISO<b.dtISO?-1:1;});
+  var rConc=reunioesHoje.filter(function(m){var s=getMeetingStatus(m);return s==='done'||s==='noshow';}).length;
+
+  // ── leads ativos ─────────────────────────────────────────────
+  var kbVals=Object.values(kanbanData);
+  var leadsAtivos=kbVals.filter(function(k){return k.status&&k.status!=='arquivado';}).length;
+
+  // ── vendas e receita ─────────────────────────────────────────
+  var prevM=mesAtual===0?11:mesAtual-1, prevY=mesAtual===0?anoAtual-1:anoAtual;
+  var todasVendas=[];
+  Object.keys(followups).forEach(function(fid){
+    var fu=followups[fid];if(fu.resultado!=='venda')return;
+    var m=meetings[fu.meetingId]||meetings[fid];
+    todasVendas.push({fu:fu,m:m,fid:fid});
+  });
+  var vendasMes=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);return dt&&dt.getMonth()===mesAtual&&dt.getFullYear()===anoAtual;});
+  var vendasPrev=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);return dt&&dt.getMonth()===prevM&&dt.getFullYear()===prevY;});
+  var totalReceita=vendasMes.reduce(function(s,v){return s+mrrFu(v.fu);},0);
+  var totalReceitaPrev=vendasPrev.reduce(function(s,v){return s+mrrFu(v.fu);},0);
+  var meta=parseFloat(localStorage.getItem('audens_meta_receita_'+anoAtual+'_'+mesAtual))||30000;
+  var pctMeta=meta>0?Math.round(totalReceita/meta*100):0;
+  var metaColor=pctMeta>=100?'#4ade80':pctMeta>=70?'#f59e0b':'#f87171';
+
+  // ── projeção ─────────────────────────────────────────────────
+  var diasDoMes=new Date(anoAtual,mesAtual+1,0).getDate();
+  var diasDecorridos=Math.max(1,now.getDate());
+  var ritmo=totalReceita/diasDecorridos;
+  var projecao=Math.round(ritmo*diasDoMes);
+
+  // ── tarefas pendentes (todos closers) ────────────────────────
+  var allMtgsArr=Object.values(meetings);
+  var tarefasPend=allMtgsArr.filter(function(m){
+    var _s=getMeetingStatus(m);
+    if(_s==='done'||_s==='noshow'||_s==='reagendado')return false;
+    if(followups[m.id])return false;
+    if(Date.now()<=new Date(m.dtISO).getTime()+MEETING_DURATION_MS)return false;
+    if(m.tel){var mt=new Date(m.dtISO).getTime();if(allMtgsArr.some(function(m2){return m2.id!==m.id&&m2.tel===m.tel&&new Date(m2.dtISO).getTime()>mt;}))return false;}
+    return true;
+  }).length;
+  var tarefasPrevPend=0; // sem comparação histórica disponível
+
+  // ── funil comercial ──────────────────────────────────────────
+  var funnelStages=[
+    {id:'novo',label:'Novos',color:'#a78bfa'},
+    {id:'qualificado',label:'Qualif.',color:'#60a5fa'},
+    {id:'reuniao',label:'Proposta',color:'#f59e0b'},
+    {id:'proposta',label:'Negoc.',color:'#10b981'},
+    {id:'fechado',label:'Fechados',color:'#4ade80'}
+  ];
+  var funnelTotal=kbVals.filter(function(k){return k.status&&k.status!=='arquivado';}).length||1;
+  var funnelData=funnelStages.map(function(s){
+    var cnt=kbVals.filter(function(k){return k.status===s.id;}).length;
+    return Object.assign({},s,{count:cnt,pct:Math.round(cnt/funnelTotal*100)});
+  });
+  var taxaConv=funnelTotal>0?Math.round(funnelData[4].count/funnelTotal*100):0;
+
+  // ── ranking closers ──────────────────────────────────────────
+  var closerMap={};
+  vendasMes.forEach(function(v){
+    var c=(v.m&&v.m.responsavel)||'Outro';
+    if(!closerMap[c])closerMap[c]={receita:0,vendas:0};
+    closerMap[c].receita+=mrrFu(v.fu);closerMap[c].vendas++;
+  });
+  var rankList=Object.keys(closerMap).map(function(k){return{name:k,receita:closerMap[k].receita,vendas:closerMap[k].vendas};});
+  rankList.sort(function(a,b){return b.receita-a.receita;});
+  var topClosers=rankList.slice(0,3);
+  var rankMax=topClosers.length?topClosers[0].receita:1;
+  var rankMedals=['🥇','🥈','🥉'];
+
+  // ── atividades recentes ──────────────────────────────────────
+  var atividades=[];
+  vendasMes.slice().sort(function(a,b){return(_vendaDate(b.fu,b.m)||0)-(_vendaDate(a.fu,a.m)||0);}).slice(0,3).forEach(function(v){
+    var dt=_vendaDate(v.fu,v.m);
+    atividades.push({ts:dt?dt.getTime():0,color:'#4ade80',icon:'ti-shopping-cart',
+      text:(v.m&&v.m.responsavel?v.m.responsavel:'—')+' finalizou venda com '+(v.fu.nome||v.m&&v.m.nome||'cliente'),
+      time:dt?String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'):'—'});
+  });
+  reunioesHoje.slice(0,3).forEach(function(m){
+    var dt=m.dtISO?new Date(m.dtISO):null;
+    atividades.push({ts:dt?dt.getTime():0,color:'#60a5fa',icon:'ti-calendar',
+      text:(m.responsavel||'—')+' tem reunião com '+(m.nome||'cliente'),
+      time:dt?String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'):'—'});
+  });
+  atividades.sort(function(a,b){return b.ts-a.ts;});
+  var atTop=atividades.slice(0,6);
+
+  // ── follow-ups prioritários ──────────────────────────────────
+  var prioItems=[];
+  var sete7=7*24*60*60*1000;
+  allMtgsArr.forEach(function(m){
+    if(!m.dtISO)return;
+    var dt=new Date(m.dtISO);
+    var st=getMeetingStatus(m);
+    var overdue=st==='pending'&&!followups[m.id]&&Date.now()>dt.getTime()+MEETING_DURATION_MS;
+    var upcoming=dt.getTime()>Date.now()&&dt.getTime()<Date.now()+sete7;
+    if(!overdue&&!upcoming)return;
+    var kbLead=null;
+    if(m.tel){var telN=m.tel.replace(/\D/g,'').slice(-9);kbLead=kbVals.find(function(k){return k.tel&&k.tel.replace(/\D/g,'').slice(-9)===telN;});}
+    var etapaMap={novo:'Novos',qualificado:'Qualificação',reuniao:'Proposta',proposta:'Negociação',fechado:'Fechados',recuperacao:'Recuperação'};
+    var etapa=kbLead?etapaMap[kbLead.status]||kbLead.status:'Reunião';
+    var hojeEnd=new Date();hojeEnd.setHours(23,59,59,999);
+    var prio=overdue?'Alta':dt<=hojeEnd?'Alta':dt.getTime()-Date.now()<2*24*60*60*1000?'Média':'Normal';
+    var prioCol=prio==='Alta'?'rgba(248,113,113,0.15)':prio==='Média'?'rgba(245,158,11,0.15)':'rgba(96,165,250,0.15)';
+    var prioTextCol=prio==='Alta'?'#f87171':prio==='Média'?'#f59e0b':'#60a5fa';
+    var prazoLabel;
+    if(overdue)prazoLabel='<span style="color:#f87171;">Pendente</span>';
+    else if(dt<=hojeEnd)prazoLabel='<span style="color:#f87171;font-weight:600;">Hoje, '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0')+'</span>';
+    else{var diff2=dt.getTime()-Date.now();if(diff2<2*24*60*60*1000)prazoLabel='<span style="color:#f59e0b;">Amanhã, '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0')+'</span>';else prazoLabel=String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0');}
+    var statusLabel=overdue?'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:rgba(248,113,113,0.15);color:#f87171;font-size:11px;font-weight:600;"><span style="width:5px;height:5px;border-radius:50%;background:#f87171;"></span>Pendente</span>':st==='done'?'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:rgba(74,222,128,0.15);color:#4ade80;font-size:11px;font-weight:600;"><span style="width:5px;height:5px;border-radius:50%;background:#4ade80;"></span>Concluída</span>':'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:rgba(96,165,250,0.15);color:#60a5fa;font-size:11px;font-weight:600;"><span style="width:5px;height:5px;border-radius:50%;background:#60a5fa;"></span>Agendada</span>';
+    var cEmail='';Object.keys(USERS).forEach(function(em){if((USERS[em].closer||'').toLowerCase()===(m.responsavel||'').toLowerCase())cEmail=em;});
+    prioItems.push({m:m,nome:m.nome||'—',etapa:etapa,responsavel:m.responsavel||'—',cEmail:cEmail,prazo:prazoLabel,prio:prio,prioCol:prioCol,prioTextCol:prioTextCol,statusLabel:statusLabel,dt:dt,overdue:overdue});
+  });
+  prioItems.sort(function(a,b){if(a.overdue!==b.overdue)return a.overdue?-1:1;return a.dt-b.dt;});
+  var prioTop=prioItems.slice(0,8);
+
+  // ── chart data ────────────────────────────────────────────────
+  var chartLabels=[],chartCum=[],chartMeta=[];
+  var cum2=0;
+  for(var d=1;d<=diasDoMes;d++){
+    chartLabels.push(String(d).padStart(2,'0'));
+    var dISO=anoAtual+'-'+String(mesAtual+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    vendasMes.forEach(function(v){var vdt=_vendaDate(v.fu,v.m);if(vdt&&vdt.toISOString().slice(0,10)===dISO)cum2+=mrrFu(v.fu);});
+    chartCum.push(d<=now.getDate()?cum2:null);
+    chartMeta.push(Math.round(meta*d/diasDoMes));
+  }
+
+  // ── kpi card helper ───────────────────────────────────────────
+  function kpiCard(icon,iconBg,label,value,sub,progress){
+    return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor=\'var(--border2)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:2px;">'+
+        '<div style="width:32px;height:32px;border-radius:8px;background:'+iconBg+';display:flex;align-items:center;justify-content:center;"><i class="ti '+icon+'" style="font-size:16px;"></i></div>'+
+        '<span style="font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--muted);text-transform:uppercase;">'+label+'</span>'+
+      '</div>'+
+      '<div style="font-size:26px;font-weight:800;color:var(--white);font-family:\'Bebas Neue\',sans-serif;letter-spacing:.5px;line-height:1;">'+value+'</div>'+
+      (sub?'<div style="margin-top:2px;">'+sub+'</div>':'')+
+      (progress!==undefined?'<div style="margin-top:6px;"><div style="height:4px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;"><div style="height:100%;width:'+Math.min(100,progress)+'%;background:'+metaColor+';border-radius:2px;transition:width .6s;"></div></div></div>':'')+
+    '</div>';
+  }
+
+  // ── agenda row helper ─────────────────────────────────────────
+  var agendaStatusColors={Confirmada:'#4ade80',Concluída:'#4ade80','No-Show':'#f87171',Agendada:'#60a5fa',Pendente:'#f59e0b'};
+  function agendaStatusLabel(m){
+    var s=getMeetingStatus(m);
+    if(s==='done')return{label:'Concluída',col:'#4ade80',bg:'rgba(74,222,128,0.12)'};
+    if(s==='noshow')return{label:'No-Show',col:'#f87171',bg:'rgba(248,113,113,0.12)'};
+    var dt=new Date(m.dtISO);
+    if(Date.now()>dt.getTime()&&Date.now()<dt.getTime()+MEETING_DURATION_MS)return{label:'Em andamento',col:'#f59e0b',bg:'rgba(245,158,11,0.12)'};
+    if(Date.now()<dt.getTime())return{label:'Agendada',col:'#60a5fa',bg:'rgba(96,165,250,0.12)'};
+    return{label:'Pendente',col:'#f87171',bg:'rgba(248,113,113,0.12)'};
+  }
+
+  // ── build HTML ────────────────────────────────────────────────
+  var html='<div class="page active" style="padding:0;">'+
+  '<div style="padding:20px 28px 0;">'+
+
+  // ── header ──
+  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">'+
+    '<div>'+
+      '<div style="font-size:22px;font-weight:900;color:var(--white);letter-spacing:1px;font-family:\'Bebas Neue\',sans-serif;">VISÃO EXECUTIVA</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-top:1px;">Acompanhe os principais indicadores e atividades do seu time comercial</div>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;"><i class="ti ti-calendar" style="font-size:13px;"></i>'+_mnsFull[mesAtual]+' '+anoAtual+'</div>'+
+      '<button onclick="showPage(\'vendas\');setTimeout(function(){abrirRegistrarVenda&&abrirRegistrarVenda();},200);" style="background:var(--purple);border:none;border-radius:8px;padding:8px 16px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 0 20px rgba(123,47,255,0.4);"><i class="ti ti-plus"></i> Novo Follow-up</button>'+
+    '</div>'+
+  '</div>'+
+
+  // ── 6 KPIs ──
+  '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px;">'+
+    kpiCard('ti-bell','rgba(167,139,250,0.15)','Tarefas pendentes',tarefasPend,'<span style="font-size:11px;color:var(--muted);">Follow-ups em aberto</span>')+
+    kpiCard('ti-calendar-event','rgba(96,165,250,0.15)','Reuniões hoje',reunioesHoje.length,'<span style="font-size:11px;color:var(--muted);"><span style="color:#4ade80;">'+rConc+' concluídas</span> · '+(reunioesHoje.length-rConc)+' restantes</span>')+
+    kpiCard('ti-users','rgba(56,189,248,0.15)','Leads ativos',leadsAtivos,'<span style="font-size:11px;color:var(--muted);">No funil comercial</span>')+
+    kpiCard('ti-shopping-cart','rgba(167,139,250,0.15)','Vendas do mês',vendasMes.length,dlt(vendasMes.length,vendasPrev.length))+
+    kpiCard('ti-coin','rgba(74,222,128,0.15)','Receita do mês',fmtV(totalReceita),dlt(totalReceita,totalReceitaPrev))+
+    kpiCard('ti-target','rgba(245,158,11,0.15)','Meta atingida',pctMeta+'%','<span style="font-size:11px;color:var(--muted);">Meta: '+fmtV(meta)+'</span>',pctMeta)+
+  '</div>'+
+
+  // ── chart + agenda ──
+  '<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px;">'+
+
+    // chart
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'+
+        '<div>'+
+          '<div style="font-size:13px;font-weight:700;color:var(--white);text-transform:uppercase;letter-spacing:.5px;">Desempenho de Vendas</div>'+
+          '<div style="font-size:11px;color:var(--muted);">Receita acumulada (R$)</div>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:12px;">'+
+          '<span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:2px;background:#a78bfa;border-radius:1px;"></span>Receita</span>'+
+          '<span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:1px;background:rgba(255,255,255,0.25);border:1px dashed rgba(255,255,255,0.25);"></span>Meta</span>'+
+        '</div>'+
+      '</div>'+
+      '<div style="position:relative;height:180px;"><canvas id="vg-chart"></canvas></div>'+
+    '</div>'+
+
+    // agenda
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--white);text-transform:uppercase;letter-spacing:.5px;">Agenda de Hoje</div>'+
+        '<button onclick="showPage(\'calendario\')" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);font-size:11px;cursor:pointer;">Ver calendário</button>'+
+      '</div>'+
+      '<div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">'+
+      (reunioesHoje.length===0?'<div style="color:var(--muted);font-size:12px;text-align:center;margin-top:24px;">Nenhuma reunião para hoje</div>':
+        reunioesHoje.slice(0,6).map(function(m){
+          var sl=agendaStatusLabel(m);
+          var dt=new Date(m.dtISO);
+          var hora=String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');
+          var cEmail='';Object.keys(USERS).forEach(function(em){if((USERS[em].closer||'').toLowerCase()===(m.responsavel||'').toLowerCase())cEmail=em;});
+          return'<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.04);">'+
+            '<div style="font-size:13px;font-weight:700;color:var(--white);font-family:\'Bebas Neue\',sans-serif;white-space:nowrap;min-width:36px;">'+hora+'</div>'+
+            '<div style="flex:1;min-width:0;">'+
+              '<div style="font-size:12px;font-weight:600;color:var(--white);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+m.nome+'</div>'+
+              '<div style="font-size:10px;color:var(--muted);">'+(m.responsavel||'—')+'</div>'+
+            '</div>'+
+            renderUserAvatar(cEmail,24,9,'rgba(167,139,250,0.2)')+
+            '<span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;background:'+sl.bg+';color:'+sl.col+';white-space:nowrap;">'+sl.label+'</span>'+
+          '</div>';
+        }).join('')
+      )+
+      '</div>'+
+    '</div>'+
+  '</div>'+
+
+  // ── funil + ranking + atividades ──
+  '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">'+
+
+    // funil
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--white);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;display:flex;align-items:center;gap:8px;"><i class="ti ti-funnel" style="color:var(--purple3);"></i>Funil Comercial</div>'+
+      funnelData.map(function(s,i){
+        var barW=s.count>0?Math.round(s.count/funnelData[0].count*100):0;
+        return'<div style="margin-bottom:12px;">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'+
+            '<div style="display:flex;align-items:center;gap:7px;">'+
+              '<span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';flex-shrink:0;"></span>'+
+              '<span style="font-size:12px;font-weight:600;color:var(--white);">'+s.label+'</span>'+
+            '</div>'+
+            '<div style="text-align:right;">'+
+              '<span style="font-size:13px;font-weight:700;color:var(--white);">'+s.count+'</span>'+
+              '<span style="font-size:10px;color:var(--muted);margin-left:4px;">'+s.pct+'%</span>'+
+            '</div>'+
+          '</div>'+
+          '<div style="height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">'+
+            '<div style="height:100%;width:'+barW+'%;background:'+s.color+';border-radius:3px;opacity:0.8;"></div>'+
+          '</div>'+
+        '</div>';
+      }).join('')+
+      '<div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;margin-top:4px;font-size:11px;color:var(--muted);">Taxa de conversão geral: <span style="color:#4ade80;font-weight:700;">'+taxaConv+'%</span></div>'+
+    '</div>'+
+
+    // ranking
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--white);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px;"><i class="ti ti-trophy" style="color:#f59e0b;"></i>Ranking Closers</div>'+
+        '<button onclick="showPage(\'vendas\')" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);font-size:11px;cursor:pointer;">Ver ranking</button>'+
+      '</div>'+
+      (topClosers.length===0?'<div style="color:var(--muted);font-size:12px;text-align:center;margin-top:24px;">Nenhuma venda no mês</div>':
+        topClosers.map(function(c,i){
+          var barW=rankMax>0?Math.round(c.receita/rankMax*100):0;
+          var cEmail='';Object.keys(USERS).forEach(function(em){if((USERS[em].closer||'').toLowerCase()===c.name.toLowerCase())cEmail=em;});
+          return'<div style="margin-bottom:14px;">'+
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'+
+              '<span style="font-size:16px;min-width:20px;">'+rankMedals[i]+'</span>'+
+              renderUserAvatar(cEmail,30,11,'rgba(167,139,250,0.2)')+
+              '<div style="flex:1;">'+
+                '<div style="font-size:13px;font-weight:700;color:var(--white);">'+c.name+'</div>'+
+                '<div style="font-size:10px;color:var(--muted);">'+c.vendas+' venda'+(c.vendas!==1?'s':'')+'</div>'+
+              '</div>'+
+              '<div style="text-align:right;font-size:14px;font-weight:800;color:#4ade80;font-family:\'Bebas Neue\',sans-serif;">'+fmtV(c.receita)+'</div>'+
+            '</div>'+
+            '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">'+
+              '<div style="height:100%;width:'+barW+'%;background:linear-gradient(90deg,var(--purple),var(--purple3));border-radius:2px;"></div>'+
+            '</div>'+
+          '</div>';
+        }).join('')
+      )+
+    '</div>'+
+
+    // atividades
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--white);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px;"><i class="ti ti-activity" style="color:var(--cyan);"></i>Atividades Recentes</div>'+
+      '</div>'+
+      (atTop.length===0?'<div style="color:var(--muted);font-size:12px;text-align:center;margin-top:24px;">Nenhuma atividade recente</div>':
+        atTop.map(function(a){
+          return'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'+
+            '<div style="width:8px;height:8px;border-radius:50%;background:'+a.color+';flex-shrink:0;margin-top:4px;"></div>'+
+            '<div style="flex:1;">'+
+              '<div style="font-size:12px;color:var(--white);line-height:1.3;">'+a.text+'</div>'+
+              '<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+a.time+'</div>'+
+            '</div>'+
+          '</div>';
+        }).join('')
+      )+
+    '</div>'+
+  '</div>'+
+
+  // ── tabela follow-ups prioritários ──
+  '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px;">'+
+    '<div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--white);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px;"><i class="ti ti-list-check" style="color:var(--purple3);"></i>Follow-ups Prioritários</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<span style="font-size:11px;color:var(--muted);">'+prioTop.length+' itens</span>'+
+        '<button onclick="showPage(\'tarefas\')" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);font-size:11px;cursor:pointer;">Ver todas tarefas</button>'+
+      '</div>'+
+    '</div>'+
+    (prioTop.length===0?
+      '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;"><i class="ti ti-check" style="font-size:24px;display:block;margin-bottom:8px;color:#4ade80;"></i>Nenhum follow-up pendente</div>':
+      '<table style="width:100%;border-collapse:collapse;">'+
+        '<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.06);">'+
+          '<th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Cliente</th>'+
+          '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Etapa</th>'+
+          '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Responsável</th>'+
+          '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Prazo</th>'+
+          '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Prioridade</th>'+
+          '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Status</th>'+
+          '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">Ações</th>'+
+        '</tr></thead>'+
+        '<tbody>'+
+        prioTop.map(function(item){
+          return'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" onmouseover="this.style.background=\'rgba(255,255,255,0.02)\'" onmouseout="this.style.background=\'\'">'+
+            '<td style="padding:10px 16px;font-size:13px;font-weight:600;color:var(--white);">'+item.nome+'</td>'+
+            '<td style="padding:10px 12px;"><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(167,139,250,0.1);color:var(--purple3);">'+item.etapa+'</span></td>'+
+            '<td style="padding:10px 12px;">'+
+              '<div style="display:flex;align-items:center;gap:8px;">'+
+                renderUserAvatar(item.cEmail,24,9,'rgba(167,139,250,0.2)')+
+                '<span style="font-size:12px;color:var(--white);">'+item.responsavel+'</span>'+
+              '</div>'+
+            '</td>'+
+            '<td style="padding:10px 12px;font-size:12px;">'+item.prazo+'</td>'+
+            '<td style="padding:10px 12px;"><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+item.prioCol+';color:'+item.prioTextCol+';">'+item.prio+'</span></td>'+
+            '<td style="padding:10px 12px;">'+item.statusLabel+'</td>'+
+            '<td style="padding:10px 12px;">'+
+              (item.overdue?'<button onclick="openFollowup(meetings[\''+item.m.id+'\'])" style="background:var(--purple);border:none;border-radius:6px;padding:4px 10px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-check"></i> Resultado</button>':
+              '<button onclick="showPage(\'calendario\')" style="background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.2);border-radius:6px;padding:4px 10px;color:#60a5fa;font-size:11px;cursor:pointer;"><i class="ti ti-calendar"></i> Ver</button>')+
+            '</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody>'+
+      '</table>'
+    )+
+  '</div>'+
+
+  '</div></div>'; // end padding + page
+
+  // ── chart init ────────────────────────────────────────────────
+  setTimeout(function(){
+    var canvas=document.getElementById('vg-chart');if(!canvas)return;
+    if(window._vgChart){try{window._vgChart.destroy();}catch(e){}}
+    canvas.style.width='100%';canvas.style.height='100%';
+    function drawVG(){
+      var c=document.getElementById('vg-chart');if(!c)return;
+      if(window._vgChart){try{window._vgChart.destroy();}catch(e){}}
+      window._vgChart=new Chart(c,{
+        type:'line',
+        data:{labels:chartLabels,datasets:[
+          {label:'Receita',data:chartCum,borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.08)',borderWidth:2.5,pointRadius:function(ctx){return chartCum[ctx.dataIndex]!=null&&ctx.dataIndex>0&&chartCum[ctx.dataIndex]!==chartCum[ctx.dataIndex-1]?4:0;},pointBackgroundColor:'#a78bfa',pointHoverRadius:6,tension:.4,fill:true,spanGaps:false},
+          {label:'Meta',data:chartMeta,borderColor:'rgba(255,255,255,0.2)',borderDash:[5,5],borderWidth:1.5,pointRadius:0,tension:0,fill:false}
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' '+fmtV(ctx.raw);}},backgroundColor:'rgba(13,13,26,0.95)',borderColor:'rgba(167,139,250,0.3)',borderWidth:1}},
+          scales:{
+            x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.35)',font:{size:10},maxTicksLimit:10}},
+            y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.35)',font:{size:10},callback:function(v){return fmtV(v);}},suggestedMin:0,suggestedMax:Math.max(meta,cum2||1)*1.1}
+          }
+        }
+      });
+    }
+    if(window.Chart){drawVG();}
+    else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';s.onload=function(){setTimeout(drawVG,100);};document.head.appendChild(s);}
+  },60);
+
+  return html;
+}
 
 // ══════════════════════════════════════════════════════════════
 // VENDAS — fonte única Firebase · redesign completo
