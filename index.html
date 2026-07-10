@@ -7090,9 +7090,13 @@ function saveFollowup(){
     followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
       comparecimento:'nao',venda:'nao',resultado:'noshow',
       bonusComp:0,bonusVenda:0,contrato:0,mensalidade:0,motivo:'',dt:todayStr()};
-    meetings[fid].status='noshow';
-    saveMeetingFB(fid, meetings[fid]);
-    saveFollowupFB(fid, followups[fid]);
+    saveFollowupFB(fid, followups[fid]); // salva PRIMEIRO — garante que não se perde se meetings[fid] for undefined
+    if(meetings[fid]){
+      meetings[fid].status='noshow';
+      saveMeetingFB(fid, meetings[fid]);
+    } else {
+      if(fbDb||initFirebase()) fbDb.ref('meetings/'+fid).update({status:'noshow'});
+    }
     updateReuniaoSheetStatus(fid,'NO-SHOW');
     saveAll();closeModal('modal-followup');
     // Envia o lead para o fluxo de recontato de no-shows
@@ -7135,9 +7139,14 @@ function saveFollowup(){
     motivo:motivo,
     retornoData:retornoData,retornoTime:retornoTime,
     dt:todayStr()};
-  meetings[fid].status='done';
-  saveMeetingFB(fid, meetings[fid]);
-  saveFollowupFB(fid, followups[fid]);
+  saveFollowupFB(fid, followups[fid]); // salva PRIMEIRO — garante que venda não se perde se meetings[fid] for undefined
+  if(meetings[fid]){
+    meetings[fid].status='done';
+    saveMeetingFB(fid, meetings[fid]);
+  } else {
+    // Retorno ou reunião não carregada localmente — atualiza status diretamente no Firebase
+    if(fbDb||initFirebase()) fbDb.ref('meetings/'+fid).update({status:'done'});
+  }
   updateReuniaoSheetStatus(fid, venda?'VENDA':choice==='retorno'?'RETORNO':'PERDIDA');
   if(choice==='retorno'){
     var lead=allLeads.find(function(l){return l.telefone===_fuMeeting.tel;});if(lead)lead._requeue=true;
