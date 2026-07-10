@@ -12145,43 +12145,70 @@ function renderReunioesPersonal(){
   '</select>';
 
   // ── Funil de Conversão ───────────────────────────────────────────────────
+  // Leads do mês via _createdAt (Firebase/webhook) ou fallback data da sheet
+  var leadsCount=0;
+  if(typeof allLeads!=='undefined'&&allLeads&&allLeads.length){
+    leadsCount=allLeads.filter(function(l){
+      var d=l._createdAt?new Date(l._createdAt):parseBRDate(l.data||l.Data||l.DATA||'');
+      if(!d)return false;
+      return d.getMonth()===filtM&&d.getFullYear()===filtY;
+    }).length;
+  }
   var vendasMes=0;
   rowsMes.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda')vendasMes++;});
-  var _fTxReal=agendadas>0?Math.round(realizadas/agendadas*100):0;
+  var _fBase=leadsCount||agendadas||1;
+  var _fTxAgLead=leadsCount>0?Math.round(agendadas/leadsCount*100):100;
+  var _fTxReaAg=agendadas>0?Math.round(realizadas/agendadas*100):0;
+  var _fTxVenRea=realizadas>0?Math.round(vendasMes/realizadas*100):0;
   var _fTxNoshow=agendadas>0?Math.round(noshow/agendadas*100):0;
-  var _fTxVendaReal=realizadas>0?Math.round(vendasMes/realizadas*100):0;
-  var _fTxVendaTot=agendadas>0?Math.round(vendasMes/agendadas*100):0;
+  var _fTxVenLead=_fBase>0?Math.round(vendasMes/_fBase*100):0;
   var _fPend=Math.max(0,agendadas-realizadas-noshow);
-  var _fSt=function(n,label,color,sub){
-    return'<div style="flex:1;text-align:center;padding:14px 10px;background:rgba(0,0,0,0.3);border-radius:10px;border:1px solid rgba(255,255,255,0.06);">'+
-      '<div style="font-family:Bebas Neue,sans-serif;font-size:56px;color:'+color+';line-height:1;">'+n+'</div>'+
-      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:3px;">'+label+'</div>'+
-      '<div style="font-size:12px;color:'+color+';margin-top:5px;font-weight:600;">'+sub+'</div>'+
+  // Função: linha do funil vertical
+  function _fStepV(n,total,label,color,sub){
+    var barW=total>0?Math.round(n/total*100):100;
+    return'<div style="display:flex;align-items:center;gap:14px;padding:10px 0;">'+
+      '<div style="min-width:48px;text-align:right;">'+
+        '<span style="font-family:Bebas Neue,sans-serif;font-size:38px;color:'+color+';line-height:1;">'+n+'</span>'+
+      '</div>'+
+      '<div style="flex:1;">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'+
+          '<span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">'+label+'</span>'+
+          '<span style="font-size:11px;font-weight:600;color:'+color+';background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:20px;">'+sub+'</span>'+
+        '</div>'+
+        '<div style="height:10px;background:rgba(255,255,255,0.05);border-radius:5px;overflow:hidden;">'+
+          '<div style="height:100%;width:'+barW+'%;background:'+color+';border-radius:5px;opacity:0.75;"></div>'+
+        '</div>'+
+      '</div>'+
     '</div>';
-  };
-  var _fAr=function(pct,color){
-    return'<div style="display:flex;flex-direction:column;align-items:center;padding:0 10px;flex-shrink:0;gap:3px;">'+
-      '<span style="font-size:12px;font-weight:800;color:'+color+';">'+pct+'%</span>'+
-      '<i class="ti ti-arrow-right" style="font-size:20px;color:rgba(255,255,255,0.18);"></i>'+
+  }
+  function _fArrV(pct,color,label){
+    return'<div style="display:flex;align-items:center;gap:10px;padding:0 0 0 62px;">'+
+      '<div style="width:2px;height:18px;background:rgba(255,255,255,0.08);border-radius:1px;flex-shrink:0;"></div>'+
+      '<span style="font-size:11px;color:'+color+';font-weight:700;opacity:0.9;">'+pct+'%</span>'+
+      '<span style="font-size:11px;color:rgba(255,255,255,0.25);">'+label+'</span>'+
     '</div>';
-  };
+  }
   var funilCard='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;">'+
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'+
       '<i class="ti ti-filter" style="font-size:16px;color:var(--purple3);"></i>'+
       '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Funil de Conversão</span>'+
       '<span style="margin-left:auto;font-size:11px;color:var(--muted);">'+mesLabel+'</span>'+
     '</div>'+
-    '<div style="display:flex;align-items:center;gap:6px;">'+
-      _fSt(agendadas,'Agendadas','var(--amber)','100% do funil')+
-      _fAr(_fTxReal,'var(--green)')+
-      _fSt(realizadas,'Realizadas','var(--green)',_fTxReal+'% das ag.')+
-      _fAr(_fTxVendaReal,'var(--purple3)')+
-      _fSt(vendasMes,'Vendas','var(--purple3)',_fTxVendaReal+'% das real.')+
+    '<div style="border-top:1px solid var(--border);padding-top:4px;">'+
+      (leadsCount>0?
+        _fStepV(leadsCount,leadsCount,'Leads','var(--cyan)','100% do funil')+
+        _fArrV(_fTxAgLead,'var(--amber)','agendaram reunião')
+      :'')+
+      _fStepV(agendadas,leadsCount||agendadas,'Agendadas','var(--amber)',(leadsCount?_fTxAgLead+'% dos leads':'100% do funil'))+
+      _fArrV(_fTxReaAg,'var(--green)','compareceram')+
+      _fStepV(realizadas,leadsCount||agendadas,'Realizadas','var(--green)',_fTxReaAg+'% das ag.')+
+      _fArrV(_fTxVenRea,'var(--purple3)','fecharam venda')+
+      _fStepV(vendasMes,leadsCount||agendadas,'Vendas','var(--purple3)',_fTxVenRea+'% das realizadas')+
     '</div>'+
-    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;align-items:center;">'+
+    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap;align-items:center;">'+
       '<span style="font-size:12px;color:var(--muted);"><i class="ti ti-user-off" style="color:var(--red);margin-right:4px;"></i>No-Show: <b style="color:var(--red);">'+noshow+'</b> ('+_fTxNoshow+'%)</span>'+
       (_fPend>0?'<span style="font-size:12px;color:var(--muted);">Pendentes: <b style="color:var(--amber);">'+_fPend+'</b></span>':'')+
-      '<span style="font-size:12px;color:var(--muted);margin-left:auto;">Conv. geral: <b style="color:var(--purple3);font-size:14px;">'+_fTxVendaTot+'%</b> agendada → venda</span>'+
+      '<span style="margin-left:auto;font-size:12px;color:var(--muted);">Conv. geral: <b style="color:var(--purple3);font-size:14px;">'+_fTxVenLead+'%</b> '+(leadsCount?'lead':'agendada')+' → venda</span>'+
     '</div>'+
   '</div>';
 
