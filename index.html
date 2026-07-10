@@ -11860,10 +11860,10 @@ function renderReunioesPersonal(){
   var agPrev=rowsPrev.length;
   var realPrev=cntSt(rowsPrev,'done'), nsPrev=cntSt(rowsPrev,'noshow');
   var totalPrev=rowsPrev.length, taxaPrev=totalPrev>0?Math.round(realPrev/totalPrev*100):0;
-  // Receita — mês selecionado (faturamento pode ser number ou string)
+  // Receita — acumulado total (faturamento pode ser number ou string)
   function _fat(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
   var receita=0, vendas=0;
-  rowsMes.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendas++;}});
+  rows.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendas++;}});
   var receitaPrev=0, vendasPrev=0;
   rowsPrev.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
@@ -12146,6 +12146,47 @@ function renderReunioesPersonal(){
     _sortedMesKeys.map(function(k){var p=k.split('-');var lbl=_mns2[parseInt(p[1])-1]+' '+p[0];return'<option value="'+k+'"'+(k===_selectedMesKey?' selected':'')+'>'+lbl+'</option>';}).join('')+
   '</select>';
 
+  // ── Funil de Conversão ───────────────────────────────────────────────────
+  var vendasMes=0;
+  rowsMes.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda')vendasMes++;});
+  var _fTxReal=agendadas>0?Math.round(realizadas/agendadas*100):0;
+  var _fTxNoshow=agendadas>0?Math.round(noshow/agendadas*100):0;
+  var _fTxVendaReal=realizadas>0?Math.round(vendasMes/realizadas*100):0;
+  var _fTxVendaTot=agendadas>0?Math.round(vendasMes/agendadas*100):0;
+  var _fPend=Math.max(0,agendadas-realizadas-noshow);
+  var _fSt=function(n,label,color,sub){
+    return'<div style="flex:1;text-align:center;padding:14px 10px;background:rgba(0,0,0,0.3);border-radius:10px;border:1px solid rgba(255,255,255,0.06);">'+
+      '<div style="font-family:Bebas Neue,sans-serif;font-size:56px;color:'+color+';line-height:1;">'+n+'</div>'+
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:3px;">'+label+'</div>'+
+      '<div style="font-size:12px;color:'+color+';margin-top:5px;font-weight:600;">'+sub+'</div>'+
+    '</div>';
+  };
+  var _fAr=function(pct,color){
+    return'<div style="display:flex;flex-direction:column;align-items:center;padding:0 10px;flex-shrink:0;gap:3px;">'+
+      '<span style="font-size:12px;font-weight:800;color:'+color+';">'+pct+'%</span>'+
+      '<i class="ti ti-arrow-right" style="font-size:20px;color:rgba(255,255,255,0.18);"></i>'+
+    '</div>';
+  };
+  var funilCard='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'+
+      '<i class="ti ti-filter" style="font-size:16px;color:var(--purple3);"></i>'+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Funil de Conversão</span>'+
+      '<span style="margin-left:auto;font-size:11px;color:var(--muted);">'+mesLabel+'</span>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:6px;">'+
+      _fSt(agendadas,'Agendadas','var(--amber)','100% do funil')+
+      _fAr(_fTxReal,'var(--green)')+
+      _fSt(realizadas,'Realizadas','var(--green)',_fTxReal+'% das ag.')+
+      _fAr(_fTxVendaReal,'var(--purple3)')+
+      _fSt(vendasMes,'Vendas','var(--purple3)',_fTxVendaReal+'% das real.')+
+    '</div>'+
+    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;align-items:center;">'+
+      '<span style="font-size:12px;color:var(--muted);"><i class="ti ti-user-off" style="color:var(--red);margin-right:4px;"></i>No-Show: <b style="color:var(--red);">'+noshow+'</b> ('+_fTxNoshow+'%)</span>'+
+      (_fPend>0?'<span style="font-size:12px;color:var(--muted);">Pendentes: <b style="color:var(--amber);">'+_fPend+'</b></span>':'')+
+      '<span style="font-size:12px;color:var(--muted);margin-left:auto;">Conv. geral: <b style="color:var(--purple3);font-size:14px;">'+_fTxVendaTot+'%</b> agendada → venda</span>'+
+    '</div>'+
+  '</div>';
+
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
       '<div class="page-title">Reuniões & Performance</div>'+
@@ -12160,6 +12201,7 @@ function renderReunioesPersonal(){
     '</div></div>'+
     createForm+
     kpiRow+
+    funilCard+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'+
       '<div>'+agendaCard+sdrCard+'</div>'+
       '<div>'+clCard+origCard+'</div>'+
