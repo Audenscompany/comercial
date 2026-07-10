@@ -3637,6 +3637,7 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
+    {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
     {id:'calendario',icon:'ti-calendar',label:'Calendario'},
     {group:'SDR',icon:'ti-report-analytics',items:[
@@ -3667,6 +3668,7 @@ function buildNav(){
     {id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
+    {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Minhas Reunioes'},
     {group:'Financeiro',icon:'ti-report-money',items:[
@@ -3727,7 +3729,8 @@ function buildNav(){
       'leads':{id:'leads',icon:'ti-upload',label:'Importar Leads'},
       'historico':{id:'historico',icon:'ti-history',label:'Historico Geral'},
       'dashboard':{id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
-      'avaliacoes':{id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'}
+      'avaliacoes':{id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
+      'vendas':{id:'vendas',icon:'ti-cash-register',label:'Vendas'}
     };
     // Grupos para organizar na sidebar quando há permissões customizadas
     var _navGroups=[
@@ -3735,7 +3738,7 @@ function buildNav(){
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
       {group:'Cold Call',icon:'ti-phone-call',items:['ligar','leads','historico','dashboard']}
     ];
-    var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
+    var _topLevel=['tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','vendas','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
     def=[];
     // Primeiro itens de topo nível permitidos
     _topLevel.forEach(function(id){
@@ -3834,7 +3837,7 @@ function showPage(id){
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinanceiro,
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'audens-command':renderAudensCommand,'bdr':renderBDR,
-    'avaliacoes':renderAvaliacoes
+    'avaliacoes':renderAvaliacoes,'vendas':renderVendas
   };
   var area=document.getElementById('content');
   if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
@@ -11829,6 +11832,7 @@ async function loadFunilReunioes(){
 
 // Filtro de mês global para Reuniões
 var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
+var _vendasMesFiltro=null;
 function setReuniaoMesFiltro(val){
   if(val){var p=val.split('-');_reunMesFiltro={m:parseInt(p[1])-1,y:parseInt(p[0])};}
   else _reunMesFiltro=null;
@@ -18390,6 +18394,241 @@ window.addEventListener('load', function(){
   }
   setTimeout(tryeSave,2500);
 })();
+
+// ══════════════════════════════════════════════════════════════
+// VENDAS — fonte única Firebase
+// ══════════════════════════════════════════════════════════════
+function setVendasMesFiltro(k){
+  if(k){var p=k.split('-');_vendasMesFiltro={y:parseInt(p[0]),m:parseInt(p[1])-1};}
+  else _vendasMesFiltro=null;
+  showPage('vendas');
+}
+
+function renderVendas(){
+  var now=new Date();
+  var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
+  var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
+  var selectedKey=filtY+'-'+String(filtM+1).padStart(2,'0');
+  var _mns=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  // Helpers
+  function _fatV(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
+  function _mrrV(fu){
+    if(!fu)return 0;
+    if(fu.tipoValor==='tcv') return _fatV(fu.contrato);
+    return _fatV(fu.mensalidade)||_fatV(fu.contrato);
+  }
+  function fmtV(n){
+    if(!n)return 'R$ 0';
+    if(n>=1000000)return 'R$ '+(n/1000000).toFixed(1).replace('.0','').replace('.',',')+'M';
+    if(n>=1000)return 'R$ '+(n/1000).toFixed(1).replace('.0','').replace('.',',')+' MIL';
+    return 'R$ '+Math.round(n).toLocaleString('pt-BR');
+  }
+
+  // Coleta todas as vendas do followups (Firebase)
+  var fidMap={};
+  Object.keys(followups).forEach(function(fid){fidMap[followups[fid].meetingId||fid]=fid;});
+  var todasVendas=[];
+  Object.keys(followups).forEach(function(fid){
+    var fu=followups[fid];
+    if(fu.resultado!=='venda')return;
+    var m=meetings[fu.meetingId]||meetings[fid];
+    todasVendas.push({fu:fu,m:m,fid:fid});
+  });
+
+  // Determina meses disponíveis
+  var mesKeys={};
+  todasVendas.forEach(function(v){
+    var dt=_vendaDate(v.fu,v.m);
+    if(!dt)return;
+    var y=dt.getFullYear(); if(y<2024||y>now.getFullYear()+1)return;
+    mesKeys[y+'-'+String(dt.getMonth()+1).padStart(2,'0')]=1;
+  });
+  var sortedKeys=Object.keys(mesKeys).sort().reverse();
+  // Se o mês selecionado não tem dados, vai pro mais recente
+  if(sortedKeys.length>0&&!mesKeys[selectedKey]){
+    var best=sortedKeys[0];var bp=best.split('-');
+    filtM=parseInt(bp[1])-1;filtY=parseInt(bp[0]);selectedKey=best;
+    _vendasMesFiltro={y:filtY,m:filtM};
+  }
+  var mesLabel=_mns[filtM]+' '+filtY;
+
+  // Filtra pro mês selecionado
+  var vendas=todasVendas.filter(function(v){
+    var dt=_vendaDate(v.fu,v.m);
+    return dt&&dt.getMonth()===filtM&&dt.getFullYear()===filtY;
+  });
+  vendas.sort(function(a,b){return(_vendaDate(b.fu,b.m)||0)-(_vendaDate(a.fu,a.m)||0);});
+
+  // KPIs
+  var totalMRR=vendas.reduce(function(s,v){return s+_mrrV(v.fu);},0);
+  var ticket=vendas.length>0?Math.round(totalMRR/vendas.length):0;
+
+  // Seletor de mês
+  var mesSelect='<select onchange="setVendasMesFiltro(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--white);font-size:13px;outline:none;cursor:pointer;">'+
+    sortedKeys.map(function(k){var p=k.split('-');return'<option value="'+k+'"'+(k===selectedKey?' selected':'')+'>'+_mns[parseInt(p[1])-1]+' '+p[0]+'</option>';}).join('')+
+  '</select>';
+
+  // Linhas da tabela
+  var planoLabels={premium:'Premium',elite:'Elite',plano3:'Plano 3'};
+  var trs=vendas.length===0
+    ?'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;font-size:13px;">Nenhuma venda registrada neste mês</td></tr>'
+    :vendas.map(function(v){
+      var fu=v.fu,m=v.m,fid=v.fid;
+      var cliente=fu.nome||(m&&m.nome)||'—';
+      var closer=(m&&m.responsavel)||'—';
+      var sdr=(m&&(m.sdrName||m.sdr))||'—';
+      var plano=planoLabels[fu.plano]||fu.plano||'—';
+      var tipo=fu.tipoValor==='tcv'?'TCV':'MRR';
+      var tipoCol=fu.tipoValor==='tcv'?'var(--amber)':'var(--cyan)';
+      var val=_mrrV(fu);
+      var dt=_vendaDate(fu,m);
+      var dtLabel=dt?(dt.getDate()+'/'+(dt.getMonth()+1)+'/'+dt.getFullYear()):'—';
+      var dur=fu.duracao?fu.duracao+'m':'—';
+      var dataInicio=fu.dataInicio||'—';
+      return'<tr>'+
+        '<td style="font-weight:600;max-width:160px;">'+cliente+'</td>'+
+        '<td style="font-size:12px;color:var(--muted);white-space:nowrap;">'+dtLabel+'</td>'+
+        '<td><span style="color:var(--purple3);font-weight:600;">'+closer+'</span></td>'+
+        '<td style="font-size:12px;color:var(--cyan);">'+sdr+'</td>'+
+        '<td><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:rgba(123,47,255,0.15);color:var(--purple3);">'+plano+'</span></td>'+
+        '<td><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+tipoCol+'22;color:'+tipoCol+';">'+tipo+'</span></td>'+
+        '<td style="font-family:Bebas Neue,sans-serif;font-size:20px;color:var(--green);">'+fmtV(val)+'</td>'+
+        '<td style="font-size:12px;white-space:nowrap;">'+dataInicio+' <span style="color:var(--muted);">('+dur+')</span></td>'+
+        '<td style="white-space:nowrap;">'+
+          '<button class="btn btn-edit" onclick="abrirEditarVenda(\''+fid+'\')" style="font-size:11px;padding:4px 8px;" title="Editar"><i class="ti ti-edit"></i></button>'+
+          ' <button class="btn btn-outline" onclick="removerVenda(\''+fid+'\')" style="font-size:11px;padding:4px 8px;color:var(--red);border-color:rgba(239,68,68,0.4);" title="Remover venda"><i class="ti ti-trash"></i></button>'+
+        '</td>'+
+      '</tr>';
+    }).join('');
+
+  return'<div class="page active">'+
+    '<div class="page-header"><div>'+
+      '<div class="page-title">Vendas do Mês</div>'+
+      '<div class="page-sub">Fonte: Firebase · '+mesLabel+'</div>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;">'+mesSelect+'</div></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">'+
+      _vKpi('cash-register','Vendas Fechadas',vendas.length,'var(--green)')+
+      _vKpi('coin','Receita do Mês',fmtV(totalMRR),'var(--purple3)')+
+      _vKpi('chart-bar','Ticket Médio',fmtV(ticket),'var(--cyan)')+
+    '</div>'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;">'+
+      '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
+        '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Registro de Vendas — '+mesLabel+'</span>'+
+        '<span class="badge b-purple">'+vendas.length+'</span>'+
+      '</div>'+
+      '<div style="overflow-x:auto;"><table id="vendas-tbl">'+
+        '<thead><tr><th>Cliente</th><th>Data Reun.</th><th>Closer</th><th>SDR</th><th>Plano</th><th>Tipo</th><th>Valor</th><th>Início</th><th></th></tr></thead>'+
+        '<tbody>'+trs+'</tbody>'+
+      '</table></div>'+
+    '</div>'+
+  '</div>';
+}
+
+function _vendaDate(fu,m){
+  if(fu&&fu.dt){var d=parseBRDate(fu.dt);if(d)return d;}
+  if(m){if(m.dtISO)return new Date(m.dtISO);if(m.scheduledAt)return new Date(m.scheduledAt);}
+  return null;
+}
+function _vKpi(icon,label,val,color){
+  return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'+
+      '<span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+label+'</span>'+
+      '<i class="ti ti-'+icon+'" style="font-size:15px;color:'+color+';"></i>'+
+    '</div>'+
+    '<div style="font-family:Bebas Neue,sans-serif;font-size:42px;color:'+color+';line-height:1.1;">'+val+'</div>'+
+  '</div>';
+}
+
+// ── Editar Venda ──────────────────────────────────────────────
+var _editVendaFid=null;
+function abrirEditarVenda(fid){
+  var fu=followups[fid];if(!fu){alert('Venda não encontrada.');return;}
+  _editVendaFid=fid;
+  var m=meetings[fu.meetingId]||meetings[fid];
+  var closerOpts=Object.keys(USERS).map(function(e){
+    var u=USERS[e];if(!u.closer)return'';
+    var sel=(m&&m.responsavel&&(m.responsavel.toLowerCase()===(u.closer||'').toLowerCase()))?'selected':'';
+    return'<option value="'+u.closer+'" '+sel+'>'+u.closer+'</option>';
+  }).join('');
+  var isTcv=(fu.tipoValor==='tcv');
+  var html='<div class="modal-ov active" id="modal-editar-venda" onclick="if(event.target===this)fecharEditarVenda()">'+
+    '<div class="modal-box" style="max-width:480px;">'+
+      '<div class="modal-hd"><div class="modal-title" style="color:var(--green);"><i class="ti ti-edit"></i> Editar Venda</div>'+
+        '<button class="modal-close" onclick="fecharEditarVenda()">×</button></div>'+
+      '<div class="modal-body" style="display:grid;gap:12px;">'+
+        '<div><label class="f-label">Cliente</label><input class="f-input" id="ev-cliente" value="'+(fu.nome||(m&&m.nome)||'')+'" placeholder="Nome do cliente"></div>'+
+        '<div><label class="f-label">Closer</label><select class="f-input" id="ev-closer">'+closerOpts+'</select></div>'+
+        '<div><label class="f-label">Plano</label><select class="f-input" id="ev-plano">'+
+          '<option value="premium"'+(fu.plano==='premium'?' selected':'')+'>Premium</option>'+
+          '<option value="elite"'+(fu.plano==='elite'?' selected':'')+'>Elite</option>'+
+          '<option value="plano3"'+(fu.plano==='plano3'?' selected':'')+'>Plano 3</option>'+
+        '</select></div>'+
+        '<div><label class="f-label">Tipo de cobrança</label><select class="f-input" id="ev-tipo" onchange="toggleEvTipo()">'+
+          '<option value="mensalidade"'+(!isTcv?' selected':'')+'>Mensalidade (MRR)</option>'+
+          '<option value="tcv"'+(isTcv?' selected':'')+'>TCV (valor total)</option>'+
+        '</select></div>'+
+        '<div id="ev-mens-wrap" style="'+(isTcv?'display:none;':'')+'"><label class="f-label">Mensalidade (R$)</label><input class="f-input" type="number" id="ev-mensalidade" value="'+(fu.mensalidade||'')+'" placeholder="0"></div>'+
+        '<div><label class="f-label">Contrato total (R$)</label><input class="f-input" type="number" id="ev-contrato" value="'+(fu.contrato||'')+'" placeholder="0"></div>'+
+        '<div><label class="f-label">Duração (meses)</label><input class="f-input" type="number" id="ev-duracao" value="'+(fu.duracao||1)+'" min="1"></div>'+
+        '<div><label class="f-label">Data de início</label><input class="f-input" type="date" id="ev-data-inicio" value="'+(fu.dataInicio||'')+'"></div>'+
+      '</div>'+
+      '<div class="modal-footer">'+
+        '<button class="btn btn-primary" onclick="salvarEdicaoVenda()"><i class="ti ti-check"></i> Salvar</button>'+
+        '<button class="btn btn-outline" onclick="fecharEditarVenda()">Cancelar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function toggleEvTipo(){
+  var t=document.getElementById('ev-tipo');
+  var w=document.getElementById('ev-mens-wrap');
+  if(t&&w)w.style.display=t.value==='tcv'?'none':'block';
+}
+function fecharEditarVenda(){
+  var el=document.getElementById('modal-editar-venda');if(el)el.remove();
+  _editVendaFid=null;
+}
+async function salvarEdicaoVenda(){
+  var fid=_editVendaFid;if(!fid)return;
+  var fu=followups[fid];if(!fu)return;
+  var cliente=(document.getElementById('ev-cliente').value||'').trim();
+  var closer=document.getElementById('ev-closer').value;
+  var plano=document.getElementById('ev-plano').value;
+  var tipo=document.getElementById('ev-tipo').value;
+  var mensalidade=parseFloat(document.getElementById('ev-mensalidade').value)||0;
+  var contrato=parseFloat(document.getElementById('ev-contrato').value)||0;
+  var duracao=parseInt(document.getElementById('ev-duracao').value)||1;
+  var dataInicio=document.getElementById('ev-data-inicio').value;
+  fu.plano=plano;fu.tipoValor=tipo;fu.mensalidade=mensalidade;fu.contrato=contrato;
+  fu.duracao=duracao;fu.dataInicio=dataInicio;
+  if(cliente)fu.nome=cliente;
+  var m=meetings[fu.meetingId]||meetings[fid];
+  if(m&&closer)m.responsavel=closer;
+  try{
+    if(fbDb||initFirebase()){
+      await fbDb.ref('followups/'+fid).update(fu);
+      if(m&&closer)await fbDb.ref('meetings/'+m.id).update({responsavel:closer});
+    }
+    saveAll();
+    showSheetToast('Venda atualizada com sucesso.',false);
+    fecharEditarVenda();
+    showPage('vendas');
+  }catch(e){alert('Erro ao salvar: '+e.message);}
+}
+async function removerVenda(fid){
+  if(!confirm('Remover esta venda? A reunião voltará para "Realizada" sem resultado.'))return;
+  try{
+    if(fbDb||initFirebase())await fbDb.ref('followups/'+fid).remove();
+    delete followups[fid];
+    var m=meetings[fid];
+    if(m){m.status='done';saveMeetingFB(fid,m);}
+    saveAll();
+    showSheetToast('Venda removida.',false);
+    showPage('vendas');
+  }catch(e){alert('Erro ao remover: '+e.message);}
+}
 </script>
 </body>
 </html>
