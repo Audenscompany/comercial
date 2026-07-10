@@ -12140,7 +12140,8 @@ function renderReunioesPersonal(){
         '<td style="white-space:nowrap;">'+
           '<button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;"><i class="ti ti-edit"></i></button>'+
           (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 8px;"><i class="ti ti-flag-check"></i></button>':
-           ' <button class="btn btn-outline" onclick="openFollowup(meetings[\''+m.id+'\'],true)" style="font-size:11px;padding:4px 8px;"><i class="ti ti-edit-circle"></i></button>')+
+           ' <button class="btn btn-outline" onclick="openFollowup(meetings[\''+m.id+'\'],true)" style="font-size:11px;padding:4px 8px;"><i class="ti ti-edit-circle"></i></button>'+
+           ' <button class="btn btn-outline" onclick="deletarFollowup(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--amber);border-color:rgba(245,158,11,0.4);" title="Remover resultado"><i class="ti ti-eraser"></i></button>')+
           ' <button class="btn btn-outline" onclick="reenviarConfirmacaoReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--green);border-color:rgba(34,197,94,0.4);"><i class="ti ti-brand-whatsapp"></i></button>'+
           ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--red);border-color:rgba(239,68,68,0.4);"><i class="ti ti-trash"></i></button>'+
         '</td></tr>';
@@ -12522,6 +12523,20 @@ function apagarReuniao(mid){
   if(fbDb || initFirebase()){ fbDb.ref('meetings/'+mid).remove(); }
   showPage('reunioes');
   showSheetToast('Reunião apagada.', false);
+}
+async function deletarFollowup(fid){
+  var fu=followups[fid];
+  if(!fu) return;
+  var label=fu.resultado==='venda'?'VENDA':fu.resultado==='retorno'?'RETORNO':'resultado';
+  if(!confirm('Remover o '+label+' desta reunião? A reunião voltará para "Realizada" sem resultado registrado.')) return;
+  try{
+    if(fbDb||initFirebase()) await fbDb.ref('followups/'+fid).remove();
+    delete followups[fid];
+    if(meetings[fid]){ meetings[fid].status='done'; saveMeetingFB(fid,meetings[fid]); }
+    saveAll();
+    showSheetToast('Resultado removido com sucesso.', false);
+    showPage('reunioes');
+  }catch(e){ alert('Erro ao remover resultado: '+e.message); }
 }
 // Reenvia (ou envia pela primeira vez) a mensagem de confirmacao de reuniao por WhatsApp,
 // igual ao fluxo automatico do SDR (Kanban / saveCallFinal).
