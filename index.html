@@ -592,9 +592,10 @@ function startRealtimeSync(){
 
   // Sync followups in realtime
   fbDb.ref('followups').on('value', function(snap){
-    var fbFU = snap.val();
-    if(!fbFU) return;
+    var fbFU = snap.val() || {};
     var prev = JSON.stringify(followups);
+    // Remove local followups that were deleted from Firebase
+    Object.keys(followups).forEach(function(k){ if(!fbFU[k]) delete followups[k]; });
     Object.assign(followups, fbFU);
     if(JSON.stringify(followups) !== prev){
       localStorage.setItem('audens_followups', JSON.stringify(followups));
@@ -776,6 +777,10 @@ function startRealtimeSync(){
     var data=snap.val()||{};
     _userPhotos=data;
     updateSidebarAvatar();
+    // Re-render vendas/reuniões tables so avatars use loaded photos
+    var area=document.getElementById('content');
+    var pg=area?area.getAttribute('data-page'):null;
+    if(pg==='vendas' && window._vendasPageData) _renderVendasTabela();
   });
 }
 
@@ -3956,6 +3961,8 @@ async function syncReunioesFBFromSheet(){
                : (followups[m.id] ? 'done' : 'pending');
       // Não sobrescrever 'reagendado' manual com 'pending' do sheet (seria desfazer um dismiss)
       if(m.status==='reagendado' && newSt==='pending') return;
+      // Não reverter reunião cuja venda foi intencionalmente removida
+      if(m.followupRemovido && newSt==='pending') return;
       if(m.status !== newSt){
         meetings[m.id].status = newSt;
         saveMeetingFB(m.id, meetings[m.id]);
@@ -3984,7 +3991,8 @@ function migrateStaleStatuses(){
       fixed++;
     }
     // 2) marcado como 'done' pelo sheet-sync mas sem followup no CRM → volta para pending
-    else if(m.status==='done' && !followups[m.id]){
+    // EXCETO se a venda foi intencionalmente removida (followupRemovido)
+    else if(m.status==='done' && !followups[m.id] && !m.followupRemovido){
       meetings[m.id].status = 'pending';
       saveMeetingFB(m.id, meetings[m.id]);
       fixed++;
@@ -19031,7 +19039,7 @@ async function removerVenda(fid){
     if(fbDb||initFirebase())await fbDb.ref('followups/'+fid).remove();
     delete followups[fid];
     var m=meetings[fid];
-    if(m){m.status='done';saveMeetingFB(fid,m);}
+    if(m){m.status='done';m.followupRemovido=true;saveMeetingFB(fid,m);}
     saveAll();
     showSheetToast('Venda removida.',false);
     showPage('vendas');
