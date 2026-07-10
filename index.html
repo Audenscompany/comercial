@@ -72,7 +72,8 @@ body{font-family:Barlow,sans-serif;background:var(--bg);color:var(--white);min-h
 .nav-badge{background:var(--red);color:white;font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;margin-left:auto;}
 .sb-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border);}
 .user-pill{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-.u-av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--purple3));display:flex;align-items:center;justify-content:center;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:white;flex-shrink:0;}
+.u-av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--purple3));display:flex;align-items:center;justify-content:center;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:white;flex-shrink:0;cursor:pointer;overflow:hidden;transition:opacity .15s;}
+.u-av:hover{opacity:.8;}
 .u-name{font-size:13px;font-weight:600;color:var(--white);font-family:Barlow Condensed,sans-serif;}
 .u-role{font-size:11px;color:var(--muted);}
 .btn-logout{width:100%;padding:8px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:600;letter-spacing:1px;cursor:pointer;transition:all .15s;text-transform:uppercase;}
@@ -769,6 +770,78 @@ function startRealtimeSync(){
       localStorage.setItem('audens_meta_token', JSON.stringify(metaToken));
     }
   });
+
+  // Fotos de perfil dos usuários
+  fbDb.ref('userPhotos').on('value', function(snap){
+    var data=snap.val()||{};
+    _userPhotos=data;
+    updateSidebarAvatar();
+  });
+}
+
+// ===== FOTOS DE PERFIL =====
+var _userPhotos = {};
+
+function _emailToKey(email){ return email.replace(/\./g,'_'); }
+
+function updateSidebarAvatar(){
+  if(!CU) return;
+  var el=document.getElementById('sb-av');
+  if(!el) return;
+  var photo=_userPhotos[_emailToKey(CU.email)];
+  if(photo){
+    el.innerHTML='<img src="'+photo+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">';
+    el.style.background='none';
+  } else {
+    el.innerHTML='';
+    el.textContent=CU.initials;
+    el.style.background='';
+  }
+}
+
+function getUserPhoto(email){
+  return _userPhotos[_emailToKey(email)]||null;
+}
+
+// Retorna HTML de um avatar (img ou iniciais) de qualquer tamanho
+function renderUserAvatar(email, size, fontSize, bgColor){
+  size=size||36; fontSize=fontSize||13; bgColor=bgColor||'rgba(123,47,255,0.25)';
+  var photo=getUserPhoto(email);
+  var u=USERS[email]||{};
+  var initials=(u.initials||((u.name||'').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase()))||'?';
+  if(photo){
+    return '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;overflow:hidden;flex-shrink:0;">'
+      +'<img src="'+photo+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;"></div>';
+  }
+  return '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+bgColor+';display:flex;align-items:center;justify-content:center;font-family:Bebas Neue,sans-serif;font-size:'+fontSize+'px;color:var(--purple3);font-weight:700;flex-shrink:0;">'+initials+'</div>';
+}
+
+function openPhotoUpload(){
+  var inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=function(){
+    var file=inp.files[0]; if(!file) return;
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var img=new Image();
+      img.onload=function(){
+        var canvas=document.createElement('canvas');
+        var MAX=180, w=img.width, h=img.height;
+        if(w>h){h=Math.round(h/w*MAX);w=MAX;}else{w=Math.round(w/h*MAX);h=MAX;}
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        var b64=canvas.toDataURL('image/jpeg',0.82);
+        var key=_emailToKey(CU.email);
+        _userPhotos[key]=b64;
+        if(fbDb) fbDb.ref('userPhotos/'+key).set(b64);
+        updateSidebarAvatar();
+        if(window.showSheetToast) showSheetToast('Foto atualizada!',false);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
 }
 
 // Save call to Firebase
@@ -3456,7 +3529,10 @@ function showMain(){
   document.getElementById('sb-name').textContent=CU.name;
   var roleLabel = CU.role==='gestor'?'Gestor · Audens':(CU.funcao==='sdr'?'SDR · Social Selling':'Closer · Cold Call');
   document.getElementById('sb-role').textContent=roleLabel;
-  document.getElementById('sb-av').textContent=CU.initials;
+  updateSidebarAvatar();
+  var _sbAv=document.getElementById('sb-av');
+  _sbAv.title='Clique para alterar foto';
+  _sbAv.onclick=function(){ openPhotoUpload(); };
   buildNav();
   // Load career levels and user passwords from Firebase
   loadCareerLevels();
@@ -11867,13 +11943,17 @@ function renderReunioesPersonal(){
   rows.forEach(function(m){var c=(m.responsavel||'').trim();if(!c)return;var k=c.toLowerCase();if(!clMap[k])clMap[k]={name:c,total:0,real:0,vendas:0,receita:0};clMap[k].total++;if(getMeetingStatus(m)==='done'){clMap[k].real++;var fu=followups[m.id];if(fu&&fu.resultado==='venda'){clMap[k].vendas++;clMap[k].receita+=_fat(fu.faturamento)+_fat(fu.faturamento2loja||0);}}});
   var clList=Object.values(clMap).sort(function(a,b){return b.vendas-a.vendas;});
   var avColors=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
+  // Mapeia nome do closer para email
+  function closerEmail(nome){var r=null;Object.keys(USERS).forEach(function(em){if((USERS[em].closer||'').toLowerCase()===nome.toLowerCase())r=em;});return r;}
   var clRows=clList.length===0
     ?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Sem dados</div>'
     :clList.map(function(c,i){
         var conv=c.real>0?Math.round(c.vendas/c.real*100):0;
         var ac=avColors[i%avColors.length];
+        var em=closerEmail(c.name);
+        var avHtml=em?renderUserAvatar(em,36,18,ac+'22'):'<div style="width:36px;height:36px;border-radius:50%;background:'+ac+'22;border:2px solid '+ac+';display:flex;align-items:center;justify-content:center;font-family:Bebas Neue,sans-serif;font-size:18px;color:'+ac+';flex-shrink:0;">'+c.name.charAt(0).toUpperCase()+'</div>';
         return'<div style="padding:12px 16px;display:flex;align-items:center;gap:12px;'+(i<clList.length-1?'border-bottom:1px solid var(--border);':'')+'">'+
-          '<div style="width:36px;height:36px;border-radius:50%;background:'+ac+'22;border:2px solid '+ac+';display:flex;align-items:center;justify-content:center;font-family:Bebas Neue,sans-serif;font-size:18px;color:'+ac+';flex-shrink:0;">'+c.name.charAt(0).toUpperCase()+'</div>'+
+          avHtml+
           '<div style="flex:1;min-width:0;">'+
             '<div style="font-size:13px;font-weight:700;">'+esc(c.name)+'</div>'+
             '<div style="font-size:11px;color:var(--muted);">'+c.real+' realizadas · '+c.vendas+' vendas</div>'+
@@ -17031,7 +17111,11 @@ function renderAvaliacoes(){
     var active=_avalCurrentCloser===u.email;
     var isSdr=u.funcao==='sdr'||u.funcao==='bdr';
     var badge=isSdr?'<span style="font-size:9px;background:rgba(16,185,129,0.25);color:#10b981;padding:1px 5px;border-radius:4px;margin-left:4px;">SDR</span>':'';
-    return '<button onclick="_avalCurrentCloser=\''+u.email+'\';_avalSelectedId=null;showPage(\'avaliacoes\')" style="padding:7px 16px;border-radius:999px;border:1px solid;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:4px;'+(active?(isSdr?'background:#10b981;border-color:#10b981;color:#fff;':'background:var(--purple);border-color:var(--purple);color:#fff;'):'background:none;border-color:var(--border);color:var(--muted);')+'">'+u.name+badge+'</button>';
+    var photo=getUserPhoto(u.email);
+    var avatarHtml=photo
+      ?'<span style="display:inline-flex;width:20px;height:20px;border-radius:50%;overflow:hidden;vertical-align:middle;margin-right:2px;"><img src="'+photo+'" style="width:100%;height:100%;object-fit:cover;"></span>'
+      :'<span style="display:inline-flex;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,0.2);align-items:center;justify-content:center;font-size:9px;font-weight:900;vertical-align:middle;margin-right:2px;">'+(u.initials||u.name.charAt(0))+'</span>';
+    return '<button onclick="_avalCurrentCloser=\''+u.email+'\';_avalSelectedId=null;showPage(\'avaliacoes\')" style="padding:7px 16px;border-radius:999px;border:1px solid;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:4px;'+(active?(isSdr?'background:#10b981;border-color:#10b981;color:#fff;':'background:var(--purple);border-color:var(--purple);color:#fff;'):'background:none;border-color:var(--border);color:var(--muted);')+'">'+avatarHtml+u.name+badge+'</button>';
   }).join('');
   // Main tabs
   var mainTabs=[{id:'geral',label:'Visão Geral'},{id:'reunioes',label:'Por Reunião'},{id:'criterios',label:'Critérios'}];
@@ -17062,7 +17146,9 @@ function renderAvaliacoes(){
     tabContent=
       '<div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:14px;">'+
         '<div style="display:flex;flex-direction:column;align-items:center;">'+_avalGaugeSVG(mediaNota)+'<div style="font-size:12px;font-weight:800;color:'+classClr+';margin-top:4px;">'+classLabel+'</div></div>'+
-        '<div><div style="font-size:14px;font-weight:900;color:var(--white);">'+closerNome+' — Média Geral</div>'+
+        '<div><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'+
+          (getUserPhoto(_avalCurrentCloser)?'<img src="'+getUserPhoto(_avalCurrentCloser)+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--purple3);">':'')+
+          '<div style="font-size:14px;font-weight:900;color:var(--white);">'+closerNome+' — Média Geral</div></div>'+
         '<div style="font-size:32px;font-weight:900;color:var(--white);margin:4px 0;">'+mediaNota+'<span style="font-size:16px;color:var(--muted);">/100</span></div>'+
         '<div style="font-size:13px;color:var(--muted);">Baseado em <b style="color:var(--white);">'+totalAval+'</b> '+(isSdrView?'conversa(s) WhatsApp':'reunião(ões)')+' analisada(s) pelo Jarvis.</div></div>'+
       '</div>'+
