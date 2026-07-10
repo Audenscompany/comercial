@@ -2408,6 +2408,89 @@ function normCloserName(n){
   if(l.includes('gustavo'))return'Gustavo';
   return n.trim();
 }
+
+// ===== SYNC PLANILHA → FIREBASE =====
+// Importa reuniões da planilha que não existem no Firebase (dedup por tel+data).
+// Chamado pelo botão "Sincronizar Planilha" na página de Reuniões.
+async function syncReunioesFromSheet(){
+  var btn=document.getElementById('btn-sync-sheet');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Importando...';}
+  try{
+    showSheetToast('Lendo planilha...', false);
+    var shData=await loadDataHybrid();
+    var shRows=(shData.reunioes&&shData.reunioes.rows)||[];
+
+    // Normaliza telefone para comparação (últimos 11 dígitos, sem código de país)
+    function normTelSync(t){
+      var d=(t||'').replace(/\D/g,'');
+      if(d.startsWith('55')&&d.length>11)d=d.slice(2);
+      return d.slice(-11);
+    }
+    // Data local como chave YYYY-MM-DD (sem shift de fuso)
+    function localDK(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+    // Monta Set de pares tel_data já existentes no Firebase
+    var fbKeys=new Set();
+    Object.values(meetings).forEach(function(m){
+      var t=normTelSync(m.tel);
+      var dk=m.dtISO?m.dtISO.substr(0,10):null;
+      if(t&&dk)fbKeys.add(t+'_'+dk);
+    });
+
+    // Filtra linhas da planilha com tel válido e data parseável
+    var toImport=[];
+    shRows.forEach(function(r){
+      var rawTel=col(r,['TELEFONE','Telefone','telefone','FONE'])||'';
+      var t=normTelSync(rawTel);
+      if(t.length<10)return; // sem telefone válido
+      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+      if(!d)return; // sem data
+      var dk=localDK(d);
+      var chave=t+'_'+dk;
+      if(fbKeys.has(chave))return; // já existe no Firebase
+      fbKeys.add(chave); // evita duplicatas dentro da própria planilha
+      toImport.push({r:r,rawTel:rawTel,t:t,d:d,dk:dk});
+    });
+
+    if(toImport.length===0){
+      showSheetToast('✅ Firebase já está sincronizado! Nenhuma reunião nova encontrada.',false);
+      if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Sincronizar Planilha';}
+      return;
+    }
+
+    showSheetToast('Importando '+toImport.length+' reuniões...', false);
+    var imported=0;
+    for(var i=0;i<toImport.length;i++){
+      var item=toImport[i];
+      var r=item.r; var d=item.d;
+      // Status Firebase a partir do status da planilha
+      var shSt=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').trim();
+      var fbSt=isRealizada(shSt)?'done':(shSt.toUpperCase()==='NO-SHOW'||shSt.toUpperCase()==='NO SHOW'||shSt.toUpperCase()==='NOSHOW')?'noshow':'pending';
+      // ISO ao meio-dia local para evitar shift de fuso
+      var dtISO=new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0).toISOString();
+      var dtDisplay=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()+' 12:00';
+      var nome=col(r,['NOME','Nome','CLIENTE','Cliente','cliente'])||'';
+      var responsavel=normCloserName(col(r,['CLOSER','Closer','closer']))||'';
+      var sdrName=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').trim();
+      var origem=(col(r,['ORIGEM','Origem','origem'])||'Tráfego').trim();
+      var mid='imp_'+Date.now()+'_'+i;
+      var meetingObj={id:mid,nome:nome,tel:item.t,dtISO:dtISO,dtDisplay:dtDisplay,
+        status:fbSt,responsavel:responsavel,sdrName:sdrName,origem:origem,
+        scheduledAt:Date.now(),_importadoPlanilha:true,_importadoEm:Date.now()};
+      await saveMeetingFB(mid,meetingObj);
+      meetings[mid]=meetingObj;
+      imported++;
+      if(imported%20===0)await new Promise(function(res){setTimeout(res,300);}); // pausa a cada 20 para não sobrecarregar
+    }
+
+    showSheetToast('✅ '+imported+' reuniões importadas para o Firebase!',false);
+    setTimeout(function(){showPage('reunioes');},1800);
+  }catch(e){
+    showSheetToast('❌ Erro ao sincronizar: '+e.message,true);
+  }
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Sincronizar Planilha';}
+}
+
 function fmtBRL(v){
   if(!v||v===0)return'R$ 0';
   if(v>=1000000)return'R$ '+(v/1000000).toFixed(2).replace('.',',')+' mi';
@@ -12142,19 +12225,19 @@ function renderReunioesPersonal(){
   rowsPrevAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_mrr(fu);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
-  function kpi(icon,label,val,delta2,color,kId){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+  function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'+
       '<span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+label+'</span>'+
       '<i class="ti ti-'+icon+'" style="font-size:15px;color:'+color+';"></i>'+
     '</div>'+
-    '<div '+(kId?'id="'+kId+'"':'')+' style="font-family:Bebas Neue,sans-serif;font-size:36px;color:'+color+';line-height:1.1;">'+val+'</div>'+
+    '<div style="font-family:Bebas Neue,sans-serif;font-size:36px;color:'+color+';line-height:1.1;">'+val+'</div>'+
     '<div style="margin-top:4px;">'+delta2+'</div>'+
   '</div>';}
   var kpiRow='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;">'+
-    kpi('calendar','Agendadas',agendadas,dlt(agendadas,agPrev),'var(--amber)','_rpAg')+
-    kpi('check','Realizadas',realizadas,dlt(realizadas,realPrev),'var(--green)','_rpReal')+
-    kpi('user-off','No-Show',noshow,dlt(noshow,nsPrev),'var(--red)','_rpNs')+
-    kpi('target','Tx. Conv.',taxaConv+'%',dlt(taxaConv,taxaPrev),'var(--cyan)','_rpConv')+
+    kpi('calendar','Agendadas',agendadas,dlt(agendadas,agPrev),'var(--amber)')+
+    kpi('check','Realizadas',realizadas,dlt(realizadas,realPrev),'var(--green)')+
+    kpi('user-off','No-Show',noshow,dlt(noshow,nsPrev),'var(--red)')+
+    kpi('target','Tx. Conv.',taxaConv+'%',dlt(taxaConv,taxaPrev),'var(--cyan)')+
     kpi('coin','MRR Gerado',fmtBRL(receita),dlt(receita,receitaPrev),'var(--purple3)')+
     kpi('chart-bar','Ticket MRR Médio',fmtBRL(ticket),dlt(ticket,ticketPrev),'#4ade80')+
   '</div>';
@@ -12509,34 +12592,6 @@ function renderReunioesPersonal(){
     '</div>'+
   '</div>';
 
-  // ── Async: atualiza KPIs com dados reais da planilha (fonte de verdade) ──
-  setTimeout(async function(){
-    try{
-      var shData=await loadDataHybrid();
-      var shRows=(shData.reunioes&&shData.reunioes.rows)||[];
-      var shPer=shRows.filter(function(r){
-        var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
-        return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
-      });
-      if(!isGestor){
-        shPer=shPer.filter(function(r){
-          var cl=(col(r,['CLOSER','Closer','closer'])||'').toLowerCase();
-          var sd=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').toLowerCase();
-          var n=nome.toLowerCase();
-          return cl.includes(n)||sd.includes(n);
-        });
-      }
-      var shAg=shPer.length;
-      var shReal=shPer.filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
-      var shNs=shPer.filter(function(r){var s=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();return s==='NO-SHOW'||s==='NO SHOW'||s==='NOSHOW';}).length;
-      var shConv=shAg>0?Math.round(shReal/shAg*100):0;
-      var agEl=document.getElementById('_rpAg');if(agEl)agEl.textContent=shAg;
-      var realEl=document.getElementById('_rpReal');if(realEl)realEl.textContent=shReal;
-      var nsEl=document.getElementById('_rpNs');if(nsEl)nsEl.textContent=shNs;
-      var convEl=document.getElementById('_rpConv');if(convEl)convEl.textContent=shConv+'%';
-    }catch(e){}
-  },100);
-
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
       '<div class="page-title">Reuniões & Performance</div>'+
@@ -12548,6 +12603,8 @@ function renderReunioesPersonal(){
         '<i class="ti ti-calendar-plus"></i> Nova Reunião</button>'+
       '<button class="btn btn-outline" onclick="(function(){var w=document.getElementById(\'rm-all-wrap\');w.style.display=w.style.display===\'none\'?\'block\':\'none\';})()">'+
         '<i class="ti ti-list"></i> Ocultar/Mostrar Lista</button>'+
+      (isGestor?'<button id="btn-sync-sheet" class="btn btn-outline" onclick="syncReunioesFromSheet()" style="color:var(--cyan);border-color:rgba(34,211,238,0.35);" title="Importa reuniões da planilha que ainda não estão no Firebase">'+
+        '<i class="ti ti-refresh"></i> Sincronizar Planilha</button>':'')+
     '</div></div>'+
     createForm+
     kpiRow+
