@@ -12088,7 +12088,7 @@ async function loadFunilReunioes(){
 // Filtro de mês global para Reuniões
 var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
 var _vendasMesFiltro=null;
-var _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:''};
+var _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
 var _vendasPagina=1;
 var _vendasRankingMode='closer';
 function setReuniaoMesFiltro(val){
@@ -19119,7 +19119,10 @@ function renderVendas(){
   Object.keys(followups).forEach(function(fid){
     var fu=followups[fid];if(fu.resultado!=='venda')return;
     var m=meetings[fu.meetingId]||meetings[fid];
-    todasVendas.push({fu:fu,m:m,fid:fid});
+    // Origem: meeting > kanban lead > fallback
+    var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var origemRaw=fu.origem||(m&&m.origem)||(ke&&ke.origem)||'';
+    todasVendas.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
   });
 
   // Meses disponíveis
@@ -19182,7 +19185,7 @@ function renderVendas(){
   var cumulativeData=[];var acc=0;
   dailyData.forEach(function(v){acc+=v;cumulativeData.push(acc);});
 
-  // Closers disponíveis
+  // Closers, SDRs e Origens disponíveis
   var closerOpts='';
   var closerSet={};
   vendas.forEach(function(v){var c=(v.m&&v.m.responsavel)||'';if(c)closerSet[c]=1;});
@@ -19190,6 +19193,13 @@ function renderVendas(){
   var sdrSet={};
   vendas.forEach(function(v){var s=(v.m&&(v.m.sdrName||v.m.sdr))||'';if(s)sdrSet[s]=1;});
   var sdrOpts='';Object.keys(sdrSet).sort().forEach(function(s){sdrOpts+='<option value="'+s+'">'+s+'</option>';});
+  // Origens disponíveis (categorias)
+  var origCats=['Trafego Pago','Trafego Organico','Indicacoes / Outros'];
+  var origOpts=origCats.map(function(o){
+    var sel=_vendasFiltros.origem===o?' selected':'';
+    var label=o==='Trafego Pago'?'🎯 Tráfego Pago':o==='Trafego Organico'?'🌱 Tráfego Orgânico':'🤝 Indicações / Outros';
+    return'<option value="'+o+'"'+sel+'>'+label+'</option>';
+  }).join('');
 
   // Filtros header
   var sel='background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--white);font-size:12px;outline:none;cursor:pointer;';
@@ -19275,6 +19285,10 @@ function renderVendas(){
       if(mode==='closer')key=(v.m&&v.m.responsavel)||'—';
       else if(mode==='sdr')key=(v.m&&(v.m.sdrName||v.m.sdr))||'—';
       else if(mode==='plano')key=v.fu.plano||'—';
+      else if(mode==='origem'){
+        var cat=v.origemCat||categorizeOrigem(v.origemRaw||(v.m&&v.m.origem)||'');
+        key=cat==='Trafego Pago'?'🎯 Tráfego Pago':cat==='Trafego Organico'?'🌱 Tráfego Orgânico':'🤝 Indicações / Outros';
+      }
       if(!key)return;
       if(!rankMap[key])rankMap[key]={name:key,count:0,receita:0};
       rankMap[key].count++;rankMap[key].receita+=_mrrV(v.fu);
@@ -19307,6 +19321,7 @@ function renderVendas(){
         '<button class="vrank-tab" data-mode="closer" onclick="setVendasRanking(\'closer\')" style="'+tabStyle+'background:'+(_vendasRankingMode==='closer'?'var(--purple3)':'transparent')+';color:'+(_vendasRankingMode==='closer'?'#fff':'var(--muted)')+';">Closers</button>'+
         '<button class="vrank-tab" data-mode="sdr" onclick="setVendasRanking(\'sdr\')" style="'+tabStyle+'background:'+(_vendasRankingMode==='sdr'?'var(--purple3)':'transparent')+';color:'+(_vendasRankingMode==='sdr'?'#fff':'var(--muted)')+';">SDRs</button>'+
         '<button class="vrank-tab" data-mode="plano" onclick="setVendasRanking(\'plano\')" style="'+tabStyle+'background:'+(_vendasRankingMode==='plano'?'var(--purple3)':'transparent')+';color:'+(_vendasRankingMode==='plano'?'#fff':'var(--muted)')+';">Planos</button>'+
+        '<button class="vrank-tab" data-mode="origem" onclick="setVendasRanking(\'origem\')" style="'+tabStyle+'background:'+(_vendasRankingMode==='origem'?'var(--purple3)':'transparent')+';color:'+(_vendasRankingMode==='origem'?'#fff':'var(--muted)')+';">Origem</button>'+
       '</div>'+
     '</div>'+
     '<div id="vendas-ranking-body">'+_buildVendasRanking(vendas)+'</div>'+
@@ -19332,6 +19347,9 @@ function renderVendas(){
     '<select id="vf-status" onchange="setVendasFiltro(\'status\',this.value)" style="'+inpStyle+'">'+
       '<option value="">Todos os status</option>'+
       Object.keys(statusConfig).map(function(k){return'<option value="'+k+'"'+((_vendasFiltros.status===k)?' selected':'')+'>'+statusConfig[k].label+'</option>';}).join('')+
+    '</select>'+
+    '<select id="vf-origem" onchange="setVendasFiltro(\'origem\',this.value)" style="'+inpStyle+'">'+
+      '<option value="">Todas origens</option>'+origOpts+
     '</select>'+
     '<span id="vf-cnt" style="font-size:12px;color:var(--muted);margin-left:auto;"></span>'+
   '</div>';
@@ -19359,6 +19377,7 @@ function renderVendas(){
       mesSelect+
       '<select onchange="setVendasFiltro(\'closer\',this.value);_vendasFiltros.closer=this.value;document.getElementById(\'vf-closer\')&&(document.getElementById(\'vf-closer\').value=this.value);_renderVendasTabela()" style="'+sel+'"><option value="">Todos closers</option>'+closerOpts+'</select>'+
       '<select onchange="_vendasFiltros.sdr=this.value;_vendasPagina=1;_renderVendasTabela()" style="'+sel+'"><option value="">Todos SDRs</option>'+sdrOpts+'</select>'+
+      '<select onchange="setVendasFiltro(\'origem\',this.value);document.getElementById(\'vf-origem\')&&(document.getElementById(\'vf-origem\').value=this.value)" style="'+sel+'"><option value="">Todas origens</option>'+origOpts+'</select>'+
       '<button onclick="exportarVendas()" style="background:rgba(255,255,255,0.07);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-download"></i> Exportar</button>'+
       '<button onclick="abrirRegistrarVenda()" style="background:var(--purple3);border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 0 20px rgba(123,47,255,0.4);"><i class="ti ti-plus"></i> Registrar venda</button>'+
     '</div></div>'+
@@ -19386,7 +19405,7 @@ function renderVendas(){
   '</div>';
 
   // Store data for table rendering
-  window._vendasPageData={vendas:vendas,statusConfig:statusConfig,planoLabels:planoLabels,fmtV:fmtV,mrrV:_mrrV};
+  window._vendasPageData={vendas:vendas,statusConfig:statusConfig,planoLabels:planoLabels,fmtV:fmtV,mrrV:_mrrV,origCats:origCats};
 
   setTimeout(function(){
     _renderVendasTabela();
@@ -19410,11 +19429,12 @@ function _renderVendasTabela(){
   var filtradas=vendas.filter(function(v){
     var fu=v.fu,m=v.m;
     var busca=(_vendasFiltros.busca||'').toLowerCase();
-    if(busca){var cliente=(fu.nome||(m&&m.nome)||'').toLowerCase(),closer=((m&&m.responsavel)||'').toLowerCase();if(!cliente.includes(busca)&&!closer.includes(busca))return false;}
+    if(busca){var cliente=(fu.nome||(m&&m.nome)||'').toLowerCase(),closer=((m&&m.responsavel)||'').toLowerCase(),orig=(v.origemRaw||'').toLowerCase();if(!cliente.includes(busca)&&!closer.includes(busca)&&!orig.includes(busca))return false;}
     if(_vendasFiltros.plano&&fu.plano!==_vendasFiltros.plano)return false;
     if(_vendasFiltros.closer){var c=(m&&m.responsavel)||'';if(c!==_vendasFiltros.closer)return false;}
     if(_vendasFiltros.sdr){var s=(m&&(m.sdrName||m.sdr))||'';if(s!==_vendasFiltros.sdr)return false;}
     if(_vendasFiltros.status&&getStatus(fu)!==_vendasFiltros.status)return false;
+    if(_vendasFiltros.origem&&v.origemCat!==_vendasFiltros.origem)return false;
     return true;
   });
 
@@ -19443,6 +19463,11 @@ function _renderVendasTabela(){
       var dur=fu.duracao?fu.duracao+'m':'—';
       var vigencia=fu.dataInicio?(fu.dataInicio.split('-').reverse().join('/')+' ('+dur+')'):('— ('+dur+')');
       var st=getStatus(fu);var sc=statusConfig[st]||statusConfig.ativa;
+      // Origem
+      var origCat=v.origemCat||'Indicacoes / Outros';
+      var origIcon=origCat==='Trafego Pago'?'🎯':origCat==='Trafego Organico'?'🌱':'🤝';
+      var origLabel=origCat==='Trafego Pago'?'Tráfego Pago':origCat==='Trafego Organico'?'Orgânico':'Indicação';
+      var origColor=origCat==='Trafego Pago'?'#f472b6':origCat==='Trafego Organico'?'#34d399':'#60a5fa';
       return'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
         '<td style="padding:10px 12px;font-weight:600;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+cliente+'</td>'+
         '<td style="padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.5);white-space:nowrap;">'+dtLabel+'</td>'+
@@ -19457,6 +19482,9 @@ function _renderVendasTabela(){
         '<td style="padding:10px 12px;font-size:15px;font-weight:700;color:#4ade80;font-family:\'Bebas Neue\',sans-serif;">'+fmtV(val)+'</td>'+
         '<td style="padding:10px 12px;"><span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;background:'+tipoCol+'18;color:'+tipoCol+';">'+tipo+'</span></td>'+
         '<td style="padding:10px 12px;font-size:11px;color:rgba(255,255,255,0.45);">'+vigencia+'</td>'+
+        '<td style="padding:10px 12px;">'+
+          '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:99px;font-size:11px;font-weight:600;background:'+origColor+'18;color:'+origColor+';">'+origIcon+' '+origLabel+'</span>'+
+        '</td>'+
         '<td style="padding:10px 12px;">'+
           '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.color+';">'+
             '<span style="width:6px;height:6px;border-radius:50%;background:'+sc.color+';flex-shrink:0;"></span>'+sc.label+
@@ -19485,6 +19513,7 @@ function _renderVendasTabela(){
       '<th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.35);">Receita</th>'+
       '<th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.35);">Tipo</th>'+
       '<th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.35);">Vigência</th>'+
+      '<th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.35);">Origem</th>'+
       '<th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.35);">Status</th>'+
       '<th style="padding:10px 12px;"></th>'+
     '</tr></thead>'+
@@ -19580,10 +19609,12 @@ function abrirRegistrarVenda(){showSheetToast('Para registrar uma venda, abra um
 
 function exportarVendas(){
   var data=window._vendasPageData;if(!data){alert('Carregue a aba de Vendas primeiro.');return;}
-  var rows=[['Cliente','Data','Closer','SDR','Plano','Tipo','Valor','Início','Duração','Status']];
+  var rows=[['Cliente','Data','Closer','SDR','Plano','Tipo','Valor','Início','Duração','Origem','Status']];
   data.vendas.forEach(function(v){
     var fu=v.fu,m=v.m;
     var dt=_vendaDate(fu,m);
+    var origCat=v.origemCat||categorizeOrigem(v.origemRaw||(m&&m.origem)||'');
+    var origLabel=origCat==='Trafego Pago'?'Tráfego Pago':origCat==='Trafego Organico'?'Orgânico':'Indicação / Outros';
     rows.push([
       fu.nome||(m&&m.nome)||'',
       dt?(dt.getDate()+'/'+(dt.getMonth()+1)+'/'+dt.getFullYear()):'',
@@ -19594,6 +19625,7 @@ function exportarVendas(){
       data.mrrV(fu),
       fu.dataInicio||'',
       fu.duracao||'',
+      origLabel,
       fu.statusVenda||'ativa'
     ]);
   });
@@ -19604,6 +19636,9 @@ function exportarVendas(){
 }
 
 function _vendaDate(fu,m){
+  // Prioriza dataInicio (= DATA DE INICIO da planilha) para bater com Dashboard Comercial
+  if(fu&&fu.dataInicio){var di=new Date(fu.dataInicio+'T12:00:00');if(!isNaN(di.getTime()))return di;}
+  // Fallback: data do followup (data de fechamento)
   if(fu&&fu.dt){var d=parseBRDate(fu.dt);if(d)return d;}
   if(m){if(m.dtISO)return new Date(m.dtISO);if(m.scheduledAt)return new Date(m.scheduledAt);}
   return null;
