@@ -2025,6 +2025,7 @@ var RECEBERLEAD_URL='https://receberlead-471063273836.us-central1.run.app';
 var WEBHOOK_SECRET='audens2025xk';
 // URL do webhook externo disparado manualmente ao confirmar uma venda (botão na aba Assinaturas)
 var webhookVendaUrl=localStorage.getItem('webhookVendaUrl')||'';
+var webhookVendaSecret=localStorage.getItem('webhookVendaSecret')||'';
 // Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card
 var KANBAN_FAT_DESTAQUE=40000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
@@ -6258,52 +6259,42 @@ async function dispararWebhookVenda(id){
       }
     });
     var planoDur=parseInt(vd.duracaoMeses||vd.duracao)||1;
-    var isTcv=(vd.tipoValor||'')==='tcv';
+    var isTcv=(vd.tipoValor||'').toLowerCase()==='tcv';
     var mensalidade=isTcv?Math.round((parseFloat(vd.contrato)||0)/planoDur):(parseFloat(vd.mensalidade||vd.contrato)||0);
-    var valorTotal=isTcv?(parseFloat(vd.contrato)||0):(mensalidade*planoDur);
+    // Mapeamento de plano para o enum do Cockpit
+    var planoRaw=(vd.plano||'').toLowerCase();
+    var planoMapped=planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':planoRaw==='marketplaces'||planoRaw==='marketplace'?'Marketplace':(vd.plano||'');
+    // Payload no formato exato do Cockpit (POST /api/webhooks/venda)
     var payload={
-      evento:'venda_confirmada',
-      timestamp:new Date().toISOString(),
-      assinatura_id:id,
       cliente:{
         nome:r.cliente||'',
-        telefone:r.telefone||'',
-        cnpj:(r.cnpj||vd.cnpj||'').replace(/\D/g,''),
-        cnpj_formatado:r.cnpj||vd.cnpj||''
+        telefone:(r.telefone||'').replace(/\D/g,''),
+        cnpj:r.cnpj||vd.cnpj||''
       },
       contrato:{
-        nome:r.contratoNome||'',
-        plano:vd.plano||'',
-        duracao_meses:planoDur,
-        tipo_valor:vd.tipoValor||'mensalidade',
-        mensalidade:mensalidade,
-        valor_total:valorTotal,
         data_inicio:vd.dataInicio||'',
-        vencimento:vd.dataInicio||'',
-        frequencia:vd.frequencia||'mensal',
-        pdf_url:r.pdfUrl||''
-      },
-      assinatura:{
-        status:r.status||'',
-        data_assinatura:r.signedAt?new Date(r.signedAt).toISOString():'',
-        criado_em:r.createdAt?new Date(r.createdAt).toISOString():'',
-        asaas_status:r.asaasStatus||'',
-        asaas_charge_id:r.asaasChargeId||''
+        plano:planoMapped,
+        duracao_meses:planoDur,
+        tipo_valor:isTcv?'TCV':'MRR',
+        mensalidade:mensalidade
       },
       comercial:{
         closer:match?match.responsavel||'':'',
-        sdr:match?match.sdr||'':'',
         sdr_nome:match?match.sdrName||'':'',
-        origem:match?match.origem||r.origem||'':r.origem||'',
-        data_reuniao:match?match.dtISO||'':''
+        origem:match?match.origem||r.origem||'':r.origem||''
       }
     };
+    var headers={'Content-Type':'application/json'};
+    if(webhookVendaSecret) headers['Authorization']='Bearer '+webhookVendaSecret;
     var resp=await fetch(webhookVendaUrl,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:headers,
       body:JSON.stringify(payload)
     });
-    if(!resp.ok) throw new Error('HTTP '+resp.status+' — '+resp.statusText);
+    if(resp.status===400){throw new Error('Campo obrigatório faltando ou inválido (HTTP 400).');}
+    else if(resp.status===401){throw new Error('Segredo inválido ou ausente (HTTP 401). Verifique o segredo em Configurações.');}
+    else if(resp.status===503){throw new Error('Webhook ainda não configurado no Cockpit (HTTP 503).');}
+    else if(!resp.ok && resp.status!==201){throw new Error('HTTP '+resp.status+' — '+resp.statusText);}
     // Marca que o webhook foi disparado neste contrato
     fbDb.ref('assinaturas/'+id).update({_webhookDisparado:true,_webhookTs:Date.now()});
     if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Enviado ✓';btn.style.background='rgba(16,185,129,0.15)';btn.style.color='#10b981';}
@@ -10875,14 +10866,16 @@ function renderConfig(){
   var integracoesHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
     '<div class="cb-title"><i class="ti ti-webhook" style="color:var(--purple3);margin-right:6px;"></i>Integrações — Webhook de Venda</div>'+
     '</div><div style="padding:20px;">'+
-    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Quando você clicar em <strong>"Enviar p/ sistema"</strong> na aba Assinaturas, o CRM faz um POST com os dados completos do cliente (nome, CNPJ, plano, valores, datas) para a URL abaixo. O envio é <strong>manual</strong> — só acontece quando você clicar.</div>'+
-    '<label class="f-label">URL do webhook (endpoint POST do seu sistema)</label>'+
-    '<div style="display:flex;gap:8px;margin-bottom:8px;">'+
-      '<input class="f-input" id="cfg-webhook-url" value="'+esc(webhookVendaUrl)+'" placeholder="https://seu-sistema.com/api/webhook/venda" style="margin-bottom:0;font-size:12px;font-family:monospace;flex:1;">'+
-      '<button class="btn btn-primary" onclick="salvarWebhookUrl()" style="white-space:nowrap;"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Quando você clicar em <strong>"Enviar p/ sistema"</strong> na aba Assinaturas, o CRM faz um POST no formato do <strong>Cockpit</strong> para a URL abaixo, com o segredo no header <code>Authorization: Bearer</code>.</div>'+
+    '<label class="f-label">URL do endpoint Cockpit</label>'+
+    '<input class="f-input" id="cfg-webhook-url" value="'+esc(webhookVendaUrl)+'" placeholder="https://<domínio>/api/webhooks/venda" style="margin-bottom:12px;font-size:12px;font-family:monospace;">'+
+    '<label class="f-label">Segredo (Bearer token gerado no Cockpit → Configurações → Integrações & Dados)</label>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
+      '<input class="f-input" id="cfg-webhook-secret" type="password" value="'+esc(webhookVendaSecret)+'" placeholder="Cole o segredo aqui" style="margin-bottom:0;font-size:12px;font-family:monospace;flex:1;">'+
+      '<button class="btn btn-primary" onclick="salvarWebhookConfig()" style="white-space:nowrap;"><i class="ti ti-device-floppy"></i> Salvar</button>'+
     '</div>'+
-    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;color:var(--muted);">Payload enviado (JSON):</div>'+
-    '<pre style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--purple3);overflow-x:auto;margin:6px 0 0 0;line-height:1.6;">{\n  "evento": "venda_confirmada",\n  "timestamp": "2025-01-15T14:32:00.000Z",\n  "cliente": { "nome", "telefone", "cnpj" },\n  "contrato": { "plano", "duracao_meses", "mensalidade", "valor_total", "data_inicio", "frequencia" },\n  "assinatura": { "status", "data_assinatura", "asaas_status" },\n  "comercial": { "closer", "sdr", "origem", "data_reuniao" }\n}</pre>'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;color:var(--muted);margin-bottom:4px;">Payload enviado (formato Cockpit):</div>'+
+    '<pre style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--purple3);overflow-x:auto;margin:0;line-height:1.6;">POST '+(webhookVendaUrl||'<url>')+'\nAuthorization: Bearer <segredo>\n\n{\n  "cliente":  { "nome", "telefone", "cnpj" },\n  "contrato": { "data_inicio", "plano", "duracao_meses", "tipo_valor": "MRR"|"TCV", "mensalidade" },\n  "comercial":{ "closer", "sdr_nome", "origem" }\n}</pre>'+
   '</div></div>';
 
   return '<div class="page active">'+
@@ -13036,11 +13029,15 @@ function saveContatosEquipe(){
 }
 
 
-function salvarWebhookUrl(){
-  var url=(document.getElementById('cfg-webhook-url').value||'').trim();
+function salvarWebhookUrl(){ salvarWebhookConfig(); } // alias legado
+function salvarWebhookConfig(){
+  var url=(document.getElementById('cfg-webhook-url')?document.getElementById('cfg-webhook-url').value||'':'').trim();
+  var secret=(document.getElementById('cfg-webhook-secret')?document.getElementById('cfg-webhook-secret').value||'':'').trim();
   webhookVendaUrl=url;
+  webhookVendaSecret=secret;
   localStorage.setItem('webhookVendaUrl',url);
-  showSheetToast(url?'✓ URL do webhook salva!':'✓ Webhook desativado.',false);
+  localStorage.setItem('webhookVendaSecret',secret);
+  showSheetToast('✅ Configurações do Cockpit salvas!',false);
 }
 
 // ---- CLOSER LEVELS DATA ----
