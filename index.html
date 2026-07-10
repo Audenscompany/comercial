@@ -4816,6 +4816,145 @@ function normalizeDocUrl(url){
   return url;
 }
 
+// ===== CANVAS DE ASSINATURA =====
+function initSignCanvas(){
+  var canvas=document.getElementById('sign-canvas');
+  if(!canvas) return;
+  // Ajusta resolução para DPR (tela retina/mobile nítida)
+  var dpr=window.devicePixelRatio||1;
+  var cssW=canvas.offsetWidth||600;
+  var cssH=130;
+  canvas.width=cssW*dpr;
+  canvas.height=cssH*dpr;
+  canvas.style.height=cssH+'px';
+  var ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.strokeStyle='#e2e8f0';
+  ctx.lineWidth=2.5;
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  var drawing=false;
+  var lx=0,ly=0,lt=0;
+  var hint=document.getElementById('sign-canvas-hint');
+  window._signHasSignature=false;
+
+  function getPos(e){
+    var r=canvas.getBoundingClientRect();
+    return {x:(e.clientX-r.left)*(cssW/r.width), y:(e.clientY-r.top)*(cssH/r.height)};
+  }
+  function onDown(e){
+    e.preventDefault();
+    drawing=true;
+    var p=getPos(e);
+    lx=p.x; ly=p.y; lt=Date.now();
+    ctx.beginPath(); ctx.moveTo(lx,ly);
+    if(hint) hint.style.display='none';
+    window._signHasSignature=true;
+  }
+  function onMove(e){
+    if(!drawing) return;
+    e.preventDefault();
+    var p=getPos(e);
+    var now=Date.now();
+    var vel=Math.sqrt((p.x-lx)*(p.x-lx)+(p.y-ly)*(p.y-ly))/Math.max(1,now-lt);
+    ctx.lineWidth=Math.max(1.2, 3.8-vel*9); // thicker when slow, thinner when fast
+    var mx=(lx+p.x)/2, my=(ly+p.y)/2;
+    ctx.quadraticCurveTo(lx,ly,mx,my);
+    ctx.stroke(); ctx.beginPath(); ctx.moveTo(mx,my);
+    lx=p.x; ly=p.y; lt=now;
+  }
+  function onUp(e){
+    if(!drawing) return;
+    drawing=false;
+    ctx.lineTo(lx,ly); ctx.stroke();
+  }
+  canvas.addEventListener('pointerdown',onDown);
+  canvas.addEventListener('pointermove',onMove);
+  canvas.addEventListener('pointerup',onUp);
+  canvas.addEventListener('pointerleave',onUp);
+  canvas.addEventListener('touchstart',function(e){e.preventDefault();},{passive:false});
+}
+function limparCanvas(){
+  var canvas=document.getElementById('sign-canvas');
+  if(!canvas) return;
+  var dpr=window.devicePixelRatio||1;
+  canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+  var hint=document.getElementById('sign-canvas-hint');
+  if(hint) hint.style.display='';
+  window._signHasSignature=false;
+}
+
+// ===== GERAR PDF ASSINADO (CRM — requer Google conectado) =====
+async function gerarPDFAssinado(signId, btn){
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Gerando...';}
+  try{
+    var signData=await fbGet('assinaturas/'+signId);
+    if(!signData) throw new Error('Contrato não encontrado.');
+    var match=(signData.pdfUrl||'').match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if(!match) throw new Error('URL do PDF inválida para extrair file ID.');
+    var fileId=match[1];
+    var token=gcalToken&&gcalToken.access_token;
+    if(!token) throw new Error('Google não conectado. Conecte o Google e tente novamente.');
+    // 1) Baixa o PDF do Drive
+    var resp=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',{headers:{Authorization:'Bearer '+token}});
+    if(!resp.ok) throw new Error('Erro ao baixar PDF: HTTP '+resp.status);
+    var pdfBytes=await resp.arrayBuffer();
+    // 2) Carrega pdf-lib
+    if(!window.PDFLib){
+      await new Promise(function(res,rej){
+        var s=document.createElement('script');
+        s.src='https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+        s.onload=res; s.onerror=function(){rej(new Error('Falha ao carregar pdf-lib'));};
+        document.head.appendChild(s);
+      });
+    }
+    var PDFDocument=window.PDFLib.PDFDocument;
+    var rgb=window.PDFLib.rgb;
+    var StandardFonts=window.PDFLib.StandardFonts;
+    var pdfDoc=await PDFDocument.load(pdfBytes);
+    var pages=pdfDoc.getPages();
+    var pg=pages[pages.length-1];
+    var pw=pg.getWidth(), ph=pg.getHeight();
+    // 3) Linha separadora
+    pg.drawLine({start:{x:50,y:125},end:{x:pw-50,y:125},thickness:0.6,color:rgb(0.75,0.75,0.75)});
+    // 4) Metadados de assinatura
+    var font=await pdfDoc.embedFont(StandardFonts.Helvetica);
+    var gray=rgb(0.25,0.25,0.25), light=rgb(0.5,0.5,0.5);
+    var dt=signData.signedAt?new Date(signData.signedAt).toLocaleString('pt-BR'):'';
+    pg.drawText('Assinado eletronicamente por: '+(signData.signerName||''),{x:50,y:112,size:8,font:font,color:gray});
+    pg.drawText('CPF: '+(signData.signerCpf||'')+' | Data/Hora: '+dt,{x:50,y:100,size:8,font:font,color:gray});
+    pg.drawText('IP: '+(signData.ip||'N/A')+' | Autenticidade verificada conforme Lei n\xba 14.063/2020',{x:50,y:88,size:7,font:font,color:light});
+    // 5) Imagem da assinatura
+    if(signData.signatureDataUrl){
+      var b64=signData.signatureDataUrl.replace(/^data:image\/png;base64,/,'');
+      var raw=atob(b64);
+      var arr=new Uint8Array(raw.length);
+      for(var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+      var img=await pdfDoc.embedPng(arr);
+      var iw=180,ih=50;
+      pg.drawImage(img,{x:pw-iw-50,y:72,width:iw,height:ih,opacity:0.92});
+    }
+    // 6) Salva e sobe ao Drive
+    var signedBytes=await pdfDoc.save();
+    var signedBlob=new Blob([signedBytes],{type:'application/pdf'});
+    var nomePDF=(signData.contratoNome||'Contrato').replace(/\.pdf$/i,'')+' - ASSINADO.pdf';
+    var form=new FormData();
+    form.append('metadata',new Blob([JSON.stringify({name:nomePDF})],{type:'application/json'}));
+    form.append('file',signedBlob);
+    var up=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+token},body:form});
+    if(!up.ok) throw new Error('Upload Drive falhou: HTTP '+up.status);
+    var newId=(await up.json()).id;
+    await fetch('https://www.googleapis.com/drive/v3/files/'+newId+'/permissions',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({role:'reader',type:'anyone'})});
+    var signedPdfUrl='https://drive.google.com/file/d/'+newId+'/preview';
+    await fbDb.ref('assinaturas/'+signId).update({signedPdfUrl:signedPdfUrl});
+    showSheetToast('✅ PDF assinado gerado e salvo no Drive!');
+    loadAssinaturas();
+  }catch(e){
+    alert('Erro ao gerar PDF assinado: '+e.message);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-file-certificate"></i> Gerar PDF assinado';}
+  }
+}
+
 // ===== ASSINATURA DE CONTRATO (pagina publica via ?sign=<id>, sem login) =====
 async function renderSignPage(id){
   var el=document.getElementById('sign-content');
@@ -4860,6 +4999,18 @@ async function renderSignPage(id){
         '<input class="f-input" id="sign-nome" placeholder="Seu nome completo" value="'+(data.cliente||'').replace(/"/g,'')+'">'+
         '<label class="f-label">CPF</label>'+
         '<input class="f-input" id="sign-cpf" placeholder="000.000.000-00">'+
+        '<div style="margin-bottom:18px;">'+
+          '<label class="f-label" style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">'+
+            '<span>Assinatura <span style="font-size:11px;font-weight:400;color:var(--muted);">— desenhe com o dedo ou mouse</span></span>'+
+            '<button type="button" onclick="limparCanvas()" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:3px;"><i class="ti ti-refresh" style="font-size:13px;"></i> Limpar</button>'+
+          '</label>'+
+          '<div style="position:relative;border:1.5px dashed rgba(255,255,255,0.18);border-radius:10px;background:rgba(255,255,255,0.02);overflow:hidden;">'+
+            '<canvas id="sign-canvas" style="width:100%;display:block;touch-action:none;cursor:crosshair;"></canvas>'+
+            '<div id="sign-canvas-hint" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">'+
+              '<span style="color:rgba(255,255,255,0.18);font-size:15px;letter-spacing:1px;">✍️  Assine aqui</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
         '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--muted);margin-bottom:16px;cursor:pointer;">'+
           '<input type="checkbox" id="sign-aceite" style="margin-top:3px;">'+
           '<span>Li o contrato acima e concordo com seus termos. Ao clicar em "Assinar eletronicamente", declaro minha aceitacao e assino este documento eletronicamente, conforme a Lei n&deg; 14.063/2020.</span>'+
@@ -4867,6 +5018,7 @@ async function renderSignPage(id){
         '<button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="confirmarAssinatura(\''+id+'\')"><i class="ti ti-signature"></i> Assinar eletronicamente</button>'+
         '<div class="login-err" id="sign-err" style="text-align:center;margin-top:10px;"></div>'+
       '</div>';
+    setTimeout(initSignCanvas, 60);
   }catch(e){
     el.innerHTML='<div class="cb" style="padding:40px;text-align:center;color:var(--red);">Erro ao carregar: '+e.message+'</div>';
   }
@@ -4876,10 +5028,19 @@ function renderSignedView(id,data){
   var dt=data.signedAt?new Date(data.signedAt).toLocaleString('pt-BR'):'';
   el.innerHTML=
     '<div class="cb" style="padding:32px;text-align:center;">'+
-      '<i class="ti ti-circle-check" style="font-size:42px;color:var(--green);"></i>'+
-      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;margin-top:10px;">Documento assinado</div>'+
+      '<i class="ti ti-circle-check" style="font-size:48px;color:var(--green);"></i>'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:26px;margin-top:10px;letter-spacing:2px;">Documento assinado</div>'+
       '<div style="color:var(--muted);font-size:13px;margin-top:6px;">Assinado por '+(data.signerName||data.cliente||'')+' em '+dt+'</div>'+
-      (data.pdfUrl?'<a href="'+normalizeDocUrl(data.pdfUrl)+'" target="_blank" class="btn btn-outline" style="margin-top:16px;display:inline-flex;"><i class="ti ti-file-text"></i> Ver documento</a>':'')+
+      (data.signatureDataUrl
+        ? '<div style="margin:18px auto;max-width:280px;background:#fff;border-radius:8px;padding:10px 14px;box-shadow:0 2px 8px rgba(0,0,0,0.15);">'+
+            '<img src="'+data.signatureDataUrl+'" style="width:100%;max-height:80px;object-fit:contain;" alt="Assinatura">'+
+            '<div style="font-size:10px;color:#666;margin-top:4px;">'+data.signerName+'</div>'+
+          '</div>'
+        : '')+
+      '<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">'+
+        (data.pdfUrl?'<a href="'+normalizeDocUrl(data.pdfUrl)+'" target="_blank" class="btn btn-outline" style="display:inline-flex;"><i class="ti ti-file-text"></i> Ver contrato</a>':'')+
+        (data.signedPdfUrl?'<a href="'+normalizeDocUrl(data.signedPdfUrl)+'" target="_blank" class="btn btn-primary" style="display:inline-flex;"><i class="ti ti-file-certificate"></i> Baixar PDF assinado</a>':'')+
+      '</div>'+
     '</div>';
 }
 async function confirmarAssinatura(id){
@@ -4890,16 +5051,29 @@ async function confirmarAssinatura(id){
   errEl.textContent='';
   if(!nome){errEl.textContent='Informe seu nome completo.';return;}
   if(!cpf){errEl.textContent='Informe seu CPF.';return;}
+  if(!window._signHasSignature){errEl.textContent='Por favor, desenhe sua assinatura no campo acima.';return;}
   if(!aceite){errEl.textContent='E necessario marcar a concordancia para assinar.';return;}
+  // Captura PNG da assinatura desenhada
+  var signatureDataUrl='';
+  var canvas=document.getElementById('sign-canvas');
+  if(canvas && window._signHasSignature){
+    // Cria canvas temporario com fundo branco para exportar PNG legivel
+    var tmp=document.createElement('canvas');
+    tmp.width=canvas.width; tmp.height=canvas.height;
+    var tc=tmp.getContext('2d');
+    tc.fillStyle='#ffffff'; tc.fillRect(0,0,tmp.width,tmp.height);
+    tc.drawImage(canvas,0,0);
+    signatureDataUrl=tmp.toDataURL('image/png');
+  }
   var btn=document.querySelector('#sign-content .btn-primary');
-  if(btn){btn.disabled=true;btn.textContent='Assinando...';}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Assinando...';}
   var ip='';
   try{
     var r=await fetch('https://api.ipify.org?format=json');
     var j=await r.json();
     ip=j.ip||'';
   }catch(e){}
-  var signData={status:'assinado',signerName:nome,signerCpf:cpf,signedAt:Date.now(),ip:ip,userAgent:navigator.userAgent};
+  var signData={status:'assinado',signerName:nome,signerCpf:cpf,signedAt:Date.now(),ip:ip,userAgent:navigator.userAgent,signatureDataUrl:signatureDataUrl};
   try{
     await fbSet('assinaturas/'+id,Object.assign({},window._signData,signData));
   }catch(e){
@@ -5946,7 +6120,8 @@ async function loadAssinaturas(){
     var rows=ids.map(function(id){
       var r=data[id];
       var statusBadge = r.status==='assinado'
-        ? '<span class="badge b-green">Assinado'+(r.signedAt?(' em '+new Date(r.signedAt).toLocaleDateString('pt-BR')):'')+'</span>'
+        ? '<span class="badge b-green">Assinado'+(r.signedAt?(' em '+new Date(r.signedAt).toLocaleDateString('pt-BR')):'')+'</span>'+
+          (r.signatureDataUrl?'<div style="margin-top:5px;"><img src="'+r.signatureDataUrl+'" style="height:32px;max-width:110px;border:1px solid rgba(255,255,255,0.1);border-radius:4px;background:#fff;padding:2px;object-fit:contain;" title="Assinatura de '+esc(r.signerName||r.cliente||'')+'"></div>':'')
         : '<span class="badge b-amber">Pendente</span>';
       var criado=r.createdAt?new Date(r.createdAt).toLocaleDateString('pt-BR'):'-';
       var pagBadge = r.asaasStatus ? asaasStatusBadge(r.asaasStatus) : '<span style="color:var(--muted);font-size:12px;">-</span>';
@@ -5965,6 +6140,13 @@ async function loadAssinaturas(){
             ? '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;"><i class="ti ti-send"></i> Enviado ao sistema</span>'
             : '<button id="wh-btn-'+id+'" class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.15);color:var(--purple3);border:1px solid rgba(99,102,241,0.35);" onclick="dispararWebhookVenda(\''+id+'\')" title="Enviar dados do cliente para o sistema externo"><i class="ti ti-send"></i> Enviar p/ sistema</button>')
         : '';
+      // Botão PDF assinado — aparece após assinatura desenhada
+      var pdfAssinadoBtn='';
+      if(r.status==='assinado' && r.signatureDataUrl){
+        pdfAssinadoBtn=r.signedPdfUrl
+          ? '<a href="'+r.signedPdfUrl+'" target="_blank" class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);"><i class="ti ti-file-certificate"></i> PDF assinado</a>'
+          : '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid rgba(245,158,11,0.3);" onclick="gerarPDFAssinado(\''+id+'\',this)" title="Gerar PDF com assinatura incorporada (requer Google conectado)"><i class="ti ti-file-certificate"></i> Gerar PDF assinado</button>';
+      }
       return '<tr>'+
         '<td>'+esc(r.cliente||'-')+'</td>'+
         '<td>'+esc(r.telefone||'-')+'</td>'+
@@ -5973,7 +6155,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+pdfAssinadoBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
