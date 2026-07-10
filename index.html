@@ -11851,10 +11851,10 @@ function renderReunioesPersonal(){
   function cntSt(arr,st){return arr.filter(function(m){return getMeetingStatus(m)===st;}).length;}
   var rowsMes=rows.filter(function(m){return inMonth(m,filtM,filtY);});
   var rowsPrev=rows.filter(function(m){return inMonth(m,prevM,prevY);});
-  var agendadas=rowsMes.filter(function(m){var s=getMeetingStatus(m);return s==='pending'||s==='reagendado';}).length;
+  var agendadas=rowsMes.length; // total agendadas no período (todas as reuniões)
   var realizadas=cntSt(rowsMes,'done'), noshow=cntSt(rowsMes,'noshow');
   var total=rowsMes.length, taxaConv=total>0?Math.round(realizadas/total*100):0;
-  var agPrev=rowsPrev.filter(function(m){var s=getMeetingStatus(m);return s==='pending'||s==='reagendado';}).length;
+  var agPrev=rowsPrev.length;
   var realPrev=cntSt(rowsPrev,'done'), nsPrev=cntSt(rowsPrev,'noshow');
   var totalPrev=rowsPrev.length, taxaPrev=totalPrev>0?Math.round(realPrev/totalPrev*100):0;
   // Receita — mês selecionado (faturamento pode ser number ou string)
