@@ -18016,79 +18016,111 @@ window.addEventListener('load', function(){
 });
 </script>
 <script>
-// ONE-TIME BOOTSTRAP: Salvar avaliação Gustavo × Ney (09/07/2026)
+// BOOTSTRAP v2: Avaliação COMPLETA Gustavo × Ney (re-salva com todos os campos)
 (function(){
-  var KEY='audens_bootstrap_aval_ney_gustavo_20260709';
-  if(localStorage.getItem(KEY)) return; // já salvo
+  var KEY='audens_bootstrap_aval_ney_gustavo_v2';
+  if(localStorage.getItem(KEY)) return;
   var record={
     id:'aval_1752105600000',
     closerEmail:'gustavo@audens.com',
     closerNome:'Gustavo Pimenta',
-    date:'2026-07-09',
+    date:'2026-07-08',
     timestamp:1752105600000,
     lead:'Ney',
     segmento:'Delivery — hamburgueria e pizzaria',
     notaFinal:52,
     classificacao:'B — Boa, mas incompleta',
-    problemaPrincipal:'Sem tráfego próprio há ~1 ano, canal próprio zerado, agência atual sem resultados, dependência total do iFood',
-    desejoPrincipal:'Estabilidade financeira, fluxo de caixa saudável, remunerar melhor equipe e crescer para depois investir na pizzaria',
-    proximoPasso:'Ligação segunda-feira às 11h — sem compromisso real do lead',
+    problemaPrincipal:'Sem tráfego próprio há ~1 ano, canal próprio zerado, agência atual sem resultados (3 semanas), dependência total do iFood',
+    desejoPrincipal:'Estabilidade financeira, fluxo de caixa saudável, remunerar melhor a equipe e crescer para depois investir na pizzaria',
+    proximoPasso:'Fraco — ligação segunda-feira às 11h; sem compromisso real, sem ação do lead definida, sem data de início confirmada',
     criterios:[
-      {nome:'Abertura e controle da reunião',nota:2,max:6},
-      {nome:'Diagnóstico factual do negócio',nota:5,max:14},
-      {nome:'Exploração da dor e consequência',nota:4,max:14},
-      {nome:'Meta, desejo e urgência',nota:5,max:10},
-      {nome:'Qualificação de decisão e investimento',nota:5,max:10},
-      {nome:'Escuta e condução consultiva',nota:3,max:10},
-      {nome:'Apresentação da solução personalizada',nota:4,max:10},
-      {nome:'Prova, autoridade e posicionamento',nota:3,max:5},
-      {nome:'Investimento e objeções',nota:4,max:10},
-      {nome:'Fechamento e próximo passo',nota:4,max:11}
+      {id:1,nome:'Abertura e controle da reunião',nota:2,max:6,
+       descricao:'Não houve abertura estruturada. O vendedor entrou já em modo de demonstração, sem alinhar agenda, objetivo ou contrato de tempo. O lead conduziu boa parte da conversa inicial sobre smash burger.',
+       evidencia:'"Opa, tá dando para ver certinho?" — já estava em tela compartilhada mostrando conteúdo. Não há nenhum momento de abertura consultiva na transcrição.',
+       acao:'Abrir com agenda clara: alinhar objetivo, tempo disponível e permissão para diagnóstico antes de qualquer apresentação ou demonstração de produto.'},
+      {id:2,nome:'Diagnóstico factual do negócio',nota:5,max:14,
+       descricao:'Dados coletados de forma fragmentada, tardia e sem profundidade. Faturamento da hamburgueria foi inferido (~R$40k iFood), não confirmado. Faturamento da pizzaria foi contraditório (R$30-35k e depois R$8k na mesma conversa) sem clarificação.',
+       evidencia:'"Tu falou que hoje fatura em torno de R$500 mil na tua hamburgueria" — vendedor confundiu o próprio faturamento com o do lead. "Da pizza tá em faixa de R$30 mil, R$35 mil... Não, tá dando ali média de R$8.000 mês" — número inconsistente que o vendedor não clarificou.',
+       acao:'Usar checklist de diagnóstico completo antes da apresentação: ticket médio, pedidos/mês, taxa de conversão atual, canal próprio vs iFood em %, decisores, orçamento disponível.'},
+      {id:3,nome:'Exploração da dor e consequência',nota:4,max:14,
+       descricao:'A dor principal (canal próprio morto, agência atual sem resultado, dependência do iFood) foi mencionada espontaneamente pelo lead, não extraída pelo vendedor. A consequência financeira não foi verbalizada nem ancorada em número ou impacto real.',
+       evidencia:'"Tu sabe o que é tu não ter visita, porra? Tu não ter venda, conversão... Eu acho que deve ter saído uma ou duas vendas, tá? Acredita? É absurdo." — dito espontaneamente. Vendedor ouviu mas não explorou.',
+       acao:'Fazer o lead verbalizar o custo de não agir: quanto está perdendo de margem no iFood? O que acontece se chegar ao final do ano ainda em R$40k-R$60k?'},
+      {id:4,nome:'Meta, desejo e urgência',nota:5,max:10,
+       descricao:'Meta coletada (R$100k-R$120k até o final do ano), mas de forma superficial e tardia — perguntada no meio da apresentação de provas, não no diagnóstico. Urgência não foi construída: por que agora? O que muda se não começar em julho?',
+       evidencia:'"Irmão, qual que é a meta para esse final de ano?" — perguntado durante apresentação de cases, não durante diagnóstico.',
+       acao:'Coletar meta e urgência no início do diagnóstico. Construir consequência temporal: o que acontece com a hamburgueria em 3 meses sem canal próprio? Em 6 meses?'},
+      {id:5,nome:'Qualificação de decisão e investimento',nota:5,max:10,
+       descricao:'Decisor confirmado implicitamente (Ney decide sozinho nas operações de João Pessoa). Porém, orçamento real foi descoberto apenas após duas recusas de preço. Contrato ativo com outra empresa identificado mas não explorado: quando termina? Existe multa?',
+       evidencia:'"Hoje é um valor que eu poderia começar aí, seria R$1.000 mensal" — surgiu apenas após o vendedor ter apresentado R$9.000, R$4.000 e outras propostas. A data de encerramento do contrato atual nunca foi perguntada.',
+       acao:'Qualificar orçamento disponível e impedimentos contratuais ANTES de apresentar qualquer proposta. Perguntar sobre o contrato ativo: "Quando ele encerra? Tem multa rescisória?"'},
+      {id:6,nome:'Escuta e condução consultiva',nota:3,max:10,
+       descricao:'O vendedor falou muito mais que o cliente durante a maior parte da reunião. Longos blocos monologando sobre tráfego, ROI, custo por clique, história do Burger FC e o aplicativo de gestão. Reunião conduzida como pitch, não como diagnóstico consultivo.',
+       evidencia:'"Eu gosto muito de usar um pensamento de que, cara, se eu tiver uma pepita de ouro de graça dentro do nosso cardápio..." — metáforas longas sem pergunta subsequente. O lead precisou interromper para dizer que precisava sair às 11h.',
+       acao:'Aplicar proporção 70/30: lead fala mais, vendedor conduz com perguntas precisas e curtas. Evitar monólogos superiores a 90 segundos sem fazer pergunta ao cliente.'},
+      {id:7,nome:'Apresentação da solução personalizada',nota:4,max:10,
+       descricao:'Solução apresentada como lista de serviços padronizados, não como resposta ao cenário específico do Ney. Não foi feito resumo do diagnóstico antes de apresentar. Pacote "Premium" apresentado sem customização no discurso.',
+       evidencia:'"A gente tem aqui os nossos pacotes, né? Temos aqui o pacote Premium..." — lista de features sem ancoragem ao problema identificado. Nenhum momento de resumo do diagnóstico antes da proposta.',
+       acao:'Antes da proposta: resumir o diagnóstico em voz alta ("você me disse que...") e conectar cada entregável ao problema específico identificado. Nunca apresentar pacotes sem essa ponte.'},
+      {id:8,nome:'Prova, autoridade e posicionamento',nota:3,max:5,
+       descricao:'Ponto mais forte da reunião. Case de R$12k para R$190k com números concretos gerou credibilidade. Posicionamento como operador do mesmo negócio é diferencial real. Perdeu pontos por excesso de tempo nesta etapa e por não conectar as provas diretamente ao problema do Ney.',
+       evidencia:'"Esse cliente aqui começou com R$12 mil de faturamento... hoje ele tá faturando 190 mil praticamente." — dado concreto e impactante. Depoimento em vídeo do Alexander do Perto do Fogo foi relevante.',
+       acao:'Usar provas como ponte para a dor do lead: "Esse cliente tinha exatamente o mesmo problema que você — canal próprio zerado, 100% dependente do iFood." Conectar o case ao diagnóstico do Ney.'},
+      {id:9,nome:'Investimento e objeções',nota:4,max:10,
+       descricao:'Preço apresentado sem qualificação prévia de orçamento. Negociação ao vivo com erros de cálculo transmitiu insegurança. Objeção real (contrato ativo, orçamento limitado, histórico ruim com agências) não foi investigada adequadamente.',
+       evidencia:'"R$3.666, cara, por mês. R$3.800, na verdade. R$3.666..." — múltiplos arredondamentos ao vivo após rejeições de R$9k e R$4k sem saber que lead tinha R$1k disponível.',
+       acao:'Qualificar orçamento antes da proposta. Quando houver objeção: "O que exatamente está sendo muito salgado — é o valor em si, é o momento, é falta de confiança nos resultados, ou é o contrato ativo?" Nunca adivinhar a objeção real.'},
+      {id:10,nome:'Fechamento e próximo passo',nota:4,max:11,
+       descricao:'Próximo passo definido (ligação segunda-feira às 11h), o que é positivo. Porém, o fechamento foi fraco: sem tentativa real de fechamento na reunião, sem ação do lead definida entre hoje e segunda, e sem urgência real criada para a segunda-feira.',
+       evidencia:'"Me dá aí, hoje é quinta, me dá até segunda-feira. Segunda-feira entre em contato comigo..." — o próprio lead deu o prazo. Vendedor apenas aceitou passivamente.',
+       acao:'Sair com uma ação concreta do lead (ex: "verifique quando encerra seu contrato atual e me manda no WhatsApp amanhã") e urgência definida para a segunda: "Esse preço que te passei é válido até segunda-feira às 11h."'}
     ],
     pontosFortes:[
-      'Prova social com dados específicos e verificáveis — cliente R$12k→R$190k em 12 meses com taxa de conversão',
-      'Posicionamento como operador do mesmo negócio — autenticidade real, não apenas script',
-      'Identificou o decisor e mapeou as duas operações (hamburgueria + pizzaria) compartilhando estrutura'
+      'Prova social com dados específicos e verificáveis — case do cliente que foi de R$12k para R$190k em 12 meses com taxa de conversão detalhada.',
+      'Posicionamento como operador do mesmo negócio (hamburgueria/pizzaria) — autenticidade real, não apenas script.',
+      'Identificou o decisor e mapeou as duas operações (hamburgueria + pizzaria) compartilhando estrutura física.',
+      'Depoimento em vídeo do Alexander do Perto do Fogo foi relevante e bem cronometrado.'
     ],
     falhas:[
-      'Sem abertura estruturada — sem agenda, sem alinhamento de tempo, sem declaração de intenção consultiva',
-      'Diagnóstico fragmentado e tardio — dados coletados depois da apresentação da solução',
-      'Dor não foi explorada nem ancorada em impacto financeiro real',
-      'Meta coletada superficialmente e fora de sequência (durante apresentação, não no diagnóstico)',
-      'Qualificação financeira só aconteceu após múltiplas recusas de preço (R$9k → R$4k → R$1k)',
-      'Reunião conduzida como pitch monólogo, não como diagnóstico consultivo',
-      'Proposta genérica (pacote Premium) sem personalização ao cenário específico do Ney',
-      'Objeções não tratadas estruturadamente — não perguntou a causa real antes de rebater',
-      'Fechamento fraco — aceitou passivamente o "preciso pensar" sem criar urgência real'
+      {titulo:'Abertura sem estrutura consultiva',
+       impacto:'Lead conduziu a reunião desde o início. Vendedor entrou em modo de demonstração sem agenda, sem objetivo alinhado e sem contrato de tempo — perdeu a postura consultiva antes mesmo de começar.',
+       correcao:'Iniciar com agenda clara: "Vou primeiro entender sua operação antes de te mostrar qualquer coisa. Posso te fazer algumas perguntas?" Alinhar tempo disponível e objetivo antes de abrir qualquer tela.'},
+      {titulo:'Proposta de preço sem qualificação de orçamento',
+       impacto:'Vendedor apresentou R$9k e R$18k sem saber que o lead tinha R$1k/mês disponível — gerou duas recusas, negociação improvisada e cálculos errados ao vivo, transmitindo insegurança.',
+       correcao:'Perguntar orçamento antes da proposta: "Qual é o valor mensal que você consegue investir em marketing hoje?" Só apresentar proposta após ter esse número.'},
+      {titulo:'Fechamento passivo sem urgência real',
+       impacto:'Lead controlou o timing da decisão. O próprio lead deu o prazo ("segunda às 11h") e o vendedor aceitou sem criar urgência, sem ação concreta do lead e sem definir critério de decisão.',
+       correcao:'Definir uma ação concreta do lead antes de encerrar (ex: verificar data de encerramento do contrato atual) e criar urgência real: "Esse valor que eu te passei é válido até segunda-feira."'}
     ],
     acoesPrioritarias:[
-      'Sempre fazer abertura estruturada: alinhar agenda, tempo disponível e intenção consultiva antes de qualquer pitch',
-      'Diagnóstico COMPLETO antes de qualquer apresentação — perguntar faturamento, canal próprio vs iFood, orçamento',
-      'Qualificar orçamento disponível ANTES de apresentar qualquer proposta',
-      'Criar urgência real antes de aceitar prazo de espera — o que muda se não começar agora?'
+      'Sempre fazer abertura estruturada: alinhar agenda, tempo disponível e intenção consultiva antes de qualquer demonstração ou pitch.',
+      'Diagnóstico COMPLETO antes de qualquer apresentação — perguntar faturamento por canal, ticket médio, pedidos/mês, decisores e orçamento disponível.',
+      'Qualificar orçamento disponível ANTES de apresentar qualquer proposta. Nunca apresentar preço sem saber o que o cliente pode pagar.',
+      'Construir urgência real durante o diagnóstico: o que acontece com a hamburgueria nos próximos 3 meses sem canal próprio?',
+      'Fechar com ação concreta do lead e horário confirmado — não aceitar "me liga segunda" sem uma entrega definida do lado do cliente.'
     ],
     diagnostico:{
-      empresa:'GMC João Pessoa (hamburgueria) + Buena Pizza',
-      faturamentoAtual:'~R$60.000/mês (hamburgueria ~R$40k iFood, pizzaria ~R$8k)',
-      metaDeclarada:'R$100.000–R$120.000/mês na hamburgueria até final do ano',
-      decisor:'Sim — Ney decide sozinho nas operações de João Pessoa',
-      objecaoPrincipal:'Preço fora da realidade atual + contrato ativo com outra agência (3 semanas) + histórico ruim com agências + aversão a fidelização'
+      ondeEsta:'Ney opera duas unidades no mesmo local físico: GMC (hamburgueria) faturando ~R$40k/mês pelo iFood com canal próprio zerado; Buena Pizza (~R$8k/mês). Sem tráfego pago há ~1 ano. Agência local contratada há 3 semanas sem nenhuma venda entregue. Paga R$2k/mês por gestão de iFood para as duas lojas.',
+      ondeQuerChegar:'R$100.000–R$120.000/mês na hamburgueria até dezembro. Estabilidade financeira para remunerar melhor a equipe e reduzir rotatividade. Depois, investir na pizzaria.',
+      impedimentos:'Canal próprio morto (cardápio web sem visitas, Instagram sem postagem há 1 ano). Sem tráfego pago estruturado. Agência atual sem entrega após 3 semanas. Histórico ruim com fornecedores de marketing. Contrato ativo com outra empresa. Aversão a contrato de fidelização. Orçamento atual limitado (~R$1k/mês por loja).',
+      risco:'Permanência na dependência exclusiva do iFood, margem corroída por comissões e taxas de gestão. Sem base de clientes própria, crescimento limitado pelo algoritmo de terceiros. A pizzaria continuará estagnada sem canal próprio e sem investimento em aquisição.',
+      solucao:'Começar apenas com a hamburgueria — gestão de tráfego pago + cardápio digital + estrutura de conteúdo que o próprio Ney consegue produzir. Proposta mensal sem fidelização obrigatória teria maior chance de adesão dado o perfil e histórico do cliente.'
     }
   };
   function tryeSave(){
-    if(!window.fbDb){setTimeout(tryeSave,1000);return;}
+    if(!window.fbDb){setTimeout(tryeSave,800);return;}
     window.fbDb.ref('avaliacoes/'+record.id).set(record,function(err){
       if(!err){
         localStorage.setItem(KEY,'1');
         if(window._avaliacoes) window._avaliacoes[record.id]=record;
-        if(window.showSheetToast) window.showSheetToast('✅ Avaliação Gustavo × Ney (52/100) salva no dashboard!',false);
-        console.log('[bootstrap] Avaliação salva:',record.id);
+        if(window.showSheetToast) window.showSheetToast('Avaliação Gustavo x Ney atualizada com todos os critérios!',false);
+        console.log('[bootstrap v2] Avaliação completa salva:',record.id);
       } else {
-        console.error('[bootstrap] Erro ao salvar avaliação:',err);
+        console.error('[bootstrap v2] Erro:',err);
       }
     });
   }
-  setTimeout(tryeSave,2000);
+  setTimeout(tryeSave,2500);
 })();
 </script>
 </body>
