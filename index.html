@@ -11931,17 +11931,23 @@ function renderReunioesPersonal(){
   rowsMes.forEach(function(m){var s=(m.sdrName||m.sdr||'').trim();if(!s)return;var k=s.toLowerCase();if(!sdrMap[k])sdrMap[k]={name:s,total:0,real:0};sdrMap[k].total++;if(getMeetingStatus(m)==='done')sdrMap[k].real++;});
   var sdrList=Object.values(sdrMap).sort(function(a,b){return b.total-a.total;}).slice(0,6);
   var sdrMax=sdrList.length>0?sdrList[0].total:1;
+  function sdrEmail(nome){var r=null;Object.keys(USERS).forEach(function(em){if((USERS[em].name||'').toLowerCase().includes(nome.toLowerCase())||(USERS[em].closer||'').toLowerCase()===nome.toLowerCase())r=em;});return r;}
   var sdrRows=sdrList.length===0
     ?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Sem dados</div>'
     :sdrList.map(function(s,i){
         var taxa=s.total>0?Math.round(s.real/s.total*100):0;
-        return'<div style="padding:11px 16px;'+(i<sdrList.length-1?'border-bottom:1px solid var(--border);':'')+'">'+
-          '<div style="display:flex;justify-content:space-between;margin-bottom:5px;">'+
-            '<span style="font-size:13px;font-weight:600;">'+esc(s.name)+'</span>'+
-            '<span style="font-size:12px;color:var(--muted);">'+s.real+'/'+s.total+' <span style="color:var(--cyan);">('+taxa+'%)</span></span>'+
-          '</div>'+
-          '<div style="height:4px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;">'+
-            '<div style="height:100%;width:'+Math.round(s.total/sdrMax*100)+'%;background:linear-gradient(90deg,var(--cyan),var(--purple3));border-radius:99px;"></div>'+
+        var em=sdrEmail(s.name);
+        var avHtml=em?renderUserAvatar(em,32,14,'rgba(6,182,212,0.15)'):'<div style="width:32px;height:32px;border-radius:50%;background:rgba(6,182,212,0.15);border:2px solid var(--cyan);display:flex;align-items:center;justify-content:center;font-family:Bebas Neue,sans-serif;font-size:14px;color:var(--cyan);flex-shrink:0;">'+s.name.charAt(0).toUpperCase()+'</div>';
+        return'<div style="padding:11px 16px;display:flex;align-items:center;gap:10px;'+(i<sdrList.length-1?'border-bottom:1px solid var(--border);':'')+'">'+
+          avHtml+
+          '<div style="flex:1;min-width:0;">'+
+            '<div style="display:flex;justify-content:space-between;margin-bottom:5px;">'+
+              '<span style="font-size:13px;font-weight:600;">'+esc(s.name)+'</span>'+
+              '<span style="font-size:12px;color:var(--muted);">'+s.real+'/'+s.total+' <span style="color:var(--cyan);">('+taxa+'%)</span></span>'+
+            '</div>'+
+            '<div style="height:4px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;">'+
+              '<div style="height:100%;width:'+Math.round(s.total/sdrMax*100)+'%;background:linear-gradient(90deg,var(--cyan),var(--purple3));border-radius:99px;"></div>'+
+            '</div>'+
           '</div></div>';
     }).join('');
   var sdrCard='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;">'+
