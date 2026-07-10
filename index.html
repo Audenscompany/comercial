@@ -9059,9 +9059,9 @@ function renderAnaliseAds(){
       '<div style="padding:14px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
         '<select onchange="changeAdsPeriod(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:8px 12px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;outline:none;">'+opts+'</select>'+
         '<span style="color:var(--muted);font-size:11px;font-family:Barlow Condensed,sans-serif;">OU</span>'+
-        '<input type="date" id="ads-start" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
+        '<input type="date" id="ads-start" value="'+(_adsStart?_adsStart.toISOString().slice(0,10):'')+'" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
         '<span style="color:var(--muted);font-size:11px;">até</span>'+
-        '<input type="date" id="ads-end" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
+        '<input type="date" id="ads-end" value="'+(_adsEnd?_adsEnd.toISOString().slice(0,10):'')+'" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--white);font-size:13px;outline:none;">'+
         '<button class="btn btn-outline" onclick="applyAdsDateRange()" style="font-size:12px;padding:8px 14px;"><i class="ti ti-filter"></i></button>'+
         '<button class="btn btn-outline" onclick="clearAdsDateRange()" style="font-size:12px;padding:8px 12px;" title="Limpar"><i class="ti ti-x"></i></button>'+
         (function(){
@@ -9082,7 +9082,7 @@ function renderAnaliseAds(){
               'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
           '</div>';
         })()+
-        '<button class="btn btn-primary" onclick="refreshAnaliseAds()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
+        '<button class="btn btn-primary" onclick="applyAdsDateRange()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
       '</div>'+
     '</div>'+
     '<div id="ads-loading" style="text-align:center;padding:80px;color:var(--muted);font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:2px;text-transform:uppercase;display:none;">'+
@@ -9095,7 +9095,12 @@ function renderAnaliseAds(){
   return html;
 }
 
-function changeAdsPeriod(p){_adsPeriod=p;_adsStart=null;_adsEnd=null;refreshAnaliseAds();}
+function changeAdsPeriod(p){
+  _adsPeriod=p;_adsStart=null;_adsEnd=null;
+  var s=document.getElementById('ads-start'),e=document.getElementById('ads-end');
+  if(s)s.value='';if(e)e.value='';
+  refreshAnaliseAds();
+}
 function applyAdsDateRange(){
   var s=document.getElementById('ads-start');
   var e=document.getElementById('ads-end');
@@ -9103,11 +9108,13 @@ function applyAdsDateRange(){
     _adsStart=new Date(s.value+'T00:00:00');
     _adsEnd=new Date(e.value+'T23:59:59');
     _adsPeriod=null;
-    refreshAnaliseAds();
   }
+  refreshAnaliseAds();
 }
 function clearAdsDateRange(){
   _adsStart=null;_adsEnd=null;_adsPeriod=getCurrentPeriod();
+  var s=document.getElementById('ads-start'),e=document.getElementById('ads-end');
+  if(s)s.value='';if(e)e.value='';
   refreshAnaliseAds();
 }
 
@@ -12112,10 +12119,20 @@ function renderReunioesPersonal(){
       if(!_dtLabel&&m.dtISO){var _di=new Date(m.dtISO);_dtLabel=_di.getDate()+'/'+(_di.getMonth()+1)+'/'+_di.getFullYear();}
       else if(!_dtLabel&&m.scheduledAt){var _ds=new Date(m.scheduledAt);_dtLabel=_ds.getDate()+'/'+(_ds.getMonth()+1)+'/'+_ds.getFullYear();}
       var tarefaH=m.tarefaOrigem?'<span style="font-size:11px;color:var(--purple3);"><i class="ti ti-checks"></i>'+m.tarefaOrigem+'</span>':'<span style="color:var(--muted);font-size:11px;">—</span>';
+      // Badge do resultado do followup
+      var fu=followups[m.id];
+      var fuBadge='<span style="color:var(--muted);font-size:11px;">—</span>';
+      if(fu){
+        if(fu.resultado==='venda') fuBadge='<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:rgba(34,197,94,0.15);color:var(--green);border:1px solid rgba(34,197,94,0.3);">✓ VENDA</span>';
+        else if(fu.resultado==='retorno') fuBadge='<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid rgba(245,158,11,0.3);">↩ RETORNO</span>';
+        else if(fu.resultado==='perdida') fuBadge='<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.25);">✗ PERDIDA</span>';
+        else if(fu.resultado==='noshow') fuBadge='<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.06);color:var(--muted);">NO-SHOW</span>';
+      }
       return'<tr data-st="'+st+'" data-mes="'+_rowMes+'" data-sdr="'+_rowSdr+'">'+
-        '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
+        '<td style="font-weight:600;">'+(m.nome||'—')+(m._retorno?'<span style="font-size:9px;color:var(--muted);margin-left:4px;">[ret]</span>':'')+'</td>'+
         '<td style="font-size:12px;">'+(_dtLabel||'—')+'</td>'+
         '<td><span style="padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
+        '<td>'+fuBadge+'</td>'+
         '<td style="white-space:nowrap;font-size:12px;color:var(--cyan);">'+sdrLabel+' <button onclick="trocarSDRReuniao(\''+m.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0 3px;" title="Trocar SDR"><i class="ti ti-edit" style="font-size:11px;"></i></button></td>'+
         '<td style="white-space:nowrap;">'+(m.responsavel||'—')+' <button onclick="trocarCloserReuniao(\''+m.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0 3px;" title="Trocar closer"><i class="ti ti-edit" style="font-size:11px;"></i></button></td>'+
         '<td>'+tarefaH+'</td>'+
@@ -12134,7 +12151,7 @@ function renderReunioesPersonal(){
         '<div style="display:flex;align-items:center;gap:8px;"><span class="badge b-amber">'+rows.length+'</span>'+
           '<button class="btn btn-outline" onclick="document.getElementById(\'rm-all-wrap\').style.display=\'none\'" style="font-size:11px;padding:3px 8px;"><i class="ti ti-x"></i></button>'+
         '</div></div>'+_filterBar+
-      '<div style="overflow-x:auto;"><table id="fb-reun-tbl"><thead><tr><th>Cliente</th><th>Data</th><th>Status</th><th>SDR</th><th>Responsável</th><th>Tarefa</th><th>Meet</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+      '<div style="overflow-x:auto;"><table id="fb-reun-tbl"><thead><tr><th>Cliente</th><th>Data</th><th>Status</th><th>Resultado</th><th>SDR</th><th>Responsável</th><th>Tarefa</th><th>Meet</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
   }
 
   // ── Header ────────────────────────────────────────────────────────────
