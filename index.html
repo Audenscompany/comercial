@@ -11841,6 +11841,9 @@ function renderReunioesPersonal(){
       return resp.includes(n) || sdr.includes(n) || criador.includes(n);
     });
   }
+  // Exclui retornos da contagem — são seguimentos do mesmo lead, não novas oportunidades
+  // (A Agenda Crítica lê Object.values(meetings) separadamente, então retornos de hoje ainda aparecem lá)
+  rows = rows.filter(function(m){ return !m._retorno; });
   rows = rows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
 
   // ── KPIs mês selecionado vs anterior ──────────────────────────────────────────
