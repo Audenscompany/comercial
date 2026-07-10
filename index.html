@@ -12137,9 +12137,16 @@ function renderReunioesPersonal(){
   // ── Header ────────────────────────────────────────────────────────────
   var _mns2=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   var mesLabel=_mns2[filtM]+' '+filtY;
-  // Seletor de mês — coleta todos os meses disponíveis nos dados
+  // Seletor de mês — coleta meses com anos válidos (2024 até ano atual)
   var _allMesKeys={};
-  rows.forEach(function(m){var d=new Date(m.dtISO||(m.scheduledAt||Date.now()));var k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');_allMesKeys[k]=1;});
+  var _nowY=new Date().getFullYear();
+  rows.forEach(function(m){
+    var d=new Date(m.dtISO||(m.scheduledAt||Date.now()));
+    var y=d.getFullYear();
+    if(y<2024||y>_nowY) return; // ignora datas inválidas (2008, 2027…)
+    var k=y+'-'+String(d.getMonth()+1).padStart(2,'0');
+    _allMesKeys[k]=1;
+  });
   var _sortedMesKeys=Object.keys(_allMesKeys).sort().reverse();
   var _selectedMesKey=filtY+'-'+String(filtM+1).padStart(2,'0');
   var mesSelect='<select onchange="setReuniaoMesFiltro(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--white);font-size:13px;outline:none;cursor:pointer;">'+
