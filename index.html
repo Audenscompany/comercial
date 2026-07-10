@@ -11858,12 +11858,14 @@ function renderReunioesPersonal(){
   var agPrev=rowsPrev.length;
   var realPrev=cntSt(rowsPrev,'done'), nsPrev=cntSt(rowsPrev,'noshow');
   var totalPrev=rowsPrev.length, taxaPrev=totalPrev>0?Math.round(realPrev/totalPrev*100):0;
-  // Receita — acumulado total (faturamento pode ser number ou string)
+  // Receita — todas as vendas do mês (inclui retornos que fecharam no mês)
   function _fat(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
+  var rowsMesAll=rows.filter(function(m){return inMonth(m,filtM,filtY);});
+  var rowsPrevAll=rows.filter(function(m){return inMonth(m,prevM,prevY);});
   var receita=0, vendas=0;
-  rows.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.contrato);vendas++;}});
+  rowsMesAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receita+=_fat(fu.contrato);vendas++;}});
   var receitaPrev=0, vendasPrev=0;
-  rowsPrev.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.contrato);vendasPrev++;}});
+  rowsPrevAll.forEach(function(m){var fu=followups[m.id];if(fu&&fu.resultado==='venda'){receitaPrev+=_fat(fu.contrato);vendasPrev++;}});
   var ticket=vendas>0?Math.round(receita/vendas):0, ticketPrev=vendasPrev>0?Math.round(receitaPrev/vendasPrev):0;
   function dlt(cur,prev){if(!prev)return cur>0?'<span style="color:var(--green);font-size:11px;">↑ novo</span>':'';var p=Math.round((cur-prev)/prev*100),up=p>=0;return'<span style="color:'+(up?'var(--green)':'var(--red)')+';font-size:11px;font-weight:600;">'+(up?'↑':'↓')+Math.abs(p)+'%</span>';}
   function kpi(icon,label,val,delta2,color){return'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
