@@ -463,9 +463,11 @@ function startRealtimeSync(){
     Object.assign(meetings, fbMeetings);
     if(JSON.stringify(meetings) !== prev){
       saveAll();
-      var area = document.getElementById('content');
-      var pg = area ? area.getAttribute('data-page') : null;
-      if(pg==='reunioes'||pg==='dashboard'||pg==='dash-comercial'||pg==='visao-geral') showPage(pg);
+      if(!window._bulkImporting){
+        var area = document.getElementById('content');
+        var pg = area ? area.getAttribute('data-page') : null;
+        if(pg==='reunioes'||pg==='dashboard'||pg==='dash-comercial'||pg==='visao-geral') showPage(pg);
+      }
     }
     // Sync planilha→Firebase uma vez por sessão após meetings carregarem
     setTimeout(syncReunioesFBFromSheet, 2000);
@@ -2414,81 +2416,108 @@ function normCloserName(n){
 // Chamado pelo botão "Sincronizar Planilha" na página de Reuniões.
 async function syncReunioesFromSheet(){
   var btn=document.getElementById('btn-sync-sheet');
-  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Importando...';}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sincronizando...';}
+  window._bulkImporting=true; // suprime re-renders do listener Firebase durante o import em massa
   try{
     showSheetToast('Lendo planilha...', false);
     var shData=await loadDataHybrid();
     var shRows=(shData.reunioes&&shData.reunioes.rows)||[];
 
-    // Normaliza telefone para comparação (últimos 11 dígitos, sem código de país)
     function normTelSync(t){
       var d=(t||'').replace(/\D/g,'');
       if(d.startsWith('55')&&d.length>11)d=d.slice(2);
       return d.slice(-11);
     }
-    // Data local como chave YYYY-MM-DD (sem shift de fuso)
     function localDK(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+    function shStatus(r){
+      var s=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').trim();
+      return isRealizada(s)?'done':(s.toUpperCase()==='NO-SHOW'||s.toUpperCase()==='NO SHOW'||s.toUpperCase()==='NOSHOW')?'noshow':'pending';
+    }
 
-    // Monta Set de pares tel_data já existentes no Firebase
-    var fbKeys=new Set();
+    // Mapa tel_data → meetingId (para detectar existentes)
+    var fbKeyToId={};
     Object.values(meetings).forEach(function(m){
       var t=normTelSync(m.tel);
       var dk=m.dtISO?m.dtISO.substr(0,10):null;
-      if(t&&dk)fbKeys.add(t+'_'+dk);
+      if(t&&dk)fbKeyToId[t+'_'+dk]=m.id;
     });
 
-    // Filtra linhas da planilha com tel válido e data parseável
-    var toImport=[];
+    var toImport=[],toUpdate=[];
+    var seen=new Set();
     shRows.forEach(function(r){
       var rawTel=col(r,['TELEFONE','Telefone','telefone','FONE'])||'';
       var t=normTelSync(rawTel);
-      if(t.length<10)return; // sem telefone válido
+      if(t.length<10)return;
       var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
-      if(!d)return; // sem data
+      if(!d)return;
       var dk=localDK(d);
       var chave=t+'_'+dk;
-      if(fbKeys.has(chave))return; // já existe no Firebase
-      fbKeys.add(chave); // evita duplicatas dentro da própria planilha
-      toImport.push({r:r,rawTel:rawTel,t:t,d:d,dk:dk});
+      if(seen.has(chave))return; // dedup intra-planilha
+      seen.add(chave);
+      var fbSt=shStatus(r);
+      if(fbKeyToId[chave]){
+        // Já existe — atualiza status se necessário (pending → done/noshow)
+        var mid=fbKeyToId[chave];
+        var m=meetings[mid];
+        if(fbSt!=='pending'&&(m.status==='pending'||!m.status)){
+          toUpdate.push({mid:mid,status:fbSt,m:m});
+        }
+      } else {
+        // Não existe — importar
+        var dtISO=new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0).toISOString();
+        var dtDisplay=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()+' 12:00';
+        toImport.push({
+          t:t,dtISO:dtISO,dtDisplay:dtDisplay,status:fbSt,
+          nome:col(r,['NOME','Nome','CLIENTE','Cliente','cliente'])||'',
+          responsavel:normCloserName(col(r,['CLOSER','Closer','closer']))||'',
+          sdrName:(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').trim(),
+          origem:(col(r,['ORIGEM','Origem','origem'])||'Tráfego').trim()
+        });
+      }
     });
 
-    if(toImport.length===0){
-      showSheetToast('✅ Firebase já está sincronizado! Nenhuma reunião nova encontrada.',false);
+    var total=toImport.length+toUpdate.length;
+    if(total===0){
+      showSheetToast('✅ Firebase já sincronizado — nenhuma diferença encontrada.',false);
+      window._bulkImporting=false;
       if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Sincronizar Planilha';}
+      showPage('reunioes');
       return;
     }
 
-    showSheetToast('Importando '+toImport.length+' reuniões...', false);
-    var imported=0;
-    for(var i=0;i<toImport.length;i++){
-      var item=toImport[i];
-      var r=item.r; var d=item.d;
-      // Status Firebase a partir do status da planilha
-      var shSt=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').trim();
-      var fbSt=isRealizada(shSt)?'done':(shSt.toUpperCase()==='NO-SHOW'||shSt.toUpperCase()==='NO SHOW'||shSt.toUpperCase()==='NOSHOW')?'noshow':'pending';
-      // ISO ao meio-dia local para evitar shift de fuso
-      var dtISO=new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0).toISOString();
-      var dtDisplay=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()+' 12:00';
-      var nome=col(r,['NOME','Nome','CLIENTE','Cliente','cliente'])||'';
-      var responsavel=normCloserName(col(r,['CLOSER','Closer','closer']))||'';
-      var sdrName=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').trim();
-      var origem=(col(r,['ORIGEM','Origem','origem'])||'Tráfego').trim();
-      var mid='imp_'+Date.now()+'_'+i;
-      var meetingObj={id:mid,nome:nome,tel:item.t,dtISO:dtISO,dtDisplay:dtDisplay,
-        status:fbSt,responsavel:responsavel,sdrName:sdrName,origem:origem,
-        scheduledAt:Date.now(),_importadoPlanilha:true,_importadoEm:Date.now()};
-      await saveMeetingFB(mid,meetingObj);
-      meetings[mid]=meetingObj;
-      imported++;
-      if(imported%20===0)await new Promise(function(res){setTimeout(res,300);}); // pausa a cada 20 para não sobrecarregar
+    showSheetToast('Processando: '+toImport.length+' novas · '+toUpdate.length+' status a corrigir...',false);
+    var updated=0,imported=0;
+
+    // 1. Corrige status de meetings já existentes (pending → done/noshow)
+    for(var i=0;i<toUpdate.length;i++){
+      var u=toUpdate[i];
+      var m2=Object.assign({},u.m,{status:u.status,_statusCorrigidoPlanilha:true,_statusCorrigidoEm:Date.now()});
+      await saveMeetingFB(u.mid,m2);
+      meetings[u.mid]=m2;
+      updated++;
+      if(updated%20===0)await new Promise(function(res){setTimeout(res,200);});
     }
 
-    showSheetToast('✅ '+imported+' reuniões importadas para o Firebase!',false);
-    setTimeout(function(){showPage('reunioes');},1800);
+    // 2. Importa meetings que não existem no Firebase
+    for(var j=0;j<toImport.length;j++){
+      var ni=toImport[j];
+      var mid2='imp_'+Date.now()+'_'+j;
+      var mObj={id:mid2,nome:ni.nome,tel:ni.t,dtISO:ni.dtISO,dtDisplay:ni.dtDisplay,
+        status:ni.status,responsavel:ni.responsavel,sdrName:ni.sdrName,origem:ni.origem,
+        scheduledAt:Date.now(),_importadoPlanilha:true,_importadoEm:Date.now()};
+      await saveMeetingFB(mid2,mObj);
+      meetings[mid2]=mObj;
+      imported++;
+      if(imported%20===0)await new Promise(function(res){setTimeout(res,200);});
+    }
+
+    showSheetToast('✅ '+updated+' status corrigidos · '+imported+' reuniões novas importadas!',false);
   }catch(e){
-    showSheetToast('❌ Erro ao sincronizar: '+e.message,true);
+    showSheetToast('❌ Erro: '+e.message,true);
   }
+  window._bulkImporting=false;
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Sincronizar Planilha';}
+  showPage('reunioes'); // render final limpo com dados corretos
 }
 
 function fmtBRL(v){
