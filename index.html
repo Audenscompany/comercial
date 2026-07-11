@@ -12071,157 +12071,146 @@ function renderFunilReunioes(){
     '</div></div>';
 }
 
+// Atualiza KPIs, Funil e Performance por Closer da aba Reuniões usando dados híbridos (sheet+Firebase)
+// Chamado 50ms após render — só age em meses passados (para mês atual, Firebase já está correto)
 async function loadFunilReunioes(){
-  var el = document.getElementById('funil-reunioes-body');
-  if(!el) return;
-  if(typeof isGcalConnected!=='function' || !isGcalConnected()){
-    el.innerHTML = '<div style="color:var(--muted);font-size:13px;">Conecte o Google em Configuracoes para ver o funil da planilha.</div>';
-    return;
-  }
+  var now=new Date();
+  var curM=now.getMonth(), curY=now.getFullYear();
+  var filtM=_reunMesFiltro?_reunMesFiltro.m:curM;
+  var filtY=_reunMesFiltro?_reunMesFiltro.y:curY;
+  // Mês atual: Firebase já tem dados em tempo real — não sobrescrever
+  if(filtM===curM&&filtY===curY) return;
+  if(typeof isGcalConnected!=='function'||!isGcalConnected()) return;
+
   try{
-    var mlong=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    var pp=getCurrentPeriod().split('/');
-    var periodLabel=mlong[parseInt(pp[0])-1]+' '+pp[1];
-    var period = getCurrentPeriod();
-    var isGestor = CU.role==='gestor';
-    var nome = (CU.closer || (CU.name||'').split(' ')[0] || CU.name || '').toLowerCase();
+    var data = await loadDataHybrid();
+
+    var STATUS_COLS=['STATUS REUNIÃO','STATUS REUNIAO','Status Reunao','STATUS','Status'];
+    var CLOSER_COLS=['CLOSER','Closer','closer'];
+    var DATE_COLS=['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento'];
+    var isGestor = CU&&CU.role==='gestor';
+    var nome = (CU&&(CU.closer||(CU.name||'').split(' ')[0])||'').toLowerCase();
 
     function isMine(r){
       if(isGestor) return true;
       var sdr=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').toLowerCase();
-      var closer=(col(r,['CLOSER','Closer','closer'])||'').toLowerCase();
+      var closer=(col(r,CLOSER_COLS)||'').toLowerCase();
       return sdr.includes(nome)||closer.includes(nome);
     }
 
-    var data = await loadDataHybrid();
-
-    var reunioesF = (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).filter(function(r){
-      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento','DATA','Data','data']));
-      if(periodStr(d)!==period) return false;
-      var nome2=(col(r,['CLIENTE','Cliente','NOME','Nome','cliente','nome'])||'').trim();
-      if(!nome2) return false;
-      return isMine(r);
-    });
-    var clientesF = (data.clientes&&data.clientes.rows?data.clientes.rows:[]).filter(function(c){
-      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
-      if(periodStr(d)!==period) return false;
-      return isMine(c);
+    // Filtra reuniões do mês selecionado
+    var shRows=(data.reunioes&&data.reunioes.rows)||[];
+    var shMes=shRows.filter(function(r){
+      var d=parseBRDate(col(r,DATE_COLS));
+      return d&&d.getMonth()===filtM&&d.getFullYear()===filtY&&isMine(r);
     });
 
-    var total = reunioesF.length;
-    var realizadas = reunioesF.filter(function(r){
-      return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
+    var shTotal=shMes.length;
+    var shReal=shMes.filter(function(r){return isRealizada(col(r,STATUS_COLS));}).length;
+    var shNoshow=shMes.filter(function(r){
+      var s=(col(r,STATUS_COLS)||'').toUpperCase().trim();
+      return s==='NO-SHOW'||s==='NO SHOW'||s==='NOSHOW';
     }).length;
-    var noshow = reunioesF.filter(function(r){
-      var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
-      return st==='NO-SHOW'||st==='NO SHOW'||st==='NOSHOW';
-    }).length;
-    var vendas = clientesF.length;
-    var mrrGerado = clientesF.reduce(function(s,c){
-      var mrr=parseMoney(col(c,['VALOR CONTRATO/MÊS','VALOR CONTRATO/MES','Valor Contrato/Mês','Valor Contrato/Mes']));
-      if(!mrr) mrr=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO','Valor Vendido']));
-      return s+mrr;
-    },0);
+    var shTx=shTotal>0?Math.round(shReal/shTotal*100):0;
 
-    // ---- Summary cards ----
-    var sumCards=[
-      {l:'Agendadas',v:total,c:'var(--cyan)'},
-      {l:'Realizadas',v:realizadas,c:'var(--purple3)'},
-      {l:'No-Show',v:noshow,c:'var(--red)'},
-      {l:'Vendas',v:vendas,c:'var(--green)'},
-      {l:'MRR Gerado',v:'R$'+Math.round(mrrGerado).toLocaleString('pt-BR'),c:'var(--green)'}
-    ];
-    var html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:20px;">';
-    sumCards.forEach(function(c){
-      html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;">'+
-        '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+c.l+'</div>'+
-        '<div style="font-family:var(--font-bn),sans-serif;font-size:32px;color:'+c.c+';">'+c.v+'</div>'+
-      '</div>';
-    });
-    html+='</div>';
+    // Atualiza KPI cards
+    var elR=document.getElementById('rp-real-v');  if(elR)elR.textContent=shReal;
+    var elN=document.getElementById('rp-ns-v');    if(elN)elN.textContent=shNoshow;
+    var elT=document.getElementById('rp-tc-v');    if(elT)elT.textContent=shTx+'%';
 
-    // ---- Funil visual ----
-    var etapas=[
-      {label:'Agendadas',val:total,cor:'var(--purple3)',icon:'ti-calendar'},
-      {label:'Realizadas',val:realizadas,cor:'var(--amber)',icon:'ti-calendar-check'},
-      {label:'Vendas',val:vendas,cor:'var(--green)',icon:'ti-trophy'}
-    ];
-    var maxVal=total||1;
-    html+='<div style="display:flex;flex-direction:column;gap:8px;max-width:600px;margin:0 auto;">';
-    etapas.forEach(function(e,i){
-      var pct=Math.round(e.val/maxVal*100);
-      var convPct=i>0&&etapas[i-1].val>0?Math.round(e.val/etapas[i-1].val*100):null;
-      var w=Math.max(pct,8);
-      html+='<div style="text-align:center;">'+
-        (convPct!==null?'<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;color:var(--muted);margin-bottom:4px;">↓ '+convPct+'% de conversão</div>':'')+
-        '<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:2px;">'+
-          '<div style="width:'+w+'%;margin:0 auto;background:'+e.cor+';border-radius:8px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;min-width:220px;">'+
-            '<div style="display:flex;align-items:center;gap:10px;">'+
-              '<i class="ti '+e.icon+'" style="font-size:20px;color:rgba(0,0,0,0.5);"></i>'+
-              '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:rgba(0,0,0,0.7);letter-spacing:1px;text-transform:uppercase;">'+e.label+'</span>'+
-            '</div>'+
-            '<span style="font-family:var(--font-bn),sans-serif;font-size:28px;color:rgba(0,0,0,0.75);">'+e.val+'</span>'+
-          '</div>'+
-        '</div>'+
-      '</div>';
-    });
-    html+='</div>';
-
-    // ---- Bottom conversion summary ----
-    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px;">';
-    [{l:'Agendada → Realizada',v:total>0?Math.round(realizadas/total*100):0},
-     {l:'Realizada → Venda',v:realizadas>0?Math.round(vendas/realizadas*100):0},
-     {l:'Agendada → Venda',v:total>0?Math.round(vendas/total*100):0}
-    ].forEach(function(t){
-      html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;">'+
-        '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">'+t.l+'</div>'+
-        '<div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:var(--white);">'+t.v+'%</div>'+
-      '</div>';
-    });
-    html+='</div>';
-
-    // ---- Ranking: qual tarefa SDR mais gerou reuniões ----
-    var tarefaCount = {};
-    Object.values(meetings||{}).forEach(function(m){
-      if(m.tarefaOrigem){
-        var label = m.tarefaOrigem + (m.tarefaOrigemDia ? ' · ' + m.tarefaOrigemDia : '');
-        tarefaCount[label] = (tarefaCount[label]||0) + 1;
-      }
-    });
-    var tarefaRanking = Object.keys(tarefaCount).map(function(k){return{label:k,v:tarefaCount[k]};})
-      .sort(function(a,b){return b.v-a.v;});
-    var maxTarefa = tarefaRanking.length ? tarefaRanking[0].v : 1;
-
-    html += '<div style="margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">';
-    html += '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;"><i class="ti ti-medal" style="color:var(--purple3);font-size:14px;"></i>Tarefas que mais agendaram reuniões</div>';
-    if(tarefaRanking.length === 0){
-      html += '<div style="color:var(--muted);font-size:13px;">Ainda sem dados — as próximas reuniões agendadas pelo CRM irão aparecer aqui.</div>';
-    } else {
-      var medalhas = ['🥇','🥈','🥉'];
-      tarefaRanking.slice(0,6).forEach(function(item,i){
-        var pct = Math.round(item.v / maxTarefa * 100);
-        html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'+
-          '<span style="font-size:16px;width:22px;text-align:center;">'+(medalhas[i]||'&nbsp;&nbsp;')+'</span>'+
+    // Atualiza Funil
+    var fbVendas=Object.values(window._rpClMap||{}).reduce(function(s,c){return s+(c.vendas||0);},0);
+    var elFunil=document.getElementById('rp-funil');
+    if(elFunil){
+      var agend=shTotal;
+      var _fTxReaAg2=agend>0?Math.round(shReal/agend*100):0;
+      var _fTxVenRea2=shReal>0?Math.round(fbVendas/shReal*100):0;
+      var _fTxNoshow2=agend>0?Math.round(shNoshow/agend*100):0;
+      var _fPend2=Math.max(0,agend-shReal-shNoshow);
+      var mlong2=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      var mesLabel2Str=mlong2[filtM]+' '+filtY;
+      function _fStepVH(n,total2,label,color,sub){
+        var barW=total2>0?Math.round(n/total2*100):100;
+        return'<div style="display:flex;align-items:center;gap:14px;padding:10px 0;">'+
+          '<div style="min-width:48px;text-align:right;"><span style="font-family:Bebas Neue,sans-serif;font-size:38px;color:'+color+';line-height:1;">'+n+'</span></div>'+
           '<div style="flex:1;">'+
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'+
-              '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;color:var(--white);">'+item.label+'</span>'+
-              '<span style="font-family:var(--font-bn),sans-serif;font-size:16px;color:var(--purple3);margin-left:12px;">'+item.v+'</span>'+
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'+
+              '<span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">'+label+'</span>'+
+              '<span style="font-size:11px;font-weight:600;color:'+color+';background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:20px;">'+sub+'</span>'+
             '</div>'+
-            '<div style="height:6px;background:rgba(255,255,255,0.06);border-radius:99px;">'+
-              '<div style="height:6px;width:'+pct+'%;background:linear-gradient(90deg,var(--purple3),var(--cyan));border-radius:99px;transition:width .4s;"></div>'+
+            '<div style="height:10px;background:rgba(255,255,255,0.05);border-radius:5px;overflow:hidden;">'+
+              '<div style="height:100%;width:'+barW+'%;background:'+color+';border-radius:5px;opacity:0.75;"></div>'+
             '</div>'+
-          '</div>'+
+          '</div></div>';
+      }
+      function _fArrVH(pct,color,label){
+        return'<div style="display:flex;align-items:center;gap:10px;padding:0 0 0 62px;">'+
+          '<div style="width:2px;height:18px;background:rgba(255,255,255,0.08);"></div>'+
+          '<span style="font-size:11px;color:'+color+';font-weight:700;">'+pct+'%</span>'+
+          '<span style="font-size:11px;color:rgba(255,255,255,0.25);">'+label+'</span></div>';
+      }
+      elFunil.innerHTML=
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'+
+          '<i class="ti ti-filter" style="font-size:16px;color:var(--purple3);"></i>'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Funil de Conversao</span>'+
+          '<span style="margin-left:auto;font-size:11px;color:var(--muted);">'+mesLabel2Str+'</span>'+
+        '</div>'+
+        '<div style="border-top:1px solid var(--border);padding-top:4px;">'+
+          _fStepVH(agend,agend,'Agendadas','var(--amber)','100% do funil')+
+          _fArrVH(_fTxReaAg2,'var(--green)','compareceram')+
+          _fStepVH(shReal,agend,'Realizadas','var(--green)',_fTxReaAg2+'% das ag.')+
+          _fArrVH(_fTxVenRea2,'var(--purple3)','fecharam venda')+
+          _fStepVH(fbVendas,agend,'Vendas','var(--purple3)',_fTxVenRea2+'% das realizadas')+
+        '</div>'+
+        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap;align-items:center;">'+
+          '<span style="font-size:12px;color:var(--muted);"><i class="ti ti-user-off" style="color:var(--red);margin-right:4px;"></i>No-Show: <b style="color:var(--red);">'+shNoshow+'</b> ('+_fTxNoshow2+'%)</span>'+
+          (_fPend2>0?'<span style="font-size:12px;color:var(--muted);">Pendentes: <b style="color:var(--amber);">'+_fPend2+'</b></span>':'')+
+          '<span style="margin-left:auto;font-size:12px;color:var(--muted);">Conv. geral: <b style="color:var(--purple3);font-size:14px;">'+(agend>0?Math.round(fbVendas/agend*100):0)+'%</b> agendada &rarr; venda</span>'+
         '</div>';
-      });
     }
-    html += '</div>';
 
-    el.innerHTML = html;
+    // Atualiza Performance por Closer
+    var shClMap={};
+    shMes.forEach(function(r){
+      var c=normCloserName(col(r,CLOSER_COLS))||(col(r,CLOSER_COLS)||'').trim();
+      if(!c)return;
+      var k=c.toLowerCase();
+      if(!shClMap[k])shClMap[k]={name:c,total:0,real:0,vendas:0,receita:0};
+      shClMap[k].total++;
+      if(isRealizada(col(r,STATUS_COLS)))shClMap[k].real++;
+    });
+    var fbCl=window._rpClMap||{};
+    Object.keys(fbCl).forEach(function(k){
+      if(!shClMap[k])shClMap[k]={name:fbCl[k].name,total:fbCl[k].total,real:0,vendas:0,receita:0};
+      shClMap[k].vendas=fbCl[k].vendas||0;
+      shClMap[k].receita=fbCl[k].receita||0;
+    });
+    var clList2=Object.values(shClMap).filter(function(c){return c.total>0||c.vendas>0;}).sort(function(a,b){return b.vendas-a.vendas;});
+    var avColors2=['var(--purple3)','var(--cyan)','var(--amber)','#4ade80','var(--red)'];
+    function closerEmail3(n3){var r=null;Object.keys(USERS).forEach(function(em){if((USERS[em].closer||'').toLowerCase()===n3.toLowerCase())r=em;});return r;}
+    var newClRows=clList2.length===0
+      ?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Sem dados</div>'
+      :clList2.map(function(c,i){
+          var conv=c.real>0?Math.round(c.vendas/c.real*100):0;
+          var ac=avColors2[i%avColors2.length];
+          var em=closerEmail3(c.name);
+          var avHtml=em?renderUserAvatar(em,36,18,ac+'22'):'<div style="width:36px;height:36px;border-radius:50%;background:'+ac+'22;border:2px solid '+ac+';display:flex;align-items:center;justify-content:center;font-family:Bebas Neue,sans-serif;font-size:18px;color:'+ac+';flex-shrink:0;">'+c.name.charAt(0).toUpperCase()+'</div>';
+          return'<div style="padding:12px 16px;display:flex;align-items:center;gap:12px;'+(i<clList2.length-1?'border-bottom:1px solid var(--border);':'')+'">'+
+            avHtml+'<div style="flex:1;min-width:0;">'+
+              '<div style="font-size:13px;font-weight:700;">'+esc(c.name)+'</div>'+
+              '<div style="font-size:11px;color:var(--muted);">'+c.real+' realizadas \u00b7 '+c.vendas+' vendas</div>'+
+              (c.receita>0?'<div style="font-size:11px;color:'+ac+';font-weight:600;margin-top:1px;">'+fmtBRL(c.receita)+'</div>':'')+
+            '</div>'+
+            '<div style="text-align:right;"><div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:'+ac+';">'+conv+'%</div>'+
+              '<div style="font-size:10px;color:var(--muted);">conv.</div></div></div>';
+        }).join('');
+    var elCl=document.getElementById('rp-closer-wrap');
+    if(elCl){var hd=elCl.querySelector('div:first-child');elCl.innerHTML=(hd?hd.outerHTML:'')+newClRows;}
+
   }catch(e){
-    el.innerHTML='<div style="color:var(--red);font-size:13px;">Erro ao carregar funil: '+e.message+'</div>';
+    console.warn('[loadFunilReunioes] Erro dados hibridoss:',e.message);
   }
 }
-
 // Filtro de mês global para Reuniões
 var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
 var _vendasMesFiltro=null;
@@ -12294,9 +12283,9 @@ function renderReunioesPersonal(){
   '</div>';}
   var kpiRow='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;">'+
     kpi('calendar','Agendadas',agendadas,dlt(agendadas,agPrev),'var(--amber)')+
-    kpi('check','Realizadas',realizadas,dlt(realizadas,realPrev),'var(--green)')+
-    kpi('user-off','No-Show',noshow,dlt(noshow,nsPrev),'var(--red)')+
-    kpi('target','Tx. Conv.',taxaConv+'%',dlt(taxaConv,taxaPrev),'var(--cyan)')+
+    kpi('check','Realizadas','<span id="rp-real-v">'+realizadas+'</span>',dlt(realizadas,realPrev),'var(--green)')+
+    kpi('user-off','No-Show','<span id="rp-ns-v">'+noshow+'</span>',dlt(noshow,nsPrev),'var(--red)')+
+    kpi('target','Tx. Conv.','<span id="rp-tc-v">'+taxaConv+'%</span>',dlt(taxaConv,taxaPrev),'var(--cyan)')+
     kpi('coin','MRR Gerado',fmtBRL(receita),dlt(receita,receitaPrev),'var(--purple3)')+
     kpi('chart-bar','Ticket MRR Médio',fmtBRL(ticket),dlt(ticket,ticketPrev),'#4ade80')+
   '</div>';
@@ -12410,10 +12399,10 @@ function renderReunioesPersonal(){
             '<div style="font-size:10px;color:var(--muted);">conv.</div>'+
           '</div></div>';
     }).join('');
-  var clCard='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px;">'+
-    '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">'+
-      '<i class="ti ti-users" style="color:var(--purple3);font-size:18px;"></i>'+
-      '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Performance por Closer</span></div>'+clRows+'</div>';
+  window._rpClMap=clMap; // preserva para atualização async com dados híbridos
+  var _clCardHd='<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;"><i class="ti ti-users" style="color:var(--purple3);font-size:18px;"></i><span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Performance por Closer</span></div>';
+  var clCard='<div id="rp-closer-wrap" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px;">'+
+    _clCardHd+clRows+'</div>';
 
   // ── Qualidade das Origens ─────────────────────────────────────────────
   var origMap={};
@@ -12636,7 +12625,7 @@ function renderReunioesPersonal(){
       '<span style="font-size:11px;color:rgba(255,255,255,0.25);">'+label+'</span>'+
     '</div>';
   }
-  var funilCard='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;">'+
+  var funilCard='<div id="rp-funil" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'+
       '<i class="ti ti-filter" style="font-size:16px;color:var(--purple3);"></i>'+
       '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Funil de Conversão</span>'+
