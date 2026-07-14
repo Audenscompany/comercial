@@ -6815,6 +6815,21 @@ async function saveCallFinalAsync(){
     tarefaOrigem:_tuSDR?_tuSDR.tipo:'',tarefaOrigemDia:_tuSDR?'Dia '+_tuSDR.dia:''};
   if(fromReativacao){meeting.origem='Recuperacao';}else{meeting.origem='COLDCALL';}
   meetings[mid]=meeting;saveAll();saveMeetingFB(mid,meeting);
+  // Cria entrada no /kanban para que o servidor /lembretes possa disparar os avisos automáticos
+  // (o endpoint /lembretes lê apenas /kanban, não /meetings)
+  var _ccKanbanKey='cc_'+(l.telefone||'').replace(/\D/g,'');
+  if(fbDb||initFirebase()){
+    fbDb.ref('kanban/'+_ccKanbanKey).set({
+      status:'reuniao',
+      meetingISO:_callData.meetingISO,
+      meetingId:mid,
+      nome:l.nome,
+      telefone:l.telefone,
+      responsavel:_callData.responsavel,
+      lembretes:{h2:false,h1:false,m10:false},
+      _coldCall:true
+    });
+  }
   // Grava ligação + reunião no Google Sheets
   saveLigacaoFB(l, _callData, _callData.meetingDisplay||'');
   var btn=document.querySelector('#mc-body .btn-primary');
@@ -12308,12 +12323,16 @@ function renderReunioesPersonal(){
         var st=getMeetingStatus(m);
         var stLabel=st==='done'?'Realizada':st==='noshow'?'No-Show':st==='reagendado'?'Reagend.':'Agendada';
         var stCol=st==='done'?'var(--green)':st==='noshow'?'var(--red)':st==='reagendado'?'var(--cyan)':'var(--amber)';
-        var hora=m.dtISO&&m.dtISO.includes('T')?m.dtISO.split('T')[1].substring(0,5):'—';
+        // Usa dtDisplay (horário local) — dtISO é UTC e mostraria 3h a mais no Brasil
+        var hora='—';
+        if(m.dtDisplay&&/\d{2}:\d{2}/.test(m.dtDisplay)){hora=m.dtDisplay.match(/\d{2}:\d{2}/)[0];}
+        else if(m.dtISO&&m.dtISO.includes('T')){hora=new Date(m.dtISO).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});}
         var rc=m.reagendamentos||0;
         var risco=rc>=2?'<span style="color:var(--red);font-size:11px;font-weight:700;">⚠ Alto</span>':rc===1?'<span style="color:var(--amber);font-size:11px;">↩ Médio</span>':st==='noshow'?'<span style="color:var(--red);font-size:11px;">⚠</span>':'<span style="color:var(--green);font-size:11px;">OK</span>';
+        var _waBtn=m.tel?'<button onclick="copiarTelefoneKanban(event,\''+esc(m.tel)+'\')" style="background:none;border:none;cursor:pointer;padding:2px 4px;margin-left:4px;vertical-align:middle;" title="Copiar WhatsApp"><i class="ti ti-brand-whatsapp" style="color:#25D366;font-size:14px;"></i></button>':'';
         return'<tr>'+
           '<td style="font-weight:700;color:var(--amber);font-family:monospace;">'+hora+'</td>'+
-          '<td style="font-weight:600;">'+(m.nome||'—')+'</td>'+
+          '<td style="font-weight:600;">'+(m.nome||'—')+_waBtn+'</td>'+
           '<td style="color:var(--muted);font-size:12px;">'+(m.responsavel||'—')+'</td>'+
           '<td><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:'+stCol+'22;color:'+stCol+';">'+stLabel+'</span></td>'+
           '<td>'+risco+'</td>'+
