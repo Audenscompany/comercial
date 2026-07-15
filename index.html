@@ -4172,11 +4172,11 @@ function calcStats(df){
   var rows=Object.values(calls);if(df)rows=rows.filter(function(r){return r.data===df;});
   var t=rows.length,at=rows.filter(function(r){return r.at==='sim';}).length;
   var re=Object.values(meetings).filter(function(m){return !m._retorno&&(df?calls[m.tel]&&calls[m.tel].data===df:true);}).length;
-  var ve=Object.values(followups).filter(function(f){return f.venda==='sim';}).length;
+  var ve=Object.values(followups).filter(function(f){return f.venda==='sim'&&!isVendaCancelada(f);}).length;
   return{total:t,atendidas:at,reunioes:re,vendas:ve,
     pAt:t?Math.round(at/t*100):0,pRe:at?Math.round(re/at*100):0,pVe:re?Math.round(ve/re*100):0};
 }
-function calcRevenue(){return Object.values(followups).filter(function(f){return f.venda==='sim';}).reduce(function(s,f){return s+(parseFloat(f.mensalidade)||0);},0);}
+function calcRevenue(){return Object.values(followups).filter(function(f){return f.venda==='sim'&&!isVendaCancelada(f);}).reduce(function(s,f){return s+(parseFloat(f.mensalidade)||0);},0);}
 function getCallsThisMonth(){
   var mo=new Date(),moStr=String(mo.getMonth()+1).padStart(2,'0')+'/'+mo.getFullYear();
   return Object.values(calls).filter(function(c){if(!c.data)return false;var p=c.data.split('/');return p[1]+'/'+p[2]===moStr;}).length;
@@ -12476,6 +12476,7 @@ function renderReunioesPersonal(){
   var receita=0, vendas=0, receitaPrev=0, vendasPrev=0;
   Object.keys(followups).forEach(function(fid){
     var fu=followups[fid];if(fu.resultado!=='venda')return;
+    if(isVendaCancelada(fu))return;
     var m2=meetings[fu.meetingId]||meetings[fid];
     var dt=_vendaDate(fu,m2);if(!dt)return;
     if(dt.getMonth()===filtM&&dt.getFullYear()===filtY){vendas++;receita+=_mrr(fu);}
@@ -12581,6 +12582,7 @@ function renderReunioesPersonal(){
   // Vendas: por dataInicio do contrato (igual ao Dashboard Comercial) — independe da data da reunião
   Object.keys(followups).forEach(function(fid){
     var fu=followups[fid];if(fu.resultado!=='venda')return;
+    if(isVendaCancelada(fu))return;
     var m2=meetings[fu.meetingId]||meetings[fid];
     var dt=_vendaDate(fu,m2);
     if(!dt||dt.getMonth()!==filtM||dt.getFullYear()!==filtY)return;
@@ -14084,6 +14086,27 @@ async function ocultarMeetingFirebase(tel, btnEl){
 
 // ===== CONTRATOS FIREBASE =====
 var _contratosCache = null;
+// Set de chaves "tel_dataInicio" de contratos cancelados (ativo===false)
+// Populado sempre que _contratosCache é atualizado
+var _cancelledContratoKeys = new Set();
+function _rebuildCancelledSet(contratos){
+  _cancelledContratoKeys.clear();
+  (contratos||[]).forEach(function(c){
+    if(c.ativo===false||c.dataCancelamento){
+      var tel=(c.telefone||c.tel||'').replace(/\D/g,'');
+      var dt=(c.dataInicio||'').substring(0,10);
+      if(tel) _cancelledContratoKeys.add(tel+'_'+dt);
+    }
+  });
+}
+// Retorna true se o followup corresponde a um contrato cancelado
+function isVendaCancelada(fu){
+  if(!fu||fu.resultado!=='venda') return false;
+  if(!_cancelledContratoKeys.size) return false;
+  var tel=(fu.tel||'').replace(/\D/g,'');
+  var dt=(fu.dataInicio||'').substring(0,10);
+  return _cancelledContratoKeys.has(tel+'_'+dt);
+}
 
 async function loadContratos(forceRefresh){
   if(!forceRefresh&&_contratosCache) return _contratosCache;
@@ -14091,6 +14114,7 @@ async function loadContratos(forceRefresh){
   var snap = await fbDb.ref('contratos').once('value');
   var val = snap.val()||{};
   _contratosCache = Object.entries(val).map(function(e){return Object.assign({},e[1],{id:e[0]});});
+  _rebuildCancelledSet(_contratosCache);
   return _contratosCache;
 }
 
@@ -14113,6 +14137,8 @@ async function cancelarContrato(id, motivo, dataCancel){
   await fbDb.ref('contratos/'+id).update({
     ativo:false, dataCancelamento:dataCancel, motivoCancelamento:motivo, updatedAt:Date.now()
   });
+  // Recarrega cache para atualizar _cancelledContratoKeys
+  loadContratos(true);
 }
 
 async function corrigirFirebaseJunho2026(){
@@ -19472,10 +19498,11 @@ function renderVendas(){
   function fmtV(n){if(!n&&n!==0)return 'R$ 0';if(n>=1000000)return 'R$ '+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return 'R$ '+(n/1000).toFixed(1).replace('.0','').replace('.',',')+' mil';return 'R$ '+Math.round(n).toLocaleString('pt-BR');}
   function fmtPct(n){return(n>0?'+':'')+n+'%';}
 
-  // Coleta todas as vendas
+  // Coleta todas as vendas (exclui contratos cancelados)
   var todasVendas=[];
   Object.keys(followups).forEach(function(fid){
     var fu=followups[fid];if(fu.resultado!=='venda')return;
+    if(isVendaCancelada(fu))return;
     var m=meetings[fu.meetingId]||meetings[fid];
     // Origem: meeting > kanban lead > fallback
     var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
