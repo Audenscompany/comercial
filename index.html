@@ -10216,17 +10216,17 @@ function buildAnaliseAdsHTML(data){
 // ===== GERADOR DE CRIATIVOS DE ADS =====
 var _criativosResult='';
 function renderCriativos(){
-  var area=document.getElementById('content');
-  if(!area) return;
-  area.setAttribute('data-page','criativos');
-  area.innerHTML=
+  var resultHtml=_criativosResult
+    ?'<div id="cr-resultado">'+_criativosResult+'</div>'
+    :'<div id="cr-resultado" style="display:none;"></div>';
+
+  return(
     '<div class="page-header"><div>'+
       '<div class="page-title"><i class="ti ti-movie" style="color:var(--purple3);margin-right:8px;"></i>Criativos de Ads</div>'+
       '<div class="page-sub">Gere 3 roteiros de Reels/TikTok prontos para gravar</div>'+
     '</div></div>'+
     '<div style="max-width:820px;">'+
 
-    // ── FORMULÁRIO ──────────────────────────────────────────
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:20px;">'+
       '<div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:18px;">Dados do Case</div>'+
 
@@ -10243,7 +10243,7 @@ function renderCriativos(){
 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
         '<div>'+
-          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">% de Crescimento <span style="color:var(--muted);font-weight:400;">(auto)</span></label>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">% de Crescimento <span style="font-weight:400;">(auto)</span></label>'+
           '<input id="cr-pct" class="f-input" type="text" placeholder="Calculado automaticamente" style="margin-bottom:0;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);">'+
         '</div>'+
         '<div>'+
@@ -10254,33 +10254,33 @@ function renderCriativos(){
 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
         '<div>'+
-          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Pedidos: Anterior → Atual <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Pedidos: Anterior → Atual <span style="font-weight:400;">(opcional)</span></label>'+
           '<input id="cr-pedidos" class="f-input" type="text" placeholder="Ex: 1.236 → 1.629" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
         '</div>'+
         '<div>'+
-          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Melhor Dia / Pico <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
-          '<input id="cr-pico" class="f-input" type="text" placeholder="Ex: R$10.582 e 103 pedidos em um dia" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Melhor Dia / Pico <span style="font-weight:400;">(opcional)</span></label>'+
+          '<input id="cr-pico" class="f-input" type="text" placeholder="Ex: R$10.582 e 103 pedidos em 1 dia" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
         '</div>'+
       '</div>'+
 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
         '<div>'+
-          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Insight de Horário <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Insight de Horário <span style="font-weight:400;">(opcional)</span></label>'+
           '<input id="cr-horario" class="f-input" type="text" placeholder="Ex: fatura dispara depois das 19h" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
         '</div>'+
         '<div>'+
-          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Nome / Tipo do Cliente <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Nome / Tipo do Cliente <span style="font-weight:400;">(opcional)</span></label>'+
           '<input id="cr-cliente" class="f-input" type="text" placeholder="Ex: hamburgueria em BH" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
         '</div>'+
       '</div>'+
 
       '<div style="margin-bottom:14px;">'+
-        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento da Minha Hamburgueria (autoridade) <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento da Minha Hamburgueria (autoridade) <span style="font-weight:400;">(opcional)</span></label>'+
         '<input id="cr-autoridade" class="f-input" type="text" placeholder="Ex: vendo R$ 180.000/mês" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
       '</div>'+
 
       '<div style="margin-bottom:20px;">'+
-        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Observações Extras <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Observações Extras <span style="font-weight:400;">(opcional)</span></label>'+
         '<textarea id="cr-obs" class="f-input" rows="3" placeholder="Qualquer detalhe específico desse case..." style="margin-bottom:0;width:100%;box-sizing:border-box;resize:vertical;"></textarea>'+
       '</div>'+
 
@@ -10289,15 +10289,9 @@ function renderCriativos(){
       '</button>'+
     '</div>'+
 
-    // ── RESULTADO ────────────────────────────────────────────
-    '<div id="cr-resultado" style="display:none;"></div>'+
-    '</div>';
-
-  // Restaura resultado anterior se houver
-  if(_criativosResult){
-    var res=document.getElementById('cr-resultado');
-    if(res){res.style.display='block';res.innerHTML=_criativosResult;}
-  }
+    resultHtml+
+    '</div>'
+  );
 }
 
 function calcCrescimento(){
@@ -10348,6 +10342,7 @@ async function gerarCriativos(){
 
   // UI de loading
   var res=document.getElementById('cr-resultado');
+  if(!res) return;
   res.style.display='block';
   res.innerHTML=
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:32px;text-align:center;">'+
