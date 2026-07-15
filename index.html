@@ -3788,6 +3788,7 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
+    {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
     {id:'calendario',icon:'ti-calendar',label:'Calendario'},
@@ -3981,7 +3982,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioesPersonal,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,'criativos':renderCriativos,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -10210,6 +10211,205 @@ function buildAnaliseAdsHTML(data){
   html+='</div>';
 
   return html;
+}
+
+// ===== GERADOR DE CRIATIVOS DE ADS =====
+var _criativosResult='';
+function renderCriativos(){
+  var area=document.getElementById('content');
+  if(!area) return;
+  area.setAttribute('data-page','criativos');
+  area.innerHTML=
+    '<div class="page-header"><div>'+
+      '<div class="page-title"><i class="ti ti-movie" style="color:var(--purple3);margin-right:8px;"></i>Criativos de Ads</div>'+
+      '<div class="page-sub">Gere 3 roteiros de Reels/TikTok prontos para gravar</div>'+
+    '</div></div>'+
+    '<div style="max-width:820px;">'+
+
+    // ── FORMULÁRIO ──────────────────────────────────────────
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:20px;">'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:18px;">Dados do Case</div>'+
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento Anterior (R$)</label>'+
+          '<input id="cr-fat-ant" class="f-input" type="text" placeholder="Ex: 92.932" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento Atual (R$)</label>'+
+          '<input id="cr-fat-at" class="f-input" type="text" placeholder="Ex: 124.812" oninput="calcCrescimento()" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+      '</div>'+
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">% de Crescimento <span style="color:var(--muted);font-weight:400;">(auto)</span></label>'+
+          '<input id="cr-pct" class="f-input" type="text" placeholder="Calculado automaticamente" style="margin-bottom:0;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.03);">'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Período de Trabalho</label>'+
+          '<input id="cr-periodo" class="f-input" type="text" placeholder="Ex: 30 dias / 1 mês" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+      '</div>'+
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Pedidos: Anterior → Atual <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<input id="cr-pedidos" class="f-input" type="text" placeholder="Ex: 1.236 → 1.629" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Melhor Dia / Pico <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<input id="cr-pico" class="f-input" type="text" placeholder="Ex: R$10.582 e 103 pedidos em um dia" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+      '</div>'+
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Insight de Horário <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<input id="cr-horario" class="f-input" type="text" placeholder="Ex: fatura dispara depois das 19h" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Nome / Tipo do Cliente <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+          '<input id="cr-cliente" class="f-input" type="text" placeholder="Ex: hamburgueria em BH" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
+      '</div>'+
+
+      '<div style="margin-bottom:14px;">'+
+        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento da Minha Hamburgueria (autoridade) <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+        '<input id="cr-autoridade" class="f-input" type="text" placeholder="Ex: vendo R$ 180.000/mês" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+      '</div>'+
+
+      '<div style="margin-bottom:20px;">'+
+        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Observações Extras <span style="color:var(--muted);font-weight:400;">(opcional)</span></label>'+
+        '<textarea id="cr-obs" class="f-input" rows="3" placeholder="Qualquer detalhe específico desse case..." style="margin-bottom:0;width:100%;box-sizing:border-box;resize:vertical;"></textarea>'+
+      '</div>'+
+
+      '<button class="btn btn-primary" onclick="gerarCriativos()" style="width:100%;padding:14px;font-size:14px;font-weight:700;">'+
+        '<i class="ti ti-sparkles" style="margin-right:8px;"></i>Gerar 3 Roteiros'+
+      '</button>'+
+    '</div>'+
+
+    // ── RESULTADO ────────────────────────────────────────────
+    '<div id="cr-resultado" style="display:none;"></div>'+
+    '</div>';
+
+  // Restaura resultado anterior se houver
+  if(_criativosResult){
+    var res=document.getElementById('cr-resultado');
+    if(res){res.style.display='block';res.innerHTML=_criativosResult;}
+  }
+}
+
+function calcCrescimento(){
+  var ant=parseFloat((document.getElementById('cr-fat-ant').value||'').replace(/\./g,'').replace(',','.'));
+  var at=parseFloat((document.getElementById('cr-fat-at').value||'').replace(/\./g,'').replace(',','.'));
+  var el=document.getElementById('cr-pct');
+  if(el&&ant>0&&at>0) el.value=Math.round((at-ant)/ant*100)+'%';
+}
+
+async function gerarCriativos(){
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  if(!claudeKey){alert('Configure a Claude API Key em ⚙ Configurações do Jarvis.');return;}
+
+  var fatAnt=(document.getElementById('cr-fat-ant').value||'').trim();
+  var fatAt=(document.getElementById('cr-fat-at').value||'').trim();
+  if(!fatAnt||!fatAt){alert('Preencha pelo menos o Faturamento Anterior e o Atual.');return;}
+
+  var pct=(document.getElementById('cr-pct').value||'').trim();
+  if(!pct&&fatAnt&&fatAt){
+    var a=parseFloat(fatAnt.replace(/\./g,'').replace(',','.'));
+    var b=parseFloat(fatAt.replace(/\./g,'').replace(',','.'));
+    if(a>0) pct=Math.round((b-a)/a*100)+'%';
+  }
+
+  var periodo=(document.getElementById('cr-periodo').value||'').trim();
+  var pedidos=(document.getElementById('cr-pedidos').value||'').trim();
+  var pico=(document.getElementById('cr-pico').value||'').trim();
+  var horario=(document.getElementById('cr-horario').value||'').trim();
+  var cliente=(document.getElementById('cr-cliente').value||'').trim();
+  var autoridade=(document.getElementById('cr-autoridade').value||'').trim();
+  var obs=(document.getElementById('cr-obs').value||'').trim();
+
+  var dados=
+    'Faturamento anterior: R$ '+fatAnt+'\n'+
+    'Faturamento atual: R$ '+fatAt+'\n'+
+    '% de crescimento: '+pct+'\n'+
+    'Período/tempo de trabalho: '+(periodo||'[não informado]')+'\n'+
+    'Pedidos anterior → atual: '+(pedidos||'[não informado]')+'\n'+
+    'Melhor dia / pico: '+(pico||'[não informado]')+'\n'+
+    'Insight de horário: '+(horario||'[não informado]')+'\n'+
+    'Nome/tipo do cliente: '+(cliente||'[não informado]')+'\n'+
+    'Número da MINHA hamburgueria pra citar como autoridade: '+(autoridade||'[não informado - não mencione]')+'\n'+
+    'Observações extras: '+(obs||'[nenhuma]');
+
+  var systemPrompt='Você é o copywriter de performance da Audens Company, uma agência de marketing feita POR donos de hamburgueria, especializada em delivery. Seu trabalho é transformar dados de resultado de um cliente em 3 criativos de vídeo (Reels/TikTok) prontos para gravar, seguindo EXATAMENTE a metodologia abaixo.\n\nREGRA-MÃE (nunca quebrar)\nO diferencial central da Audens é: NÃO somos agência genérica. Somos donos de hamburgueria que vendem todo dia e sabem na pele o que faz uma hamburgueria vender mais. Todo criativo precisa deixar isso explícito e usar os números como PROVA dessa competência — nunca como sorte.\n\nESTRUTURA OBRIGATÓRIA DE CADA CRIATIVO\nSempre nesta ordem, com marcação de tempo:\n1. HOOK (0–3s): Abre com TENSÃO, nunca com número solto. Use uma decisão, um conflito ou uma provocação. Ganchos que funcionam: "trocou de agência", "demitiu a agência", "a agência dela nunca vendeu um hambúrguer". O número NÃO abre o vídeo.\n2. CONTEXTO (3–8s): O problema/situação anterior do cliente. Aqui entra o faturamento ANTERIOR e a ideia de "agência genérica no automático".\n3. DIFERENCIAL (8–16s): Quem é a Audens — donos de hamburgueria, prática de balcão, não teoria de manual. Reforçar autoridade.\n4. PROVA / NÚMEROS (16–28s): Os números como consequência lógica do diferencial. Sempre ligar cada número a uma CAUSA concreta (horário de pico, cardápio, retenção, segmentação). Nunca jogar número sem explicar o porquê.\n5. VIRADA + CTA (28–35s): O headline de crescimento (ex: "+X% em Y dias") + fechamento na dor "cansado de agência genérica" + CTA "clica aqui embaixo".\n\nPRINCÍPIOS DE ESCRITA\n* Tom conversacional e direto (fala de dono pra dono, não corporativo). Pode usar "a gente", "meu", "olha isso".\n* Cada número precisa de uma causa clara. Ex: "o dinheiro entra depois das 19h, então botamos anúncio na hora certa".\n* Frases curtas. Ritmo de vídeo, não de texto.\n* NUNCA inventar dados. Use só os números que eu passar. Se algum dado não for fornecido, não crie um valor — omita ou deixe [PLACEHOLDER].\n* NÃO falar de ticket médio, a menos que eu peça explicitamente.\n\nOS 3 CRIATIVOS DEVEM TER ÂNGULOS DIFERENTES\n* Criativo 1 — A TROCA: foco na história de largar a agência genérica e vir pra Audens.\n* Criativo 2 — A PROVOCAÇÃO: foco em cutucar a dor ("sua agência nunca vendeu um lanche") + os números como resposta.\n* Criativo 3 — O INSIGHT: foco em um detalhe estratégico que só quem é dono enxerga (ex: horário de ouro, produto do cardápio, retenção) provado pelos números.\n\nFORMATO DE SAÍDA (para cada um dos 3)\n* Título do criativo\n* Script completo com marcação de tempo (0–3s, 3–8s, etc.)\n* Sugestão de texto grande na tela (os números que devem ser estampados)\n* Uma linha dizendo pra qual público/temperatura ele serve (frio/morno/quente)\nNo final dos 3, entregue também:\n* 2 hooks alternativos extras pra teste A/B (só a abertura de 0–3s)\n* 1 dica de visual pros 3 primeiros segundos';
+
+  var userMsg='DADOS DE ENTRADA\n'+dados+'\n\nGere agora os 3 criativos seguindo tudo acima.';
+
+  // UI de loading
+  var res=document.getElementById('cr-resultado');
+  res.style.display='block';
+  res.innerHTML=
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:32px;text-align:center;">'+
+      '<div style="font-size:28px;margin-bottom:12px;">✍️</div>'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:16px;font-weight:700;letter-spacing:1px;color:var(--white);">Gerando seus 3 roteiros...</div>'+
+      '<div style="font-size:13px;color:var(--muted);margin-top:6px;">Isso pode levar alguns segundos</div>'+
+    '</div>';
+  res.scrollIntoView({behavior:'smooth',block:'start'});
+
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-opus-4-8',max_tokens:4096,system:systemPrompt,messages:[{role:'user',content:userMsg}]})
+    });
+    if(!resp.ok) throw new Error('Claude API: '+resp.status+' — '+await resp.text());
+    var data=await resp.json();
+    var text=(data.content&&data.content[0]&&data.content[0].text)||'';
+
+    // Renderiza o resultado com formatação bonita
+    _criativosResult=renderCriativosResult(text, fatAnt, fatAt, pct, periodo);
+    res.innerHTML=_criativosResult;
+  }catch(e){
+    res.innerHTML='<div style="background:var(--bg2);border:1px solid rgba(239,68,68,0.3);border-radius:14px;padding:24px;color:var(--red);">'+
+      '<i class="ti ti-alert-circle" style="font-size:20px;margin-bottom:8px;display:block;"></i>'+
+      'Erro ao gerar criativos: '+esc(e.message)+'</div>';
+  }
+}
+
+function renderCriativosResult(text, fatAnt, fatAt, pct, periodo){
+  // Botão de copiar tudo
+  var copyId='cr-copy-'+Date.now();
+  var html=
+    '<div style="background:var(--bg2);border:1px solid rgba(139,92,246,0.3);border-radius:14px;overflow:hidden;">'+
+      '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
+        '<div style="display:flex;align-items:center;gap:10px;">'+
+          '<i class="ti ti-sparkles" style="color:var(--purple3);font-size:18px;"></i>'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:15px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Roteiros Gerados</span>'+
+          (periodo?'<span style="font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:20px;">'+esc(periodo)+'</span>':'')+
+        '</div>'+
+        '<div style="display:flex;gap:8px;">'+
+          '<button id="'+copyId+'" class="btn btn-outline" style="font-size:12px;padding:6px 12px;" onclick="copyCriativos(\''+copyId+'\')">'+
+            '<i class="ti ti-copy"></i> Copiar tudo</button>'+
+          '<button class="btn btn-outline" style="font-size:12px;padding:6px 12px;color:var(--amber);" onclick="gerarCriativos()">'+
+            '<i class="ti ti-refresh"></i> Regerar</button>'+
+        '</div>'+
+      '</div>'+
+      '<div id="cr-text-content" style="padding:24px;white-space:pre-wrap;font-size:13px;line-height:1.8;color:var(--white);font-family:ui-monospace,monospace;overflow-x:auto;">'+
+        esc(text)+
+      '</div>'+
+    '</div>';
+  return html;
+}
+
+function copyCriativos(btnId){
+  var content=document.getElementById('cr-text-content');
+  if(!content) return;
+  var text=content.textContent||'';
+  var btn=document.getElementById(btnId);
+  navigator.clipboard.writeText(text).then(function(){
+    if(btn){var orig=btn.innerHTML;btn.innerHTML='<i class="ti ti-check"></i> Copiado!';setTimeout(function(){btn.innerHTML=orig;},1500);}
+  }).catch(function(){});
 }
 
 // ===== GERADOR DE CONTRACHEQUE =====
