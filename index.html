@@ -10270,13 +10270,26 @@ function renderCriativos(){
         '</div>'+
         '<div>'+
           '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Nome / Tipo do Cliente <span style="font-weight:400;">(opcional)</span></label>'+
-          '<input id="cr-cliente" class="f-input" type="text" placeholder="Ex: hamburgueria em BH" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+          '<input id="cr-cliente" class="f-input" type="text" placeholder="Ex: hamburgueria artesanal em BH" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
         '</div>'+
       '</div>'+
 
-      '<div style="margin-bottom:14px;">'+
-        '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento da Minha Hamburgueria (autoridade) <span style="font-weight:400;">(opcional)</span></label>'+
-        '<input id="cr-autoridade" class="f-input" type="text" placeholder="Ex: vendo R$ 180.000/mês" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Contexto do Cliente</label>'+
+          '<select id="cr-contexto" class="f-input" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+            '<option value="agencia_generica">Vinha de agência genérica</option>'+
+            '<option value="sem_marketing">Nunca fez marketing antes</option>'+
+            '<option value="solo">Fazia marketing sozinho</option>'+
+            '<option value="cetico">Era cético / não acreditava em ads</option>'+
+            '<option value="crescimento">Já fazia bem, veio pra escalar</option>'+
+            '<option value="outra_agencia">Veio de outra agência</option>'+
+          '</select>'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Faturamento da Minha Hamburgueria (autoridade) <span style="font-weight:400;">(opcional)</span></label>'+
+          '<input id="cr-autoridade" class="f-input" type="text" placeholder="Ex: vendo R$ 180.000/mês" style="margin-bottom:0;width:100%;box-sizing:border-box;">'+
+        '</div>'+
       '</div>'+
 
       '<div style="margin-bottom:20px;">'+
@@ -10321,6 +10334,17 @@ async function gerarCriativos(){
   var pico=(document.getElementById('cr-pico').value||'').trim();
   var horario=(document.getElementById('cr-horario').value||'').trim();
   var cliente=(document.getElementById('cr-cliente').value||'').trim();
+  var contextoEl=document.getElementById('cr-contexto');
+  var contextoVal=contextoEl?contextoEl.value:'agencia_generica';
+  var contextoMap={
+    agencia_generica:'Veio de agência genérica (nunca vendeu um lanche)',
+    sem_marketing:'Nunca tinha feito marketing / tráfego antes',
+    solo:'Tentava fazer marketing sozinho, sem resultado',
+    cetico:'Era cético, não acreditava que ads funcionaria pra ele',
+    crescimento:'Já faturava bem e queria escalar para o próximo nível',
+    outra_agencia:'Vinha de outra agência que não entendia do segmento'
+  };
+  var contexto=contextoMap[contextoVal]||contextoVal;
   var autoridade=(document.getElementById('cr-autoridade').value||'').trim();
   var obs=(document.getElementById('cr-obs').value||'').trim();
 
@@ -10333,12 +10357,13 @@ async function gerarCriativos(){
     'Melhor dia / pico: '+(pico||'[não informado]')+'\n'+
     'Insight de horário: '+(horario||'[não informado]')+'\n'+
     'Nome/tipo do cliente: '+(cliente||'[não informado]')+'\n'+
-    'Número da MINHA hamburgueria pra citar como autoridade: '+(autoridade||'[não informado - não mencione]')+'\n'+
+    'Contexto/situação do cliente ANTES da Audens: '+contexto+'\n'+
+    'Faturamento da MINHA hamburgueria (autoridade): '+(autoridade||'[não informado — não mencione]')+'\n'+
     'Observações extras: '+(obs||'[nenhuma]');
 
-  var systemPrompt='Você é o copywriter de performance da Audens Company, uma agência de marketing feita POR donos de hamburgueria, especializada em delivery. Seu trabalho é transformar dados de resultado de um cliente em 3 criativos de vídeo (Reels/TikTok) prontos para gravar, seguindo EXATAMENTE a metodologia abaixo.\n\nREGRA-MÃE (nunca quebrar)\nO diferencial central da Audens é: NÃO somos agência genérica. Somos donos de hamburgueria que vendem todo dia e sabem na pele o que faz uma hamburgueria vender mais. Todo criativo precisa deixar isso explícito e usar os números como PROVA dessa competência — nunca como sorte.\n\nESTRUTURA OBRIGATÓRIA DE CADA CRIATIVO\nSempre nesta ordem, com marcação de tempo:\n1. HOOK (0–3s): Abre com TENSÃO, nunca com número solto. Use uma decisão, um conflito ou uma provocação. Ganchos que funcionam: "trocou de agência", "demitiu a agência", "a agência dela nunca vendeu um hambúrguer". O número NÃO abre o vídeo.\n2. CONTEXTO (3–8s): O problema/situação anterior do cliente. Aqui entra o faturamento ANTERIOR e a ideia de "agência genérica no automático".\n3. DIFERENCIAL (8–16s): Quem é a Audens — donos de hamburgueria, prática de balcão, não teoria de manual. Reforçar autoridade.\n4. PROVA / NÚMEROS (16–28s): Os números como consequência lógica do diferencial. Sempre ligar cada número a uma CAUSA concreta (horário de pico, cardápio, retenção, segmentação). Nunca jogar número sem explicar o porquê.\n5. VIRADA + CTA (28–35s): O headline de crescimento (ex: "+X% em Y dias") + fechamento na dor "cansado de agência genérica" + CTA "clica aqui embaixo".\n\nPRINCÍPIOS DE ESCRITA\n* Tom conversacional e direto (fala de dono pra dono, não corporativo). Pode usar "a gente", "meu", "olha isso".\n* Cada número precisa de uma causa clara. Ex: "o dinheiro entra depois das 19h, então botamos anúncio na hora certa".\n* Frases curtas. Ritmo de vídeo, não de texto.\n* NUNCA inventar dados. Use só os números que eu passar. Se algum dado não for fornecido, não crie um valor — omita ou deixe [PLACEHOLDER].\n* NÃO falar de ticket médio, a menos que eu peça explicitamente.\n\nOS 3 CRIATIVOS DEVEM TER ÂNGULOS DIFERENTES\n* Criativo 1 — A TROCA: foco na história de largar a agência genérica e vir pra Audens.\n* Criativo 2 — A PROVOCAÇÃO: foco em cutucar a dor ("sua agência nunca vendeu um lanche") + os números como resposta.\n* Criativo 3 — O INSIGHT: foco em um detalhe estratégico que só quem é dono enxerga (ex: horário de ouro, produto do cardápio, retenção) provado pelos números.\n\nFORMATO DE SAÍDA (para cada um dos 3)\n* Título do criativo\n* Script completo com marcação de tempo (0–3s, 3–8s, etc.)\n* Sugestão de texto grande na tela (os números que devem ser estampados)\n* Uma linha dizendo pra qual público/temperatura ele serve (frio/morno/quente)\nNo final dos 3, entregue também:\n* 2 hooks alternativos extras pra teste A/B (só a abertura de 0–3s)\n* 1 dica de visual pros 3 primeiros segundos';
+  var systemPrompt='Você é o copywriter de performance da Audens Company — uma agência de marketing feita POR donos de hamburgueria, especializada em delivery. Seu trabalho é transformar dados reais de resultado em 3 criativos de vídeo (Reels/TikTok) completamente diferentes entre si, prontos para gravar.\n\nIDENTIDADE DA AUDENS (use em todos os criativos)\nA Audens não é agência de PowerPoint. Somos donos de hamburgueria: vendemos no balcão, sentimos o pico do fim de semana, sabemos que o delivery dispara depois das 19h. Essa autoridade prática é o que nos diferencia — e os números do cliente são a prova.\n\nESTRUTURA OBRIGATÓRIA (todo criativo segue esta ordem)\n0–3s HOOK: Abre com TENSÃO ou DECISÃO. Nunca número solto. O gancho deve forçar o dono a continuar assistindo.\n3–8s CONTEXTO: Situação anterior do cliente. Use o faturamento anterior. Adapte ao contexto real informado.\n8–16s DIFERENCIAL: Quem é a Audens. Autoridade prática de dono. Não teoria, não manual.\n16–28s PROVA: Os números como consequência lógica. Cada número tem uma causa concreta (horário, cardápio, frequência, segmentação). NUNCA número solto.\n28–35s VIRADA + CTA: Headline de crescimento (+X% em Y dias) + fechamento na dor do público-alvo + "clica aqui embaixo".\n\nLEI DE OURO DA ESCRITA\n- Tom: dono falando pra dono. "A gente", "olha isso", "na prática". Nunca corporativo.\n- Frases curtas. Ritmo de vídeo.\n- NUNCA inventar dados. Se não foi informado, omita ou deixe [DADO NÃO FORNECIDO].\n- Cada número exige uma causa. "Saiu de 40 pra 95 mil" precisa de "porque a gente ajustou o horário do anúncio e o produto de entrada do cardápio".\n- NÃO mencionar ticket médio, a menos que pedido explicitamente nas observações.\n\nBANCO DE ÂNGULOS — ESCOLHA OS 3 MELHORES PARA ESSE CASE\nAntes de escrever, leia o CONTEXTO DO CLIENTE e escolha os 3 ângulos que fazem mais sentido para essa história específica. Não use sempre os mesmos 3.\n\nÂngulos disponíveis:\n[A] A TROCA — cliente que largou outra agência/solução e veio pra Audens. Foco na decisão de trocar. (Só use se contexto for "agência" ou similar.)\n[B] A DESCOBERTA — cliente que nunca tinha feito marketing. Foco no antes/depois de quem abre os olhos pela primeira vez.\n[C] O CÉTICO — cliente que duvidava que ads funcionaria pra ele. Foco na resistência inicial e na virada dos números.\n[D] A ESCALADA — cliente que já fazia bem e queria escalar. Foco em ir de um nível para o próximo, não em "salvar" o negócio.\n[E] O INSIGHT DE DONO — revela um detalhe estratégico que só quem é dono enxerga (horário de ouro, produto âncora, frequência de compra). Os números confirmam o insight.\n[F] A PROVOCAÇÃO — cutuca direto a dor ("você sabe quanto você perdeu esse mês com anúncio na hora errada?") e os números respondem.\n[G] O MÉTODO — explica brevemente O QUE foi feito (não só o resultado): qual estratégia, qual ajuste, qual decisão. Humaniza o processo.\n[H] O SÓCIO INVISÍVEL — posiciona a Audens como sócio estratégico, não fornecedor. "Enquanto você tava no balcão, a gente tava olhando o seu dashboard."\n[I] A VIRADA — um momento específico em que os números viraram. Foco no turning point, não no acumulado.\n[J] O COMPARATIVO BRUTAL — lado a lado: antes sem a Audens vs depois. Simples, visual, direto.\n\nREGRAS DE SELEÇÃO\n1. Leia o contexto do cliente e escolha os 3 ângulos com maior fit para aquela história.\n2. Os 3 criativos devem ter hooks COMPLETAMENTE diferentes — abertura diferente, tensão diferente, vocabulário diferente.\n3. Cada criativo deve ter um público-alvo/temperatura diferente (frio, morno, quente).\n4. Se o contexto for "nunca fez marketing", NÃO use o ângulo A (A Troca). Use B, C ou D.\n5. Se houver insight de horário ou pico informado, inclua obrigatoriamente o ângulo E ou G.\n\nFORMATO DE SAÍDA (para cada criativo)\n## CRIATIVO X — [NOME DO ÂNGULO ESCOLHIDO]\n[Script com marcação de tempo: 0–3s, 3–8s, 8–16s, 16–28s, 28–35s]\n**TEXTO NA TELA:** [números/frases que aparecem em destaque visual]\n**PÚBLICO:** [temperatura: frio/morno/quente + descrição em 1 linha]\n\nAPÓS OS 3 CRIATIVOS:\n**2 HOOKS ALTERNATIVOS (A/B test):** apenas a abertura 0–3s, dois estilos completamente diferentes dos criativos acima.\n**DICA DE VISUAL:** 1 recomendação de cena/ambiente para os primeiros 3 segundos.';
 
-  var userMsg='DADOS DE ENTRADA\n'+dados+'\n\nGere agora os 3 criativos seguindo tudo acima.';
+  var userMsg='DADOS DE ENTRADA\n'+dados+'\n\nAnalise o contexto do cliente, escolha os 3 ângulos com melhor fit e gere os roteiros.';
 
   // UI de loading
   var res=document.getElementById('cr-resultado');
