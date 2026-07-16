@@ -7450,6 +7450,8 @@ async function dispararWebhookVenda(id){
     });
     if(resp.status===400){throw new Error('Campo obrigatório faltando ou inválido (HTTP 400).');}
     else if(resp.status===401){throw new Error('Segredo inválido ou ausente (HTTP 401). Verifique o segredo em Configurações.');}
+    else if(resp.status===404){throw new Error('Endpoint não encontrado (HTTP 404). URL configurada: '+webhookVendaUrl);}
+    else if(resp.status===405){throw new Error('Método POST não permitido (HTTP 405). Verifique se a URL está correta: '+webhookVendaUrl.replace(/^https?:\/\/[^/]+/,''));}
     else if(resp.status===503){throw new Error('Webhook ainda não configurado no Cockpit (HTTP 503).');}
     else if(!resp.ok && resp.status!==201){throw new Error('HTTP '+resp.status+' — '+resp.statusText);}
     // Marca que o webhook foi disparado neste contrato
