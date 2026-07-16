@@ -20072,11 +20072,14 @@ function bdrRenderLeads(filter){
       // Header row: name + status badge
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap;">'+
         '<div style="flex:1;min-width:0;">'+
-          '<div style="font-size:14px;font-weight:700;color:var(--white);margin-bottom:4px;line-height:1.3;">'+l.nome+'</div>'+
+          '<div style="font-size:14px;font-weight:700;color:var(--white);margin-bottom:4px;line-height:1.3;">'+l.nome+
+            (l.faturamento?'<span style="font-size:11px;font-weight:500;color:#22c55e;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:8px;padding:1px 8px;margin-left:8px;">R$ '+l.faturamento+'</span>':'')+
+          '</div>'+
           '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
             (l.segmento?'<span style="font-size:10px;font-weight:500;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);padding:2px 8px;border-radius:12px;text-transform:capitalize;">'+l.segmento+'</span>':'')+
             (l.cidade?'<span style="font-size:11px;color:var(--muted);"><i class="ti ti-map-pin" style="font-size:10px;margin-right:2px;"></i>'+l.cidade+'</span>':'')+
             (l.telefone?'<span style="font-size:11px;color:var(--cyan);font-weight:500;"><i class="ti ti-phone" style="font-size:10px;margin-right:2px;"></i>'+l.telefone+'</span>':'')+
+            (l.retornoEm?(function(){var d=new Date(l.retornoEm+'T12:00:00');var hoje=new Date();hoje.setHours(0,0,0,0);var atrasado=d<hoje;return '<span style="font-size:10px;font-weight:600;color:'+(atrasado?'var(--red)':'#f5c400')+';background:'+(atrasado?'rgba(239,68,68,0.1)':'rgba(245,196,0,0.1)')+';border:1px solid '+(atrasado?'rgba(239,68,68,0.25)':'rgba(245,196,0,0.25)')+';border-radius:8px;padding:2px 8px;"><i class="ti ti-calendar-due" style="font-size:9px;margin-right:3px;"></i>Retorno: '+d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+(atrasado?' ⚠️':'')+'</span>';})():'')+
           '</div>'+
         '</div>'+
         selHtml+
@@ -20104,10 +20107,15 @@ function bdrRenderLeads(filter){
           '<div style="font-size:10px;font-weight:600;color:'+col+';letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;">'+
             '<i class="ti ti-history" style="margin-right:4px;"></i>Histórico'+
           '</div>'+
-          hist.slice(-3).reverse().map(function(h){
-            return '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'+
-              '<span style="font-size:11px;color:'+col+';white-space:nowrap;font-weight:500;flex-shrink:0;">'+h.dt+'</span>'+
-              '<span style="font-size:11px;color:var(--muted);line-height:1.5;">'+h.obs+'</span>'+
+          hist.slice(-5).reverse().map(function(h){
+            var reuniaoChip=h.reuniao==='sim'?'<span style="font-size:9px;font-weight:700;color:#22c55e;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap;"><i class="ti ti-calendar-check" style="font-size:9px;"></i> Reunião</span>':h.reuniao==='nao'?'<span style="font-size:9px;font-weight:700;color:var(--red);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap;"><i class="ti ti-x" style="font-size:9px;"></i> Não marcou</span>':h.reuniao==='nd'?'<span style="font-size:9px;font-weight:700;color:#f5c400;background:rgba(245,196,0,0.1);border:1px solid rgba(245,196,0,0.2);border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap;"><i class="ti ti-phone-off" style="font-size:9px;"></i> N. atendeu</span>':'';
+            return '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'+
+              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'+
+                '<span style="font-size:11px;color:'+col+';white-space:nowrap;font-weight:600;">'+h.dt+'</span>'+
+                reuniaoChip+
+                (h.faturamento?'<span style="font-size:9px;color:#22c55e;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.18);border-radius:6px;padding:1px 6px;white-space:nowrap;margin-left:2px;">R$ '+h.faturamento+'</span>':'')+
+              '</div>'+
+              '<div style="font-size:11px;color:var(--muted);line-height:1.5;">'+h.obs+'</div>'+
             '</div>';
           }).join('')+
           (hist.length>3?'<div style="font-size:10px;color:rgba(255,255,255,0.2);margin-top:6px;text-align:right;">+ '+(hist.length-3)+' registros anteriores</div>':'')+
@@ -20139,13 +20147,95 @@ function bdrSalvarObs(id,obs){
 
 function bdrRegistrarHistorico(id){
   if(!bdrLeads[id]) return;
-  var obs=window.prompt('O que aconteceu nesse contato?');
-  if(!obs||!obs.trim()) return;
+  var l=bdrLeads[id];
+  // Remove modal anterior se existir
+  var old=document.getElementById('modal-bdr-contato');
+  if(old) old.remove();
+  var today=new Date();
+  var todayVal=today.toISOString().slice(0,10);
+  var faturamentoAtual=l.faturamento||'';
+  var retornoAtual=l.retornoEm||'';
+  var modal=document.createElement('div');
+  modal.id='modal-bdr-contato';
+  modal.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML=
+    '<div style="background:#13131f;border:1px solid rgba(123,47,255,0.25);border-radius:16px;width:100%;max-width:440px;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.6);">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'+
+        '<div>'+
+          '<div style="font-size:15px;font-weight:700;color:var(--white);">Registrar Contato</div>'+
+          '<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+esc(l.nome)+'</div>'+
+        '</div>'+
+        '<button onclick="document.getElementById(\'modal-bdr-contato\').remove()" style="background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      // O que aconteceu
+      '<div style="margin-bottom:14px;">'+
+        '<label style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;display:block;margin-bottom:6px;">O que aconteceu?</label>'+
+        '<textarea id="bdr-hist-obs" placeholder="Descreva o que aconteceu no contato..." rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:var(--white);font-size:13px;resize:vertical;outline:none;font-family:inherit;"></textarea>'+
+      '</div>'+
+      // Conseguiu marcar reunião?
+      '<div style="margin-bottom:14px;">'+
+        '<label style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Conseguiu marcar reunião?</label>'+
+        '<div style="display:flex;gap:8px;">'+
+          '<button id="bdr-reuniao-sim" onclick="bdrToggleReuniao(\'sim\')" style="flex:1;height:36px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;color:rgba(34,197,94,0.5);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;"><i class="ti ti-check"></i> Sim</button>'+
+          '<button id="bdr-reuniao-nao" onclick="bdrToggleReuniao(\'nao\')" style="flex:1;height:36px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;"><i class="ti ti-x"></i> Não</button>'+
+          '<button id="bdr-reuniao-nd" onclick="bdrToggleReuniao(\'nd\')" style="flex:1;height:36px;background:rgba(255,200,0,0.08);border:1px solid rgba(255,200,0,0.18);border-radius:10px;color:rgba(255,200,0,0.5);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;"><i class="ti ti-phone-off"></i> Não atendeu</button>'+
+        '</div>'+
+      '</div>'+
+      // Faturamento
+      '<div style="margin-bottom:14px;">'+
+        '<label style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;display:block;margin-bottom:6px;">Faturamento estimado do lead (R$)</label>'+
+        '<input id="bdr-hist-fat" type="text" placeholder="Ex: 50.000" value="'+esc(faturamentoAtual)+'" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;">'+
+      '</div>'+
+      // Data de retorno
+      '<div style="margin-bottom:20px;">'+
+        '<label style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;display:block;margin-bottom:6px;">Data de retorno <span style="color:rgba(255,255,255,0.25);font-weight:400;">(opcional)</span></label>'+
+        '<input id="bdr-hist-retorno" type="date" value="'+retornoAtual+'" min="'+todayVal+'" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;color-scheme:dark;">'+
+      '</div>'+
+      // Botões
+      '<div style="display:flex;gap:8px;">'+
+        '<button onclick="document.getElementById(\'modal-bdr-contato\').remove()" style="flex:1;height:40px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--muted);font-size:13px;cursor:pointer;">Cancelar</button>'+
+        '<button onclick="bdrSalvarContato(\''+id+'\')" style="flex:2;height:40px;background:var(--purple3);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;"><i class="ti ti-check"></i> Salvar contato</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){var el=document.getElementById('bdr-hist-obs');if(el)el.focus();},50);
+}
+var _bdrReuniaoSel='';
+function bdrToggleReuniao(val){
+  _bdrReuniaoSel=val;
+  var opts={sim:{bg:'rgba(34,197,94,0.18)',border:'rgba(34,197,94,0.5)',col:'#22c55e'},nao:{bg:'rgba(239,68,68,0.12)',border:'rgba(239,68,68,0.35)',col:'var(--red)'},nd:{bg:'rgba(255,200,0,0.15)',border:'rgba(255,200,0,0.4)',col:'#f5c400'}};
+  ['sim','nao','nd'].forEach(function(k){
+    var btn=document.getElementById('bdr-reuniao-'+k);
+    if(!btn) return;
+    if(k===val){var o=opts[k];btn.style.background=o.bg;btn.style.borderColor=o.border;btn.style.color=o.col;}
+    else{btn.style.background='rgba(255,255,255,0.04)';btn.style.borderColor='rgba(255,255,255,0.1)';btn.style.color='var(--muted)';}
+  });
+}
+function bdrSalvarContato(id){
+  if(!bdrLeads[id]) return;
+  var obs=(document.getElementById('bdr-hist-obs')||{}).value||'';
+  var fat=(document.getElementById('bdr-hist-fat')||{}).value||'';
+  var retorno=(document.getElementById('bdr-hist-retorno')||{}).value||'';
+  if(!obs.trim()){showSheetToast('Descreva o que aconteceu no contato.',true);return;}
   if(!bdrLeads[id].historico) bdrLeads[id].historico=[];
-  var entry={dt:todayStr(),obs:obs.trim(),status:bdrLeads[id].status,por:CU?CU.name:'Gustavo'};
+  var reuniao=_bdrReuniaoSel||'';
+  var entry={dt:todayStr(),obs:obs.trim(),faturamento:fat.trim(),reuniao:reuniao,status:bdrLeads[id].status,por:CU?CU.name:'Gustavo'};
   bdrLeads[id].historico.push(entry);
-  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id+'/historico').set(bdrLeads[id].historico);
+  if(fat.trim()) bdrLeads[id].faturamento=fat.trim();
+  if(retorno) bdrLeads[id].retornoEm=retorno;
+  else delete bdrLeads[id].retornoEm;
+  // Se marcou reunião, atualiza status automaticamente
+  if(reuniao==='sim'&&bdrLeads[id].status==='novo') bdrLeads[id].status='reuniao';
+  if(fbDb||initFirebase()){
+    fbDb.ref('bdr_leads/'+id+'/historico').set(bdrLeads[id].historico);
+    fbDb.ref('bdr_leads/'+id+'/faturamento').set(bdrLeads[id].faturamento||null);
+    fbDb.ref('bdr_leads/'+id+'/retornoEm').set(bdrLeads[id].retornoEm||null);
+    fbDb.ref('bdr_leads/'+id+'/status').set(bdrLeads[id].status);
+  }
   localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  _bdrReuniaoSel='';
+  var modal=document.getElementById('modal-bdr-contato');
+  if(modal) modal.remove();
   var ll=document.getElementById('bdr-leads-list');
   if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
   showSheetToast('Contato registrado!',false);
