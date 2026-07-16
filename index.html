@@ -14548,7 +14548,7 @@ function trocarSenha(email){
   USERS[email].pw = nova;
   // Save to Firebase so it persists across devices
   if(fbDb){
-    fbDb.ref('userPasswords/'+email.replace(/[.#$[\]]/g,'_')).set(nova).then(function(){
+    fbDb.ref('userPasswords/'+email.replace(/[@.#$[\]]/g,'_')).set(nova).then(function(){
       showSheetToast('Senha de '+USERS[email].name+' alterada com sucesso!',false);
       el.value='';
     }).catch(function(e){showSheetToast('Erro ao salvar: '+e.message,true);});
@@ -14575,7 +14575,7 @@ async function loadUserPasswords(){
         });
         // Simpler approach: match by finding the email
         var matchedEmail = Object.keys(USERS).find(function(e){
-          return e.replace(/[.@]/g,'_')===key || e.replace('@','_').replace(/\./g,'_')===key;
+          return e.replace(/[@.#$[\]]/g,'_')===key;
         });
         if(matchedEmail) USERS[matchedEmail].pw = data[key];
       });
