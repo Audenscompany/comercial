@@ -13667,8 +13667,11 @@ function renderReunioesPersonal(){
   var origMap={};
   rowsMes.forEach(function(m){
     var o=(m.origem||'Outros').trim();var k=o.toLowerCase();
-    if(!origMap[k])origMap[k]={name:o,total:0,real:0};
-    origMap[k].total++;if(getMeetingStatus(m)==='done')origMap[k].real++;
+    if(!origMap[k])origMap[k]={name:o,total:0,real:0,ns:0};
+    origMap[k].total++;
+    var _st=getMeetingStatus(m);
+    if(_st==='done')origMap[k].real++;
+    if(_st==='noshow')origMap[k].ns++;
   });
   var origList=Object.values(origMap).sort(function(a,b){return b.total-a.total;}).slice(0,6);
   var origMax=origList.length>0?origList[0].total:1;
@@ -13713,6 +13716,49 @@ function renderReunioesPersonal(){
     '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">'+
       '<i class="ti ti-chart-pie" style="color:var(--amber);font-size:18px;"></i>'+
       '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">Qualidade das Origens</span></div>'+origRows+'</div>';
+
+  // ── No-show por Canal ─────────────────────────────────────────────────
+  var nsCanais=Object.values(origMap).filter(function(o){return o.ns>0;}).sort(function(a,b){return b.ns-a.ns;});
+  var nsWorstName=nsCanais.length?nsCanais[0].name:null;
+  var nsCanaisCard='<div style="background:var(--bg2);border:1px solid rgba(239,68,68,0.3);border-radius:12px;overflow:hidden;margin-bottom:16px;">'+
+    '<div style="padding:14px 18px;border-bottom:1px solid rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:space-between;">'+
+      '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<i class="ti ti-user-off" style="color:var(--red);font-size:18px;"></i>'+
+        '<div>'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--white);">No-show por Canal</span>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:1px;">'+(noshow>0?noshow+' no-show'+(noshow!==1?'s':'')+' este mês':'Nenhum no-show este mês')+'</div>'+
+        '</div>'+
+      '</div>'+
+      (nsWorstName?'<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);font-size:11px;font-weight:700;color:var(--red);">'+
+        '<i class="ti ti-alert-triangle" style="font-size:11px;"></i>Crítico: '+esc(nsWorstName)+'</span>':'')+'</div>'+
+    (nsCanais.length===0
+      ?'<div style="padding:20px;text-align:center;color:var(--green);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-circle-check" style="font-size:16px;"></i>Nenhum no-show registrado este mês</div>'
+      :'<div style="display:grid;grid-template-columns:repeat('+Math.min(nsCanais.length,3)+',1fr);gap:0;border-top:1px solid rgba(239,68,68,0.1);">'+
+        nsCanais.map(function(o,i){
+          var nsP=o.real+o.ns>0?Math.round(o.ns/(o.real+o.ns)*100):0;
+          var pctTotal=noshow>0?Math.round(o.ns/noshow*100):0;
+          var nsCol=nsP>35?'var(--red)':nsP>20?'var(--amber)':'var(--green)';
+          var ico=origIconMap[o.name.toLowerCase()]||'dots';
+          var origCol=origColMap[o.name.toLowerCase()]||'var(--muted)';
+          return'<div style="padding:16px 18px;'+(i<nsCanais.length-1&&nsCanais.length>1?'border-right:1px solid rgba(239,68,68,0.12);':'')+'">'+
+            '<div style="display:flex;align-items:center;gap:7px;margin-bottom:12px;">'+
+              '<i class="ti ti-'+ico+'" style="color:'+origCol+';font-size:15px;"></i>'+
+              '<span style="font-size:12px;font-weight:700;color:var(--white);">'+esc(o.name)+'</span>'+
+              '<span style="margin-left:auto;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.06);color:var(--muted);">'+pctTotal+'% do total</span>'+
+            '</div>'+
+            '<div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:8px;">'+
+              '<div style="font-family:Bebas Neue,sans-serif;font-size:44px;color:'+nsCol+';line-height:1;">'+o.ns+'</div>'+
+              '<div style="padding-bottom:7px;">'+
+                '<div style="font-size:10px;color:var(--muted);line-height:1.4;">no-show'+(o.ns!==1?'s':'')+'</div>'+
+                '<div style="font-size:13px;font-weight:700;color:'+nsCol+';">'+nsP+'% taxa</div>'+
+              '</div>'+
+            '</div>'+
+            '<div style="height:4px;background:rgba(255,255,255,0.07);border-radius:2px;margin-bottom:7px;"><div style="height:4px;width:'+Math.min(nsP,100)+'%;background:'+nsCol+';border-radius:2px;"></div></div>'+
+            '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);">'+
+              '<span>'+o.total+' agendadas</span><span>'+o.real+' realizadas</span>'+
+            '</div></div>';
+        }).join('')+'</div>')+
+  '</div>';
 
   // ── Próximas Ações ────────────────────────────────────────────────────
   var pendentes=rows.filter(function(m){var s=getMeetingStatus(m);return (s==='pending'||s==='reagendado')&&!followups[m.id];}).slice(0,4);
@@ -13926,6 +13972,7 @@ function renderReunioesPersonal(){
     '</div></div>'+
     createForm+
     kpiRow+
+    nsCanaisCard+
     funilCard+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'+
       '<div>'+agendaCard+sdrCard+'</div>'+
