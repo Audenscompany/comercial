@@ -6142,24 +6142,34 @@ function finOpenNewTx(tipo){
   else openModalLancamento('entrada');
 }
 
+function finFecharModal(id){var el=document.getElementById(id);if(el)el.remove();}
+
 function finOpenNewConta(){
-  var html='<div class="modal-overlay" id="fin-conta-modal">'+
-    '<div class="modal-box" style="max-width:440px;">'+
-      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-building-bank"></i> Nova Conta</div><button class="modal-close" onclick="document.getElementById(\'fin-conta-modal\').remove()">✕</button></div>'+
-      '<div style="padding:20px;display:grid;gap:14px;">'+
-        '<div><label class="f-label">Nome da conta *</label><input id="fc-nome" class="f-input" placeholder="Ex: Itaú PJ, Nubank PJ, Caixa Reserva"></div>'+
+  var existing=document.getElementById('fin-conta-modal');if(existing)existing.remove();
+  var html='<div class="modal-ov" id="fin-conta-modal" style="display:flex;" onclick="if(event.target===this)finFecharModal(\'fin-conta-modal\')">'+
+    '<div class="modal-box" style="max-width:440px;width:100%;padding:0;overflow:hidden;">'+
+      '<div style="padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
+        '<div style="display:flex;align-items:center;gap:10px;"><div style="width:36px;height:36px;border-radius:9px;background:rgba(56,189,248,.15);display:flex;align-items:center;justify-content:center;color:var(--cyan);font-size:18px;"><i class="ti ti-building-bank"></i></div><div class="modal-title" style="margin:0;font-size:20px;">Nova Conta</div></div>'+
+        '<button style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;padding:0 4px;" onclick="finFecharModal(\'fin-conta-modal\')">✕</button>'+
+      '</div>'+
+      '<div style="padding:20px 22px;display:grid;gap:14px;">'+
+        '<div><label class="f-label">Nome da conta *</label><input id="fc-nome" class="f-input" placeholder="Ex: Itaú PJ, Nubank PJ, Caixa Reserva" autofocus></div>'+
         '<div><label class="f-label">Instituição</label><input id="fc-inst" class="f-input" placeholder="Ex: Itaú, Nubank, Mercado Pago"></div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
-          '<div><label class="f-label">Tipo</label><select id="fc-tipo" class="f-input"><option value="checking">Conta Corrente</option><option value="payments">Conta de Pagamentos</option><option value="reserve">Reserva</option><option value="investment">Aplicação</option><option value="wallet">Carteira</option></select></div>'+
-          '<div><label class="f-label">Saldo Inicial (R$)</label><input id="fc-saldo" class="f-input" type="number" placeholder="0,00" step="0.01"></div>'+
+          '<div><label class="f-label">Tipo</label><select id="fc-tipo" class="f-input"><option value="checking">Conta Corrente</option><option value="payments">Conta de Pagamentos</option><option value="reserve">Reserva</option><option value="investment">Aplicação/CDB</option><option value="wallet">Carteira</option></select></div>'+
+          '<div><label class="f-label">Saldo Atual (R$)</label><input id="fc-saldo" class="f-input" type="number" placeholder="0,00" step="0.01"></div>'+
         '</div>'+
-        '<div><label class="f-label">Agência/Conta (mascarado)</label><input id="fc-mask" class="f-input" placeholder="Ex: Ag. 1234-5 | Cc. 123456-7"></div>'+
-        '<div style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="fc-consol" checked style="width:16px;height:16px;accent-color:var(--purple3);"><label for="fc-consol" style="font-size:13px;cursor:pointer;">Incluir no saldo consolidado</label></div>'+
-        '<button class="btn btn-primary" onclick="finSalvarConta()">Salvar Conta</button>'+
+        '<div><label class="f-label">Agência/Conta <span style="font-weight:400;color:var(--muted);">(mascarado, opcional)</span></label><input id="fc-mask" class="f-input" placeholder="Ex: Ag. 1234-5 | Cc. 123456-7"></div>'+
+        '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(255,255,255,.04);border-radius:8px;border:1px solid var(--border);"><input type="checkbox" id="fc-consol" checked style="width:16px;height:16px;accent-color:var(--purple3);"><label for="fc-consol" style="font-size:13px;cursor:pointer;">Incluir no saldo consolidado</label></div>'+
+        '<div style="display:flex;gap:10px;margin-top:4px;">'+
+          '<button class="btn btn-outline" style="flex:1;" onclick="finFecharModal(\'fin-conta-modal\')">Cancelar</button>'+
+          '<button class="btn btn-primary" style="flex:2;" onclick="finSalvarConta()"><i class="ti ti-check"></i> Salvar Conta</button>'+
+        '</div>'+
       '</div>'+
     '</div>'+
   '</div>';
   document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(function(){var el=document.getElementById('fc-nome');if(el)el.focus();},100);
 }
 
 async function finSalvarConta(){
@@ -6176,7 +6186,7 @@ async function finSalvarConta(){
     active:true,createdAt:Date.now()
   };
   await fbPush('financeiro/contas',conta);
-  document.getElementById('fin-conta-modal').remove();
+  finFecharModal('fin-conta-modal');
   _finState.loaded=false;
   showSheetToast('✅ Conta adicionada!');
   finRenderContas();
@@ -6185,19 +6195,26 @@ async function finSalvarConta(){
 function finEditarConta(id){
   var c=_finState.contas.find(function(x){return x.id===id;});
   if(!c) return;
-  var html='<div class="modal-overlay" id="fin-conta-edit-modal">'+
-    '<div class="modal-box" style="max-width:440px;">'+
-      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-building-bank"></i> Editar Conta</div><button class="modal-close" onclick="document.getElementById(\'fin-conta-edit-modal\').remove()">✕</button></div>'+
-      '<div style="padding:20px;display:grid;gap:14px;">'+
+  var existing=document.getElementById('fin-conta-edit-modal');if(existing)existing.remove();
+  var html='<div class="modal-ov" id="fin-conta-edit-modal" style="display:flex;" onclick="if(event.target===this)finFecharModal(\'fin-conta-edit-modal\')">'+
+    '<div class="modal-box" style="max-width:440px;width:100%;padding:0;overflow:hidden;">'+
+      '<div style="padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
+        '<div style="display:flex;align-items:center;gap:10px;"><div style="width:36px;height:36px;border-radius:9px;background:rgba(56,189,248,.15);display:flex;align-items:center;justify-content:center;color:var(--cyan);font-size:18px;"><i class="ti ti-building-bank"></i></div><div class="modal-title" style="margin:0;font-size:20px;">Editar Conta</div></div>'+
+        '<button style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;padding:0 4px;" onclick="finFecharModal(\'fin-conta-edit-modal\')">✕</button>'+
+      '</div>'+
+      '<div style="padding:20px 22px;display:grid;gap:14px;">'+
         '<div><label class="f-label">Nome *</label><input id="fce-nome" class="f-input" value="'+esc(c.name||'')+'"></div>'+
         '<div><label class="f-label">Instituição</label><input id="fce-inst" class="f-input" value="'+esc(c.institution||'')+'"></div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
-          '<div><label class="f-label">Tipo</label><select id="fce-tipo" class="f-input"><option value="checking"'+(c.type==='checking'?' selected':'')+'>Conta Corrente</option><option value="payments"'+(c.type==='payments'?' selected':'')+'>Pagamentos</option><option value="reserve"'+(c.type==='reserve'?' selected':'')+'>Reserva</option><option value="investment"'+(c.type==='investment'?' selected':'')+'>Aplicação</option><option value="wallet"'+(c.type==='wallet'?' selected':'')+'>Carteira</option></select></div>'+
+          '<div><label class="f-label">Tipo</label><select id="fce-tipo" class="f-input"><option value="checking"'+(c.type==='checking'?' selected':'')+'>Conta Corrente</option><option value="payments"'+(c.type==='payments'?' selected':'')+'>Pagamentos</option><option value="reserve"'+(c.type==='reserve'?' selected':'')+'>Reserva</option><option value="investment"'+(c.type==='investment'?' selected':'')+'>Aplicação/CDB</option><option value="wallet"'+(c.type==='wallet'?' selected':'')+'>Carteira</option></select></div>'+
           '<div><label class="f-label">Saldo Atual (R$)</label><input id="fce-saldo" class="f-input" type="number" step="0.01" value="'+(c.cachedBalance||c.initialBalance||0)+'"></div>'+
         '</div>'+
-        '<div><label class="f-label">Detalhes mascarados</label><input id="fce-mask" class="f-input" value="'+esc(c.maskedDetails||'')+'"></div>'+
-        '<div style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="fce-consol"'+(c.includeInConsolidated!==false?' checked':'')+' style="width:16px;height:16px;accent-color:var(--purple3);"><label for="fce-consol" style="font-size:13px;cursor:pointer;">Incluir no consolidado</label></div>'+
-        '<button class="btn btn-primary" onclick="finAtualizarConta(\''+id+'\')">Salvar</button>'+
+        '<div><label class="f-label">Agência/Conta <span style="font-weight:400;color:var(--muted);">(mascarado)</span></label><input id="fce-mask" class="f-input" value="'+esc(c.maskedDetails||'')+'"></div>'+
+        '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(255,255,255,.04);border-radius:8px;border:1px solid var(--border);"><input type="checkbox" id="fce-consol"'+(c.includeInConsolidated!==false?' checked':'')+' style="width:16px;height:16px;accent-color:var(--purple3);"><label for="fce-consol" style="font-size:13px;cursor:pointer;">Incluir no consolidado</label></div>'+
+        '<div style="display:flex;gap:10px;margin-top:4px;">'+
+          '<button class="btn btn-outline" style="flex:1;" onclick="finFecharModal(\'fin-conta-edit-modal\')">Cancelar</button>'+
+          '<button class="btn btn-primary" style="flex:2;" onclick="finAtualizarConta(\''+id+'\')"><i class="ti ti-check"></i> Salvar</button>'+
+        '</div>'+
       '</div>'+
     '</div>'+
   '</div>';
@@ -6216,7 +6233,7 @@ async function finAtualizarConta(id){
     updatedAt:Date.now()
   };
   await fbDb.ref('financeiro/contas/'+id).update(upd);
-  document.getElementById('fin-conta-edit-modal').remove();
+  finFecharModal('fin-conta-edit-modal');
   _finState.loaded=false;
   showSheetToast('✅ Conta atualizada!');
   finRenderContas();
