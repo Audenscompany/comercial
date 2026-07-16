@@ -13517,14 +13517,20 @@ function renderReunioesPersonal(){
   rows = rows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
 
   // ── KPIs mês selecionado vs anterior ──────────────────────────────────────────
-  // _retorno excluído APENAS dos KPIs (contagem) — receita e tabela usam rows completo
+  // _retorno e origem Recuperação/Retorno excluídos de TODOS os KPIs de reunião
   var now=new Date(), curM=now.getMonth(), curY=now.getFullYear();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:curM, filtY=_reunMesFiltro?_reunMesFiltro.y:curY;
   var prevM=filtM===0?11:filtM-1, prevY=filtM===0?filtY-1:filtY;
   function inMonth(m,mo,yr){var d=new Date(m.dtISO||(m.scheduledAt||Date.now()));return d.getMonth()===mo&&d.getFullYear()===yr;}
   function cntSt(arr,st){return arr.filter(function(m){return getMeetingStatus(m)===st;}).length;}
-  var rowsMes=rows.filter(function(m){return inMonth(m,filtM,filtY)&&!m._retorno;});
-  var rowsPrev=rows.filter(function(m){return inMonth(m,prevM,prevY)&&!m._retorno;});
+  // Reuniões contabilizáveis: exclui retorno e recuperação (não são aquisições novas)
+  function _isContabilizavel(m){
+    if(m._retorno) return false;
+    var orig=_normOrigem(m.origem).toLowerCase();
+    return orig!=='recuperação'&&orig!=='recuperacao'&&orig!=='retorno';
+  }
+  var rowsMes=rows.filter(function(m){return inMonth(m,filtM,filtY)&&_isContabilizavel(m);});
+  var rowsPrev=rows.filter(function(m){return inMonth(m,prevM,prevY)&&_isContabilizavel(m);});
   var agendadas=rowsMes.length; // total agendadas no período (todas as reuniões)
   var realizadas=cntSt(rowsMes,'done'), noshow=cntSt(rowsMes,'noshow');
   var total=rowsMes.length, taxaConv=total>0?Math.round(realizadas/total*100):0;
@@ -13701,10 +13707,8 @@ function renderReunioesPersonal(){
     return n;
   }
   var origMap={};
-  var _origExcluidas=['recuperação','recuperacao','retorno']; // não são origens de aquisição
-  rowsMes.forEach(function(m){
+  rowsMes.forEach(function(m){ // rowsMes já exclui recuperação/retorno via _isContabilizavel
     var o=_normOrigem(m.origem);var k=o.toLowerCase();
-    if(_origExcluidas.indexOf(k)>=0) return; // exclui retornos/recuperações
     if(!origMap[k])origMap[k]={name:o,total:0,real:0,ns:0};
     origMap[k].total++;
     var _st=getMeetingStatus(m);
