@@ -423,13 +423,15 @@ window.addEventListener('DOMContentLoaded', function(){
     renderSignPage(signId);
     return;
   }
+  // Pre-load passwords from Firebase so login works with updated passwords on any machine
+  if(!fbDb) initFirebase();
+  loadUserPasswords();
   var saved = localStorage.getItem('audens_session');
   if(saved){
     try{
       var s = JSON.parse(saved);
       var u = USERS[s.email];
       if(u){
-        if(!fbDb) initFirebase();
         CU = {email:s.email,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
         showMain();
         return;
@@ -3718,7 +3720,17 @@ function doLogin(){
   var er=document.getElementById('login-err');
   var u=USERS[em];
   if(!u){er.textContent='E-mail nao encontrado.';return;}
-  if(u.pw!==pw){er.textContent='Senha incorreta.';return;}
+  // If password doesn't match, try reloading from Firebase first (handles first-time on new machine)
+  if(u.pw!==pw){
+    er.textContent='Verificando...';
+    loadUserPasswords().then(function(){
+      var u2=USERS[em];
+      if(!u2||u2.pw!==pw){er.textContent='Senha incorreta.';return;}
+      if(u2.role!==selRole){er.textContent='Perfil incorreto. Selecione '+(u2.role==='gestor'?'Gestor':'Atendente')+' acima.';return;}
+      er.textContent='';CU={email:em,role:u2.role,name:u2.name,initials:u2.initials,closer:u2.closer,funcao:u2.funcao||'closer'};localStorage.setItem('audens_session',JSON.stringify({email:em}));showMain();
+    });
+    return;
+  }
   if(u.role!==selRole){er.textContent='Perfil incorreto. Selecione '+(u.role==='gestor'?'Gestor':'Atendente')+' acima.';return;}
   er.textContent='';CU={email:em,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};localStorage.setItem('audens_session',JSON.stringify({email:em}));showMain();
 }
