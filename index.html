@@ -749,13 +749,13 @@ function startRealtimeSync(){
     }
   });
 
-  // Sync BDR leads em tempo real
-  fbDb.ref('bdr_leads').on('value', function(snap){
+  // Sync BDR leads em tempo real — por usuário
+  fbDb.ref(_bdrFbPath()).on('value', function(snap){
     var fb=snap.val()||{};
     var prev=JSON.stringify(bdrLeads);
     bdrLeads=fb;
     if(JSON.stringify(bdrLeads)!==prev){
-      localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+      localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
       var area=document.getElementById('content');
       if(area&&area.getAttribute('data-page')==='bdr'){
         var ll=document.getElementById('bdr-leads-list');
@@ -2101,6 +2101,10 @@ var sdrTarefas={};
 var bdrLeads={};
 var _bdrSearchResults=[];
 var _bdrFilter='';
+// BDR namespacing — cada usuário tem sua própria lista
+function _bdrUserSlug(){return CU&&CU.closer?CU.closer.toLowerCase().replace(/\s/g,'_').replace(/[^a-z0-9_]/g,''):'shared';}
+function _bdrLsKey(){return 'audens_bdr_'+_bdrUserSlug();}
+function _bdrFbPath(id){return 'bdr_leads/'+_bdrUserSlug()+(id?'/'+id:'');}
 // Cadencia de contato (sem e-mail), baseada na planilha "Cadencia de Inbound"
 // "Periodo seguinte" = mesmo dia util, periodo da tarde
 var CADENCIA_SDR=[
@@ -2308,7 +2312,7 @@ function loadStorage(){
     var aak=localStorage.getItem('audens_asaas_key');if(aak)asaasApiKey=aak;
     var aae=localStorage.getItem('audens_asaas_env');if(aae)asaasEnv=aae;
     var aabt=localStorage.getItem('audens_asaas_bt');if(aabt)asaasBillingType=aabt;
-    var bdr=localStorage.getItem('audens_bdr_leads');if(bdr)bdrLeads=JSON.parse(bdr);
+    var bdr=localStorage.getItem(_bdrLsKey());if(bdr)bdrLeads=JSON.parse(bdr);
   }catch(e){}
 }
 function saveAll(){
@@ -19972,8 +19976,8 @@ function bdrAdicionarLead(idx,tipo,cidade){
     addedAt:Date.now(),addedBy:CU?CU.name:'Gustavo'
   };
   bdrLeads[id]=lead;
-  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id).set(lead);
-  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  if(fbDb||initFirebase()) fbDb.ref(_bdrFbPath(id)).set(lead);
+  localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
   showSheetToast(lead.nome+' adicionado à lista BDR!',false);
   // Atualiza botão na lista de resultados
   var btns=document.querySelectorAll('#bdr-search-results button');
@@ -20026,7 +20030,7 @@ function bdrAdicionarSelecionados(tipo,cidade){
       addedAt:Date.now(),addedBy:CU?CU.name:'Gustavo'
     };
     bdrLeads[id]=lead;
-    if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id).set(lead);
+    if(fbDb||initFirebase()) fbDb.ref(_bdrFbPath(id)).set(lead);
     // Atualiza linha para "Na lista"
     var row=document.getElementById('bdr-row-'+idx);
     if(row){
@@ -20036,7 +20040,7 @@ function bdrAdicionarSelecionados(tipo,cidade){
     }
     adicionados++;
   });
-  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
   showSheetToast(adicionados+' lead'+(adicionados>1?'s':'')+' adicionado'+(adicionados>1?'s':'')+' à lista BDR!',false);
   // Oculta barra de seleção
   var btn=document.getElementById('bdr-add-sel-btn');
@@ -20128,8 +20132,8 @@ function bdrRenderLeads(filter){
 function bdrAtualizarStatus(id,status){
   if(!bdrLeads[id]) return;
   bdrLeads[id].status=status;
-  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id+'/status').set(status);
-  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  if(fbDb||initFirebase()) fbDb.ref(_bdrFbPath(id)+'/status').set(status);
+  localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
   // Update dot color inline
   var area=document.getElementById('content');
   if(area&&area.getAttribute('data-page')==='bdr'){
@@ -20141,8 +20145,8 @@ function bdrAtualizarStatus(id,status){
 function bdrSalvarObs(id,obs){
   if(!bdrLeads[id]||bdrLeads[id].obs===obs) return;
   bdrLeads[id].obs=obs;
-  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id+'/obs').set(obs);
-  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  if(fbDb||initFirebase()) fbDb.ref(_bdrFbPath(id)+'/obs').set(obs);
+  localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
 }
 
 function bdrRegistrarHistorico(id){
@@ -20227,12 +20231,12 @@ function bdrSalvarContato(id){
   // Se marcou reunião, atualiza status automaticamente
   if(reuniao==='sim'&&bdrLeads[id].status==='novo') bdrLeads[id].status='reuniao';
   if(fbDb||initFirebase()){
-    fbDb.ref('bdr_leads/'+id+'/historico').set(bdrLeads[id].historico);
-    fbDb.ref('bdr_leads/'+id+'/faturamento').set(bdrLeads[id].faturamento||null);
-    fbDb.ref('bdr_leads/'+id+'/retornoEm').set(bdrLeads[id].retornoEm||null);
-    fbDb.ref('bdr_leads/'+id+'/status').set(bdrLeads[id].status);
+    fbDb.ref(_bdrFbPath(id)+'/historico').set(bdrLeads[id].historico);
+    fbDb.ref(_bdrFbPath(id)+'/faturamento').set(bdrLeads[id].faturamento||null);
+    fbDb.ref(_bdrFbPath(id)+'/retornoEm').set(bdrLeads[id].retornoEm||null);
+    fbDb.ref(_bdrFbPath(id)+'/status').set(bdrLeads[id].status);
   }
-  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
   _bdrReuniaoSel='';
   var modal=document.getElementById('modal-bdr-contato');
   if(modal) modal.remove();
@@ -20245,8 +20249,8 @@ function bdrRemover(id){
   if(!bdrLeads[id]) return;
   if(!confirm('Remover "'+bdrLeads[id].nome+'" da lista BDR?')) return;
   delete bdrLeads[id];
-  if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id).remove();
-  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  if(fbDb||initFirebase()) fbDb.ref(_bdrFbPath(id)).remove();
+  localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
   var ll=document.getElementById('bdr-leads-list');
   if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
   showSheetToast('Lead removido.',false);
