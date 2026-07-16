@@ -9013,6 +9013,61 @@ function renderReunioes(){
   });
   html+='</div>';
 
+  // No-show por Canal
+  var nsCanais=Object.keys(byOrigem).filter(function(k){return byOrigem[k].ns>0;}).sort(function(a,b){return byOrigem[b].ns-byOrigem[a].ns;});
+  var nsWorstK=nsCanais.length?nsCanais[0]:null;
+  html+='<div style="background:var(--bg2);border:1px solid rgba(239,68,68,0.25);border-radius:14px;padding:16px 20px;margin-bottom:20px;">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<div style="width:36px;height:36px;border-radius:10px;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-off" style="color:#f87171;font-size:17px;"></i></div>'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--white);">No-show por Canal</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">'+(noshow>0?noshow+' no-show'+(noshow>1?'s':'')+' este mes — identifique o canal mais critico':'Nenhum no-show registrado este mes')+'</div>'+
+      '</div>'+
+    '</div>'+
+    (nsWorstK?'<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:20px;">'+
+      '<i class="ti ti-alert-triangle" style="color:#f87171;font-size:12px;"></i>'+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:700;color:#f87171;">Critico: '+nsWorstK+'</span>'+
+    '</div>':'')+'</div>';
+
+  if(nsCanais.length){
+    html+='<div style="display:grid;grid-template-columns:repeat('+Math.min(nsCanais.length,4)+',1fr);gap:12px;">';
+    nsCanais.forEach(function(k){
+      var d=byOrigem[k];
+      var nsP=d.real+d.ns>0?Math.round(d.ns/(d.real+d.ns)*100):0;
+      var pctTotal=noshow>0?Math.round(d.ns/noshow*100):0;
+      var oi=getOrigIc(k);
+      var nsCol=nsP>35?'#f87171':nsP>20?'#fbbf24':'#4ade80';
+      var nsBg=nsP>35?'rgba(239,68,68,0.1)':nsP>20?'rgba(245,158,11,0.08)':'rgba(34,197,94,0.08)';
+      var nsBorder=nsP>35?'rgba(239,68,68,0.25)':nsP>20?'rgba(245,158,11,0.2)':'rgba(34,197,94,0.2)';
+      html+='<div style="background:'+nsBg+';border:1px solid '+nsBorder+';border-radius:12px;padding:16px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'+
+          '<div style="display:flex;align-items:center;gap:8px;">'+
+            '<div style="width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+oi.ic+'" style="color:'+oi.cl+';font-size:14px;"></i></div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:700;color:var(--white);line-height:1.2;">'+k+'</div>'+
+          '</div>'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,0.06);color:var(--muted);">'+pctTotal+'% do total</span>'+
+        '</div>'+
+        '<div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:10px;">'+
+          '<div style="font-family:Bebas Neue,sans-serif;font-size:40px;color:'+nsCol+';line-height:1;">'+d.ns+'</div>'+
+          '<div style="padding-bottom:6px;">'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);">no-show'+(d.ns>1?'s':'')+'</div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:700;color:'+nsCol+';">'+nsP+'% taxa</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;margin-bottom:8px;"><div style="height:4px;width:'+Math.min(nsP,100)+'%;background:'+nsCol+';border-radius:2px;"></div></div>'+
+        '<div style="display:flex;justify-content:space-between;font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);">'+
+          '<span>'+d.ag+' agendadas</span>'+
+          '<span>'+d.real+' realizadas</span>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div>';
+  } else {
+    html+='<div style="text-align:center;padding:20px 0;font-family:Barlow Condensed,sans-serif;font-size:14px;color:var(--green);display:flex;align-items:center;justify-content:center;gap:8px;"><i class="ti ti-circle-check" style="font-size:18px;"></i>Nenhum no-show registrado este mes. Excelente!</div>';
+  }
+  html+='</div>';
+
   // 2-column layout
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">';
 
