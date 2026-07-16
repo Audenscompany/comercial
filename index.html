@@ -13664,9 +13664,15 @@ function renderReunioesPersonal(){
     _clCardHd+clRows+'</div>';
 
   // ── Qualidade das Origens ─────────────────────────────────────────────
+  function _normOrigem(o){
+    var n=(o||'Outros').trim();
+    var nl=n.toLowerCase().replace(/[áàâã]/g,'a').replace(/[éê]/g,'e').replace(/[íì]/g,'i').replace(/[óôõò]/g,'o').replace(/[úû]/g,'u').replace(/[ç]/g,'c');
+    if(nl==='trafego'||nl==='trafego pago'||nl==='tráfego'||nl==='trafego pago'||nl.startsWith('trafego'))return'Tráfego Pago';
+    return n;
+  }
   var origMap={};
   rowsMes.forEach(function(m){
-    var o=(m.origem||'Outros').trim();var k=o.toLowerCase();
+    var o=_normOrigem(m.origem);var k=o.toLowerCase();
     if(!origMap[k])origMap[k]={name:o,total:0,real:0,ns:0};
     origMap[k].total++;
     var _st=getMeetingStatus(m);
