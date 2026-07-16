@@ -18741,7 +18741,7 @@ async function acAnalisarReuniao(){
   if(objecoes) systemPrompt += '\n\nOBJEÇÕES ADICIONAIS:\n'+objecoes;
   if(criterios) systemPrompt += '\n\nCRITÉRIOS ADICIONAIS:\n'+criterios;
 
-  var jsonInstruction = '\n\n=== INSTRUÇÃO ADICIONAL ===\nAo final de toda a análise textual, inclua um bloco JSON estruturado entre as tags <AVALIACAO_JSON> e </AVALIACAO_JSON> com o seguinte formato exato (não quebre linhas desnecessárias dentro dos campos de texto):\n<AVALIACAO_JSON>\n{"lead":"nome do lead","segmento":"segmento do negócio","notaFinal":75,"classificacao":"B — Boa, mas incompleta","problemaPrincipal":"...","desejoPrincipal":"...","proximoPasso":"...","criterios":[{"id":1,"nome":"Abertura e controle da reunião","nota":4,"max":6,"descricao":"...","evidencia":"...","acao":"..."},{"id":2,"nome":"Diagnóstico factual do negócio","nota":8,"max":14,"descricao":"...","evidencia":"...","acao":"..."},{"id":3,"nome":"Exploração da dor e consequência","nota":7,"max":14,"descricao":"...","evidencia":"...","acao":"..."},{"id":4,"nome":"Meta, desejo e urgência","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":5,"nome":"Qualificação de decisão e investimento","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":6,"nome":"Escuta e condução consultiva","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":7,"nome":"Apresentação da solução personalizada","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":8,"nome":"Prova, autoridade e posicionamento","nota":3,"max":5,"descricao":"...","evidencia":"...","acao":"..."},{"id":9,"nome":"Investimento e objeções","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":10,"nome":"Fechamento e próximo passo","nota":5,"max":11,"descricao":"...","evidencia":"...","acao":"..."}],"pontosFortes":["...","..."],"falhas":[{"titulo":"...","impacto":"...","correcao":"..."}],"acoesPrioritarias":["...","..."],"diagnostico":{"ondeEsta":"...","ondeQuerChegar":"...","impedimentos":"...","risco":"...","solucao":"..."}}\n</AVALIACAO_JSON>\nSubstitua os "..." com informações reais da transcrição. A soma das notas dos critérios deve refletir o desempenho real. O campo notaFinal é a nota geral de 0 a 100.';
+  var jsonInstruction = '\n\n=== INSTRUÇÃO ADICIONAL ===\nEMITA PRIMEIRO, antes de qualquer análise textual, o bloco JSON estruturado entre as tags <AVALIACAO_JSON> e </AVALIACAO_JSON>. Somente após o bloco JSON escreva a análise textual completa.\n\nFormato exato do bloco JSON (não quebre linhas desnecessárias dentro dos campos de texto):\n<AVALIACAO_JSON>\n{"lead":"nome do lead","segmento":"segmento do negócio","notaFinal":75,"classificacao":"B — Boa, mas incompleta","problemaPrincipal":"...","desejoPrincipal":"...","proximoPasso":"...","criterios":[{"id":1,"nome":"Abertura e controle da reunião","nota":4,"max":6,"descricao":"...","evidencia":"...","acao":"..."},{"id":2,"nome":"Diagnóstico factual do negócio","nota":8,"max":14,"descricao":"...","evidencia":"...","acao":"..."},{"id":3,"nome":"Exploração da dor e consequência","nota":7,"max":14,"descricao":"...","evidencia":"...","acao":"..."},{"id":4,"nome":"Meta, desejo e urgência","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":5,"nome":"Qualificação de decisão e investimento","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":6,"nome":"Escuta e condução consultiva","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":7,"nome":"Apresentação da solução personalizada","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":8,"nome":"Prova, autoridade e posicionamento","nota":3,"max":5,"descricao":"...","evidencia":"...","acao":"..."},{"id":9,"nome":"Investimento e objeções","nota":5,"max":10,"descricao":"...","evidencia":"...","acao":"..."},{"id":10,"nome":"Fechamento e próximo passo","nota":5,"max":11,"descricao":"...","evidencia":"...","acao":"..."}],"pontosFortes":["...","..."],"falhas":[{"titulo":"...","impacto":"...","correcao":"..."}],"acoesPrioritarias":["...","..."],"diagnostico":{"ondeEsta":"...","ondeQuerChegar":"...","impedimentos":"...","risco":"...","solucao":"..."}}\n</AVALIACAO_JSON>\nSubstitua os "..." com informações reais da transcrição. A soma das notas dos critérios deve refletir o desempenho real. O campo notaFinal é a nota geral de 0 a 100.';
   var prompt = 'Analise a transcrição abaixo seguindo exatamente o padrão Jarvis Comercial Audens.'+(nomeLead?' Lead: '+nomeLead+'.':'')+'\n\n=== TRANSCRIÇÃO ===\n'+transcript+jsonInstruction;
   var input=document.getElementById('ac-chat-input');
   if(input) input.value='';
@@ -18758,7 +18758,7 @@ async function acAnalisarReuniao(){
     var resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'content-type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4096,system:systemPrompt,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:16000,system:systemPrompt,messages:[{role:'user',content:prompt}]})
     });
     if(!resp.ok){ var err=await resp.json().catch(function(){return{};}); throw new Error(err.error&&err.error.message?err.error.message:'Erro '+resp.status); }
     var data=await resp.json();
@@ -18914,8 +18914,11 @@ function acAddMsg(role, html, id){
 
 // ===== AVALIAÇÕES: SALVAR E DASHBOARD =====
 function acAbrirModalSalvarAvaliacao(){
-  // Se não há JSON estruturado, cria um objeto mínimo para salvar
-  if(!_lastJarvisEvaluation){ _lastJarvisEvaluation={notaFinal:0,classificacao:'',lead:'',_nomeLead:''}; }
+  // Bloqueia se não há avaliação estruturada (JSON não foi extraído da resposta)
+  if(!_lastJarvisEvaluation||!_lastJarvisEvaluation.notaFinal){
+    showSheetToast('Análise sem dados estruturados — refaça a análise da reunião.',true);
+    return;
+  }
   // Monta lista de closers (todos que não são gestor/sdr)
   var closerOpts=Object.entries(USERS).filter(function(e){ return e[1].funcao!=='sdr'; }).map(function(e){
     var em=e[0],u=e[1];
