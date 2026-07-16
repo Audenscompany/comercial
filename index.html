@@ -19909,7 +19909,22 @@ async function bdrBuscar(){
       return;
     }
     var existingIds=Object.values(bdrLeads).map(function(l){return l.placeId;});
-    var html='<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+_bdrSearchResults.length+' resultados · <span style="color:var(--white);">'+tipo+'</span> em <span style="color:var(--white);">'+cidade+'</span></div>'+
+    var naoAdicionados=_bdrSearchResults.filter(function(p){return existingIds.indexOf(p.id)===-1;}).length;
+    var html=
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'+
+        '<div style="font-size:12px;color:var(--muted);">'+_bdrSearchResults.length+' resultados · <span style="color:var(--white);">'+tipo+'</span> em <span style="color:var(--white);">'+cidade+'</span></div>'+
+        (naoAdicionados>0?
+          '<div style="display:flex;align-items:center;gap:8px;">'+
+            '<label style="font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:5px;">'+
+              '<input type="checkbox" id="bdr-sel-all" onchange="bdrToggleSelectAll(this.checked)" style="accent-color:var(--purple3);width:14px;height:14px;cursor:pointer;">'+
+              'Selecionar todos'+
+            '</label>'+
+            '<button class="btn btn-primary" id="bdr-add-sel-btn" style="font-size:12px;padding:5px 14px;display:none;" onclick="bdrAdicionarSelecionados(\''+tipo.toLowerCase()+'\',\''+cidade+'\')">'+
+              '<i class="ti ti-plus"></i> Adicionar <span id="bdr-sel-count">0</span> selecionados'+
+            '</button>'+
+          '</div>'
+        :'')+
+      '</div>'+
       '<div style="display:flex;flex-direction:column;gap:6px;">'+
       _bdrSearchResults.map(function(p,i){
         var nome=(p.displayName&&p.displayName.text)||'?';
@@ -19918,7 +19933,9 @@ async function bdrBuscar(){
         var site=p.websiteUri||'';
         var rating=p.rating?('⭐ '+p.rating+(p.userRatingCount?' ('+p.userRatingCount+')':'')):'';
         var jaAdded=existingIds.indexOf(p.id)>-1;
-        return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;">'+
+        return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;" id="bdr-row-'+i+'">'+
+          (!jaAdded?'<input type="checkbox" class="bdr-cb" data-idx="'+i+'" onchange="bdrUpdateSelCount()" style="accent-color:var(--purple3);width:15px;height:15px;cursor:pointer;flex-shrink:0;">':
+            '<div style="width:15px;flex-shrink:0;"></div>')+
           '<div style="flex:1;min-width:0;">'+
             '<div style="font-weight:600;font-size:13px;margin-bottom:3px;">'+nome+'</div>'+
             '<div style="font-size:11px;color:var(--muted);line-height:1.5;">'+
@@ -19929,7 +19946,7 @@ async function bdrBuscar(){
           '</div>'+
           (jaAdded
             ?'<span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0;"><i class="ti ti-check"></i> Na lista</span>'
-            :'<button class="btn btn-outline" style="font-size:12px;white-space:nowrap;padding:5px 14px;flex-shrink:0;" onclick="bdrAdicionarLead('+i+',\''+tipo.toLowerCase()+'\',\''+cidade+'\')"><i class="ti ti-plus"></i> Adicionar</button>'
+            :'<button class="btn btn-outline" style="font-size:12px;white-space:nowrap;padding:5px 14px;flex-shrink:0;" onclick="bdrAdicionarLead('+i+',\''+tipo.toLowerCase()+'\',\''+cidade+'\')"><i class="ti ti-plus"></i></button>'
           )+
         '</div>';
       }).join('')+'</div>';
@@ -19973,6 +19990,63 @@ function bdrAdicionarLead(idx,tipo,cidade){
   if(pg&&pg.textContent.includes('BDR')) showPage('bdr');
 }
 
+function bdrUpdateSelCount(){
+  var cbs=document.querySelectorAll('.bdr-cb:checked');
+  var btn=document.getElementById('bdr-add-sel-btn');
+  var cnt=document.getElementById('bdr-sel-count');
+  var allCb=document.getElementById('bdr-sel-all');
+  var total=document.querySelectorAll('.bdr-cb').length;
+  if(cnt) cnt.textContent=cbs.length;
+  if(btn) btn.style.display=cbs.length>0?'':'none';
+  if(allCb) allCb.indeterminate=(cbs.length>0&&cbs.length<total);
+  if(allCb&&cbs.length===total&&total>0) allCb.checked=true;
+  if(allCb&&cbs.length===0) allCb.checked=false;
+}
+function bdrToggleSelectAll(checked){
+  document.querySelectorAll('.bdr-cb').forEach(function(cb){cb.checked=checked;});
+  bdrUpdateSelCount();
+}
+function bdrAdicionarSelecionados(tipo,cidade){
+  var cbs=document.querySelectorAll('.bdr-cb:checked');
+  if(!cbs.length) return;
+  var adicionados=0;
+  cbs.forEach(function(cb){
+    var idx=parseInt(cb.getAttribute('data-idx'));
+    var p=_bdrSearchResults[idx];
+    if(!p) return;
+    var id='bdr_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    var lead={
+      id:id,placeId:p.id||'',
+      nome:(p.displayName&&p.displayName.text)||'',
+      telefone:p.nationalPhoneNumber||'',
+      endereco:p.formattedAddress||'',
+      website:p.websiteUri||'',
+      segmento:tipo||'',cidade:cidade||'',
+      status:'novo',obs:'',historico:[],
+      addedAt:Date.now(),addedBy:CU?CU.name:'Gustavo'
+    };
+    bdrLeads[id]=lead;
+    if(fbDb||initFirebase()) fbDb.ref('bdr_leads/'+id).set(lead);
+    // Atualiza linha para "Na lista"
+    var row=document.getElementById('bdr-row-'+idx);
+    if(row){
+      cb.outerHTML='<div style="width:15px;flex-shrink:0;"></div>';
+      var addBtn=row.querySelector('button');
+      if(addBtn) addBtn.outerHTML='<span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0;"><i class="ti ti-check"></i> Na lista</span>';
+    }
+    adicionados++;
+  });
+  localStorage.setItem('audens_bdr_leads',JSON.stringify(bdrLeads));
+  showSheetToast(adicionados+' lead'+(adicionados>1?'s':'')+' adicionado'+(adicionados>1?'s':'')+' à lista BDR!',false);
+  // Oculta barra de seleção
+  var btn=document.getElementById('bdr-add-sel-btn');
+  if(btn) btn.style.display='none';
+  var allCb=document.getElementById('bdr-sel-all');
+  if(allCb) allCb.checked=false;
+  // Atualiza lista de leads
+  var ll=document.getElementById('bdr-leads-list');
+  if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
+}
 function bdrFiltrar(status){
   _bdrFilter=status;
   showPage('bdr');
