@@ -14575,7 +14575,8 @@ async function loadUserPasswords(){
         });
         // Simpler approach: match by finding the email
         var matchedEmail = Object.keys(USERS).find(function(e){
-          return e.replace(/[@.#$[\]]/g,'_')===key;
+          // Match both new format (@ also replaced) and legacy format (@ kept)
+          return e.replace(/[@.#$[\]]/g,'_')===key || e.replace(/[.#$[\]]/g,'_')===key;
         });
         if(matchedEmail) USERS[matchedEmail].pw = data[key];
       });
