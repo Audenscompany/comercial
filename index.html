@@ -361,6 +361,8 @@ var _navPermissions={}; // {email: [pageId, ...]} — permissões customizadas p
 var BONUS_COMP=30,BONUS_VENDA_PCT=0.25;
 // Tempo apos o horario marcado da reuniao em que o follow-up (Realizada/No-show) passa a ficar pendente
 var MEETING_DURATION_MS=60*60*1000;
+// IDs de tarefas dispensadas persistidas em localStorage (sobrevive a reloads e falhas de Firebase)
+var _dispensadosLS=JSON.parse(localStorage.getItem('audens_dispensados')||'{}');
 
 // ===== HOLIDAYS =====
 var FIXED_HOL={'01-01':'Confraternizacao','04-21':'Tiradentes','05-01':'Dia do Trabalho',
@@ -4205,13 +4207,17 @@ function getPendingFollowups(){
     var _st=getMeetingStatus(m);
     if(_st==='done'||_st==='noshow'||_st==='reagendado') return false;
     if(followups[m.id]) return false;
-    if(Date.now()<=new Date(m.dtISO).getTime()+MEETING_DURATION_MS) return false;
+    if(_dispensadosLS[m.id]) return false; // dispensado via X (persiste em localStorage)
+    var _dtMs=m.dtISO?new Date(m.dtISO).getTime():NaN;
+    if(isNaN(_dtMs)) return false; // data inválida/ausente — não exibir
+    if(Date.now()<=_dtMs+MEETING_DURATION_MS) return false;
     if(m.responsavel!==CU.closer) return false;
     // Se existe uma reunião MAIS RECENTE para o mesmo telefone, essa foi reagendada
     if(m.tel){
-      var mTime=new Date(m.dtISO).getTime();
+      var mTime=_dtMs; // já calculado e validado acima
       var hasNewer=allMtgs.some(function(m2){
-        return m2.id!==m.id&&m2.tel===m.tel&&new Date(m2.dtISO).getTime()>mTime;
+        var t2=m2.dtISO?new Date(m2.dtISO).getTime():NaN;
+        return m2.id!==m.id&&m2.tel===m.tel&&!isNaN(t2)&&t2>mTime;
       });
       if(hasNewer) return false;
     }
@@ -8839,6 +8845,9 @@ function dispensarTarefa(mid){
   // Marca como reagendado para sair do getPendingFollowups
   meetings[mid].status = 'reagendado';
   meetings[mid]._dispensadoEm = Date.now();
+  // Persiste em localStorage para sobreviver a reloads e race conditions com Firebase
+  _dispensadosLS[mid] = Date.now();
+  localStorage.setItem('audens_dispensados', JSON.stringify(_dispensadosLS));
   saveMeetingFB(mid, meetings[mid]);
   // Remove a linha da UI sem recarregar a página
   var row = document.getElementById('tarefa-row-'+mid);
