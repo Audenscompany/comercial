@@ -363,6 +363,16 @@ tbody tr:hover td{background:var(--pglow2);}
 </div>
 </div>
 <script>
+// ===== SIGN PAGE IMMEDIATE CHECK (runs before DOMContentLoaded) =====
+(function(){
+  var _sp=new URLSearchParams(window.location.search).get('sign');
+  if(_sp){
+    var ls=document.getElementById('login-screen');
+    var ss=document.getElementById('sign-screen');
+    if(ls) ls.classList.remove('active');
+    if(ss) ss.classList.add('active');
+  }
+})();
 // ===== USERS =====
 var USERS={
   'lucas@audens.com':{pw:'audens2025',role:'gestor',name:'Lucas Siqueira',initials:'LS',closer:'Lucas',funcao:'gestor'},
@@ -417,10 +427,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // Link de assinatura de contrato (?sign=<id>) - tela publica, sem login
   var signId=new URLSearchParams(window.location.search).get('sign');
   if(signId){
-    if(!fbDb) initFirebase();
+    // Screen already switched by IIFE above, but do it again for safety
     document.getElementById('login-screen').classList.remove('active');
     document.getElementById('sign-screen').classList.add('active');
-    renderSignPage(signId);
+    ensureFirebase(function(){ renderSignPage(signId); });
     return;
   }
   // Pre-load passwords from Firebase so login works with updated passwords on any machine
