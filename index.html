@@ -1898,7 +1898,7 @@ function renderKanban(){
         '<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:#f87171;">'+urgentes.length+' lead'+(urgentes.length>1?'s':'')+' aguardando contato — meta: ≤ 10 min</div>'+
         '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">Mais antigo: '+(worst.nome||'lead')+(worst.empresa?' ('+worst.empresa+')':'')+' — esperando há '+lbl+'</div>'+
       '</div>'+
-      '<button onclick="filterKanbanSearch('')" style="padding:6px 14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Ver Novos Leads</button>'+
+      '<button onclick="filterKanbanSearch()" style="padding:6px 14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Ver Novos Leads</button>'+
     '</div>'+html;
   })();
 
@@ -13632,6 +13632,7 @@ async function loadFunilReunioes(){
 }
 // Filtro de mês global para Reuniões
 var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
+var _reunTab='geral'; // 'geral' | 'noshow'
 var _vendasMesFiltro=null;
 var _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
 var _vendasPagina=1;
@@ -13642,6 +13643,7 @@ function setReuniaoMesFiltro(val){
   showPage('reunioes');
 }
 
+function setReunTab(t){_reunTab=t;showPage('reunioes');}
 function renderReunioesPersonal(){
   var nome = CU.closer || (CU.name||'').split(' ')[0] || CU.name || '';
   var isGestor = CU.role==='gestor';
@@ -13856,6 +13858,34 @@ function renderReunioesPersonal(){
     if(_st==='done')origMap[k].real++;
     if(_st==='noshow')origMap[k].ns++;
   });
+  // No-show por Qualificacao
+  var byQualifP={qualificado:{ag:0,real:0,ns:0,vendas:0},nao_qualificado:{ag:0,real:0,ns:0,vendas:0}};
+  rowsMes.forEach(function(m){
+    var fv=parseFaturamentoValue(m.faturamentoLead||'');
+    var qk=fv>=40000?'qualificado':'nao_qualificado';
+    var _st=getMeetingStatus(m);
+    byQualifP[qk].ag++;
+    if(_st==='done')byQualifP[qk].real++;
+    if(_st==='noshow')byQualifP[qk].ns++;
+    var fu2=followups[m.id];if(fu2&&fu2.venda==='sim')byQualifP[qk].vendas++;
+  });
+  // No-show por Closer
+  var byCloserNs={};
+  rowsMes.forEach(function(m){
+    var _st=getMeetingStatus(m);
+    if(_st!=='noshow') return;
+    var cl=(m.responsavel||'Nao atribuido').trim();
+    if(!byCloserNs[cl])byCloserNs[cl]={name:cl,ns:0,total:0};
+    byCloserNs[cl].ns++;
+    byCloserNs[cl].total++;
+  });
+  rowsMes.forEach(function(m){
+    var cl=(m.responsavel||'Nao atribuido').trim();
+    if(!byCloserNs[cl])byCloserNs[cl]={name:cl,ns:0,total:0};
+    byCloserNs[cl].total++;
+  });
+  var closerNsList=Object.values(byCloserNs).filter(function(c){return c.ns>0;}).sort(function(a,b){return b.ns-a.ns;});
+
   var origList=Object.values(origMap).sort(function(a,b){return b.total-a.total;}).slice(0,6);
   var origMax=origList.length>0?origList[0].total:1;
   var origIconMap={
@@ -14154,6 +14184,146 @@ function renderReunioesPersonal(){
     '</div>'+
   '</div>';
 
+
+  // ── Tab Nav ──────────────────────────────────────────────────────────────────
+  var _tabsNav='<div style="display:flex;gap:4px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:20px;">'+
+    [['geral','Visão Geral','ti-layout-dashboard'],['noshow','No-show','ti-user-off']].map(function(t){
+      var active=_reunTab===t[0];
+      return '<button onclick="setReunTab(\''+t[0]+'\')" style="flex:1;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;transition:all .15s;'+
+        (active?'background:var(--purple);color:#fff;box-shadow:0 2px 8px rgba(123,47,255,0.3);':'background:transparent;color:var(--muted);')+
+        '"><i class="ti '+t[2]+'" style="margin-right:5px;font-size:13px;"></i>'+t[1]+
+        (t[0]==='noshow'&&noshow>0?' <span style="background:rgba(239,68,68,0.25);color:#f87171;border-radius:20px;padding:1px 7px;font-size:11px;margin-left:4px;">'+noshow+'</span>':'')+
+      '</button>';
+    }).join('')+
+  '</div>';
+
+  // ── No-show Tab Content ───────────────────────────────────────────────────────
+  var _nsTabHtml='';
+  if(_reunTab==='noshow'){
+    var _nsTaxaP=realizadas+noshow>0?Math.round(noshow/(realizadas+noshow)*100):0;
+    var _nsKpis='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">'+
+      '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+        '<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">No-shows no Mes</div>'+
+        '<div style="font-family:Bebas Neue,sans-serif;font-size:44px;color:#f87171;line-height:1;">'+noshow+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">de '+agendadas+' agendadas</div></div>'+
+      '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+        '<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Taxa de No-show</div>'+
+        '<div style="font-family:Bebas Neue,sans-serif;font-size:44px;color:'+(_nsTaxaP>25?'#f87171':_nsTaxaP>15?'var(--amber)':'var(--green)')+';line-height:1;">'+_nsTaxaP+'%</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+(noshow>0?'meta: abaixo de 15%':'dentro do ideal')+'</div></div>'+
+      '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+        '<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Realizadas</div>'+
+        '<div style="font-family:Bebas Neue,sans-serif;font-size:44px;color:var(--green);line-height:1;">'+realizadas+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">taxa: '+(agendadas>0?Math.round(realizadas/agendadas*100):0)+'%</div></div>'+
+      '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">'+
+        '<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Vendas</div>'+
+        '<div style="font-family:Bebas Neue,sans-serif;font-size:44px;color:var(--purple3);line-height:1;">'+vendas+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">conv. '+(realizadas>0?Math.round(vendas/realizadas*100):0)+'% das realizadas</div></div>'+
+    '</div>';
+
+    var _nsCanais=Object.values(origMap).filter(function(o){return o.ns>0;}).sort(function(a,b){return b.ns-a.ns;});
+    var _nsWorstName=_nsCanais.length?_nsCanais[0].name:null;
+    var _nsCanaisSection='<div style="background:var(--bg2);border:1px solid rgba(239,68,68,0.3);border-radius:14px;padding:20px;margin-bottom:16px;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">'+
+        '<div style="display:flex;align-items:center;gap:10px;">'+
+          '<div style="width:36px;height:36px;border-radius:10px;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;"><i class="ti ti-chart-bar" style="color:#f87171;font-size:17px;"></i></div>'+
+          '<div><div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">No-show por Canal</div>'+
+            '<div style="font-size:11px;color:var(--muted);">'+(noshow>0?noshow+' no-show'+(noshow!==1?'s':'')+' neste mes':'Nenhum no-show este mes')+'</div></div>'+
+        '</div>'+
+        (_nsWorstName?'<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);font-size:11px;font-weight:700;color:#f87171;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i>Critico: '+esc(_nsWorstName)+'</span>':'')+
+      '</div>'+
+      (_nsCanais.length===0
+        ?'<div style="text-align:center;padding:24px;color:var(--green);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-circle-check" style="font-size:18px;"></i>Nenhum no-show este mes. Otimo!</div>'
+        :'<div style="display:grid;grid-template-columns:repeat('+Math.min(_nsCanais.length,3)+',1fr);gap:12px;">'+
+          _nsCanais.map(function(o){
+            var nsP=o.real+o.ns>0?Math.round(o.ns/(o.real+o.ns)*100):0;
+            var pctTotal=noshow>0?Math.round(o.ns/noshow*100):0;
+            var nsCol=nsP>35?'#f87171':nsP>20?'var(--amber)':'var(--green)';
+            var nsBg=nsP>35?'rgba(239,68,68,0.08)':nsP>20?'rgba(245,158,11,0.06)':'rgba(34,197,94,0.06)';
+            var ico=origIconMap[o.name.toLowerCase()]||'dots';
+            var oc=origColMap[o.name.toLowerCase()]||'var(--muted)';
+            return '<div style="background:'+nsBg+';border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:16px;">'+
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'+
+                '<i class="ti ti-'+ico+'" style="color:'+oc+';font-size:15px;"></i>'+
+                '<span style="font-size:12px;font-weight:700;color:var(--white);">'+esc(o.name)+'</span>'+
+                '<span style="margin-left:auto;font-size:10px;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.06);color:var(--muted);">'+pctTotal+'% do total</span>'+
+              '</div>'+
+              '<div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:8px;">'+
+                '<div style="font-family:Bebas Neue,sans-serif;font-size:44px;color:'+nsCol+';line-height:1;">'+o.ns+'</div>'+
+                '<div style="padding-bottom:8px;"><div style="font-size:10px;color:var(--muted);">no-shows</div><div style="font-size:13px;font-weight:700;color:'+nsCol+';">'+nsP+'% taxa</div></div>'+
+              '</div>'+
+              '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;"><div style="height:4px;width:'+Math.min(nsP,100)+'%;background:'+nsCol+';border-radius:2px;"></div></div>'+
+              '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;"><span>'+o.total+' agendadas</span><span>'+o.real+' realizadas</span></div>'+
+            '</div>';
+          }).join('')+'</div>')+
+    '</div>';
+
+    var _qItems=[
+      {key:'qualificado',label:'Qualificados',sub:'Fat. >= R$40k',ic:'ti-star',col:'var(--green)',bg:'rgba(34,197,94,0.08)',bor:'rgba(34,197,94,0.25)'},
+      {key:'nao_qualificado',label:'Nao Qualificados',sub:'Fat. < R$40k',ic:'ti-user',col:'var(--amber)',bg:'rgba(245,158,11,0.06)',bor:'rgba(245,158,11,0.2)'}
+    ];
+    var _nsQualifSection='<div style="background:var(--bg2);border:1px solid rgba(123,47,255,0.25);border-radius:14px;padding:20px;margin-bottom:16px;">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">'+
+        '<div style="width:36px;height:36px;border-radius:10px;background:rgba(123,47,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-chart-pie" style="color:var(--purple3);font-size:17px;"></i></div>'+
+        '<div><div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">No-show por Qualificacao</div>'+
+          '<div style="font-size:11px;color:var(--muted);">Leads qualificados (fat. >= R$40k) vs nao qualificados</div></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+        _qItems.map(function(qi){
+          var d=byQualifP[qi.key];
+          var nsP=d.real+d.ns>0?Math.round(d.ns/(d.real+d.ns)*100):0;
+          var nsCol=nsP>35?'#f87171':nsP>20?'var(--amber)':'var(--green)';
+          var convP=d.real>0?Math.round(d.vendas/d.real*100):0;
+          return '<div style="background:'+qi.bg+';border:1px solid '+qi.bor+';border-radius:12px;padding:18px;">'+
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'+
+              '<div style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;"><i class="ti '+qi.ic+'" style="color:'+qi.col+';font-size:13px;"></i></div>'+
+              '<div><div style="font-size:13px;font-weight:700;color:var(--white);">'+qi.label+'</div><div style="font-size:10px;color:var(--muted);">'+qi.sub+'</div></div>'+
+            '</div>'+
+            '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">'+
+              '<div style="text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:32px;color:var(--white);line-height:1;">'+d.ag+'</div><div style="font-size:10px;color:var(--muted);">Agend.</div></div>'+
+              '<div style="text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:32px;color:'+nsCol+';line-height:1;">'+d.ns+'</div><div style="font-size:10px;color:var(--muted);">No-show</div></div>'+
+              '<div style="text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:32px;color:var(--green);line-height:1;">'+d.vendas+'</div><div style="font-size:10px;color:var(--muted);">Vendas</div></div>'+
+            '</div>'+
+            '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+              '<div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Taxa no-show</div>'+
+                '<div style="height:4px;width:80px;background:rgba(255,255,255,0.06);border-radius:2px;"><div style="height:4px;width:'+Math.min(nsP,100)+'%;background:'+nsCol+';border-radius:2px;"></div></div></div>'+
+              '<div style="text-align:right;"><div style="font-family:Bebas Neue,sans-serif;font-size:26px;color:'+nsCol+';">'+nsP+'%</div>'+
+                '<div style="font-size:10px;color:var(--green);">conv. '+convP+'%</div></div>'+
+            '</div>'+
+          '</div>';
+        }).join('')+
+      '</div></div>';
+
+    var _nsCloserSection='';
+    if(closerNsList.length){
+      _nsCloserSection='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;">'+
+        '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">'+
+          '<i class="ti ti-user-off" style="color:var(--amber);font-size:18px;"></i>'+
+          '<span style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;">No-show por Closer</span></div>'+
+        '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-family:Barlow Condensed,sans-serif;">'+
+          '<thead><tr style="border-bottom:1px solid var(--border);">'+
+            '<th style="padding:10px 16px;text-align:left;font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;">Closer</th>'+
+            '<th style="padding:10px 12px;text-align:center;font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;">No-shows</th>'+
+            '<th style="padding:10px 12px;text-align:center;font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;">Agendadas</th>'+
+            '<th style="padding:10px 16px;text-align:right;font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;">Taxa NS</th>'+
+          '</tr></thead><tbody>'+
+          closerNsList.map(function(c,i){
+            var taxaNsC=c.total>0?Math.round(c.ns/c.total*100):0;
+            var nsColC=taxaNsC>30?'#f87171':taxaNsC>15?'var(--amber)':'var(--green)';
+            var ini=c.name.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+              '<td style="padding:12px 16px;"><div style="display:flex;align-items:center;gap:8px;">'+
+                '<div style="width:30px;height:30px;border-radius:50%;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;font-family:Bebas Neue,sans-serif;font-size:13px;color:#f87171;">'+ini+'</div>'+
+                '<span style="font-size:13px;font-weight:700;color:var(--white);">'+esc(c.name)+'</span></div></td>'+
+              '<td style="padding:12px;text-align:center;font-family:Bebas Neue,sans-serif;font-size:26px;color:#f87171;">'+c.ns+'</td>'+
+              '<td style="padding:12px;text-align:center;font-size:13px;color:var(--muted);">'+c.total+'</td>'+
+              '<td style="padding:12px 16px;text-align:right;font-size:15px;font-weight:700;color:'+nsColC+';">'+taxaNsC+'%</td>'+
+            '</tr>';
+          }).join('')+
+          '</tbody></table></div></div>';
+    }
+    _nsTabHtml=_nsKpis+_nsCanaisSection+_nsQualifSection+_nsCloserSection;
+  }
+
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
       '<div class="page-title">Reuniões & Performance</div>'+
@@ -14171,15 +14341,18 @@ function renderReunioesPersonal(){
         '<i class="ti ti-x"></i> Desfazer Sync</button>':'')+
     '</div></div>'+
     createForm+
-    kpiRow+
-    nsCanaisCard+
-    funilCard+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'+
-      '<div>'+agendaCard+sdrCard+'</div>'+
-      '<div>'+clCard+origCard+'</div>'+
-    '</div>'+
-    proxAcoes+
-    fbHtml+
+    _tabsNav+
+    (_reunTab==='noshow'?_nsTabHtml:
+      kpiRow+
+      nsCanaisCard+
+      funilCard+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'+
+        '<div>'+agendaCard+sdrCard+'</div>'+
+        '<div>'+clCard+origCard+'</div>'+
+      '</div>'+
+      proxAcoes+
+      fbHtml
+    )+
   '</div>';
 }
 
