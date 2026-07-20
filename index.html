@@ -21238,6 +21238,8 @@ function renderVisaoGeral(){
 function setVendasMesFiltro(k){
   if(k){var p=k.split('-');_vendasMesFiltro={y:parseInt(p[0]),m:parseInt(p[1])-1};}
   else _vendasMesFiltro=null;
+  _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
+  _vendasPagina=1;
   _vendasPagina=1;
   showPage('vendas');
 }
@@ -21371,10 +21373,10 @@ function renderVendas(){
   var closerOpts='';
   var closerSet={};
   vendas.forEach(function(v){var c=(v.m&&v.m.responsavel)||'';if(c)closerSet[c]=1;});
-  Object.keys(closerSet).sort().forEach(function(c){closerOpts+='<option value="'+c+'">'+c+'</option>';});
+  Object.keys(closerSet).sort().forEach(function(c){var sel=(_vendasFiltros.closer===c)?' selected':'';closerOpts+='<option value="'+c+'"'+sel+'>'+c+'</option>';});
   var sdrSet={};
   vendas.forEach(function(v){var s=(v.m&&(v.m.sdrName||v.m.sdr))||'';if(s)sdrSet[s]=1;});
-  var sdrOpts='';Object.keys(sdrSet).sort().forEach(function(s){sdrOpts+='<option value="'+s+'">'+s+'</option>';});
+  var sdrOpts='';Object.keys(sdrSet).sort().forEach(function(s){var sel=(_vendasFiltros.sdr===s)?' selected':'';sdrOpts+='<option value="'+s+'"'+sel+'>'+s+'</option>';});
   // Origens disponíveis (categorias)
   var origCats=['Trafego Pago','Trafego Organico','Indicacoes / Outros'];
   var origOpts=origCats.map(function(o){
@@ -21723,6 +21725,7 @@ function _renderVendasTabela(){
 
   var cnt=document.getElementById('vf-cnt');if(cnt)cnt.textContent=total+' resultado'+(total!==1?'s':'');
   var badge=document.getElementById('vf-badge');if(badge)badge.textContent=total;
+  var kpiTotal=document.getElementById('v-total-vendas');if(kpiTotal)kpiTotal.textContent=total;
 }
 
 function _initVendasChart(labels,data,metaLine,meta){
@@ -21908,6 +21911,13 @@ async function salvarEdicaoVenda(){
       await fbDb.ref('followups/'+fid).update(fu);
       if(m&&closer)await fbDb.ref('meetings/'+m.id).update({responsavel:closer});
     }
+    // Re-apply edited fields — Firebase listener may have replaced followups[fid] during await
+    if(!followups[fid]) followups[fid]={};
+    followups[fid].plano=plano;followups[fid].tipoValor=tipo;
+    followups[fid].mensalidade=mensalidade;followups[fid].contrato=contrato;
+    followups[fid].duracao=duracao;followups[fid].dataInicio=dataInicio;
+    if(cliente)followups[fid].nome=cliente;
+    if(m&&closer&&m.responsavel!==closer)m.responsavel=closer;
     saveAll();
     showSheetToast('Venda atualizada com sucesso.',false);
     fecharEditarVenda();
