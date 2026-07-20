@@ -4087,6 +4087,7 @@ function showPage(id){
     if(id==='audens-day') setTimeout(loadAudensDay,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
+    if(id==='vendas') setTimeout(loadVendasSheets,50);
     if(id==='financeiro'||id.startsWith('fin-')) setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -13419,6 +13420,12 @@ async function loadFunilReunioes(){
 
     // Atualiza Funil
     var fbVendas=Object.values(window._rpClMap||{}).reduce(function(s,c){return s+(c.vendas||0);},0);
+    // Usa planilha clientes como fonte de verdade (alinha com Dashboard Comercial)
+    var _sheetsVendasMes=(data.clientes&&data.clientes.rows||[]).filter(function(c){
+      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+      return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
+    }).length;
+    if(_sheetsVendasMes>fbVendas) fbVendas=_sheetsVendasMes;
     var elFunil=document.getElementById('rp-funil');
     if(elFunil){
       var agend=shTotal;
@@ -20824,6 +20831,22 @@ function editarMetaVendas(){
   if(v&&!isNaN(parseFloat(v))){localStorage.setItem(k,parseFloat(v));showPage('vendas');}
 }
 
+async function loadVendasSheets(){
+  var now=new Date();
+  var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
+  var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
+  try{
+    var data=await loadDataHybrid();
+    var sheetsCount=(data.clientes&&data.clientes.rows||[]).filter(function(c){
+      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+      return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
+    }).length;
+    var el=document.getElementById('v-total-vendas');
+    if(el&&sheetsCount>parseInt(el.textContent||'0')){
+      el.textContent=sheetsCount;
+    }
+  }catch(e){console.warn('[loadVendasSheets]',e);}
+}
 function renderVendas(){
   var now=new Date();
   var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
@@ -20967,7 +20990,7 @@ function renderVendas(){
   }
 
   var kpiGrid=
-    kpiCard('shopping-cart','Vendas fechadas',vendas.length,dlt(vendas.length,vendasPrev.length),'#4ade80','#4ade80')+
+    kpiCard('shopping-cart','Vendas fechadas','<span id="v-total-vendas">'+vendas.length+'</span>',dlt(vendas.length,vendasPrev.length),'#4ade80','#4ade80')+
     kpiCard('coin','Receita nova',fmtV(totalReceita),dlt(totalReceita,totalReceitaPrev),'#a78bfa','#a78bfa')+
     kpiCard('refresh','MRR adicionado',fmtV(totalReceita),dlt(totalReceita,totalReceitaPrev),'#60a5fa','#60a5fa')+
     kpiCard('chart-bar','Ticket médio',fmtV(ticket),dlt(ticket,ticketPrev),'#fbbf24','#fbbf24')+
