@@ -5426,7 +5426,7 @@ function _finNormalizeLegacy(saidas,entradas,recebimentos){
       date:d.data||'',dueDate:d.data||'',description:d.descricao||'Despesa',
       category:d.categoria||'Outros',accountId:'legado',status:d.status||'pendente',
       origin:'manual',createdAt:d.createdAt||0,createdBy:d.criadoPor||'',
-      fixed:!!(d.fixa||d.fixed),_raw:d});
+      fixed:!!(d.fixa||d.fixed),_src:'saidas',_raw:d});
   });
   Object.entries(entradas||{}).forEach(function(e){
     var d=Object.assign({},e[1],{_id:e[0],_src:'entradas_manuais'});
@@ -7260,7 +7260,12 @@ async function finSalvarEdicao(){
   await fbDb.ref('financeiro/'+tipo+'/'+id).update(updates);
   closeModal('modal-editar-lanc');
   showSheetToast('Lançamento atualizado!');
-  loadFinanceiroData();
+  _finState.loaded=false;
+  await finLoadData(true);
+  var dp=document.getElementById('content')&&document.getElementById('content').getAttribute('data-page');
+  if(dp==='fin-despesas') finRenderDespesas();
+  else if(dp==='fin-lancamentos') finRenderLancamentos();
+  else if(dp==='fin-dashboard'||dp==='financeiro') finRenderDashboard();
 }
 
 // ===== ASSINATURAS: pagina interna (gestor/closer) =====
