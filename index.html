@@ -7975,7 +7975,7 @@ function renderFollowupBody(){
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
         '<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
         '<div class="modal-grid2">'+
-          '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;">'+
+          '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;" onchange="fuOnPlanoChange()">'+
             '<option value="starter">Starter</option>'+
             '<option value="marketplaces">Marketplaces</option>'+
             '<option value="premium">Premium</option>'+
@@ -8064,6 +8064,33 @@ function fuToggleSegLoja(){
     btn.style.background  = open ? 'rgba(123,47,255,0.1)' : 'rgba(123,47,255,0.18)';
   }
 }
+function fuOnPlanoChange(){
+  var plano=(document.getElementById('fu-plano')||{}).value||'';
+  var duracaoWrap=document.getElementById('fu-duracao-wrap');
+  var tipoEl=document.getElementById('fu-tipo-valor');
+  if(plano==='starter'){
+    // Starter: prazo fixo 45 dias, sempre TCV
+    if(duracaoWrap) duracaoWrap.innerHTML=
+      '<label class="f-label">Duração</label>'+
+      '<input class="f-input" id="fu-duracao" value="45" type="hidden">'+
+      '<div class="f-input" style="background:rgba(255,255,255,0.04);cursor:default;color:var(--muted);">45 dias (fixo)</div>';
+    if(tipoEl){tipoEl.value='tcv';}
+    toggleMensalidadeField();
+  } else {
+    // Outros planos: restaura select normal
+    if(duracaoWrap){
+      var curVal='6';
+      duracaoWrap.innerHTML=
+        '<label class="f-label">Duracao (meses)</label>'+
+        '<select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()">'+
+        '<option value="3"'+(curVal==='3'?' selected':'')+'>3 meses</option>'+
+        '<option value="6"'+(curVal!=='3'?' selected':'')+'>6 meses</option>'+
+        '</select>';
+    }
+    toggleMensalidadeField();
+  }
+  updateBonusPreview();
+}
 function toggleMensalidadeField(){
   var tipo=document.getElementById('fu-tipo-valor');
   var wrap=document.getElementById('fu-mensalidade-wrap');
@@ -8137,7 +8164,7 @@ function fmtBRLPlanilha(v){
 }
 // Monta o texto "Plano X - Frequencia" conforme padrao da coluna PLANO da planilha de Clientes
 function buildPlanoLabel(plano,duracao,tipoValor){
-  var nomes={marketplaces:'Marketplaces',premium:'Premium',elite:'Elite'};
+  var nomes={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium',elite:'Elite'};
   var nome=nomes[plano]||(plano?(plano.charAt(0).toUpperCase()+plano.slice(1)):'');
   var freq;
   if(tipoValor==='mmr') freq='Recorrente';
@@ -8351,10 +8378,18 @@ async function generateContratoDocx(dados){
     var doc=new window.docxtemplater(zip,{paragraphLoop:true,linebreaks:true});
 
     var dataInicio=new Date((dados.dataInicio||new Date().toISOString().split('T')[0])+'T00:00:00');
-    var dataFim=addMonthsISO(dados.dataInicio,dados.duracaoMeses);
+    var _isStarter=dados.plano==='starter';
+    var dataFim;
+    if(_isStarter){
+      dataFim=new Date(dataInicio);dataFim.setDate(dataFim.getDate()+45);
+    } else {
+      dataFim=addMonthsISO(dados.dataInicio,dados.duracaoMeses);
+    }
 
     var formaPagamento;
-    if(dados.tipoValor==='mmr'){
+    if(_isStarter){
+      formaPagamento='o valor total de R$ '+fmtMoeda(dados.valorTotal)+', correspondente ao Plano Starter, com vigência de 45 (quarenta e cinco) dias corridos.';
+    } else if(dados.tipoValor==='mmr'){
       formaPagamento='o valor mensal de R$ '+fmtMoeda(dados.valorParcela)+', durante o prazo de '+dados.duracaoMeses+' meses, totalizando o valor global de R$ '+fmtMoeda(dados.valorTotal)+'.';
     }else{
       formaPagamento='o valor total de R$ '+fmtMoeda(dados.valorTotal)+', correspondente ao plano contratado, com vigência de '+dados.duracaoMeses+' meses.';
@@ -8373,7 +8408,7 @@ async function generateContratoDocx(dados){
     doc.render({
       nome_cliente:dados.nomeCliente||'',
       cnpj_cliente:dados.cnpjCliente||'',
-      duracao_meses:String(dados.duracaoMeses||''),
+      duracao_meses:_isStarter?'45 dias':String(dados.duracaoMeses||''),
       data_inicio:fmtDataBR(dataInicio),
       data_fim:fmtDataBR(dataFim),
       forma_pagamento:formaPagamento,
