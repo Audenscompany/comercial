@@ -21117,7 +21117,7 @@ function renderVendas(){
   '</div>';
 
   // Tabela
-  var planoLabels={starter:'Starter',premium:'Premium',elite:'Elite',plano3:'Plano 3'};
+  var planoLabels={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium',elite:'Elite',plano3:'Plano 3'};
   var inpStyle='background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--white);font-size:12px;outline:none;';
   var filterBar='<div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border);">'+
     '<div style="position:relative;flex:1;min-width:180px;">'+
@@ -21219,7 +21219,7 @@ function _renderVendasTabela(){
   var filtradas=vendas.filter(function(v){
     var fu=v.fu,m=v.m;
     var busca=(_vendasFiltros.busca||'').toLowerCase();
-    if(busca){var cliente=(fu.nome||(m&&m.nome)||'').toLowerCase(),closer=((m&&m.responsavel)||'').toLowerCase(),orig=(v.origemRaw||'').toLowerCase();if(!cliente.includes(busca)&&!closer.includes(busca)&&!orig.includes(busca))return false;}
+    if(busca){var _ke2=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;var cliente=((fu.empresa)||(m&&m.empresa)||(_ke2&&_ke2.empresa)||fu.nome||(m&&m.nome)||'').toLowerCase(),closer=((m&&m.responsavel)||'').toLowerCase(),orig=(v.origemRaw||'').toLowerCase();if(!cliente.includes(busca)&&!closer.includes(busca)&&!orig.includes(busca))return false;}
     if(_vendasFiltros.plano&&fu.plano!==_vendasFiltros.plano)return false;
     if(_vendasFiltros.closer){var c=(m&&m.responsavel)||'';if(c!==_vendasFiltros.closer)return false;}
     if(_vendasFiltros.sdr){var s=(m&&(m.sdrName||m.sdr))||'';if(s!==_vendasFiltros.sdr)return false;}
@@ -21241,7 +21241,8 @@ function _renderVendasTabela(){
     ?'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;font-size:13px;">Nenhuma venda encontrada</td></tr>'
     :paginadas.map(function(v){
       var fu=v.fu,m=v.m,fid=v.fid;
-      var cliente=fu.nome||(m&&m.nome)||'—';
+      var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
+      var cliente=(fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa)||fu.nome||(m&&m.nome)||'—';
       var closer=(m&&m.responsavel)||'—';
       var sdr=(m&&(m.sdrName||m.sdr))||'—';
       var plano=planoLabels[fu.plano]||fu.plano||'—';
