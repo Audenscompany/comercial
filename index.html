@@ -13682,7 +13682,8 @@ function renderReunioesNoshow(){
     var sel=mv.m===filtM&&mv.y===filtY?' selected':'';
     opts2+='<option value="'+JSON.stringify(mv).replace(/"/g,'&quot;')+'"'+sel+'>'+_mns2[dd.getMonth()]+' '+dd.getFullYear()+'</option>';
   }
-  var mesSelect2='<select onchange="(function(v){_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'\"')); showPage('reunioes-noshow');})(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 12px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;outline:none;">'+opts2+'</select>';
+  function _nsMonthChange(v){try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;} showPage('reunioes-noshow');}
+  var mesSelect2='<select onchange="_nsMonthChange(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 12px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;outline:none;">'+opts2+'</select>';
 
   var rowsMes2=Object.values(meetings).filter(function(m){
     if(!m.dtISO) return false;
