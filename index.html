@@ -7941,6 +7941,7 @@ function prefillFollowupEdit(fu){
   setVal('fu-data-inicio', fu.dataInicio||'');
   setVal('fu-tipo-valor', fu.tipoValor||'tcv');
   toggleMensalidadeField();
+  fuOnPlanoChange(); // aplica restrições do plano (ex: Starter = 45 dias fixo)
   setVal('fu-contrato', fu.contrato||'');
   setVal('fu-mensalidade', fu.mensalidade||'');
   setVal('fu-frequencia', fu.frequencia||'mensal');
@@ -8100,7 +8101,9 @@ function toggleMensalidadeField(){
   var freqWrap=document.getElementById('fu-frequencia-wrap');
   if(freqWrap) freqWrap.style.display=isTCV?'none':'grid';
   var duracaoWrap=document.getElementById('fu-duracao-wrap');
-  if(duracaoWrap){
+  var _planoEl=document.getElementById('fu-plano');
+  var _isStarterNow=_planoEl&&_planoEl.value==='starter';
+  if(duracaoWrap&&!_isStarterNow){
     var curVal=(document.getElementById('fu-duracao')||{}).value||'6';
     if(isTCV){
       duracaoWrap.innerHTML='<label class="f-label">Duracao (meses)</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()"><option value="3"'+(curVal==='3'?' selected':'')+'>3 meses</option><option value="6"'+(curVal!=='3'?' selected':'')+'>6 meses</option></select>';
