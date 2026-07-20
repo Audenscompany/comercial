@@ -5328,7 +5328,7 @@ async function confirmarAssinatura(id){
       var isTcv=(vd.tipoValor||'').toLowerCase()==='tcv';
       var mensalidade=isTcv?Math.round((parseFloat(vd.valorTotal)||0)/planoDur):(parseFloat(vd.mensalidade||vd.valorParcela)||0);
       var planoRaw=(vd.plano||'').toLowerCase();
-      var planoMapped=planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':
+      var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':
         (planoRaw==='marketplaces'||planoRaw==='marketplace')?'Marketplace':(vd.plano||'');
       var wPayload={
         cliente:{nome:sd.cliente||'',telefone:(sd.telefone||'').replace(/\D/g,''),cnpj:sd.cnpj||vd.cnpj||''},
@@ -7394,7 +7394,7 @@ async function marcarContratoComoVenda(id){
   // Cria entrada na coleção contratos (usada para cálculo de bônus/comissão)
   var _planoDurMCV=parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||1;
   var _planoNomeMCV=(vd.plano||'').toLowerCase();
-  var _planoLblMCV=_planoNomeMCV==='premium'?'Plano Premium':_planoNomeMCV==='elite'?'Plano Elite':'Plano '+(_planoNomeMCV||'');
+  var _planoLblMCV=_planoNomeMCV==='starter'?'Plano Starter':_planoNomeMCV==='premium'?'Plano Premium':_planoNomeMCV==='elite'?'Plano Elite':'Plano '+(_planoNomeMCV||'');
   var _planoSufMCV=_planoDurMCV>=6?' - Semestral':_planoDurMCV>=3?' - Trimestral':' - Mensal';
   var _mrrMCV=(vd.tipoValor||'')==='tcv'?Math.round((parseFloat(vd.contrato)||0)/_planoDurMCV):(mensBase||parseFloat(vd.contrato)||0);
   var _tcvMCV=(vd.tipoValor||'')==='tcv'?(parseFloat(vd.contrato)||0):(_mrrMCV*_planoDurMCV);
@@ -7442,7 +7442,7 @@ async function dispararWebhookVenda(id){
     var mensalidade=isTcv?Math.round((parseFloat(vd.contrato)||0)/planoDur):(parseFloat(vd.mensalidade||vd.contrato)||0);
     // Mapeamento de plano para o enum do Cockpit
     var planoRaw=(vd.plano||'').toLowerCase();
-    var planoMapped=planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':planoRaw==='marketplaces'||planoRaw==='marketplace'?'Marketplace':(vd.plano||'');
+    var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':planoRaw==='marketplaces'||planoRaw==='marketplace'?'Marketplace':(vd.plano||'');
     // Payload no formato exato do Cockpit (POST /api/webhooks/venda)
     var payload={
       cliente:{
@@ -7489,7 +7489,7 @@ async function dispararWebhookVenda(id){
 async function abrirModalAsaasAssinatura(id){
   var data=(await fbGet('assinaturas/'+id))||{};
   var vd=data.vendaData||{};
-  var planos=['Marketplaces','Premium','Elite'];
+  var planos=['Starter','Marketplaces','Premium','Elite'];
   var freqs=['semanal','quinzenal','mensal','trimestral','semestral','anual'];
   var today=new Date().toISOString().split('T')[0];
   var html='<div class="modal-ov active" id="modal-asaas-assinatura" onclick="if(event.target===this)this.remove()">'+
@@ -7580,7 +7580,7 @@ function copiarLinkAssinatura(id,btn){
 }
 function abrirModalNovaAssinatura(){
   var today=new Date().toISOString().split('T')[0];
-  var planos=['Marketplaces','Premium','Elite'];
+  var planos=['Starter','Marketplaces','Premium','Elite'];
   var html='<div class="modal-ov active" id="modal-nova-assinatura" onclick="if(event.target===this)cancelarNovaAssinatura()">'+
     '<div class="modal-box" style="max-width:500px;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-signature"></i> Novo Link de Assinatura</div>'+
@@ -7976,6 +7976,7 @@ function renderFollowupBody(){
         '<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;">'+
+            '<option value="starter">Starter</option>'+
             '<option value="marketplaces">Marketplaces</option>'+
             '<option value="premium">Premium</option>'+
             '<option value="elite">Elite</option>'+
@@ -8013,7 +8014,7 @@ function renderFollowupBody(){
               '<div><label class="f-label">CNPJ da 2ª loja</label><input class="f-input" type="text" id="fu-seg-cnpj" placeholder="00.000.000/0001-00" style="margin-bottom:0;"></div>'+
             '</div>'+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
-              '<div><label class="f-label">Plano</label><select class="f-input" id="fu-seg-plano" style="margin-bottom:0;"><option value="marketplaces">Marketplaces</option><option value="premium">Premium</option><option value="elite">Elite</option></select></div>'+
+              '<div><label class="f-label">Plano</label><select class="f-input" id="fu-seg-plano" style="margin-bottom:0;"><option value="starter">Starter</option><option value="marketplaces">Marketplaces</option><option value="premium">Premium</option><option value="elite">Elite</option></select></div>'+
               '<div><label class="f-label">Duração (meses)</label><select class="f-input" id="fu-seg-duracao" style="margin-bottom:0;"><option value="3">3 meses</option><option value="6" selected>6 meses</option></select></div>'+
             '</div>'+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
@@ -8624,7 +8625,7 @@ function saveFollowup(){
     // Salva contrato no Firebase para cálculo de comissão
     (function(){
       var _planoDur=duracao||1;
-      var _planoNome=plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
+      var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
       var _planoSufixo=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
       var _mrr=tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato);
       var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
@@ -8694,7 +8695,7 @@ function saveFollowup(){
            contrato:segContrato,mensalidade:segMens,cnpj:segCnpj}, null);
       }, 1200);
       // Salva contrato no Firebase
-      var _p2=segPlano==='premium'?'Plano Premium':segPlano==='elite'?'Plano Elite':'Plano 3';
+      var _p2=segPlano==='starter'?'Plano Starter':segPlano==='premium'?'Plano Premium':segPlano==='elite'?'Plano Elite':'Plano 3';
       var _suf2=segDuracao>=6?' - Semestral':segDuracao>=3?' - Trimestral':' - Mensal';
       var _mrr2=tipoValor==='tcv'?Math.round(segContrato/segDuracao):(segMens||segContrato);
       var _tcv2=tipoValor==='tcv'?segContrato:(_mrr2*segDuracao);
@@ -8821,7 +8822,7 @@ function saveFollowupEdit(){
       // Salva contrato no Firebase (apenas na primeira vez ou se veio de marcarContratoComoVenda)
       (function(){
         var _planoDur=duracao||1;
-        var _planoNome=plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
+        var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
         var _planoSufixo=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
         var _mrr=tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato);
         var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
@@ -17773,6 +17774,9 @@ function buildContratosModal(){
           '<input id="ct-dataInicio" type="date" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;box-sizing:border-box;"></div>'+
         '<div><label class="f-label">Plano</label>'+
           '<select id="ct-plano" onchange="ctAutoValor()" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:14px;outline:none;">'+
+            '<option value="Plano Starter - Mensal">Plano Starter · Mensal</option>'+
+            '<option value="Plano Starter - Trimestral">Plano Starter · Trimestral</option>'+
+            '<option value="Plano Starter - Semestral">Plano Starter · Semestral</option>'+
             '<option value="Plano 3 - Mensal">Plano 3 · Mensal</option>'+
             '<option value="Plano 3 - Trimestral">Plano 3 · Trimestral</option>'+
             '<option value="Plano Premium - Semestral">Plano Premium · Semestral</option>'+
@@ -21074,7 +21078,7 @@ function renderVendas(){
   '</div>';
 
   // Tabela
-  var planoLabels={premium:'Premium',elite:'Elite',plano3:'Plano 3'};
+  var planoLabels={starter:'Starter',premium:'Premium',elite:'Elite',plano3:'Plano 3'};
   var inpStyle='background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--white);font-size:12px;outline:none;';
   var filterBar='<div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border);">'+
     '<div style="position:relative;flex:1;min-width:180px;">'+
@@ -21083,6 +21087,7 @@ function renderVendas(){
     '</div>'+
     '<select id="vf-plano" onchange="setVendasFiltro(\'plano\',this.value)" style="'+inpStyle+'">'+
       '<option value="">Todos os planos</option>'+
+      '<option value="starter"'+((_vendasFiltros.plano==='starter')?' selected':'')+'>Starter</option>'+
       '<option value="premium"'+((_vendasFiltros.plano==='premium')?' selected':'')+'>Premium</option>'+
       '<option value="elite"'+((_vendasFiltros.plano==='elite')?' selected':'')+'>Elite</option>'+
       '<option value="plano3"'+((_vendasFiltros.plano==='plano3')?' selected':'')+'>Plano 3</option>'+
@@ -21419,6 +21424,7 @@ function abrirEditarVenda(fid){
         '<div><label class="f-label">Cliente</label><input class="f-input" id="ev-cliente" value="'+(fu.nome||(m&&m.nome)||'')+'" placeholder="Nome do cliente"></div>'+
         '<div><label class="f-label">Closer</label><select class="f-input" id="ev-closer">'+closerOpts+'</select></div>'+
         '<div><label class="f-label">Plano</label><select class="f-input" id="ev-plano">'+
+          '<option value="starter"'+(fu.plano==='starter'?' selected':'')+'>Starter</option>'+
           '<option value="premium"'+(fu.plano==='premium'?' selected':'')+'>Premium</option>'+
           '<option value="elite"'+(fu.plano==='elite'?' selected':'')+'>Elite</option>'+
           '<option value="plano3"'+(fu.plano==='plano3'?' selected':'')+'>Plano 3</option>'+
