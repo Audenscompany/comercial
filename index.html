@@ -7401,7 +7401,18 @@ async function marcarContratoComoVenda(id){
       if(!match||((m.dtISO||'')>(match.dtISO||''))) match=m;
     }
   });
-  if(!match){ alert('Não encontrei uma reunião para o telefone '+r.telefone+'.\nVerifique se o lead está no sistema com esse número.'); return; }
+  if(!match){
+    // Sem reunião cadastrada — cria entry sintética para registrar a venda no histórico
+    if(!confirm('Não encontrei reunião para o telefone '+r.telefone+'.\nDeseja registrar a venda mesmo assim (sem vínculo de reunião)?')) return;
+    var synId='syn_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    var synMeeting={id:synId,tel:(r.telefone||'').replace(/\D/g,''),nome:r.cliente||'',
+      responsavel:(r.comercial&&r.comercial.closer)||'',sdrName:(r.comercial&&r.comercial.sdrNome)||'',
+      sdr:(r.comercial&&r.comercial.sdrNome)||'',origem:(r.comercial&&r.comercial.origem)||'',
+      dtISO:new Date().toISOString(),status:'done',_sintetico:true};
+    meetings[synId]=synMeeting;
+    saveMeetingFB(synId, synMeeting);
+    match=synMeeting;
+  }
   var fid=match.id;
   var vd=r.vendaData||{};
   var mensBase=parseFloat(vd.mensalidade)||0;
@@ -7411,9 +7422,9 @@ async function marcarContratoComoVenda(id){
     comparecimento:'sim',venda:'sim',resultado:'venda',
     plano:vd.plano||'',duracao:parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||0,
     dataInicio:vd.dataInicio||'',tipoValor:vd.tipoValor||'mensalidade',
-    contrato:parseFloat(vd.contrato)||0,mensalidade:mensBase,
+    contrato:parseFloat(vd.contrato)||parseFloat(vd.valorTotal)||0,mensalidade:parseFloat(vd.mensalidade)||parseFloat(vd.valorParcela)||0,
     frequencia:vd.frequencia||'mensal',vencimento:vd.dataInicio||'',
-    bonusComp:BONUS_COMP,bonusVenda:mensBase*BONUS_VENDA_PCT,
+    bonusComp:BONUS_COMP,bonusVenda:(parseFloat(vd.mensalidade)||parseFloat(vd.valorParcela)||0)*BONUS_VENDA_PCT,
     motivo:'',retornoData:'',retornoTime:'',
     dt:new Date().toISOString().split('T')[0],
     _fromContrato:id
@@ -21287,6 +21298,8 @@ async function loadVendasSheets(){
 }
 function renderVendas(){
   var now=new Date();
+  // Reset stale filters on page entry
+  _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
   var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
   var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
   var selectedKey=filtY+'-'+String(filtM+1).padStart(2,'0');
