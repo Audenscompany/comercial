@@ -1883,6 +1883,25 @@ function renderKanban(){
     '<span class="badge b-purple" id="kanban-total-badge">'+entries.length+' leads</span>'+
     '</div></div>'+
     '<div class="kanban-board">';
+
+  // Response time alert: leads in 'novo' waiting > 10 min
+  (function(){
+    var novos=entries.filter(function(e){return (e.status||'novo')==='novo'&&e._createdAt;});
+    var urgentes=novos.filter(function(e){return (Date.now()-e._createdAt)>600000;}).sort(function(a,b){return a._createdAt-b._createdAt;});
+    if(!urgentes.length) return;
+    var worst=urgentes[0];
+    var mins=Math.round((Date.now()-worst._createdAt)/60000);
+    var lbl=mins<60?mins+'min':Math.floor(mins/60)+'h'+Math.round(mins%60)+'min';
+    html='<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'+
+      '<div style="width:32px;height:32px;border-radius:8px;background:rgba(239,68,68,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-exclamation" style="color:#f87171;font-size:16px;"></i></div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:#f87171;">'+urgentes.length+' lead'+(urgentes.length>1?'s':'')+' aguardando contato — meta: ≤ 10 min</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">Mais antigo: '+(worst.nome||'lead')+(worst.empresa?' ('+worst.empresa+')':'')+' — esperando há '+lbl+'</div>'+
+      '</div>'+
+      '<button onclick="filterKanbanSearch('')" style="padding:6px 14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Ver Novos Leads</button>'+
+    '</div>'+html;
+  })();
+
   KANBAN_COLS.forEach(function(col,idx){
     var items=entries.filter(function(e){return (e.status||'novo')===col.id;});
     html+='<div class="kanban-col" data-colid="'+col.id+'">'+
@@ -1958,6 +1977,7 @@ function kanbanCardHtml(e,idx){
       '</div>'+
       (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
       (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
+      (idx===0&&(e._createdAt||e._source==='import'&&e._createdAt)?(function(){var ms=Date.now()-(e._createdAt||0);if(!e._createdAt)return'';var mins=Math.floor(ms/60000);var lbl=mins<1?'agora':mins<60?mins+'min':Math.floor(mins/60)+'h';var hot=mins>10&&mins<9999;return '<div class="kanban-card-sub" style="color:'+(hot?'#f87171':'#4ade80')+';font-size:11px;"><i class="ti ti-clock" style="font-size:10px;"></i> Chegou há '+lbl+(hot?' ⚡':'')+'</div>';})():'')+
       (e.ad?'<div class="kanban-card-sub" style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+e.ad+'"><i class="ti ti-ad-2"></i> '+e.ad+'</div>':'')+
       (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+(e.responsavel?' ('+e.responsavel+')':'')+'</div>':'')+
       (e.retornoDisplay?'<div class="kanban-card-sub" style="color:var(--amber);"><i class="ti ti-calendar-due"></i> Retorno: '+e.retornoDisplay+'</div>':'')+
@@ -8995,7 +9015,7 @@ function renderReunioes(){
   // Current metrics
   var total=rows.length;
   var realized=0,noshow=0,pending=0,vendas=0;
-  var byCloser={},bySdr={},byOrigem={};
+  var byCloser={},bySdr={},byOrigem={},byQualif={qualificado:{ag:0,real:0,ns:0,vendas:0},nao_qualificado:{ag:0,real:0,ns:0,vendas:0}};
   rows.forEach(function(m){
     var fu=followups[m.id];
     var isReal=fu?(fu.comparecimento==='sim'||fu.venda==='sim'):isRealizada(m.status);
@@ -9011,9 +9031,12 @@ function renderReunioes(){
     byCloser[cl].ag++;if(isReal)byCloser[cl].real++;if(isNs)byCloser[cl].ns++;if(isVenda)byCloser[cl].vendas++;
     var sdr=m.sdr||m.agendadoPor||'';
     if(sdr){if(!bySdr[sdr])bySdr[sdr]={ag:0,real:0,ns:0,vendas:0};bySdr[sdr].ag++;if(isReal)bySdr[sdr].real++;if(isNs)bySdr[sdr].ns++;if(isVenda)bySdr[sdr].vendas++;}
-    var orig=m.origem||'Outros';
+    var orig=m.origem||'Sem Origem';
     if(!byOrigem[orig])byOrigem[orig]={ag:0,real:0,ns:0,vendas:0};
     byOrigem[orig].ag++;if(isReal)byOrigem[orig].real++;if(isNs)byOrigem[orig].ns++;if(isVenda)byOrigem[orig].vendas++;
+    var _fatV=parseFaturamentoValue(m.faturamentoLead||'');
+    var _qk=_fatV>=40000?'qualificado':'nao_qualificado';
+    byQualif[_qk].ag++;if(isReal)byQualif[_qk].real++;if(isNs)byQualif[_qk].ns++;if(isVenda)byQualif[_qk].vendas++;
   });
   var taxaComp=total>0?Math.round(realized/total*100):0;
   var taxaNs=realized+noshow>0?Math.round(noshow/(realized+noshow)*100):0;
@@ -9154,6 +9177,56 @@ function renderReunioes(){
     html+='<div style="text-align:center;padding:20px 0;font-family:Barlow Condensed,sans-serif;font-size:14px;color:var(--green);display:flex;align-items:center;justify-content:center;gap:8px;"><i class="ti ti-circle-check" style="font-size:18px;"></i>Nenhum no-show registrado este mes. Excelente!</div>';
   }
   html+='</div>';
+
+
+  // No-show por Qualificacao
+  (function(){
+    var dq=byQualif;
+    var qItems=[
+      {key:'qualificado',label:'Qualificados',sub:'Faturamento >= R$40k',ic:'ti-star',col:'var(--green)',bg:'rgba(34,197,94,0.12)',bor:'rgba(34,197,94,0.25)'},
+      {key:'nao_qualificado',label:'Nao Qualificados',sub:'Faturamento < R$40k',ic:'ti-user',col:'var(--amber)',bg:'rgba(245,158,11,0.08)',bor:'rgba(245,158,11,0.2)'}
+    ];
+    html+='<div style="background:var(--bg2);border:1px solid rgba(123,47,255,0.25);border-radius:14px;padding:16px 20px;margin-bottom:20px;">';
+    html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">'+
+      '<div style="width:36px;height:36px;border-radius:10px;background:rgba(123,47,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-chart-bar" style="color:var(--purple3);font-size:17px;"></i></div>'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--white);">No-show por Qualificacao</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">Compara taxa de no-show entre leads qualificados (fat. >= R$40k) e nao qualificados</div>'+
+      '</div>'+
+    '</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+    qItems.forEach(function(qi){
+      var d=dq[qi.key];
+      var nsP=d.real+d.ns>0?Math.round(d.ns/(d.real+d.ns)*100):0;
+      var nsCol=nsP>35?'#f87171':nsP>20?'#fbbf24':'#4ade80';
+      var convP=d.real>0?Math.round(d.vendas/d.real*100):0;
+      html+='<div style="background:'+qi.bg+';border:1px solid '+qi.bor+';border-radius:12px;padding:16px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'+
+          '<div style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+qi.ic+'" style="color:'+qi.col+';font-size:13px;"></i></div>'+
+          '<div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:var(--white);">'+qi.label+'</div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);">'+qi.sub+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">'+
+          '<div style="text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--white);line-height:1;">'+d.ag+'</div><div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);">Agend.</div></div>'+
+          '<div style="text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:'+nsCol+';line-height:1;">'+d.ns+'</div><div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);">No-show</div></div>'+
+          '<div style="text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--green);line-height:1;">'+d.vendas+'</div><div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);">Vendas</div></div>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+          '<div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);margin-bottom:4px;">Taxa no-show</div>'+
+            '<div style="height:4px;width:80px;background:rgba(255,255,255,0.06);border-radius:2px;"><div style="height:4px;width:'+Math.min(nsP,100)+'%;background:'+nsCol+';border-radius:2px;"></div></div>'+
+          '</div>'+
+          '<div style="text-align:right;">'+
+            '<div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:'+nsCol+';">'+nsP+'%</div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--green);">conv. '+convP+'%</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    });
+    html+='</div></div>';
+  })();
 
   // 2-column layout
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">';
@@ -13764,7 +13837,7 @@ function renderReunioesPersonal(){
 
   // ── Qualidade das Origens ─────────────────────────────────────────────
   function _normOrigem(o){
-    var n=(o||'Outros').trim();
+    var n=(o||'').trim();if(!n)return'Sem Origem';
     var nl=n.toLowerCase().replace(/[áàâã]/g,'a').replace(/[éê]/g,'e').replace(/[íì]/g,'i').replace(/[óôõò]/g,'o').replace(/[úû]/g,'u').replace(/[ç]/g,'c');
     if(nl==='trafego'||nl==='trafego pago'||nl.startsWith('trafego'))return'Tráfego Pago';
     if(nl==='coldcall'||nl==='cold call'||nl==='cold-call'||nl==='ligacao'||nl==='ligacoes'||nl==='ligacao fria')return'Cold Call';
@@ -19819,6 +19892,12 @@ function renderBDR(){
     {label:'Reunião',val:counts['reuniao'],icon:'ti-calendar-event',color:'#38bdf8',bg:'rgba(56,189,248,0.06)',border:'rgba(56,189,248,0.18)'},
     {label:'Convertidos',val:counts['convertido'],icon:'ti-trophy',color:'var(--green)',bg:'rgba(34,197,94,0.06)',border:'rgba(34,197,94,0.18)'},
   ];
+  // Avg response time
+  var _respondidos=allArr.filter(function(l){return l.firstContactAt&&l.addedAt;});
+  var _avgRespMin=_respondidos.length?Math.round(_respondidos.reduce(function(s,l){return s+(l.firstContactAt-l.addedAt)/60000;},0)/_respondidos.length):null;
+  var _avgRespLabel=_avgRespMin===null?'--':_avgRespMin<60?_avgRespMin+'min':Math.round(_avgRespMin/60)+'h'+Math.round(_avgRespMin%60)+'min';
+  var _avgRespColor=_avgRespMin===null?'var(--muted)':_avgRespMin<=10?'var(--green)':_avgRespMin<=30?'var(--amber)':'#f87171';
+  kpiCards.push({label:'Tempo Médio Resp.',val:_avgRespLabel,icon:'ti-clock-bolt',color:_avgRespColor,bg:'rgba(6,182,212,0.06)',border:'rgba(6,182,212,0.18)'});
   var kpiHtml='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px;">'+
     kpiCards.map(function(k){
       return '<div style="background:'+k.bg+';border:1px solid '+k.border+';border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;">'+
@@ -20111,6 +20190,18 @@ function bdrFiltrar(status){
   showPage('bdr');
 }
 
+function bdrTempoEspera(l){
+  var ts=l.addedAt||l._createdAt||0;
+  if(!ts) return '';
+  var ms=Date.now()-ts;
+  var mins=Math.floor(ms/60000);
+  if(mins<1) return {label:'< 1 min',col:'#4ade80',bg:'rgba(34,197,94,0.12)',bor:'rgba(34,197,94,0.3)'};
+  if(mins<60) return {label:mins+' min',col:mins>10?'#f87171':'#4ade80',bg:mins>10?'rgba(239,68,68,0.1)':'rgba(34,197,94,0.12)',bor:mins>10?'rgba(239,68,68,0.3)':'rgba(34,197,94,0.3)'};
+  var hrs=Math.floor(mins/60);
+  if(hrs<24) return {label:hrs+'h',col:hrs>2?'#fbbf24':'#4ade80',bg:hrs>2?'rgba(245,158,11,0.1)':'rgba(34,197,94,0.12)',bor:hrs>2?'rgba(245,158,11,0.3)':'rgba(34,197,94,0.3)'};
+  var dias=Math.floor(hrs/24);
+  return {label:dias+'d',col:'#f87171',bg:'rgba(239,68,68,0.1)',bor:'rgba(239,68,68,0.3)'};
+}
 function bdrRenderLeads(filter){
   var leads=Object.values(bdrLeads).filter(function(l){return !filter||l.status===filter;});
   leads.sort(function(a,b){return (b.addedAt||0)-(a.addedAt||0);});
@@ -20138,6 +20229,7 @@ function bdrRenderLeads(filter){
             (l.segmento?'<span style="font-size:10px;font-weight:500;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);padding:2px 8px;border-radius:12px;text-transform:capitalize;">'+l.segmento+'</span>':'')+
             (l.cidade?'<span style="font-size:11px;color:var(--muted);"><i class="ti ti-map-pin" style="font-size:10px;margin-right:2px;"></i>'+l.cidade+'</span>':'')+
             (l.telefone?'<span style="font-size:11px;color:var(--cyan);font-weight:500;"><i class="ti ti-phone" style="font-size:10px;margin-right:2px;"></i>'+l.telefone+'</span>':'')+
+            (function(){var te=bdrTempoEspera(l);return te?'<span style="font-size:10px;font-weight:600;color:'+te.col+';background:'+te.bg+';border:1px solid '+te.bor+';border-radius:8px;padding:2px 8px;"><i class="ti ti-clock" style="font-size:9px;margin-right:2px;"></i>'+(l.firstContactAt?'1ª resp: ':'Espera: ')+te.label+'</span>':'';})()+
             (l.retornoEm?(function(){var d=new Date(l.retornoEm+'T12:00:00');var hoje=new Date();hoje.setHours(0,0,0,0);var atrasado=d<hoje;return '<span style="font-size:10px;font-weight:600;color:'+(atrasado?'var(--red)':'#f5c400')+';background:'+(atrasado?'rgba(239,68,68,0.1)':'rgba(245,196,0,0.1)')+';border:1px solid '+(atrasado?'rgba(239,68,68,0.25)':'rgba(245,196,0,0.25)')+';border-radius:8px;padding:2px 8px;"><i class="ti ti-calendar-due" style="font-size:9px;margin-right:3px;"></i>Retorno: '+d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+(atrasado?' ⚠️':'')+'</span>';})():'')+
           '</div>'+
         '</div>'+
@@ -20277,6 +20369,11 @@ function bdrSalvarContato(id){
   var retorno=(document.getElementById('bdr-hist-retorno')||{}).value||'';
   if(!obs.trim()){showSheetToast('Descreva o que aconteceu no contato.',true);return;}
   if(!bdrLeads[id].historico) bdrLeads[id].historico=[];
+  // Track first contact time for response time metric
+  if(!bdrLeads[id].historico.length && !bdrLeads[id].firstContactAt){
+    bdrLeads[id].firstContactAt=Date.now();
+    if(fbDb||initFirebase()) fbDb.ref(_bdrFbPath(id)+'/firstContactAt').set(bdrLeads[id].firstContactAt);
+  }
   var reuniao=_bdrReuniaoSel||'';
   var entry={dt:todayStr(),obs:obs.trim(),faturamento:fat.trim(),reuniao:reuniao,status:bdrLeads[id].status,por:CU?CU.name:'Gustavo'};
   bdrLeads[id].historico.push(entry);
