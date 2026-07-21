@@ -9735,11 +9735,11 @@ function buildDashComHTML(data){
   // All clientes for annual metrics
   var todosClientes=data.clientes.rows;
 
-  // ── UNIFICAÇÃO DE FONTE: mês atual vem do Firebase (fonte de verdade do CRM)
-  // Meses passados mantêm Planilha Google (CRM foi implementado no meio do mês passado)
+  // ── UNIFICAÇÃO DE FONTE: Firebase é fonte de verdade a partir de junho/2026 (início do CRM)
+  // Meses anteriores a junho/2026 mantêm Planilha Google
   (function(){
     var now=new Date();
-    var curMonthStart=new Date(now.getFullYear(),now.getMonth(),1);
+    var curMonthStart=new Date(2026,5,1); // Junho 2026 = início do CRM
     // Remover do Sheets as linhas do mês atual (Firebase substitui)
     clientesF=clientesF.filter(function(c){
       var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
