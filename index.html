@@ -23760,8 +23760,8 @@ function _renderVendasTabela(){
       var fu=v.fu,m=v.m,fid=v.fid;
       var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
       var cliente=(fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa)||fu.nome||(m&&m.nome)||'—';
-      var closer=(m&&m.responsavel)||'—';
-      var sdr=(m&&(m.sdrName||m.sdr))||'—';
+      var closer=(m&&m.responsavel)||fu.closer||fu.responsavel||'—';
+      var sdr=(m&&(m.sdrName||m.sdr))||fu.sdr||fu.sdrName||'—';
       var plano=planoLabels[fu.plano]||fu.plano||'—';
       var tipo=fu.tipoValor==='tcv'?'TCV':'MRR';
       var tipoCol=fu.tipoValor==='tcv'?'#fbbf24':'#60a5fa';
@@ -23968,10 +23968,13 @@ function abrirEditarVenda(fid){
   var fu=followups[fid];if(!fu){alert('Venda não encontrada.');return;}
   _editVendaFid=fid;
   var m=meetings[fu.meetingId]||meetings[fid];
-  var closerOpts=Object.keys(USERS).map(function(e){
-    var u=USERS[e];if(!u.closer)return'';
-    var sel=(m&&m.responsavel&&(m.responsavel.toLowerCase()===(u.closer||'').toLowerCase()))?'selected':'';
-    return'<option value="'+u.closer+'" '+sel+'>'+u.closer+'</option>';
+  var _curCloser=(m&&m.responsavel)||fu.closer||fu.responsavel||'';
+  var _closerNames=[];
+  Object.keys(USERS).forEach(function(e){var u=USERS[e];if(u.closer&&_closerNames.indexOf(u.closer)<0)_closerNames.push(u.closer);});
+  if(!_closerNames.length)(CLOSERS||[]).forEach(function(c){if(_closerNames.indexOf(c)<0)_closerNames.push(c);});
+  var closerOpts=_closerNames.map(function(c){
+    var sel=_curCloser&&_curCloser.toLowerCase()===c.toLowerCase()?'selected':'';
+    return'<option value="'+c+'" '+sel+'>'+c+'</option>';
   }).join('');
   var isTcv=(fu.tipoValor==='tcv');
   var html='<div class="modal-ov active" id="modal-editar-venda" onclick="if(event.target===this)fecharEditarVenda()">'+
@@ -24026,12 +24029,15 @@ async function salvarEdicaoVenda(){
   fu.plano=plano;fu.tipoValor=tipo;fu.mensalidade=mensalidade;fu.contrato=contrato;
   fu.duracao=duracao;fu.dataInicio=dataInicio;
   if(cliente)fu.nome=cliente;
+  if(closer){fu.closer=closer;fu.responsavel=closer;}
   var m=meetings[fu.meetingId]||meetings[fid];
   if(m&&closer)m.responsavel=closer;
   try{
     if(fbDb||initFirebase()){
-      await fbDb.ref('followups/'+fid).update(fu);
+      var fuUpdate=Object.assign({},fu);
+      await fbDb.ref('followups/'+fid).update(fuUpdate);
       if(m&&closer)await fbDb.ref('meetings/'+m.id).update({responsavel:closer});
+      else if(closer)await fbDb.ref('followups/'+fid+'/closer').set(closer);
     }
     // Re-apply edited fields — Firebase listener may have replaced followups[fid] during await
     if(!followups[fid]) followups[fid]={};
@@ -24039,6 +24045,7 @@ async function salvarEdicaoVenda(){
     followups[fid].mensalidade=mensalidade;followups[fid].contrato=contrato;
     followups[fid].duracao=duracao;followups[fid].dataInicio=dataInicio;
     if(cliente)followups[fid].nome=cliente;
+    if(closer){followups[fid].closer=closer;followups[fid].responsavel=closer;}
     if(m&&closer&&m.responsavel!==closer)m.responsavel=closer;
     saveAll();
     showSheetToast('Venda atualizada com sucesso.',false);
