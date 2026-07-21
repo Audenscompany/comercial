@@ -21315,14 +21315,38 @@ async function loadVendasSheets(){
   var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
   var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
   try{
-    var data=await loadDataHybrid();
-    var sheetsCount=(data.clientes&&data.clientes.rows||[]).filter(function(c){
-      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
-      return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
-    }).length;
-    var el=document.getElementById('v-total-vendas');
-    if(el&&sheetsCount>0){
-      el.textContent=sheetsCount;
+    // Garante que contratos cancelados estão carregados (preenche _cancelledContratoKeys)
+    await loadContratos();
+    var isCurrentMonth=(filtM===now.getMonth()&&filtY===now.getFullYear());
+    var finalCount=0;
+    if(isCurrentMonth){
+      // Mês atual: Firebase com filtro de cancelados (igual Dashboard Comercial)
+      var curMonthStart=new Date(now.getFullYear(),now.getMonth(),1);
+      Object.keys(followups||{}).forEach(function(fid){
+        var fu=followups[fid];
+        if(!fu||fu.resultado!=='venda')return;
+        if(isVendaCancelada(fu))return;
+        var m=meetings[fu.meetingId]||meetings[fid];
+        var dt=_vendaDate(fu,m);
+        if(!dt&&fu.dataInicio)dt=new Date(fu.dataInicio+'T12:00:00');
+        if(!dt&&m&&m.dtISO)dt=new Date(m.dtISO);
+        if(!dt||isNaN(dt.getTime())||dt<curMonthStart)return;
+        if(dt.getMonth()!==filtM||dt.getFullYear()!==filtY)return;
+        finalCount++;
+      });
+    }else{
+      // Meses anteriores: Sheets
+      var data=await loadDataHybrid();
+      finalCount=(data.clientes&&data.clientes.rows||[]).filter(function(c){
+        var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+        return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
+      }).length;
+    }
+    if(finalCount>0){
+      var el=document.getElementById('v-total-vendas');
+      if(el)el.textContent=finalCount;
+      var badge=document.getElementById('vf-badge');
+      if(badge)badge.textContent=finalCount;
     }
   }catch(e){console.warn('[loadVendasSheets]',e);}
 }
