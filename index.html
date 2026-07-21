@@ -13425,6 +13425,8 @@ async function loadFunilReunioes(){
   var curM=now.getMonth(), curY=now.getFullYear();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:curM;
   var filtY=_reunMesFiltro?_reunMesFiltro.y:curY;
+  // Mês atual: Firebase é fonte de verdade — planilha não sobrescreve KPIs
+  var isCurrentMonth=(filtM===curM&&filtY===curY);
   try{
     var data = await loadDataHybrid();
 
@@ -13476,13 +13478,15 @@ async function loadFunilReunioes(){
     var elR=document.getElementById('rp-real-v');  if(elR)elR.textContent=shReal;
     var elN=document.getElementById('rp-ns-v');    if(elN)elN.textContent=shNoshow;
     var elT=document.getElementById('rp-tc-v');    if(elT)elT.textContent=shTx+'%';
-    var elRvAg=document.getElementById('rv-ag');   if(elRvAg)elRvAg.textContent=shTotal;
-    var elRvRe=document.getElementById('rv-real'); if(elRvRe)elRvRe.textContent=shReal;
-    var elRvNs=document.getElementById('rv-ns');   if(elRvNs)elRvNs.textContent=shNoshow;
-    // Atualiza KPIs da página No-show com os mesmos dados da planilha
-    var elNsEl=document.getElementById('ns-eleg');  if(elNsEl)elNsEl.textContent=shTotal;
-    var elNsTo=document.getElementById('ns-total'); if(elNsTo)elNsTo.textContent=shNoshow;
-    var elNsTx=document.getElementById('ns-taxa');  if(elNsTx)elNsTx.textContent=shTotal>0?Math.round(shNoshow/shTotal*100):0;
+    // Só sobrescreve KPIs com dados da planilha para meses passados; mês atual usa Firebase
+    if(!isCurrentMonth){
+      var elRvAg=document.getElementById('rv-ag');   if(elRvAg)elRvAg.textContent=shTotal;
+      var elRvRe=document.getElementById('rv-real'); if(elRvRe)elRvRe.textContent=shReal;
+      var elRvNs=document.getElementById('rv-ns');   if(elRvNs)elRvNs.textContent=shNoshow;
+      var elNsEl=document.getElementById('ns-eleg');  if(elNsEl)elNsEl.textContent=shTotal;
+      var elNsTo=document.getElementById('ns-total'); if(elNsTo)elNsTo.textContent=shNoshow;
+      var elNsTx=document.getElementById('ns-taxa');  if(elNsTx)elNsTx.textContent=shTotal>0?Math.round(shNoshow/shTotal*100):0;
+    }
     // Vendas e receita: Firebase com filtro de cancelados (mesmo que Dashboard Comercial)
     (function(){
       try{
