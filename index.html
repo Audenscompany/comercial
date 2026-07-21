@@ -379,6 +379,8 @@ var USERS={
   'gustavo@audens.com':{pw:'closer2025',role:'atendente',name:'Gustavo Pimenta',initials:'GP',closer:'Gustavo',funcao:'closer'},
   'joao@audens.com':{pw:'sdr2025',role:'atendente',name:'João Silva',initials:'JS',closer:'João',funcao:'sdr'}
 };
+// Senhas originais do código — nunca sobrescritas pelo Firebase
+var USERS_DEFAULTS={'lucas@audens.com':'audens2025','gustavo@audens.com':'closer2025','joao@audens.com':'sdr2025'};
 var CLOSERS=['Lucas','Gustavo'];
 var SDR_USERS=['João'];
 var _navPermissions={}; // {email: [pageId, ...]} — permissões customizadas por usuário
@@ -3754,27 +3756,28 @@ function doLogin(){
   var er=document.getElementById('login-err');
   var u=USERS[em];
   if(!u){er.textContent='E-mail nao encontrado.';return;}
-  // If password doesn't match, try reloading from Firebase first (handles first-time on new machine)
-  if(u.pw!==pw){
+  // Verificar também contra a senha padrão original do código (imune a corrupção no Firebase)
+  var _defaultPw=USERS_DEFAULTS&&USERS_DEFAULTS[em];
+  if(u.pw!==pw&&_defaultPw!==pw){
     er.textContent='Verificando...';
-    // Salvar senha padrão do código antes de Firebase sobrescrever
-    var _codePw=u.pw;
     loadUserPasswords().then(function(){
       var u2=USERS[em];
       if(!u2){er.textContent='Usuário não encontrado.';return;}
-      if(u2.pw!==pw){
-        // Fallback: tenta senha original do código (caso Firebase tenha valor corrompido)
-        if(_codePw&&_codePw===pw){
-          // Reseta Firebase para a senha correta
-          if(fbDb){var fbKey=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey).set(pw);}
-        } else {
-          er.textContent='Senha incorreta.';return;
-        }
+      if(u2.pw!==pw&&_defaultPw!==pw){er.textContent='Senha incorreta.';return;}
+      // Se passou com senha default mas Firebase tem valor diferente, reseta Firebase
+      if(_defaultPw===pw&&u2.pw!==pw){
+        if(fbDb){var fbKey=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey).remove();}
+        u2.pw=pw;
       }
       if(u2.role!==selRole){er.textContent='Perfil incorreto. Selecione '+(u2.role==='gestor'?'Gestor':'Atendente')+' acima.';return;}
       er.textContent='';CU={email:em,role:u2.role,name:u2.name,initials:u2.initials,closer:u2.closer,funcao:u2.funcao||'closer'};localStorage.setItem('audens_session',JSON.stringify({email:em}));showMain();
     });
     return;
+  }
+  // Se senha bate com o default mas Firebase sobrescreveu localmente, reseta
+  if(_defaultPw===pw&&u.pw!==pw){
+    if(fbDb){var fbKey2=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey2).remove();}
+    u.pw=pw;
   }
   if(u.role!==selRole){er.textContent='Perfil incorreto. Selecione '+(u.role==='gestor'?'Gestor':'Atendente')+' acima.';return;}
   er.textContent='';CU={email:em,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};localStorage.setItem('audens_session',JSON.stringify({email:em}));showMain();
