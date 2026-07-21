@@ -1272,6 +1272,24 @@ function moveKanbanCard(key,newStatus){
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
 }
 // ===== Agendamento de reuniao (popup de data/hora ao mover para "Reuniao Agendada") =====
+function registrarPrimeiroContato(ev,key){
+  ev.stopPropagation();
+  var e=kanbanData[key];
+  if(!e)return;
+  if(e.primeiroContatoAt){
+    var d=new Date(e.primeiroContatoAt);
+    showSheetToast('1° contato já registrado: '+d.toLocaleString('pt-BR'));
+    return;
+  }
+  var ts=Date.now();
+  kanbanData[key].primeiroContatoAt=ts;
+  localStorage.setItem('audens_kanban',JSON.stringify(kanbanData));
+  if(fbDb)fbDb.ref('kanban/'+key).update({primeiroContatoAt:ts});
+  showSheetToast('✅ 1° contato registrado!');
+  var area=document.getElementById('content');
+  if(area&&area.getAttribute('data-page')==='kanban')showPage('kanban');
+}
+
 function abrirAgendarReuniao(key){
   var e=kanbanData[key];
   if(!e) return;
@@ -1903,7 +1921,7 @@ function renderKanban(){
       '<input type="text" id="kanban-search" placeholder="Buscar nome, empresa ou telefone…" oninput="filterKanbanSearch(this.value)" '+
         'style="background:transparent;border:none;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:13px;outline:none;width:230px;padding:0;" />'+
     '</div>'+
-    syncBtn+'<button onclick="toggleFunilMetricas()" id="btn-funil-metricas" style="background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.3);color:var(--purple3);border-radius:8px;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-chart-bar"></i> Métricas</button>'+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button>'+
+    syncBtn+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button>'+
     '<span class="badge b-purple" id="kanban-total-badge">'+entries.length+' leads</span>'+
     '</div></div>'+
     '<div class="kanban-board">';
@@ -2071,6 +2089,7 @@ function kanbanCardHtml(e,idx){
     actions=(prevCol?'<button class="kbtn" title="Voltar para '+prevCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+prevCol.id+'\')"><i class="ti ti-arrow-left"></i></button>':'<span></span>')+
       (nextCol?'<button class="kbtn" title="Avancar para '+nextCol.label+'" onclick="moveKanbanCard(\''+e._key+'\',\''+nextCol.id+'\')"><i class="ti ti-arrow-right"></i></button>':'<span></span>')+
       '<span style="flex:1"></span>'+
+      (idx===0?'<button class="kbtn" title="'+(e.primeiroContatoAt?'1° contato: '+new Date(e.primeiroContatoAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+" "+new Date(e.primeiroContatoAt).toLocaleDateString("pt-BR"):'Registrar 1° Contato')+\'" onclick="registrarPrimeiroContato(event,\\\''+(e._key)+'\\\')" style="color:'+(e.primeiroContatoAt?'#4ade80':'#a78bfa')+';">'+(e.primeiroContatoAt?'<i class="ti ti-phone-check"></i>':'<i class="ti ti-phone-plus"></i>')+'</button>':'')+
       '<button class="kbtn" title="Agendar Reuniao" onclick="abrirAgendarReuniao(\''+e._key+'\')"><i class="ti ti-calendar-event"></i></button>'+
       '<button class="kbtn" title="Editar Lead" onclick="abrirEditarLead(\''+e._key+'\')"><i class="ti ti-edit"></i></button>'+
       '<button class="kbtn" title="Arquivar" onclick="archiveKanbanCard(\''+e._key+'\')"><i class="ti ti-archive"></i></button>'+
@@ -4124,6 +4143,7 @@ function buildNav(){
     {id:'visao-geral',icon:'ti-layout-dashboard',label:'Visão Geral'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
+    {id:'metricas',icon:'ti-chart-dots-3',label:'Métricas'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
@@ -4329,7 +4349,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -10792,6 +10812,122 @@ function _reunDateLabel(){
 var _tarefasData=null; // data selecionada para visualização de tarefas
 
 // ===== DASHBOARD COMERCIAL =====
+function renderMetricas(){
+  var entries=Object.keys(kanbanData||{}).map(function(k){var v=Object.assign({},kanbanData[k]);v._key=k;return v;});
+  function fmtMs(ms){
+    if(!ms||ms<0)return '—';
+    var mins=Math.floor(ms/60000);
+    if(mins<60)return mins+'min';
+    var hs=Math.floor(mins/60);
+    if(hs<24)return hs+'h '+Math.floor(mins%60)+'min';
+    var ds=Math.floor(hs/24);
+    return ds+'d '+Math.floor(hs%24)+'h';
+  }
+  function avgMs(arr){if(!arr.length)return null;return arr.reduce(function(a,b){return a+b;},0)/arr.length;}
+
+  // ---- Tempos de etapa usando statusHistory ----
+  var transitions=[
+    {from:'novo',to:'qualificado',label:'1° Contato',sub:'Novo Lead → Qualificado',icon:'ti-phone-call',color:'#a78bfa',desc:'Quanto tempo o lead fica sem ninguém ligar após entrar no funil.'},
+    {from:'qualificado',to:'reuniao',label:'Qualif → Reunião',sub:'Qualificado → Reunião Agendada',icon:'ti-calendar-event',color:'#34d399',desc:'Tempo entre qualificação do lead e agendamento da reunião.'},
+    {from:'reuniao',to:'proposta',label:'Reunião → Proposta',sub:'Reunião → Proposta Enviada',icon:'ti-file-description',color:'#fbbf24',desc:'Tempo entre a reunião realizada e o envio da proposta.'},
+    {from:'proposta',to:'fechado',label:'Proposta → Venda',sub:'Proposta → Fechamento',icon:'ti-trophy',color:'#60a5fa',desc:'Tempo de decisão do cliente após receber a proposta.'},
+  ];
+  var kpis=transitions.map(function(tr){
+    // Leads com histórico completo da transição
+    var withHistory=entries.filter(function(e){return e.statusHistory&&e.statusHistory[tr.from]&&e.statusHistory[tr.to];});
+    var times=withHistory.map(function(e){return e.statusHistory[tr.to]-e.statusHistory[tr.from];});
+    var avg=avgMs(times);
+    // Fallback: leads atualmente nessa etapa (estimativa do tempo atual)
+    var curTimes=entries.filter(function(e){return (e.status||'novo')===tr.from&&(e.statusAt||e._createdAt);}).map(function(e){return Date.now()-(e.statusAt||e._createdAt);});
+    var curAvg=avgMs(curTimes);
+    // Para 1° Contato: usar primeiroContatoAt se disponível
+    if(tr.from==='novo'&&tr.to==='qualificado'){
+      var withPrimeiro=entries.filter(function(e){return e._createdAt&&e.primeiroContatoAt;});
+      if(withPrimeiro.length){
+        var pTimes=withPrimeiro.map(function(e){return e.primeiroContatoAt-e._createdAt;});
+        avg=avgMs(pTimes);
+        times=pTimes;
+      }
+    }
+    return {label:tr.label,sub:tr.sub,icon:tr.icon,color:tr.color,desc:tr.desc,avg:avg,curAvg:curAvg,count:times.length};
+  });
+
+  // ---- Leads parados por etapa ----
+  var STAGE_LABELS={'novo':'Novo Lead','qualificado':'Qualificado','reuniao':'Reunião Agend.','proposta':'Proposta Enviada','recuperacao':'Recuperação'};
+  var HOT={'novo':10*60000,'qualificado':24*3600000,'reuniao':48*3600000,'proposta':72*3600000,'recuperacao':72*3600000};
+  var aging=[];
+  ['novo','qualificado','reuniao','proposta','recuperacao'].forEach(function(s){
+    entries.filter(function(e){return (e.status||'novo')===s;}).forEach(function(e){
+      var enteredAt=e.statusHistory&&e.statusHistory[s]?e.statusHistory[s]:(e.statusAt||e._createdAt||Date.now());
+      aging.push({nome:e.nome||'Lead',empresa:e.empresa||'',faturamento:e.faturamento||'',status:s,label:STAGE_LABELS[s]||s,ms:Date.now()-enteredAt,key:e._key,hot:Date.now()-enteredAt>(HOT[s]||86400000)});
+    });
+  });
+  aging.sort(function(a,b){return b.ms-a.ms;});
+
+  // ---- Primeiros contatos: leads em 'novo' sem primeiroContatoAt ----
+  var semContato=entries.filter(function(e){return (e.status||'novo')==='novo'&&!e.primeiroContatoAt;});
+  var comContato=entries.filter(function(e){return e.primeiroContatoAt;});
+
+  // ---- BUILD HTML ----
+  function kpiCard(k){
+    var val=k.avg!=null?fmtMs(k.avg):(k.curAvg!=null?'~'+fmtMs(k.curAvg):'Sem dados');
+    var isCur=k.avg==null&&k.curAvg!=null;
+    return '<div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:18px 20px;flex:1;min-width:200px;">'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
+      +'<div style="width:36px;height:36px;border-radius:9px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;color:'+k.color+';font-size:18px;"><i class="ti '+k.icon+'"></i></div>'
+      +'<div><div style="font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1px;">'+k.label+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);opacity:.7;">'+k.sub+'</div></div></div>'
+      +'<div style="font-size:28px;font-weight:900;font-family:Barlow Condensed,sans-serif;color:'+(k.avg!=null?'var(--white)':'var(--muted)')+';">'+val+'</div>'
+      +(isCur?'<div style="font-size:10px;color:var(--amber);margin-top:4px;"><i class="ti ti-clock"></i> Estimativa atual — dados históricos acumulando</div>':'')
+      +(k.count>0?'<div style="font-size:10px;color:var(--muted);margin-top:4px;">Baseado em '+k.count+' lead'+(k.count>1?'s':'')+'</div>':'')
+      +'<div style="font-size:11px;color:var(--muted);margin-top:8px;opacity:.7;line-height:1.5;">'+k.desc+'</div>'
+      +'</div>';
+  }
+
+  var agingRows=aging.slice(0,10).map(function(a){
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);" onclick="showPage(\'kanban\')" style="cursor:pointer;">'
+      +'<td style="padding:8px 12px;font-size:12px;color:var(--white);">'+esc(a.nome)+(a.empresa?'<br><span style="font-size:10px;color:var(--muted);">'+esc(a.empresa)+'</span>':'')+'</td>'
+      +'<td style="padding:8px 12px;"><span style="background:rgba(255,255,255,0.06);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap;">'+a.label+'</span></td>'
+      +'<td style="padding:8px 12px;font-size:13px;font-weight:800;font-family:Barlow Condensed,sans-serif;color:'+(a.hot?'#f87171':'#4ade80')+';">'+fmtMs(a.ms)+(a.hot?' ⚡':'')+'</td>'
+      +'</tr>';
+  }).join('');
+
+  var H='<div class="page active" style="padding:22px;max-width:1100px;margin:0 auto;">';
+  H+='<div class="page-header"><div><div class="page-title">Métricas de Pipeline</div><div class="page-sub">Tempo médio em cada etapa do funil de vendas</div></div></div>';
+
+  // --- 1° Contato info box ---
+  H+='<div style="background:rgba(147,51,234,0.06);border:1px solid rgba(147,51,234,0.2);border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:flex-start;gap:14px;">'
+    +'<div style="width:36px;height:36px;border-radius:9px;background:rgba(147,51,234,0.15);display:flex;align-items:center;justify-content:center;color:var(--purple3);font-size:18px;flex-shrink:0;"><i class="ti ti-info-circle"></i></div>'
+    +'<div style="flex:1;">'
+    +'<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:800;color:var(--white);margin-bottom:4px;">Como medimos o 1° Contato</div>'
+    +'<div style="font-size:12px;color:var(--muted);line-height:1.6;">O tempo de primeiro contato é registrado quando o SDR clica <strong style="color:var(--white);">📞 Registrar 1° Contato</strong> no card do Funil. '
+    +'Sem esse clique, usamos como proxy o momento em que o lead é movido para "Qualificado". '
+    +'<span style="color:var(--amber);">'+semContato.length+' lead'+(semContato.length!==1?'s':'')+' em "Novo Lead" ainda sem contato registrado.</span></div>'
+    +(comContato.length?'<div style="font-size:11px;color:var(--green);margin-top:4px;"><i class="ti ti-check"></i> '+comContato.length+' lead'+(comContato.length!==1?'s':'')+' com 1° contato registrado com precisão.</div>':'')
+    +'</div></div>';
+
+  // --- KPI cards ---
+  H+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:24px;">'
+    +kpis.map(kpiCard).join('')+'</div>';
+
+  // --- Leads parados ---
+  H+='<div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:20px;">'
+    +'<div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:800;letter-spacing:1px;color:var(--white);margin-bottom:14px;">LEADS PARADOS POR MAIS TEMPO '
+    +'<span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:6px;">ativos no funil, ordenados por tempo na etapa atual</span></div>'
+    +(aging.length
+      ?'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+      +'<thead><tr style="border-bottom:1px solid var(--border2);">'
+      +'<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);">LEAD</th>'
+      +'<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);">ETAPA ATUAL</th>'
+      +'<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);">TEMPO PARADO</th>'
+      +'</tr></thead><tbody>'+agingRows+'</tbody></table></div>'
+      :'<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px;">Nenhum lead ativo no funil</div>')
+    +'</div>';
+
+  H+='</div>';
+  document.getElementById('content').innerHTML=H;
+}
+
 function renderDashComercial(){
   if(!_dashPeriod)_dashPeriod=getCurrentPeriod();
   var now=new Date(),opts='';
