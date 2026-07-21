@@ -9058,20 +9058,39 @@ function renderReunioes(){
   function initials(n){return (n||'?').split(' ').slice(0,2).map(function(p){return p[0]||'';}).join('').toUpperCase();}
   function av(n){return '<div style="width:28px;height:28px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">'+initials(n)+'</div>';}
 
-  var agendadas=rows.length;
-  var confirmadas=rows.filter(isConf).length;
-  var realizadas=rows.filter(isReal).length;
-  var noshows=rows.filter(isNs).length;
-  var propostas=rows.filter(isProp).length;
-  var vendas=rows.filter(isVenda).length;
-  var receita=rows.reduce(function(s,m){return s+getReceita(m);},0);
+  // Apenas realizadas + no-shows, de-duplicando por lead (mesmo tel/nome = mesmo lead)
+  function dedupLeads(arr){
+    var seen={};var out=[];
+    arr.forEach(function(m){
+      var k=((m.tel||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
+      if(!k)return;
+      if(!seen[k]){seen[k]=m;out.push(m);}
+      else if(isNs(seen[k])&&isReal(m)){
+        // substituir no-show por realizada do mesmo lead
+        out[out.indexOf(seen[k])]=m;seen[k]=m;
+      }
+    });
+    return out;
+  }
+  var eligibleRows=rows.filter(function(m){return isReal(m)||isNs(m);});
+  var dedupedRows=dedupLeads(eligibleRows);
+  var prevEligible=prevRows.filter(function(m){return isReal(m)||isNs(m);});
+  var prevDeduped=dedupLeads(prevEligible);
+
+  var agendadas=dedupedRows.length;
+  var confirmadas=dedupedRows.filter(isConf).length;
+  var realizadas=dedupedRows.filter(isReal).length;
+  var noshows=dedupedRows.filter(isNs).length;
+  var propostas=dedupedRows.filter(isProp).length;
+  var vendas=dedupedRows.filter(isVenda).length;
+  var receita=dedupedRows.reduce(function(s,m){return s+getReceita(m);},0);
   var taxaComp=pct(realizadas,agendadas);
   var txProp=pct(propostas,realizadas);
   var txVenda=pct(vendas,propostas);
   var ticket=vendas>0?Math.round(receita/vendas):0;
-  var pA=prevRows.length,pR=prevRows.filter(isReal).length,pV=prevRows.filter(isVenda).length;
-  var pRec=prevRows.reduce(function(s,m){return s+getReceita(m);},0);
-  var pNs=prevRows.filter(isNs).length;
+  var pA=prevDeduped.length,pR=prevDeduped.filter(isReal).length,pV=prevDeduped.filter(isVenda).length;
+  var pRec=prevDeduped.reduce(function(s,m){return s+getReceita(m);},0);
+  var pNs=prevDeduped.filter(isNs).length;
 
   function dStr(c,p,inv){
     if(!p&&!c)return '';
@@ -9086,11 +9105,12 @@ function renderReunioes(){
     var hDate=new Date(filtY,filtM-hi,1);
     var hm=hDate.getMonth(),hy=hDate.getFullYear();
     var hR=allM.filter(function(m){if(!m.dtISO)return false;var d=new Date(m.dtISO);return d.getMonth()===hm&&d.getFullYear()===hy;});
-    histAg.push(hR.length);
-    var hr=hR.filter(isReal).length;
+    var hDd=dedupLeads(hR.filter(function(m){return isReal(m)||isNs(m);}));
+    histAg.push(hDd.length);
+    var hr=hDd.filter(isReal).length;
     histReal.push(hr);
-    histVend.push(hR.filter(isVenda).length);
-    histTc.push(hR.length>0?Math.round(hr/hR.length*100):0);
+    histVend.push(hDd.filter(isVenda).length);
+    histTc.push(hDd.length>0?Math.round(hr/hDd.length*100):0);
     histLb.push(_mns[hm]);
   }
 
@@ -13388,17 +13408,33 @@ async function loadFunilReunioes(){
 
     // Filtra reuniões do mês selecionado
     var shRows=(data.reunioes&&data.reunioes.rows)||[];
-    var shMes=shRows.filter(function(r){
+    var shAllMes=shRows.filter(function(r){
       var d=parseBRDate(col(r,DATE_COLS));
       return d&&d.getMonth()===filtM&&d.getFullYear()===filtY&&isMine(r);
     });
 
+    // Filtrar só realizadas + no-shows
+    var TEL_COLS=['TELEFONE','Tel','Telefone','WHATSAPP','Whatsapp','Phone','phone'];
+    var NOME_COLS=['NOME','Nome','nome','LEAD','Lead'];
+    function shIsReal(r){return isRealizada(col(r,STATUS_COLS));}
+    function shIsNs(r){var s=(col(r,STATUS_COLS)||'').toUpperCase().trim();return s==='NO-SHOW'||s==='NO SHOW'||s==='NOSHOW';}
+    var shEligible=shAllMes.filter(function(r){return shIsReal(r)||shIsNs(r);});
+    // De-duplicar por telefone ou nome
+    var shSeen={};var shMes=[];
+    shEligible.forEach(function(r){
+      var tel=(col(r,TEL_COLS)||'').replace(/\D/g,'');
+      var nome=(col(r,NOME_COLS)||'').toLowerCase().trim();
+      var k=tel||nome;
+      if(!k)return;
+      if(!shSeen[k]){shSeen[k]=r;shMes.push(r);}
+      else if(shIsNs(shSeen[k])&&shIsReal(r)){
+        shMes[shMes.indexOf(shSeen[k])]=r;shSeen[k]=r;
+      }
+    });
+
     var shTotal=shMes.length;
-    var shReal=shMes.filter(function(r){return isRealizada(col(r,STATUS_COLS));}).length;
-    var shNoshow=shMes.filter(function(r){
-      var s=(col(r,STATUS_COLS)||'').toUpperCase().trim();
-      return s==='NO-SHOW'||s==='NO SHOW'||s==='NOSHOW';
-    }).length;
+    var shReal=shMes.filter(shIsReal).length;
+    var shNoshow=shMes.filter(shIsNs).length;
     var shTx=shTotal>0?Math.round(shReal/shTotal*100):0;
 
     // Atualiza KPI cards — tanto renderReunioesPersonal (rp-*) quanto renderReunioes premium (rv-*)
