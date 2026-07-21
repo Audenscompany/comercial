@@ -812,6 +812,8 @@ function startRealtimeSync(){
     if(cfg.sheets_ids){ SHEETS_IDS=Object.assign(SHEETS_IDS,cfg.sheets_ids); localStorage.setItem('audens_sheets_ids',JSON.stringify(SHEETS_IDS)); }
     if(cfg.sheets_gids){ SHEETS_GIDS=Object.assign(SHEETS_GIDS,cfg.sheets_gids); localStorage.setItem('audens_sheets_gids',JSON.stringify(SHEETS_GIDS)); }
     if(cfg.gcalClientId){ gcalClientId=cfg.gcalClientId; localStorage.setItem('audens_gcal_id',gcalClientId); }
+    if(cfg.meta_app_id){ metaAppId=cfg.meta_app_id; localStorage.setItem('audens_meta_app',metaAppId); }
+    if(cfg.meta_acc_id){ metaAccountId=cfg.meta_acc_id; localStorage.setItem('audens_meta_acc',metaAccountId); }
     if(cfg.maps_key){ if(!localStorage.getItem('audens_maps_key')) localStorage.setItem('audens_maps_key',cfg.maps_key); }
     if(cfg.claude_key){ localStorage.setItem('audens_claude_key',cfg.claude_key); }
     if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
@@ -2392,6 +2394,8 @@ function saveAll(){
         fbDb.ref('config/sheets_ids').set(SHEETS_IDS);
         fbDb.ref('config/sheets_gids').set(SHEETS_GIDS);
         if(gcalClientId) fbDb.ref('config/gcalClientId').set(gcalClientId);
+        if(metaAppId) fbDb.ref('config/meta_app_id').set(metaAppId);
+        if(metaAccountId) fbDb.ref('config/meta_acc_id').set(metaAccountId);
       }catch(e){}
     }
   }catch(e){}
@@ -3185,6 +3189,8 @@ function saveMetaConfig(){
   if(appEl)metaAppId=appEl.value.trim();
   if(accEl)metaAccountId=accEl.value.trim().replace(/^act_/,'').replace(/,\s*act_/g,',');
   saveAll();showPage('config');
+  // Persist to Firebase so token+config sync across devices
+  try{if(fbDb){if(metaAppId)fbDb.ref('config/meta_app_id').set(metaAppId);if(metaAccountId)fbDb.ref('config/meta_acc_id').set(metaAccountId);}}catch(e){}
   var ids=metaAccountId.split(',').filter(Boolean);
   alert('Meta configurado!\nApp ID: '+metaAppId+'\n'+(ids.length>1?ids.length+' contas: '+ids.join(', '):'Account ID: '+metaAccountId));
 }
