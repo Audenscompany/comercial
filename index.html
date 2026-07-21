@@ -4107,7 +4107,7 @@ function showPage(id){
   if(typeof openNavGroupFor==='function') openNavGroupFor(id);
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
-    historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioesPersonal,
+    historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
     bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,'criativos':renderCriativos,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
@@ -4119,7 +4119,7 @@ function showPage(id){
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas
   };
   var area=document.getElementById('content');
-  if(map[id]){area.innerHTML=map[id]();area.setAttribute('data-page',id);
+  if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
