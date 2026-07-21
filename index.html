@@ -14939,9 +14939,10 @@ function _fuRenderLeadTable(universe,category,title,subtitle){
 
     var cells=[];
     // Lead cell
-    cells.push('<div style="min-width:140px;">'
+    var telHtml=l.tel?(' · <span onclick="_fuCopyTel(this,\''+l.tel+'\')" style="cursor:pointer;transition:color .15s;" title="Copiar número">'+l.tel+'</span>'):'';
+  cells.push('<div style="min-width:140px;">'
       +'<div style="font-size:12px;font-weight:700;color:var(--white);" class="fu-nome">'+(l.empresa!==l.nome&&l.empresa!=='—'?l.empresa:l.nome)+'</div>'
-      +'<div style="font-size:10px;color:var(--muted);">'+l.nome+(l.tel?' · '+l.tel:'')+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);">'+l.nome+telHtml+'</div>'
       +'</div>');
     cells.push('<span style="font-size:12px;font-weight:700;color:'+(l.faturamento>=100000?'#22c55e':l.faturamento>=60000?'#f59e0b':'var(--white)')+';">'+_fuFmtFat(l.faturamento)+'</span>');
     // Column 3 varies by category
@@ -14993,6 +14994,19 @@ function _fuCloserEmail(name){
   var em=null;
   Object.keys(USERS||{}).forEach(function(e){if((USERS[e].closer||'').toLowerCase()===(name||'').toLowerCase())em=e;});
   return em||'';
+}
+
+function _fuCopyTel(el,tel){
+  var num=(tel||'').replace(/\D/g,'');
+  if(!num)return;
+  navigator.clipboard.writeText(num).then(function(){
+    var orig=el.textContent;el.textContent='Copiado!';el.style.color='#22c55e';
+    setTimeout(function(){el.textContent=orig;el.style.color='';},1500);
+  }).catch(function(){
+    var ta=document.createElement('textarea');ta.value=num;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    var orig=el.textContent;el.textContent='Copiado!';el.style.color='#22c55e';
+    setTimeout(function(){el.textContent=orig;el.style.color='';},1500);
+  });
 }
 
 function _fuOpenLead(id){
