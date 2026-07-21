@@ -9258,8 +9258,8 @@ function renderReunioes(){
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
-  // Vendas/receita: direto dos followups para bater com KPI
-  Object.values(followups||{}).forEach(function(fu){if(fu.resultado!=='venda')return;var m=meetings[fu.meetingId];if(!m||!m.dtISO)return;if(!inMes(new Date(m.dtISO),filtM,filtY))return;var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  // Vendas/receita: usa _vendaDate (prioriza fu.dataInicio, fu.dt) para não perder vendas com meeting em mês anterior
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
   // Faixas — ag/real de dedupedRows; vend de followups direto (mesmo critério do KPI)
@@ -9267,8 +9267,8 @@ function renderReunioes(){
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
   dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
-  // Vendas: conta direto dos followups para bater com KPI
-  Object.values(followups||{}).forEach(function(fu){if(fu.resultado!=='venda')return;var m=meetings[fu.meetingId];if(!m||!m.dtISO)return;if(!inMes(new Date(m.dtISO),filtM,filtY))return;var fat=getFat(m);var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
+  // Vendas: usa _vendaDate para não perder vendas com meeting em mês anterior
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
   var closerMap={};
@@ -9539,19 +9539,19 @@ function buildDashComHTML(data){
     if(_dashStart&&_dashEnd) return d>=_dashStart&&d<=_dashEnd;
     return periodStr(d)===period;
   }
-  var leadsF=data.leads.rows.filter(function(r){
+  var leadsF=((data.leads&&data.leads.rows)||[]).filter(function(r){
     var d=parseBRDate(col(r,['Data','DATA','data']));return inRange(d);
   });
-  var reunioesF=data.reunioes.rows.filter(function(r){
+  var reunioesF=((data.reunioes&&data.reunioes.rows)||[]).filter(function(r){
     var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
     return inRange(d);
   });
-  var clientesF=data.clientes.rows.filter(function(r){
+  var clientesF=((data.clientes&&data.clientes.rows)||[]).filter(function(r){
     var d=parseBRDate(col(r,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
     return inRange(d);
   });
   // All clientes for annual metrics
-  var todosClientes=data.clientes.rows;
+  var todosClientes=(data.clientes&&data.clientes.rows)||[];
 
   // ── UNIFICAÇÃO DE FONTE DE VENDAS ──
   // Até junho/2026: Planilha Google é fonte completa (igual aba Vendas usa loadVendasSheets)
@@ -13510,6 +13510,9 @@ async function loadFunilReunioes(){
             vendCount++;recSum+=_mrr2(fu);
           });
           function _fmtR2(n){if(!n)return'R$ 0';if(n>=1000000)return'R$'+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return'R$'+(n/1000).toFixed(0)+'k';return'R$'+Math.round(n);}
+          // Vendas: Firebase pode perder vendas cujo meeting tem dtISO em mês anterior — usar máximo com Planilha
+          var _shVendM=(data&&data.clientes&&data.clientes.rows||[]).filter(function(c){var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));return d&&d.getMonth()===_filtM&&d.getFullYear()===_filtY;}).length;
+          if(_shVendM>vendCount)vendCount=_shVendM;
           var elRvV=document.getElementById('rv-vend'); if(elRvV)elRvV.textContent=vendCount;
           var elRvRc=document.getElementById('rv-rec');  if(elRvRc)elRvRc.textContent=_fmtR2(recSum);
           var elRvP=document.getElementById('rv-prop');
