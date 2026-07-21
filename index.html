@@ -11719,72 +11719,241 @@ function _renderMetaIntelligence(d){
   var pctDelivered=totalProg>0?Math.round(todaySpend/totalProg*100):0;
   var now=new Date(),hourFrac=(now.getHours()*60+now.getMinutes())/(24*60);
   var pctDay=Math.round(hourFrac*100);
-  var hourStr=now.getHours()+'h';
+  var hourStr=now.getHours().toString().padStart(2,'0')+'h'+now.getMinutes().toString().padStart(2,'0');
   var saldoVit=camps.filter(function(c){return c._bud.saldo>0;}).reduce(function(s,c){return s+c._bud.saldo;},0);
   var maxDaysLeft=camps.filter(function(c){return c._bud.daysLeft;}).reduce(function(m,c){return Math.max(m,c._bud.daysLeft||0);},0);
   var semGasto=camps.filter(function(c){return c._bud.dayTotal>0&&c._bud.spendToday<=0;});
   var vitEnc=camps.filter(function(c){return c._bud.daysLeft&&c._bud.daysLeft<=3&&c._bud.saldo>0;});
+  var ritmoEsperado=totalProg*hourFrac;
+  var diffRitmo=todaySpend-ritmoEsperado;
+  var healthOk=pctDelivered>=(pctDay-10);
+
   var ctx={atualizadoEm:d.updatedAt?d.updatedAt.toISOString():'—',programadoHoje:totalProg,gastoHoje:todaySpend,gastoMes:d.monthSpend||0,percentualDia:pctDay,percentualEntregue:pctDelivered,campanhas:camps.slice(0,20).map(function(c){return{nome:c.name,tipo:c._bud.type,budgetTipo:c._bud.budgetType,orcamentoDia:+(c._bud.dayTotal||0).toFixed(2),gastoHoje:+(c._bud.spendToday||0).toFixed(2),saldo:+(c._bud.saldo||0).toFixed(2),diasRestantes:c._bud.daysLeft||null};})};
   window._metaIntelCtx=ctx;
+
+  // Insights
   var insights=[];
-  if(pctDelivered<pctDay-20)insights.push('Gasto real ('+pctDelivered+'%) abaixo do ritmo esperado ('+pctDay+'%) para '+hourStr+'.');
-  else insights.push('Entrega dentro do ritmo: '+pctDelivered+'% entregue até '+hourStr+' ('+pctDay+'% do dia).');
-  if(semGasto.length)insights.push(semGasto.length+' campanha(s) com orçamento ativo sem gasto hoje.');
-  else insights.push('Todas as campanhas registraram gasto hoje.');
-  if(vitEnc.length)insights.push(vitEnc.length+' vitalício(s) encerrando em até 3 dias com saldo positivo.');
-  if(maxDaysLeft>0)insights.push('Saldo total de vitalícios: '+_maFmt(saldoVit)+' para os próximos '+maxDaysLeft+' dias.');
+  if(pctDelivered<pctDay-20){insights.push({type:'warn',icon:'ti-trending-down',col:'#ef4444',text:'Gasto real ('+pctDelivered+'%) abaixo do ritmo esperado ('+pctDay+'%) para '+hourStr+'.'});}
+  else{insights.push({type:'ok',icon:'ti-trending-up',col:'#22c55e',text:'Entrega dentro do ritmo: '+pctDelivered+'% até '+hourStr+' (esperado '+pctDay+'%).'});}
+  if(semGasto.length){insights.push({type:'warn',icon:'ti-player-pause',col:'#f59e0b',text:semGasto.length+' campanha(s) com orçamento ativo sem gasto hoje.'});}
+  else{insights.push({type:'ok',icon:'ti-circle-check',col:'#22c55e',text:'Todas as campanhas registraram gasto hoje.'});}
+  if(vitEnc.length){insights.push({type:'alert',icon:'ti-clock-exclamation',col:'#f97316',text:vitEnc.length+' vitalício(s) encerrando em até 3 dias com saldo positivo.'});}
+  if(maxDaysLeft>0){insights.push({type:'info',icon:'ti-coin',col:'#06b6d4',text:'Saldo total de vitalícios: '+_maFmt(saldoVit)+' para os próximos '+maxDaysLeft+' dias.'});}
+  var topSpend=camps.slice().sort(function(a,b){return(b._bud.spendToday||0)-(a._bud.spendToday||0);});
+  if(topSpend.length>0){var top=topSpend[0];var pctTop=totalProg>0?Math.round((top._bud.spendToday||0)/todaySpend*100):0;insights.push({type:'info',icon:'ti-award',col:'#9333ea',text:'Maior gasto: "'+top.name.split(' ').slice(0,4).join(' ')+'" — '+_maFmt(top._bud.spendToday||0)+' ('+pctTop+'% do total).'});}
+
+  // Alerts
   var alerts=[];
-  if(pctDelivered<pctDay-30)alerts.push({col:'#ef4444',title:'Subentrega crítica',msg:(pctDay-pctDelivered)+'pp abaixo do ritmo'});
-  semGasto.slice(0,3).forEach(function(c){alerts.push({col:'#f59e0b',title:'Sem gasto',msg:'"'+c.name.split(' ').slice(0,3).join(' ')+'"'});});
-  vitEnc.slice(0,3).forEach(function(c){alerts.push({col:'#f97316',title:'Vitalício encerrando',msg:c._bud.daysLeft+' dia(s) • '+_maFmt(c._bud.saldo)});});
-  var sugs=['Quanto está programado para hoje?','Estamos dentro do ritmo?','Qual campanha está mais atrasada?','Quanto os vitalícios precisam gastar por dia?'];
-  var H='<div style="display:grid;grid-template-columns:280px 1fr;gap:14px;margin-bottom:14px;">';
+  if(pctDelivered<pctDay-30){alerts.push({sev:3,col:'#ef4444',icon:'ti-flame',title:'Subentrega Crítica',msg:Math.abs(diffRitmo>0?diffRitmo:-diffRitmo)?_maFmt(Math.abs(diffRitmo))+' abaixo do ritmo ideal':'',action:'Ver campanhas',page:'camps'});}
+  else if(pctDelivered<pctDay-10){alerts.push({sev:2,col:'#f59e0b',icon:'ti-alert-triangle',title:'Entrega Levemente Abaixo',msg:pctDay+'% esperado vs '+pctDelivered+'% real',action:'Ver detalhes',page:'camps'});}
+  semGasto.slice(0,2).forEach(function(c){alerts.push({sev:2,col:'#f59e0b',icon:'ti-player-pause',title:'Campanha sem gasto',msg:'"'+c.name.split(' ').slice(0,3).join(' ')+'..."',action:'Ver campanha',page:'camps'});});
+  vitEnc.slice(0,2).forEach(function(c){alerts.push({sev:2,col:'#f97316',icon:'ti-calendar-x',title:'Vitalício encerrando',msg:c._bud.daysLeft+' dia(s) restante(s) • '+_maFmt(c._bud.saldo)+' de saldo',action:'Ver vitalícios',page:'camps'});});
+  if(!alerts.length){alerts.push({sev:0,col:'#22c55e',icon:'ti-shield-check',title:'Tudo normal',msg:'Nenhum alerta crítico identificado.',action:null});}
+
+  // Data sources
+  var ts=d.updatedAt?d.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—';
+  var dataSrcs=[
+    {dot:'#9333ea',label:'Orçamento Programado',val:_maFmt(totalProg),sub:'Hoje',ts:ts},
+    {dot:'#22c55e',label:'Gasto em Tempo Real',val:_maFmt(todaySpend),sub:pctDelivered+'% do prog.',ts:ts},
+    {dot:'#3b82f6',label:'Ritmo de Entrega',val:pctDay+'% do dia',sub:hourStr+' agora',ts:ts},
+    {dot:'#f59e0b',label:'Meta de Vitalícios',val:_maFmt(saldoVit),sub:maxDaysLeft+' dias',ts:ts},
+    {dot:'#06b6d4',label:'Campanhas Ativas',val:camps.length+'',sub:d.lifetimeCount+' vitalícias',ts:ts},
+    {dot:'#ec4899',label:'Gasto do Mês',val:_maFmtI(d.monthSpend||0),sub:'Acumulado',ts:ts}
+  ];
+
+  // Progress bar helper
+  function pbar(pct,col,h){h=h||5;var safe=Math.min(100,Math.max(0,pct));return '<div style="width:100%;height:'+h+'px;background:rgba(255,255,255,0.07);border-radius:99px;overflow:hidden;"><div style="height:100%;width:'+safe+'%;background:'+col+';border-radius:99px;transition:width .4s;"></div></div>';}
+
+  // Suggestions with icons
+  var sugs=[
+    {ic:'ti-calendar-event',q:'Quanto está programado para hoje?'},
+    {ic:'ti-activity',q:'Estamos dentro do ritmo?'},
+    {ic:'ti-podium',q:'Qual campanha está mais atrasada?'},
+    {ic:'ti-clock-dollar',q:'Quanto os vitalícios precisam gastar por dia?'}
+  ];
+
+  var H='<div style="display:grid;grid-template-columns:320px 1fr;gap:14px;margin-bottom:14px;">';
+
+  // ─── LEFT PANEL ─────────────────────────────────────────────────────────────
   H+='<div style="display:flex;flex-direction:column;gap:12px;">';
+
+  // Health status banner
+  var healthCol=healthOk?'#22c55e':'#ef4444';
+  var healthMsg=healthOk?'Entrega no ritmo ✓':'Atenção: entrega abaixo do ritmo';
+  H+='<div style="background:'+healthCol.replace('#','rgba(').slice(0,-1)+',0.08);border:1px solid '+healthCol.replace('#','rgba(').slice(0,-1)+',0.25);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:8px;">'
+    +'<div style="width:8px;height:8px;border-radius:50%;background:'+healthCol+';box-shadow:0 0 6px '+healthCol+';flex-shrink:0;"></div>'
+    +'<div style="flex:1;"><div style="font-size:11px;font-weight:700;color:'+healthCol+';">'+healthMsg+'</div><div style="font-size:9px;color:var(--muted);margin-top:1px;">'+pctDelivered+'% entregue · esperado '+pctDay+'% às '+hourStr+'</div></div>'
+    +'</div>';
+
+  // Context cards — 3 large cards stacked + 3 small
   H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">';
-  H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">CONTEXTO ATUAL</div>';
-  function ctxCard(title,val,sub,col){return '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:10px;"><div style="font-size:8.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:3px;">'+title+'</div><div style="font-family:Bebas Neue,sans-serif;font-size:17px;color:'+(col||'var(--white)')+';">'+val+'</div><div style="font-size:9.5px;color:var(--muted);margin-top:1px;line-height:1.3;">'+sub+'</div></div>';}
+  H+='<div style="font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">CONTEXTO ATUAL</div>';
+  // Big cards
+  function bigCtx(ic,col,title,val,sub,pct2,pctCol){
+    return '<div style="background:linear-gradient(135deg,'+col.replace('#','rgba(').slice(0,-1)+',0.1),transparent);border:1px solid '+col.replace('#','rgba(').slice(0,-1)+',0.2);border-radius:10px;padding:12px;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+      +'<div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:'+col+';opacity:0.8;">'+title+'</div>'
+      +'<div style="width:28px;height:28px;background:'+col.replace('#','rgba(').slice(0,-1)+',0.15);border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti '+ic+'" style="font-size:14px;color:'+col+';"></i></div>'
+      +'</div>'
+      +'<div style="font-family:Bebas Neue,sans-serif;font-size:22px;line-height:1;color:'+col+';margin-bottom:4px;">'+val+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px;">'+sub+'</div>'
+      +(pct2!==undefined?pbar(pct2,pctCol||col,4):'')
+      +'</div>';
+  }
+  H+=bigCtx('ti-calendar-bolt','#9333ea','Programado Hoje',_maFmt(totalProg),'100% da meta diária',100,'#9333ea');
+  H+='<div style="height:8px;"></div>';
+  H+=bigCtx('ti-receipt-2','#22c55e','Gasto Hoje (até '+hourStr+')',_maFmt(todaySpend),pctDelivered+'% do programado · ritmo '+pctDay+'%',pctDelivered,'#22c55e');
+  H+='<div style="height:8px;"></div>';
+  // Small 2x2
   H+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">';
-  H+=ctxCard('Programado Hoje',_maFmt(totalProg),'100% da meta diária','#9333ea');
-  H+=ctxCard('Gasto Hoje (até '+hourStr+')',_maFmt(todaySpend),pctDelivered+'% do programado','#22c55e');
-  H+=ctxCard('Gasto do Mês',_maFmtI(d.monthSpend||0),(d.totalProg>0?Math.round((d.monthSpend||0)/((d.totalProg||1)*30)*100)+'% do orç. mensal':'—'),'#3b82f6');
-  H+=ctxCard('Campanhas Ativas',camps.length+'',d.lifetimeCount+' vitalício'+(d.lifetimeCount===1?'':'s'),'#f59e0b');
-  H+=ctxCard('Vitalícios (total)',_maFmt(saldoVit),maxDaysLeft>0?'Para os próximos '+maxDaysLeft+' dias':'','#06b6d4');
-  H+=ctxCard('Última Atualização',d.updatedAt?d.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—','Dados em tempo real','var(--muted)');
+  function smCtx(ic,col,title,val,sub){return '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:9px;"><div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;"><i class="ti '+ic+'" style="font-size:11px;color:'+col+';"></i><div style="font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+title+'</div></div><div style="font-family:Bebas Neue,sans-serif;font-size:16px;color:'+col+';">'+val+'</div><div style="font-size:9px;color:var(--muted);">'+sub+'</div></div>';}
+  H+=smCtx('ti-chart-line','#3b82f6','Gasto do Mês',_maFmtI(d.monthSpend||0),(d.monthSpend&&totalProg?Math.round(d.monthSpend/(totalProg*30)*100)+'% do orç.':'—'));
+  H+=smCtx('ti-speakerphone','#f59e0b','Campanhas',camps.length+'',d.lifetimeCount+' vitalício'+(d.lifetimeCount===1?'':'s'));
+  H+=smCtx('ti-coin','#06b6d4','Saldo Vit.',_maFmt(saldoVit),(maxDaysLeft>0?maxDaysLeft+' dias restantes':'—'));
+  H+=smCtx('ti-refresh','var(--muted)','Atualizado',d.updatedAt?d.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—','Dados ao vivo');
   H+='</div></div>';
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;">';
-  H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">PERGUNTAS SUGERIDAS</div>';
+
+  // Suggestions
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">';
+  H+='<div style="font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">PERGUNTAS SUGERIDAS</div>';
   H+='<div style="display:flex;flex-direction:column;gap:6px;">';
-  sugs.forEach(function(s){H+='<button onclick="_metaIntelSend(\''+s.replace(/'/g,"\\'")+'\')" style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:8px 12px;font-size:11px;cursor:pointer;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px;" onmouseover="this.style.borderColor=\'var(--purple3)\'" onmouseout="this.style.borderColor=\'var(--border2)\'"><span>'+s+'</span><i class="ti ti-arrow-right" style="color:var(--purple3);font-size:12px;flex-shrink:0;"></i></button>';});
-  H+='</div></div></div>';
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;">';
-  H+='<div style="display:flex;align-items:center;justify-content:space-between;">';
-  H+='<div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;background:var(--purple3);border-radius:50%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-brain" style="font-size:17px;color:#fff;"></i></div><div><div style="font-size:13px;font-weight:700;">Meta Intelligence</div><div style="font-size:10px;color:var(--muted);">Análise com IA • '+camps.length+' campanhas no contexto</div></div></div>';
-  H+='<button onclick="_metaIntelHistory=[];_renderMetaContent(window._metaAdsLastData);" style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:4px 8px;font-size:10px;cursor:pointer;"><i class="ti ti-trash"></i> Limpar</button></div>';
-  H+='<div id="meta-intel-hist" style="flex:1;min-height:240px;max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">';
-  if(!_metaIntelHistory.length)H+='<div style="text-align:center;padding:44px 20px;color:var(--muted);"><div style="width:48px;height:48px;background:rgba(147,51,234,0.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><i class="ti ti-message-circle" style="font-size:22px;color:var(--purple3);"></i></div><div style="font-weight:600;color:var(--white);font-size:13px;margin-bottom:5px;">Converse com seus dados</div><div style="font-size:11px;">Selecione uma pergunta ou escreva a sua.</div></div>';
+  sugs.forEach(function(s){
+    H+='<button onclick="_metaIntelSend(\''+s.q.replace(/'/g,"\\'")+'\');" style="background:var(--bg);border:1px solid var(--border2);border-radius:9px;color:var(--white);padding:9px 12px;font-size:11px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;transition:all .15s;" onmouseover="this.style.borderColor=\'var(--purple3)\';this.style.background=\'rgba(147,51,234,0.06)\'" onmouseout="this.style.borderColor=\'var(--border2)\';this.style.background=\'var(--bg)\'">'
+      +'<div style="width:26px;height:26px;background:rgba(147,51,234,0.12);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+s.ic+'" style="font-size:12px;color:var(--purple3);"></i></div>'
+      +'<span style="flex:1;line-height:1.3;">'+s.q+'</span>'
+      +'<i class="ti ti-arrow-right" style="color:var(--purple3);font-size:11px;flex-shrink:0;"></i>'
+      +'</button>';
+  });
+  H+='</div></div></div>'; // end left panel
+
+  // ─── RIGHT PANEL: CHAT ──────────────────────────────────────────────────────
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:0;display:flex;flex-direction:column;overflow:hidden;">';
+  // Chat header
+  H+='<div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'
+    +'<div style="display:flex;align-items:center;gap:12px;">'
+    +'<div style="width:38px;height:38px;background:linear-gradient(135deg,#9333ea,#7c3aed);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 14px rgba(147,51,234,0.3);">'
+    +'<svg width="20" height="14" viewBox="0 0 36 22" fill="none"><path d="M2 11C2 11 8 2 14 2s8 9 10 9 8-9 10-9 10 9 10 9" stroke="url(#mg)" stroke-width="3.5" stroke-linecap="round" fill="none"/><defs><linearGradient id="mg" x1="0" y1="0" x2="36" y2="0"><stop stop-color="#fff"/><stop offset="1" stop-color="rgba(255,255,255,0.7)"/></linearGradient></defs></svg>'
+    +'</div>'
+    +'<div><div style="font-size:13px;font-weight:700;">Inteligência Meta</div>'
+    +'<div style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;background:#22c55e;border-radius:50%;display:inline-block;"></span>Analisando '+camps.length+' campanhas · atualizado '+ts+'</div></div>'
+    +'</div>'
+    +'<button onclick="_metaIntelHistory=[];_renderMetaContent(window._metaAdsLastData);" style="background:none;border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:5px 10px;font-size:10px;cursor:pointer;display:flex;align-items:center;gap:4px;" onmouseover="this.style.borderColor=\'#ef4444\';this.style.color=\'#ef4444\'" onmouseout="this.style.borderColor=\'var(--border2)\';this.style.color=\'var(--muted)\'"><i class="ti ti-trash" style="font-size:11px;"></i> Limpar</button>'
+    +'</div>';
+  // Chat history
+  H+='<div id="meta-intel-hist" style="flex:1;min-height:260px;max-height:380px;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">';
+  if(!_metaIntelHistory.length){
+    H+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:220px;text-align:center;color:var(--muted);">'
+      +'<div style="width:56px;height:56px;background:rgba(147,51,234,0.08);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:14px;border:1px solid rgba(147,51,234,0.2);">'
+      +'<i class="ti ti-sparkles" style="font-size:24px;color:var(--purple3);"></i></div>'
+      +'<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:5px;">Converse com seus dados de tráfego</div>'
+      +'<div style="font-size:11px;max-width:260px;line-height:1.5;">Selecione uma pergunta sugerida ou escreva a sua. A IA tem acesso aos dados de todas as suas campanhas.</div>'
+      +'</div>';
+  }
+  // Render history
   _metaIntelHistory.forEach(function(msg){
-    var ts=msg.ts?new Date(msg.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
-    if(msg.role==='user')H+='<div style="display:flex;justify-content:flex-end;gap:8px;align-items:flex-end;"><div><div style="background:var(--purple3);color:#fff;padding:9px 13px;border-radius:12px 12px 4px 12px;font-size:12px;max-width:340px;">'+msg.text+'</div>'+(ts?'<div style="font-size:9px;color:var(--muted);text-align:right;margin-top:3px;">'+ts+'</div>':'')+'</div><div style="width:28px;height:28px;background:var(--purple3);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user" style="font-size:12px;color:#fff;"></i></div></div>';
-    else H+='<div style="display:flex;justify-content:flex-start;gap:8px;align-items:flex-end;"><div style="width:28px;height:28px;background:rgba(147,51,234,0.18);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brain" style="font-size:12px;color:var(--purple3);"></i></div><div><div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:9px 13px;border-radius:12px 12px 12px 4px;font-size:12px;max-width:420px;color:var(--white);white-space:pre-wrap;line-height:1.5;">'+msg.text+'</div>'+(ts?'<div style="font-size:9px;color:var(--muted);margin-top:3px;">'+ts+'</div>':'')+'</div></div>';
+    var ts2=msg.ts?new Date(msg.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
+    if(msg.role==='user'){
+      H+='<div style="display:flex;justify-content:flex-end;gap:8px;align-items:flex-end;">'
+        +'<div><div style="background:var(--purple3);color:#fff;padding:10px 14px;border-radius:14px 14px 4px 14px;font-size:12px;max-width:380px;line-height:1.5;box-shadow:0 2px 8px rgba(147,51,234,0.25);">'+msg.text+'</div>'
+        +(ts2?'<div style="font-size:9px;color:var(--muted);text-align:right;margin-top:3px;">'+ts2+'</div>':'')
+        +'</div>'
+        +'<div style="width:30px;height:30px;background:var(--purple3);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700;color:#fff;">L</div>'
+        +'</div>';
+    } else if(msg._loading){
+      H+='<div style="display:flex;justify-content:flex-start;gap:8px;align-items:flex-end;">'
+        +'<div style="width:30px;height:30px;background:rgba(147,51,234,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(147,51,234,0.25);"><svg width="12" height="9" viewBox="0 0 36 22" fill="none"><path d="M2 11C2 11 8 2 14 2s8 9 10 9 8-9 10-9 10 9 10 9" stroke="#9333ea" stroke-width="3" stroke-linecap="round" fill="none"/></svg></div>'
+        +'<div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:12px 16px;border-radius:14px 14px 14px 4px;">'
+        +'<div style="display:flex;gap:5px;align-items:center;">'
+        +'<div style="width:6px;height:6px;background:var(--purple3);border-radius:50%;animation:pulse 1s infinite;"></div>'
+        +'<div style="width:6px;height:6px;background:var(--purple3);border-radius:50%;animation:pulse 1s infinite;animation-delay:.2s;opacity:.7;"></div>'
+        +'<div style="width:6px;height:6px;background:var(--purple3);border-radius:50%;animation:pulse 1s infinite;animation-delay:.4s;opacity:.4;"></div>'
+        +'</div></div></div>';
+    } else {
+      // Format assistant message — detect table data
+      var txt=msg.text;
+      var fmtTxt=txt.replace(/\n/g,'<br>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code style="background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px;font-size:11px;">$1</code>');
+      H+='<div style="display:flex;justify-content:flex-start;gap:8px;align-items:flex-end;">'
+        +'<div style="width:30px;height:30px;background:rgba(147,51,234,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(147,51,234,0.25);"><svg width="12" height="9" viewBox="0 0 36 22" fill="none"><path d="M2 11C2 11 8 2 14 2s8 9 10 9 8-9 10-9 10 9 10 9" stroke="#9333ea" stroke-width="3" stroke-linecap="round" fill="none"/></svg></div>'
+        +'<div><div style="font-size:9px;color:var(--muted);margin-bottom:3px;display:flex;align-items:center;gap:5px;"><span>'+ts2+'</span><span>·</span><span style="color:var(--purple3);">Meta Intelligence</span></div>'
+        +'<div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:12px 16px;border-radius:14px 14px 14px 4px;font-size:12px;max-width:500px;color:var(--white);line-height:1.6;">'+fmtTxt+'</div>'
+        +'</div></div>';
+    }
   });
   H+='</div>';
-  if(!_metaN8nWebhook)H+='<div style="background:rgba(147,51,234,0.06);border:1px dashed rgba(147,51,234,0.3);border-radius:8px;padding:9px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-plug" style="color:var(--purple3);font-size:13px;"></i><span style="font-size:11px;color:var(--muted);flex:1;">Configure o webhook n8n em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Configurações</a> para habilitar a IA.</span><input type="text" placeholder="URL webhook n8n..." value="'+_metaN8nWebhook+'" oninput="_metaN8nWebhook=this.value;localStorage.setItem(\'audens_meta_n8n\',this.value);" style="background:var(--bg);border:1px solid var(--border2);border-radius:6px;color:var(--white);padding:4px 8px;font-size:10px;outline:none;width:200px;"></div>';
-  H+='<div style="display:flex;gap:8px;"><input id="meta-intel-inp" type="text" placeholder="Pergunte algo sobre seus dados de tráfego..." style="flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:9px 12px;font-size:12px;outline:none;" onkeydown="if(event.key===\'Enter\'){var v=this.value.trim();if(v)_metaIntelSend(v);}"><button onclick="var v=document.getElementById(\'meta-intel-inp\').value.trim();if(v)_metaIntelSend(v);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:9px 14px;font-size:12px;cursor:pointer;"><i class="ti ti-send"></i></button></div></div>';
-  H+='</div>';
+  // Webhook config bar
+  if(!_metaN8nWebhook){
+    H+='<div style="margin:0 16px;background:rgba(147,51,234,0.05);border:1px dashed rgba(147,51,234,0.25);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-plug" style="color:var(--purple3);font-size:12px;"></i><span style="font-size:11px;color:var(--muted);flex:1;">Configure o webhook n8n em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;text-decoration:underline;">Configurações</a> para habilitar a IA.</span></div>';
+  }
+  // Input
+  H+='<div style="padding:14px 16px;border-top:1px solid var(--border);">';
+  H+='<div style="display:flex;gap:8px;align-items:center;background:var(--bg);border:1px solid var(--border2);border-radius:10px;padding:4px 6px 4px 12px;" onfocus="this.style.borderColor=\'var(--purple3)\'">'
+    +'<input id="meta-intel-inp" type="text" placeholder="Pergunte algo sobre seus dados de tráfego..." style="flex:1;background:none;border:none;color:var(--white);padding:7px 0;font-size:12px;outline:none;" onkeydown="if(event.key===\'Enter\'){var v=this.value.trim();if(v)_metaIntelSend(v);}">'
+    +'<button onclick="var v=document.getElementById(\'meta-intel-inp\').value.trim();if(v)_metaIntelSend(v);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:13px;" title="Enviar"><i class="ti ti-send-2"></i></button>'
+    +'</div>'
+    +'<div style="font-size:9px;color:var(--muted);margin-top:5px;text-align:center;">Dica: pergunte sobre ritmo, campanhas, vitalícios, comparativos e oportunidades de escala.</div>'
+    +'</div>';
+  H+='</div>'; // end chat right panel
+  H+='</div>'; // end top grid
+
+  // ─── BOTTOM 3 PANELS ────────────────────────────────────────────────────────
   H+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">';
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;"><div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">INSIGHTS GERADOS</div><div style="display:flex;flex-direction:column;gap:8px;">';
-  insights.forEach(function(ins){H+='<div style="display:flex;gap:8px;align-items:flex-start;"><div style="width:18px;height:18px;background:rgba(34,197,94,0.12);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-check" style="font-size:10px;color:#22c55e;"></i></div><div style="font-size:11px;color:var(--muted);line-height:1.4;">'+ins+'</div></div>';});
+
+  // INSIGHTS
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;background:rgba(34,197,94,0.12);border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-bulb" style="font-size:13px;color:#22c55e;"></i></div>'
+    +'<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Insights Gerados</div></div>'
+    +'<span style="font-size:10px;background:rgba(34,197,94,0.1);color:#22c55e;padding:2px 7px;border-radius:20px;font-weight:700;">'+insights.length+'</span>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:9px;">';
+  insights.forEach(function(ins,i){
+    H+='<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 10px;background:'+ins.col.replace('#','rgba(').slice(0,-1)+',0.05);border:1px solid '+ins.col.replace('#','rgba(').slice(0,-1)+',0.15);border-radius:8px;">'
+      +'<div style="width:22px;height:22px;background:'+ins.col.replace('#','rgba(').slice(0,-1)+',0.12);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti '+ins.icon+'" style="font-size:11px;color:'+ins.col+';"></i></div>'
+      +'<div style="font-size:11px;color:var(--muted);line-height:1.45;flex:1;">'+ins.text+'</div>'
+      +'</div>';
+  });
   H+='</div></div>';
-  var ds2=[{label:'Campanhas ativas',val:camps.length+' campanhas',col:'#9333ea'},{label:'Gasto hoje (real)',val:_maFmt(todaySpend),col:'#22c55e'},{label:'Gasto do mês',val:_maFmtI(d.monthSpend||0),col:'#3b82f6'},{label:'Vitalícios ativos',val:d.lifetimeCount+' campanhas',col:'#f59e0b'},{label:'Saldo restante',val:_maFmt(saldoVit),col:'#06b6d4'},{label:'Referência temporal',val:d.updatedAt?d.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—',col:'var(--muted)'}];
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;"><div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">DADOS UTILIZADOS NA RESPOSTA</div><div style="display:flex;flex-direction:column;gap:7px;">';
-  ds2.forEach(function(dd){H+='<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;"><div style="display:flex;align-items:center;gap:7px;"><div style="width:7px;height:7px;border-radius:50%;background:'+dd.col+';flex-shrink:0;"></div><div style="font-size:11px;color:var(--muted);">'+dd.label+'</div></div><div style="font-size:11px;font-weight:600;color:var(--white);">'+dd.val+'</div></div>';});
+
+  // DADOS
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;background:rgba(59,130,246,0.12);border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-database" style="font-size:13px;color:#3b82f6;"></i></div>'
+    +'<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Dados Utilizados</div></div>'
+    +'<div style="display:flex;align-items:center;gap:4px;font-size:9px;color:#22c55e;"><span style="width:5px;height:5px;background:#22c55e;border-radius:50%;"></span>Ao vivo</div>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:0;">';
+  dataSrcs.forEach(function(ds,i){
+    H+='<div style="display:flex;align-items:center;gap:10px;padding:9px 0;'+(i<dataSrcs.length-1?'border-bottom:1px solid rgba(255,255,255,0.04);':'')+';">'
+      +'<div style="width:8px;height:8px;border-radius:50%;background:'+ds.dot+';flex-shrink:0;box-shadow:0 0 5px '+ds.dot+'44;"></div>'
+      +'<div style="flex:1;"><div style="font-size:11px;color:var(--white);font-weight:500;">'+ds.label+'</div><div style="font-size:9px;color:var(--muted);">'+ds.sub+'</div></div>'
+      +'<div style="text-align:right;"><div style="font-size:11px;font-weight:700;color:'+ds.dot+';">'+ds.val+'</div><div style="font-size:9px;color:var(--muted);">'+ds.ts+'</div></div>'
+      +'</div>';
+  });
   H+='</div></div>';
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;"><div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">ALERTAS IDENTIFICADOS</div>';
-  if(!alerts.length)H+='<div style="display:flex;align-items:center;gap:8px;padding:12px 0;"><i class="ti ti-circle-check" style="color:#22c55e;font-size:20px;"></i><span style="font-size:12px;color:var(--muted);">Nenhum alerta ativo</span></div>';
-  else{H+='<div style="display:flex;flex-direction:column;gap:8px;">';alerts.slice(0,4).forEach(function(a){H+='<div style="display:flex;gap:8px;align-items:flex-start;"><div style="width:18px;height:18px;background:'+a.col.replace('#','rgba(').slice(0,-1)+',0.12);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:10px;color:'+a.col+';"></i></div><div><div style="font-size:11px;font-weight:600;color:'+a.col+';">'+a.title+'</div><div style="font-size:10px;color:var(--muted);">'+a.msg+'</div></div></div>';});H+='</div>';}
+
+  // ALERTS
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;background:rgba(239,68,68,0.1);border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-bell-exclamation" style="font-size:13px;color:#ef4444;"></i></div>'
+    +'<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Alertas Identificados</div></div>'
+    +'<span style="font-size:10px;background:'+(alerts.filter(function(a){return a.sev>0;}).length>0?'rgba(239,68,68,0.12);color:#ef4444':'rgba(34,197,94,0.1);color:#22c55e')+';padding:2px 7px;border-radius:20px;font-weight:700;">'+(alerts.filter(function(a){return a.sev>0;}).length||'✓')+'</span>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;">';
+  alerts.slice(0,4).forEach(function(a){
+    H+='<div style="border:1px solid '+a.col.replace('#','rgba(').slice(0,-1)+',0.25);border-radius:9px;padding:11px 12px;background:'+a.col.replace('#','rgba(').slice(0,-1)+',0.05);">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:'+(a.action?'7px':'0')+';">'
+      +'<div style="width:24px;height:24px;background:'+a.col.replace('#','rgba(').slice(0,-1)+',0.15);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+a.icon+'" style="font-size:12px;color:'+a.col+';"></i></div>'
+      +'<div style="flex:1;"><div style="font-size:11px;font-weight:700;color:'+a.col+';">'+a.title+'</div>'+(a.msg?'<div style="font-size:10px;color:var(--muted);margin-top:1px;">'+a.msg+'</div>':'')+'</div>'
+      +'</div>'
+      +(a.action?'<button onclick="window._reunMetaSubTab=\'campanhas\';_buildMetaSubTabs();_renderMetaCampaigns(window._metaAdsLastData);" style="width:100%;background:'+a.col.replace('#','rgba(').slice(0,-1)+',0.12);border:1px solid '+a.col.replace('#','rgba(').slice(0,-1)+',0.25);border-radius:6px;color:'+a.col+';padding:5px;font-size:10px;font-weight:600;cursor:pointer;">'+a.action+' →</button>':'')
+      +'</div>';
+  });
   H+='</div></div>';
+
+  H+='</div>'; // end bottom grid
   return H;
 }
+
 
 async function _metaIntelSend(q){
   if(!q)return;
