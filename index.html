@@ -816,6 +816,7 @@ function startRealtimeSync(){
     if(cfg.meta_acc_id){ metaAccountId=cfg.meta_acc_id; localStorage.setItem('audens_meta_acc',metaAccountId); }
     if(cfg.maps_key){ if(!localStorage.getItem('audens_maps_key')) localStorage.setItem('audens_maps_key',cfg.maps_key); }
     if(cfg.claude_key){ localStorage.setItem('audens_claude_key',cfg.claude_key); }
+    if(cfg.n8n_intel_webhook){ _intelWebhookUrl=cfg.n8n_intel_webhook; localStorage.setItem('audens_intel_webhook',_intelWebhookUrl); }
     if(cfg.eleven_key){ localStorage.setItem('audens_elevenlabs_key',cfg.eleven_key); }
     if(cfg.eleven_voice !== undefined){ localStorage.setItem('audens_elevenlabs_voice',cfg.eleven_voice); }
     if(cfg.assembly_key){ localStorage.setItem('audens_assembly_key',cfg.assembly_key); }
@@ -4066,6 +4067,7 @@ function buildNav(){
     ]},
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
+    {id:'intel',icon:'ti-sparkles',label:'Inteligência Comercial'},
     {id:'bdr',icon:'ti-building-store',label:'BDR'},
     {id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
@@ -4244,7 +4246,7 @@ function showPage(id){
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinDashboard,'fin-dashboard':renderFinDashboard,'fin-receitas':renderFinReceitas,'fin-despesas':renderFinDespesas,'fin-lancamentos':renderFinLancamentos,'fin-contas':renderFinContas,
     'contratos':renderContratos,'audens-day':renderAudensDay,
-    'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'bdr':renderBDR,
+    'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas
   };
   var area=document.getElementById('content');
@@ -13639,14 +13641,18 @@ function renderSDRHoje(){
   // Parse today's date for comparison
   var hojeISO = new Date().toISOString().split('T')[0];
   
+  setTimeout(function(){renderPilulaDia('pilula-sdr-hoje');},200);
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Reunioes do Dia</div><div class="page-sub">'+hoje+'</div></div></div>'+
+    '<div style="padding:16px 20px 0;"><div id="pilula-sdr-hoje"></div></div>'+
     '<div id="sdr-hoje-content"><div class="empty-st"><i class="ti ti-loader"></i><p>Carregando reunioes...</p></div></div>'+
   '</div>';
 }
 
 function renderSDRReunioes(){
+  setTimeout(function(){renderPilulaDia('pilula-sdr-reun');},200);
   return '<div class="page active">'+
+    '<div style="padding:16px 20px 0;"><div id="pilula-sdr-reun"></div></div>'+
     '<div class="page-header"><div><div class="page-title">Todas as Reunioes</div><div class="page-sub">Historico completo</div></div></div>'+
     '<div id="sdr-all-content"><div class="empty-st"><i class="ti ti-loader"></i><p>Carregando...</p></div></div>'+
   '</div>';
@@ -19175,6 +19181,306 @@ async function _execImport(reImport){
     console.error('Import error',e);
     showSheetToast('Erro ao importar: '+e.message,true);
   }
+}
+
+// ===== INTELIGÊNCIA COMERCIAL =====
+var _intelWebhookUrl=localStorage.getItem('audens_intel_webhook')||'';
+var _intelCache={};
+var _intelHistory=[];
+var _conhecimento=null; // cache em memória
+
+// Carrega base de conhecimento do Firebase (1x por sessão)
+async function loadConhecimento(force){
+  if(_conhecimento&&!force)return _conhecimento;
+  try{
+    var data=await fbGet('conhecimento')||{};
+    _conhecimento=Object.entries(data).map(function(e){return Object.assign({id:e[0]},e[1]);})
+      .filter(function(i){return i.nota>=7;})
+      .sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+    return _conhecimento;
+  }catch(e){console.warn('[Intel]',e);return[];}
+}
+
+// RAG simples: busca itens relevantes por palavras-chave + categoria
+function searchConhecimento(query,catFiltro){
+  if(!_conhecimento||!_conhecimento.length)return[];
+  var words=(query||'').toLowerCase().split(/\s+/).filter(function(w){return w.length>3;});
+  var scored=_conhecimento.filter(function(i){return !catFiltro||i.categoria===catFiltro;}).map(function(i){
+    var score=0;
+    var blob=([i.titulo||'']
+      .concat(i.tags||[])
+      .concat(i.resumo||[])
+      .concat([i.aplicacao||'',i.fonte||''])).join(' ').toLowerCase();
+    words.forEach(function(w){if(blob.includes(w))score+=i.fonte==='interno'?3:1;});
+    if(i.nota)score+=i.nota*0.1;
+    // Recência: último mês vale mais
+    var age=new Date()-new Date(i.data||'2000-01-01');
+    if(age<30*86400000)score+=2;
+    return{item:i,score:score};
+  }).filter(function(s){return s.score>0;}).sort(function(a,b){return b.score-a.score;}).slice(0,8);
+  return scored.map(function(s){return s.item;});
+}
+
+// Pílula do dia: item mais relevante por rodízio de categoria
+async function getPilulaDia(){
+  var items=await loadConhecimento();
+  if(!items||!items.length)return null;
+  // Determina categoria prioritária (rodar por dia da semana)
+  var cats=['objecoes','qualificacao','reuniao','followup','fechamento'];
+  var dow=new Date().getDay(); // 0=Dom
+  var catIdx=dow%cats.length;
+  var catDia=cats[catIdx];
+  // Tenta encontrar item da categoria do dia, recente e não visto hoje
+  var todayKey=new Date().toISOString().slice(0,10);
+  var vistos=(JSON.parse(localStorage.getItem('audens_pilula_vistos')||'{}')||{});
+  var candidatos=items.filter(function(i){return i.categoria===catDia&&!vistos[i.id];});
+  if(!candidatos.length)candidatos=items.filter(function(i){return !vistos[i.id];});
+  if(!candidatos.length)candidatos=items; // todos vistos → recomeça
+  var escolhido=candidatos[0];
+  return escolhido;
+}
+
+function marcarPilulaVista(id){
+  var vistos=JSON.parse(localStorage.getItem('audens_pilula_vistos')||'{}')||{};
+  vistos[id]=new Date().toISOString().slice(0,10);
+  // Limpa entradas antigas (> 30 dias)
+  var cutoff=new Date();cutoff.setDate(cutoff.getDate()-30);
+  Object.keys(vistos).forEach(function(k){if(new Date(vistos[k])<cutoff)delete vistos[k];});
+  localStorage.setItem('audens_pilula_vistos',JSON.stringify(vistos));
+}
+
+// Renderiza card pílula diária (retorna HTML string)
+async function renderPilulaDia(targetElId){
+  var el=document.getElementById(targetElId);
+  if(!el)return;
+  var item=await getPilulaDia();
+  if(!item){el.innerHTML='';return;}
+  var catColors={'objecoes':'#ef4444','qualificacao':'#3b82f6','reuniao':'#22c55e','followup':'#f59e0b','fechamento':'#9333ea'};
+  var catLabels={'objecoes':'Objeções','qualificacao':'Qualificação','reuniao':'Reunião','followup':'Follow-up','fechamento':'Fechamento'};
+  var col=catColors[item.categoria]||'#9333ea';
+  var lbl=catLabels[item.categoria]||item.categoria;
+  var resumoHtml=(item.resumo||[]).slice(0,3).map(function(b){return '<li style="margin-bottom:5px;font-size:12px;color:var(--muted);line-height:1.5;">'+esc(b)+'</li>';}).join('');
+  el.innerHTML='<div style="background:linear-gradient(135deg,rgba(147,51,234,0.08),rgba(59,130,246,0.06));border:1px solid rgba(147,51,234,0.25);border-left:3px solid '+col+';border-radius:10px;padding:14px 16px;margin-bottom:16px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+    +'<i class="ti ti-bulb" style="color:'+col+';font-size:16px;"></i>'
+    +'<span style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:'+col+';">PÍLULA DO DIA · '+lbl+'</span>'
+    +'<span style="margin-left:auto;font-size:10px;color:var(--muted);">'+esc(item.fonte||'')+'</span>'
+    +'</div>'
+    +'<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:6px;">'+esc(item.titulo||'')+'</div>'
+    +'<ul style="margin:0;padding-left:16px;">'+resumoHtml+'</ul>'
+    +(item.aplicacao?'<div style="margin-top:8px;padding:8px 10px;background:rgba(147,51,234,0.1);border-radius:6px;font-size:11px;color:var(--white);line-height:1.5;"><b style="color:'+col+';">💡 Como aplicar hoje:</b> '+esc(item.aplicacao)+'</div>':'')
+    +'<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;">'
+    +'<button onclick="abrirIntelItem(\''+item.id+'\')" style="background:none;border:none;color:var(--purple3);font-size:11px;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-weight:700;letter-spacing:1px;">VER MAIS →</button>'
+    +'<button onclick="marcarPilulaVista(\''+item.id+'\');renderPilulaDia(\'pilula-dia-card\');" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;">Próxima →</button>'
+    +'</div>'
+    +'</div>';
+  marcarPilulaVista(item.id);
+}
+
+function abrirIntelItem(id){
+  if(!_conhecimento)return;
+  var item=_conhecimento.find(function(i){return i.id===id;});
+  if(!item)return;
+  var catColors={'objecoes':'#ef4444','qualificacao':'#3b82f6','reuniao':'#22c55e','followup':'#f59e0b','fechamento':'#9333ea'};
+  var col=catColors[item.categoria]||'#9333ea';
+  var resumoHtml=(item.resumo||[]).map(function(b,i){return '<li style="margin-bottom:8px;font-size:13px;color:var(--muted);line-height:1.6;">'+(i+1)+'. '+esc(b)+'</li>';}).join('');
+  var tagsHtml=(item.tags||[]).map(function(t){return '<span style="background:rgba(147,51,234,0.15);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;color:var(--purple3);letter-spacing:1px;">'+esc(t)+'</span>';}).join('');
+  var html='<div class="modal-ov active" id="modal-intel-item" onclick="if(event.target===this)this.remove()"><div class="modal-box" style="max-width:580px;">'
+    +'<div class="modal-hd"><div class="modal-title" style="color:'+col+'"><i class="ti ti-book-2"></i> '+esc(item.titulo||'')+'</div><button class="modal-close" onclick="document.getElementById(\'modal-intel-item\').remove()">×</button></div>'
+    +'<div style="padding:20px;">'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">'+tagsHtml+'</div>'
+    +'<ul style="margin:0;padding-left:18px;margin-bottom:14px;">'+resumoHtml+'</ul>'
+    +(item.aplicacao?'<div style="background:rgba(147,51,234,0.1);border-left:3px solid '+col+';border-radius:8px;padding:12px 14px;margin-bottom:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:'+col+';margin-bottom:4px;">COMO APLICAR HOJE</div><div style="font-size:13px;color:var(--white);line-height:1.6;">'+esc(item.aplicacao)+'</div></div>':'')
+    +'<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);">'
+    +'<span>Fonte: '+esc(item.fonte||'—')+(item.url?(' · <a href="'+esc(item.url)+'" target="_blank" style="color:var(--purple3);">ver artigo</a>'):'')+'</span>'
+    +'<span>Nota: '+item.nota+'/10 · '+esc(item.data||'')+'</span>'
+    +'</div></div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+// ===== RENDER INTEL PAGE =====
+function renderIntelComercial(){
+  var cats=[{v:'',l:'Todas'},{v:'objecoes',l:'Objeções'},{v:'qualificacao',l:'Qualificação'},{v:'reuniao',l:'Reunião'},{v:'followup',l:'Follow-up'},{v:'fechamento',l:'Fechamento'}];
+  var catSel=cats.map(function(c){return '<option value="'+c.v+'">'+c.l+'</option>';}).join('');
+  var H='<div class="page active" style="padding:22px;max-width:1200px;margin:0 auto;">';
+  H+='<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">'
+    +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:3px;">INTELIGÊNCIA COMERCIAL</div>'
+    +'<div style="font-size:11px;color:var(--muted);">Base de conhecimento curada para o time Audens · Powered by Claude</div></div>'
+    +'<button onclick="showPage(\'intel-admin\')" style="background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;"><i class="ti ti-settings"></i> Gerenciar base</button>'
+    +'</div>';
+  H+='<div style="display:grid;grid-template-columns:1fr 380px;gap:16px;">';
+  // Chat column
+  H+='<div style="display:flex;flex-direction:column;gap:14px;">';
+  // Chat card
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px;">';
+  H+='<div style="display:flex;align-items:center;gap:8px;"><i class="ti ti-message-circle-2" style="font-size:18px;color:var(--purple3);"></i><div style="font-size:13px;font-weight:700;">Pergunte à Inteligência</div><span style="font-size:10px;color:var(--muted);">Baseado na base curada + dados internos</span></div>';
+  H+='<div id="intel-hist" style="min-height:260px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0;">'
+    +'<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:12px;"><i class="ti ti-brain" style="font-size:32px;display:block;margin-bottom:10px;color:var(--purple3);"></i>Pergunte sobre objeções, qualificação, no-show, fechamento...</div>'
+    +'</div>';
+  // Sugestões
+  var sugs=['Como quebro a objeção "já tenho gestor de tráfego"?','Roteiro de perguntas pra qualificar hamburgueria','Como reduzir no-show de reunião agendada','Técnica de fechamento para dono de delivery hesitante','O que fazer quando o lead some após proposta?'];
+  H+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+  sugs.forEach(function(s){H+='<button onclick="intelEnviar(\''+s.replace(/'/g,"\\'")+'\')" style="background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.25);border-radius:20px;color:var(--white);padding:5px 10px;font-size:11px;cursor:pointer;line-height:1.3;text-align:left;">'+s+'</button>';});
+  H+='</div>';
+  H+='<div style="display:flex;gap:8px;">'
+    +'<input id="intel-inp" type="text" placeholder="Faça uma pergunta sobre vendas..." style="flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:9px 12px;font-size:12px;outline:none;" onkeydown="if(event.key===\'Enter\'){var v=this.value.trim();if(v)intelEnviar(v);}">'
+    +'<button onclick="var v=document.getElementById(\'intel-inp\').value.trim();if(v)intelEnviar(v);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;"><i class="ti ti-send"></i></button>'
+    +'</div>';
+  H+='</div>';
+  // Base de conhecimento cards
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">';
+  H+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">'
+    +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">BASE DE CONHECIMENTO</div>'
+    +'<select id="intel-cat-filter" onchange="intelRenderBase()" style="background:var(--bg);border:1px solid var(--border2);border-radius:7px;color:var(--white);padding:5px 8px;font-size:11px;outline:none;margin-left:auto;">'+catSel+'</select>'
+    +'<input id="intel-search" type="text" placeholder="Buscar..." oninput="intelRenderBase()" style="background:var(--bg);border:1px solid var(--border2);border-radius:7px;color:var(--white);padding:5px 10px;font-size:11px;outline:none;width:130px;">'
+    +'</div>';
+  H+='<div id="intel-base-list"><div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Carregando...</div></div>';
+  H+='</div>';
+  H+='</div>'; // end chat col
+  // Right panel: stats + pílula + config
+  H+='<div style="display:flex;flex-direction:column;gap:12px;">';
+  H+='<div id="intel-pilula-side" style=""></div>';
+  H+='<div id="intel-stats" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">'
+    +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">BASE DE DADOS</div>'
+    +'<div id="intel-stats-body" style="color:var(--muted);font-size:12px;">Carregando...</div>'
+    +'</div>';
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">'
+    +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">CONFIGURAÇÃO</div>'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Webhook n8n (chat proxy)</label>'
+    +'<input id="intel-webhook-inp" type="text" placeholder="https://n8n.sua-instancia.com/webhook/..." value="'+esc(_intelWebhookUrl)+'" oninput="_intelWebhookUrl=this.value;localStorage.setItem(\'audens_intel_webhook\',this.value);fbDb&&fbDb.ref(\'config/n8n_intel_webhook\').set(this.value);" style="width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:7px;color:var(--white);padding:7px 10px;font-size:11px;outline:none;box-sizing:border-box;margin-bottom:8px;">'
+    +'<div style="font-size:10px;color:var(--muted);line-height:1.5;">O webhook recebe <code style="background:rgba(255,255,255,0.07);padding:1px 4px;border-radius:3px;">{pergunta, contexto[]}</code> e retorna <code style="background:rgba(255,255,255,0.07);padding:1px 4px;border-radius:3px;">{resposta}</code> via Claude (API key fica no n8n).</div>'
+    +'</div>';
+  H+='</div>'; // end right col
+  H+='</div>'; // end grid
+  H+='</div>';
+  setTimeout(function(){
+    loadConhecimento().then(function(){intelRenderBase();intelRenderStats();});
+    renderPilulaDia('intel-pilula-side');
+    // Load webhook URL from Firebase if not in localStorage
+    if(!_intelWebhookUrl&&fbDb){fbGet('config/n8n_intel_webhook').then(function(url){if(url){_intelWebhookUrl=url;var inp=document.getElementById('intel-webhook-inp');if(inp)inp.value=url;}});}
+  },80);
+  return H;
+}
+
+function intelRenderBase(){
+  var el=document.getElementById('intel-base-list');
+  if(!el)return;
+  if(!_conhecimento||!_conhecimento.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">Nenhum item na base ainda.<br><span style="font-size:11px;">Configure o workflow n8n para coletar automaticamente.</span></div>';return;}
+  var catF=(document.getElementById('intel-cat-filter')||{}).value||'';
+  var q=(document.getElementById('intel-search')||{}).value||'';
+  var items=q?searchConhecimento(q,catF||null):_conhecimento.filter(function(i){return !catF||i.categoria===catF;});
+  var catColors={'objecoes':'#ef4444','qualificacao':'#3b82f6','reuniao':'#22c55e','followup':'#f59e0b','fechamento':'#9333ea'};
+  var catLabels={'objecoes':'Objeções','qualificacao':'Qualificação','reuniao':'Reunião','followup':'Follow-up','fechamento':'Fechamento'};
+  if(!items.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">Nenhum resultado.</div>';return;}
+  el.innerHTML=items.slice(0,15).map(function(i){
+    var col=catColors[i.categoria]||'#9333ea';
+    var isInt=i.fonte==='interno';
+    return '<div onclick="abrirIntelItem(\''+i.id+'\')" style="border-left:2px solid '+col+';padding:8px 10px;border-radius:0 6px 6px 0;background:rgba(255,255,255,0.02);margin-bottom:6px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background=\'rgba(147,51,234,0.08)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.02)\'">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'
+      +'<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+col+'22;color:'+col+';text-transform:uppercase;letter-spacing:1px;">'+catLabels[i.categoria]+'</span>'
+      +(isInt?'<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(245,158,11,0.15);color:#f59e0b;">INTERNO</span>':'')
+      +'<span style="margin-left:auto;font-size:10px;color:var(--muted);">'+esc(i.data||'')+'</span>'
+      +'</div>'
+      +'<div style="font-size:12px;font-weight:600;color:var(--white);line-height:1.4;">'+esc(i.titulo||'')+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+(i.resumo&&i.resumo[0]?esc(i.resumo[0].slice(0,100)+'…'):'')+'</div>'
+      +'</div>';
+  }).join('');
+}
+
+function intelRenderStats(){
+  var el=document.getElementById('intel-stats-body');
+  if(!el||!_conhecimento)return;
+  var cats={'objecoes':0,'qualificacao':0,'reuniao':0,'followup':0,'fechamento':0};
+  var internos=0;
+  _conhecimento.forEach(function(i){if(cats[i.categoria]!==undefined)cats[i.categoria]++;if(i.fonte==='interno')internos++;});
+  var catColors={'objecoes':'#ef4444','qualificacao':'#3b82f6','reuniao':'#22c55e','followup':'#f59e0b','fechamento':'#9333ea'};
+  var catLabels={'objecoes':'Objeções','qualificacao':'Qualificação','reuniao':'Reunião','followup':'Follow-up','fechamento':'Fechamento'};
+  var total=_conhecimento.length;
+  el.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">'+total+' itens curados'+(internos?'  · '+internos+' internos':'')+' </div>'
+    +Object.keys(cats).map(function(c){var pct=total?Math.round(cats[c]/total*100):0;return '<div style="margin-bottom:6px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="color:var(--muted);">'+catLabels[c]+'</span><span style="font-weight:700;color:'+catColors[c]+';">'+cats[c]+'</span></div><div style="background:rgba(255,255,255,0.07);border-radius:99px;height:4px;"><div style="width:'+pct+'%;background:'+catColors[c]+';height:100%;border-radius:99px;"></div></div></div>';}).join('');
+}
+
+async function intelEnviar(q){
+  if(!q)return;
+  var inp=document.getElementById('intel-inp');if(inp)inp.value='';
+  _intelHistory.push({role:'user',text:q});
+  _intelRenderHist();
+  var hist=document.getElementById('intel-hist');if(hist)hist.scrollTop=hist.scrollHeight;
+  // Verifica cache (24h)
+  var cacheKey='ik_'+btoa(encodeURIComponent(q)).slice(0,32);
+  var cached=_intelCache[cacheKey];
+  if(cached&&(Date.now()-cached.ts<86400000)){
+    _intelHistory.push({role:'assistant',text:cached.resp,cached:true});
+    _intelRenderHist();return;
+  }
+  // Carrega conhecimento e busca contexto
+  await loadConhecimento();
+  var items=searchConhecimento(q,null);
+  if(!items.length){
+    _intelHistory.push({role:'assistant',text:'Não encontrei itens relacionados na base de conhecimento. Tente palavras-chave diferentes ou aguarde o workflow de curadoria popular a base.',cached:false});
+    _intelRenderHist();return;
+  }
+  if(!_intelWebhookUrl){
+    // Modo offline: responde com os itens encontrados sem IA
+    var txt='Encontrei '+items.length+' item(s) relevante(s):\n\n'+items.slice(0,3).map(function(i,idx){
+      return (idx+1)+'. **'+i.titulo+'**\n'+(i.resumo||[]).slice(0,2).join('\n')+(i.aplicacao?'\n💡 '+i.aplicacao:'');
+    }).join('\n\n');
+    _intelHistory.push({role:'assistant',text:txt,items:items.slice(0,3)});
+    _intelRenderHist();
+    return;
+  }
+  _intelHistory.push({role:'assistant',text:'⏳ Consultando...',loading:true});
+  _intelRenderHist();
+  try{
+    var ctx=items.map(function(i){return{titulo:i.titulo,categoria:i.categoria,fonte:i.fonte,tags:i.tags,resumo:i.resumo,aplicacao:i.aplicacao,data:i.data};});
+    var secret=await fbGet('config/n8n_intel_secret')||'';
+    var headers={'Content-Type':'application/json'};
+    if(secret)headers['Authorization']='Bearer '+secret;
+    var r=await fetch(_intelWebhookUrl,{method:'POST',headers:headers,body:JSON.stringify({pergunta:q,contexto:ctx})});
+    var rd=await r.json();
+    var resp=rd.resposta||rd.response||rd.text||rd.output||JSON.stringify(rd);
+    _intelHistory[_intelHistory.length-1]={role:'assistant',text:resp,items:items.slice(0,3)};
+    _intelCache[cacheKey]={resp:resp,ts:Date.now()};
+    // Cache no Firebase
+    try{if(fbDb)fbDb.ref('intel_cache/'+cacheKey).set({resposta:resp,pergunta:q,ts:Date.now()});}catch(e2){}
+  }catch(e){
+    _intelHistory[_intelHistory.length-1]={role:'assistant',text:'Erro ao consultar webhook: '+e.message+'. Verifique a URL do n8n em Configurações.'};
+  }
+  _intelRenderHist();
+  var h2=document.getElementById('intel-hist');if(h2)h2.scrollTop=h2.scrollHeight;
+}
+
+function _intelRenderHist(){
+  var el=document.getElementById('intel-hist');if(!el)return;
+  if(!_intelHistory.length){el.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:12px;"><i class="ti ti-brain" style="font-size:32px;display:block;margin-bottom:10px;color:var(--purple3);"></i>Pergunte sobre objeções, qualificação, no-show, fechamento...</div>';return;}
+  el.innerHTML=_intelHistory.map(function(msg){
+    if(msg.role==='user')return '<div style="display:flex;justify-content:flex-end;"><div style="background:var(--purple3);color:#fff;padding:9px 13px;border-radius:12px 12px 4px 12px;font-size:12px;max-width:80%;">'+esc(msg.text)+'</div></div>';
+    var body=msg.loading
+      ?'<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Consultando...'
+      :'<div style="font-size:12px;white-space:pre-wrap;color:var(--white);line-height:1.6;">'+esc(msg.text)+'</div>'
+       +(msg.cached?'<div style="font-size:10px;color:var(--muted);margin-top:4px;">📦 Resposta em cache</div>':'')
+       +(msg.items?'<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">'+msg.items.map(function(i){return '<span onclick="abrirIntelItem(\''+i.id+'\')" style="font-size:10px;background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.2);border-radius:12px;padding:2px 8px;cursor:pointer;color:var(--purple3);">'+esc(i.titulo.slice(0,35)+(i.titulo.length>35?'…':''))+'</span>';}).join('')+'</div>':'');
+    return '<div style="display:flex;justify-content:flex-start;"><div style="background:var(--card2,#1e2535);border:1px solid var(--border);padding:10px 13px;border-radius:12px 12px 12px 4px;max-width:90%;">'+body+'</div></div>';
+  }).join('');
+}
+
+
+
+// Seed 3 itens de exemplo na base (chamar do console: seedConhecimento())
+async function seedConhecimento(){
+  if(!fbDb){alert('Firebase não conectado');return;}
+  var items=[
+    {data:new Date().toISOString().slice(0,10),fonte:'Audens Intelligence',url:'',titulo:'Como quebrar a objeção "já tenho gestor de tráfego"',categoria:'objecoes',tags:['ja-tenho-gestor','concorrente','diferenciacao'],resumo:['Valide antes de rebater: "Legal! Como está o resultado com ele? O que falta para você estar 100% satisfeito?"','Identifique o GAP: gestores genéricos não entendem sazonalidade de delivery.','Posicione a diferença: "Trabalhamos só com delivery — sabemos que sexta e domingo são os picos. Seu gestor ajusta para isso?"','Use prova social: cases de clientes que vieram de outros gestores.'],aplicacao:'Na próxima call, use a pergunta de gap antes de qualquer pitch. Descubra o ponto de dor específico.',nota:9},
+    {data:new Date(Date.now()-86400000).toISOString().slice(0,10),fonte:'Audens Intelligence',url:'',titulo:'5 perguntas para qualificar dono de hamburgueria em 10 minutos',categoria:'qualificacao',tags:['qualificacao','hamburgueria','spin','decisor'],resumo:['"Qual seu faturamento médio mensal?" — filtra abaixo de R$40k.','"Já investe em tráfego? Quanto?" — calibra o tamanho do mercado.','"O que acontece se o movimento não crescer nos próximos 6 meses?" — cria urgência.','"Quem mais precisa aprovar essa decisão?" — identifica o decisor real.'],aplicacao:'Use essas 4 perguntas na ordem certa nos primeiros 10 minutos. Se o lead não responder com clareza, não avance para proposta.',nota:9},
+    {data:new Date(Date.now()-172800000).toISOString().slice(0,10),fonte:'Audens Intelligence',url:'',titulo:'Protocolo de confirmação em 3 etapas para zerar no-show',categoria:'reuniao',tags:['no-show','confirmacao','whatsapp','comparecimento'],resumo:['24h antes: WhatsApp pessoal com o nome do dono + pauta da reunião.','2h antes: lembrete curto com link + "estou aqui se precisar reagendar".','5min antes: "Já estou na sala, te espero!" — cria compromisso social.'],aplicacao:'Configure templates no WhatsApp Business para as 3 etapas e automatize pelo Z-API com base no horário do CRM.',nota:8}
+  ];
+  var count=0;
+  for(var i=0;i<items.length;i++){
+    await fbDb.ref('conhecimento').push(items[i]);
+    count++;
+  }
+  _conhecimento=null; // limpa cache
+  alert('✅ '+count+' itens de exemplo adicionados! Reabra a página Inteligência Comercial.');
 }
 
 // ===== AUDENS COMMAND =====
