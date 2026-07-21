@@ -22844,6 +22844,57 @@ function renderVendas(){
     todasVendas.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
   });
 
+  // Inclui assinaturas assinadas sem followup de venda (auto-sync sem Firebase write)
+  if(window._assinaturasVendasCache){
+    var _telsComVenda={};
+    todasVendas.forEach(function(v){
+      var mTel=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');
+      if(mTel)_telsComVenda[mTel]=1;
+    });
+    Object.keys(window._assinaturasVendasCache).forEach(function(aid){
+      var r=window._assinaturasVendasCache[aid];
+      if(r.status!=='assinado')return;
+      var telRaw=(r.telefone||'').replace(/\D/g,'');
+      // Verifica se já há venda com esse telefone
+      var jaContado=Object.keys(_telsComVenda).some(function(t){return t===telRaw||t.endsWith(telRaw)||telRaw.endsWith(t);});
+      if(jaContado)return;
+      var signedDate=r.signedAt?new Date(r.signedAt):now;
+      var efDi=signedDate.toISOString().split('T')[0];
+      var dtBR=String(signedDate.getDate()).padStart(2,'0')+'/'+String(signedDate.getMonth()+1).padStart(2,'0')+'/'+signedDate.getFullYear();
+      var vd=r.vendaData||{};
+      var mensBase=parseFloat(vd.mensalidade||vd.valorParcela)||0;
+      var synId='assin_'+aid;
+      var synMeeting=meetings[synId]||{id:synId,tel:telRaw,nome:r.cliente||'',
+        responsavel:(r.comercial&&r.comercial.closer)||'',
+        sdrName:(r.comercial&&r.comercial.sdrNome)||'',
+        sdr:(r.comercial&&r.comercial.sdrNome)||'',
+        origem:(r.comercial&&r.comercial.origem)||'',
+        dtISO:signedDate.toISOString(),status:'done',_sintetico:true};
+      meetings[synId]=synMeeting;
+      // Cria followup sintético em memória
+      var synFu={meetingId:synId,tel:telRaw,nome:r.cliente||'',
+        comparecimento:'sim',venda:'sim',resultado:'venda',
+        plano:vd.plano||'',duracao:parseInt(vd.duracaoMeses||vd.duracao)||0,
+        dataInicio:efDi,tipoValor:vd.tipoValor||'mensalidade',
+        contrato:parseFloat(vd.contrato||vd.valorTotal)||0,
+        mensalidade:mensBase,dt:dtBR,_fromContrato:aid,_assinaturaSync:true};
+      followups[synId]=synFu;
+      var origemRaw=(r.comercial&&r.comercial.origem)||'';
+      todasVendas.push({fu:synFu,m:synMeeting,fid:synId,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
+      // Persiste no Firebase em background
+      saveFollowupFB(synId,synFu);
+      if(fbDb)fbDb.ref('assinaturas/'+aid).update({_vendaRegistrada:true});
+    });
+  }else{
+    // Carrega assinaturas em background e re-renderiza
+    fbGet('assinaturas').then(function(data){
+      window._assinaturasVendasCache=data||{};
+      // Verifica se há pendentes antes de re-renderizar
+      var hasPendentes=Object.values(window._assinaturasVendasCache).some(function(r){return r.status==='assinado'&&!r._vendaRegistrada;});
+      if(hasPendentes) renderVendas();
+    }).catch(function(){window._assinaturasVendasCache={};});
+  }
+
   // Meses disponíveis
   var mesKeys={};
   todasVendas.forEach(function(v){
