@@ -13501,6 +13501,17 @@ async function loadFunilReunioes(){
           var _hDate=new Date(filtY,filtM-_hi,1);
           var _hm=_hDate.getMonth(),_hy=_hDate.getFullYear();
           (function(_hm2,_hy2){
+            // Mês atual: usa valores Firebase já calculados pelo renderReunioesNoshow (DOM)
+            if(_hm2===curM&&_hy2===curY){
+              var _elEleg2=document.getElementById('ns-eleg');
+              var _elNsTot2=document.getElementById('ns-total');
+              var _fbEleg2=parseInt(_elEleg2?_elEleg2.textContent||'0':'0')||0;
+              var _fbNs2=parseInt(_elNsTot2?_elNsTot2.textContent||'0':'0')||0;
+              _histLb.push(_mns2[_hm2]);
+              _histTx.push(_fbEleg2>0?Math.round(_fbNs2/_fbEleg2*100):0);
+              return;
+            }
+            // Meses passados: usa Planilha
             var _hRows=_allShRows.filter(function(r){
               var d=parseBRDate(col(r,DATE_COLS));
               return d&&d.getMonth()===_hm2&&d.getFullYear()===_hy2&&isMine(r);
