@@ -9258,14 +9258,18 @@ function renderReunioes(){
   // Canal breakdown — todos os canais individualmente, Tráfego normalizado
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
-  dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;if(isVenda(m)){canalMap[o].vend++;canalMap[o].rec+=getReceita(m);}});
+  dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
+  // Vendas/receita: direto dos followups para bater com KPI
+  Object.values(followups||{}).forEach(function(fu){if(fu.resultado!=='venda')return;var m=meetings[fu.meetingId];if(!m||!m.dtISO)return;if(!inMes(new Date(m.dtISO),filtM,filtY))return;var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
-  // Faixas
+  // Faixas — ag/real de dedupedRows; vend de followups direto (mesmo critério do KPI)
   var fatFaixas=[{label:'Até R$20 mil',min:0,max:20000},{label:'R$20-R$40 mil',min:20000,max:40000},{label:'R$40-R$90 mil',min:40000,max:90000},{label:'R$90-R$150 mil',min:90000,max:150000},{label:'Acima de R$100 mil',min:150000,max:1e9}];
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
-  dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;if(isVenda(m))fatNI.vend++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;if(isVenda(m))f.vend++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;if(isVenda(m))fatNI.vend++;}});
+  dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
+  // Vendas: conta direto dos followups para bater com KPI
+  Object.values(followups||{}).forEach(function(fu){if(fu.resultado!=='venda')return;var m=meetings[fu.meetingId];if(!m||!m.dtISO)return;if(!inMes(new Date(m.dtISO),filtM,filtY))return;var fat=getFat(m);var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
   var closerMap={};
