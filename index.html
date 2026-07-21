@@ -13489,6 +13489,58 @@ async function loadFunilReunioes(){
       var elNsTo=document.getElementById('ns-total'); if(elNsTo)elNsTo.textContent=shNoshow;
       var elNsTx=document.getElementById('ns-taxa');  if(elNsTx)elNsTx.textContent=shTotal>0?Math.round(shNoshow/shTotal*100):0;
     }
+    // Evolução de no-show: recalcula 7 meses da Planilha e atualiza gráfico
+    (function(){
+      try{
+        var _shAllRows=shRows; // todas as linhas da aba reunioes (sem filtro de mês)
+        // precisa de todas as rows, não só do mês filtrado — buscamos data.reunioes.rows
+        var _allShRows=(data.reunioes&&data.reunioes.rows)||[];
+        var _mns2=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        var _histLb=[],_histTx=[];
+        for(var _hi=6;_hi>=0;_hi--){
+          var _hDate=new Date(filtY,filtM-_hi,1);
+          var _hm=_hDate.getMonth(),_hy=_hDate.getFullYear();
+          (function(_hm2,_hy2){
+            var _hRows=_allShRows.filter(function(r){
+              var d=parseBRDate(col(r,DATE_COLS));
+              return d&&d.getMonth()===_hm2&&d.getFullYear()===_hy2&&isMine(r);
+            });
+            var _hElig=_hRows.filter(function(r){return shIsReal(r)||shIsNs(r);});
+            var _hSeen={},_hDedup=[];
+            _hElig.forEach(function(r){
+              var tel=(col(r,TEL_COLS)||'').replace(/\D/g,'');
+              var nm=(col(r,NOME_COLS)||'').toLowerCase().trim();
+              var k=tel||nm;if(!k)return;
+              if(!_hSeen[k]){_hSeen[k]=r;_hDedup.push(r);}
+              else if(shIsNs(_hSeen[k])&&shIsReal(r)){_hDedup[_hDedup.indexOf(_hSeen[k])]=r;_hSeen[k]=r;}
+            });
+            var _hElegN=_hDedup.length;
+            var _hNsN=_hDedup.filter(shIsNs).length;
+            _histLb.push(_mns2[_hm2]);
+            _histTx.push(_hElegN>0?Math.round(_hNsN/_hElegN*100):0);
+          })(_hm,_hy);
+        }
+        // Rebuild chart SVG (mesma lógica do mkNsChart em renderReunioesNoshow)
+        var _meta=15,_w=490,_h=190,_pL=38,_pR=15,_pT=15,_pB=24;
+        var _cw=_w-_pL-_pR,_ch=_h-_pT-_pB,_n=_histLb.length;
+        var _maxY=Math.max.apply(null,_histTx.concat([_meta]))*1.2||60;
+        function _lx(i){return _pL+i/(_n-1)*_cw;}
+        function _ly(v){return _pT+_ch-v/_maxY*_ch;}
+        var _svg='<svg viewBox="0 0 '+_w+' '+_h+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:150px;">';
+        for(var _gi=0;_gi<=4;_gi++){var _gy=_pT+_gi*_ch/4;_svg+='<line x1="'+_pL+'" y1="'+_gy+'" x2="'+(_w-_pR)+'" y2="'+_gy+'" stroke="rgba(255,255,255,0.05)" stroke-width="1"/><text x="'+(_pL-3)+'" y="'+(_gy+4)+'" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.3)">'+Math.round(_maxY*(4-_gi)/4)+'%</text>';}
+        _histLb.forEach(function(lb,i){_svg+='<text x="'+_lx(i)+'" y="'+(_h-4)+'" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.4)">'+lb+'</text>';});
+        var _my=_ly(_meta);_svg+='<line x1="'+_pL+'" y1="'+_my+'" x2="'+(_w-_pR)+'" y2="'+_my+'" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-dasharray="6,3"/>';
+        _svg+='<text x="'+(_w-_pR+2)+'" y="'+(_my+3)+'" font-size="9" fill="rgba(255,255,255,0.4)">'+_meta+'%</text>';
+        var _pts=_histTx.map(function(v,i){return _lx(i)+','+_ly(v);}).join(' ');
+        _svg+='<polyline points="'+_pts+'" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+        _histTx.forEach(function(v,i){_svg+='<circle cx="'+_lx(i)+'" cy="'+_ly(v)+'" r="4" fill="#ef4444" stroke="#111827" stroke-width="1.5"/>';_svg+='<text x="'+_lx(i)+'" y="'+(_ly(v)-8)+'" text-anchor="middle" font-size="9" font-weight="bold" fill="#ef4444">'+v+'%</text>';});
+        _svg+='</svg>';
+        var _chartHTML='<div><div style="display:flex;gap:14px;margin-bottom:4px;"><span style="font-size:10px;color:#ef4444;"><span style="display:inline-block;width:16px;height:2px;background:#ef4444;vertical-align:middle;margin-right:4px;"></span>No-shows (%)</span><span style="font-size:10px;color:rgba(255,255,255,0.4);"><span style="display:inline-block;width:16px;height:2px;background:rgba(255,255,255,0.4);vertical-align:middle;margin-right:4px;border-top:1px dashed rgba(255,255,255,0.4);"></span>Meta (15%)</span></div>'+_svg+'</div>';
+        var _wrap=document.getElementById('ns-evol-chart-wrap');
+        if(_wrap)_wrap.innerHTML=_chartHTML;
+      }catch(e){console.warn('[nsEvol Sheets]',e);}
+    })();
+
     // Vendas e receita: Firebase com filtro de cancelados (mesmo que Dashboard Comercial)
     (function(){
       try{
@@ -13838,7 +13890,7 @@ function renderReunioesNoshow(){
   H+='<div style="display:grid;grid-template-columns:2fr 1.5fr 2fr;gap:14px;margin-bottom:14px;">';
   H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
     '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">EVOLUÇÃO DE NO-SHOWS</div>'+
-    mkNsChart(histLb,histNsTx,15,490,190)+
+    '<div id="ns-evol-chart-wrap">'+mkNsChart(histLb,histNsTx,15,490,190)+'</div>'+
   '</div>';
   // Canal
   H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
