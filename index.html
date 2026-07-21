@@ -7696,7 +7696,13 @@ async function dispararWebhookVenda(id){
       headers:headers,
       body:JSON.stringify(payload)
     });
-    if(resp.status===400){throw new Error('Campo obrigatório faltando ou inválido (HTTP 400).');}
+    if(resp.status===400){
+      var errBody='';try{var errJ=await resp.json();errBody=JSON.stringify(errJ);}catch(e2){try{errBody=await resp.text();}catch(e3){}}
+      // Log payload for debugging
+      console.error('[Webhook 400] payload enviado:',JSON.stringify(payload,null,2));
+      console.error('[Webhook 400] resposta:',errBody);
+      throw new Error('HTTP 400 — '+errBody);
+    }
     else if(resp.status===401){throw new Error('Segredo inválido ou ausente (HTTP 401). Verifique o segredo em Configurações.');}
     else if(resp.status===404){throw new Error('Endpoint não encontrado (HTTP 404). URL configurada: '+webhookVendaUrl);}
     else if(resp.status===405){throw new Error('Método POST não permitido (HTTP 405). Verifique se a URL está correta: '+webhookVendaUrl.replace(/^https?:\/\/[^/]+/,''));}
