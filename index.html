@@ -9757,6 +9757,12 @@ function buildDashComHTML(data){
       var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
       if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
       if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
+      // Se a data resolvida caiu antes do mês atual (ex: meeting era de junho mas venda é julho),
+      // tenta usar a data de criação do followup como fallback
+      if((!dt||dt<curMonthStart)&&fu.createdAt){
+        var _fuCr=new Date(fu.createdAt);
+        if(_fuCr>=curMonthStart)dt=_fuCr;
+      }
       if(!dt||isNaN(dt.getTime())||dt<curMonthStart)return; // só julho em diante
       if(!inRange(dt))return;
       var dtStr=String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
