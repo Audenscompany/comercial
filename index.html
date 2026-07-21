@@ -4154,6 +4154,47 @@ function showPage(id){
 // Retorna o status real de uma reunião cruzando com followups,
 // corrigindo registros antigos onde meetings[id].status ficou como 'pending'
 // mesmo após o resultado ter sido lançado.
+// ═══════════════════════════════════════════════════════════════
+// GLOBAL: dedup de reuniões — só realizadas/no-show, por lead único
+// Regra: mesmo tel ou nome = mesmo lead; realizada prevalece sobre no-show
+// ═══════════════════════════════════════════════════════════════
+function _crmLeadKey(tel, nome){
+  var t=(tel||'').replace(/\D/g,'').trim();
+  var n=(nome||'').toLowerCase().trim();
+  return t||n;
+}
+// Para Firebase meetings
+function crmDedupFB(arr, isRealFn, isNsFn){
+  var elig=arr.filter(function(m){return isRealFn(m)||isNsFn(m);});
+  var seen={},out=[];
+  elig.forEach(function(m){
+    var k=_crmLeadKey(m.tel,m.nome);
+    if(!k)return;
+    if(seen[k]===undefined){seen[k]=out.length;out.push(m);}
+    else if(isNsFn(out[seen[k]])&&isRealFn(m)){out[seen[k]]=m;}
+  });
+  return out;
+}
+// Para Sheets rows
+var _SHEET_TEL_COLS=['TELEFONE','Telefone','TEL','Tel','WHATSAPP','Whatsapp','Phone','phone'];
+var _SHEET_NOME_COLS=['NOME','Nome','nome','LEAD','Lead','EMPRESA','Empresa'];
+var _SHEET_STATUS_COLS=['STATUS REUNIÃO','STATUS REUNIAO','Status Reunao','STATUS','Status'];
+function _shIsReal(r){return isRealizada(col(r,_SHEET_STATUS_COLS));}
+function _shIsNs(r){var s=(col(r,_SHEET_STATUS_COLS)||'').toUpperCase().trim();return s==='NO-SHOW'||s==='NO SHOW'||s==='NOSHOW';}
+function crmDedupSheets(rows){
+  var elig=rows.filter(function(r){return _shIsReal(r)||_shIsNs(r);});
+  var seen={},out=[];
+  elig.forEach(function(r){
+    var tel=(col(r,_SHEET_TEL_COLS)||'').replace(/\D/g,'');
+    var nome=(col(r,_SHEET_NOME_COLS)||'').toLowerCase().trim();
+    var k=tel||nome;
+    if(!k)return;
+    if(seen[k]===undefined){seen[k]=out.length;out.push(r);}
+    else if(_shIsNs(out[seen[k]])&&_shIsReal(r)){out[seen[k]]=r;}
+  });
+  return out;
+}
+
 function getMeetingStatus(m){
   var st = m.status || 'pending';
   if(st === 'pending' && followups[m.id]){
@@ -9568,7 +9609,7 @@ function buildDashComHTML(data){
   var txQualifTrafego=leadsTrafegoCount>0?Math.round(leadsTrafegoQ/leadsTrafegoCount*100):0;
 
   // ---- TRÁFEGO: reuniões e clientes atribuídos a Tráfego Pago (via ORIGEM) ----
-  var reunRealTrafego=reunioesF.filter(function(r){
+  var reunRealTrafego=reunioesDD.filter(function(r){
     var o=categorizeOrigem(col(r,['ORIGEM','Origem','origem']));
     return o==='Trafego Pago'&&isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
   }).length;
@@ -9605,21 +9646,14 @@ function buildDashComHTML(data){
   var adRanking=Object.keys(adMap).map(function(a){return{ad:a,count:adMap[a]};})
     .sort(function(a,b){return b.count-a.count;}).slice(0,10);
 
-  // Meetings
-  var reunAgend=reunioesF.length;
-  var reunReal=reunioesF.filter(function(r){
-    return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));
-  }).length;
-  var reunNoShow=reunioesF.filter(function(r){
-    var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
-    return st==='NO-SHOW'||st==='NOSHOW'||st==='NO SHOW';
-  }).length;
-  var reunPend=reunioesF.filter(function(r){
-    var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
-    return st==='AGENDADA'||st===''||(!isRealizada(st)&&st!=='NO-SHOW'&&st!=='NO SHOW'&&st!=='NOSHOW');
-  }).length;
+  // Meetings — só realizadas+no-show, de-duplicadas por lead
+  var reunioesDD=crmDedupSheets(reunioesF);
+  var reunAgend=reunioesDD.length;
+  var reunReal=reunioesDD.filter(_shIsReal).length;
+  var reunNoShow=reunioesDD.filter(_shIsNs).length;
+  var reunPend=0;
 
-  // Taxa no-show = noshow / (noshow + realizada) - só sobre resolvidas
+  // Taxa no-show = noshow / (noshow + realizada)
   var resolvidas=reunReal+reunNoShow;
   var taxaNoShow=resolvidas>0?Math.round(reunNoShow/resolvidas*100):0;
   var taxaComp=resolvidas>0?Math.round(reunReal/resolvidas*100):0;
@@ -9752,7 +9786,7 @@ function buildDashComHTML(data){
     cData[nm].contratos++;
     cData[nm].valor+=parseMoney(col(c,['VALOR VENDIDO DO CONTRATO','Valor Vendido do Contrato','VALOR VENDIDO']));
   });
-  reunioesF.forEach(function(r){
+  reunioesDD.forEach(function(r){
     var rawCloser=(col(r,['CLOSER','Closer','closer'])||'').trim();
     var nm=normCloserName(rawCloser)||'Outros';
     if(!cData[nm])cData[nm]={contratos:0,valor:0,rReal:0,rAg:0,noshow:0};
@@ -9779,7 +9813,7 @@ function buildDashComHTML(data){
   // ---- BY SDR ----
   var SDR_NAMES=['JOÃO','JOAO','JOÃO SILVA','JOAO SILVA'];
   var sData={};
-  reunioesF.forEach(function(r){
+  reunioesDD.forEach(function(r){
     var nm=(col(r,['SDR/BDR','SDR','BDR','Sdr'])||'').trim().toUpperCase();
     var isSDR=SDR_NAMES.some(function(s){return nm.includes(s.split(' ')[0]);});
     if(!isSDR&&nm&&nm!=='OUTROS') return;
@@ -9803,7 +9837,7 @@ function buildDashComHTML(data){
   // ---- ORIGEM MATRIX ----
   var origens=['Trafego Pago','Trafego Organico','Indicacoes / Outros'];
   var mtz={};origens.forEach(function(o){mtz[o]={ag:0,re:0,vd:0,ns:0};});
-  reunioesF.forEach(function(r){
+  reunioesDD.forEach(function(r){
     var o=categorizeOrigem(col(r,['ORIGEM','Origem','origem']));
     mtz[o].ag++;
     var st=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase();
