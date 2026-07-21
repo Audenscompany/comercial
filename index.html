@@ -19294,6 +19294,10 @@ function abrirIntelItem(id){
     +'<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);">'
     +'<span>Fonte: '+esc(item.fonte||'—')+(item.url?(' · <a href="'+esc(item.url)+'" target="_blank" style="color:var(--purple3);">ver artigo</a>'):'')+'</span>'
     +'<span>Nota: '+item.nota+'/10 · '+esc(item.data||'')+'</span>'
+    +'</div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px;">'
+    +'<button onclick="document.getElementById(\'modal-intel-item\').remove();abrirModalAdicionarConhecimento(\''+item.id+'\')" style="flex:1;background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.3);color:var(--purple3);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;"><i class=\"ti ti-edit\"></i> Editar</button>'
+    +'<button onclick="excluirConhecimento(\''+item.id+'\')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;"><i class=\"ti ti-trash\"></i> Excluir</button>'
     +'</div></div></div></div>';
   document.body.insertAdjacentHTML('beforeend',html);
 }
@@ -19306,7 +19310,7 @@ function renderIntelComercial(){
   H+='<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">'
     +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:3px;">INTELIGÊNCIA COMERCIAL</div>'
     +'<div style="font-size:11px;color:var(--muted);">Base de conhecimento curada para o time Audens · Powered by Claude</div></div>'
-    +'<button onclick="showPage(\'intel-admin\')" style="background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;"><i class="ti ti-settings"></i> Gerenciar base</button>'
+    +'<button onclick="abrirModalAdicionarConhecimento()" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-plus"></i> Adicionar item</button>'
     +'</div>';
   H+='<div style="display:grid;grid-template-columns:1fr 380px;gap:16px;">';
   // Chat column
@@ -19465,6 +19469,99 @@ function _intelRenderHist(){
 }
 
 
+
+function abrirModalAdicionarConhecimento(editId){
+  var cats=[{v:'objecoes',l:'Objeções'},{v:'qualificacao',l:'Qualificação'},{v:'reuniao',l:'Reunião'},{v:'followup',l:'Follow-up'},{v:'fechamento',l:'Fechamento'}];
+  var item=editId&&_conhecimento?(_conhecimento.find(function(i){return i.id===editId;})||{}):null;
+  var catOpts=cats.map(function(c){return '<option value="'+c.v+'"'+(item&&item.categoria===c.v?' selected':'')+'>'+c.l+'</option>';}).join('');
+  var resumoVal=(item&&item.resumo?item.resumo.join('\n'):'');
+  var tagsVal=(item&&item.tags?item.tags.join(', '):'');
+  var html='<div class="modal-ov active" id="modal-add-conhecimento" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal-box" style="max-width:560px;">'
+    +'<div class="modal-hd"><div class="modal-title"><i class="ti ti-book-plus"></i> '+(editId?'Editar':'Adicionar')+'item à base</div>'
+    +'<button class="modal-close" onclick="document.getElementById(\'modal-add-conhecimento\').remove()">×</button></div>'
+    +'<div style="padding:20px;display:flex;flex-direction:column;gap:12px;">'
+    +'<div><label class="f-label">Título *</label>'
+    +'<input class="f-input" id="ak-titulo" placeholder="Ex: Como quebrar a objeção de preço" value="'+esc(item&&item.titulo||'')+'"></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    +'<div><label class="f-label">Categoria *</label>'
+    +'<select class="f-input" id="ak-cat">'+catOpts+'</select></div>'
+    +'<div><label class="f-label">Fonte</label>'
+    +'<input class="f-input" id="ak-fonte" placeholder="Ex: Gong Labs, interno" value="'+esc(item&&item.fonte||'')+'"></div>'
+    +'</div>'
+    +'<div><label class="f-label">Tags (separadas por vírgula)</label>'
+    +'<input class="f-input" id="ak-tags" placeholder="preco, objecao, valor" value="'+esc(tagsVal)+'"></div>'
+    +'<div><label class="f-label">Resumo * (um bullet por linha, mín. 2)</label>'
+    +'<textarea class="f-input" id="ak-resumo" rows="5" placeholder="Pergunte antes de responder: Caro comparado a quê?\nAncore o preço na transformação, não na entrega\nUse casos de clientes similares" style="resize:vertical;font-size:12px;line-height:1.5;">'+esc(resumoVal)+'</textarea></div>'
+    +'<div><label class="f-label">Como aplicar hoje</label>'
+    +'<textarea class="f-input" id="ak-aplicacao" rows="2" placeholder="Na próxima call, faça esta pergunta antes de citar o preço..." style="resize:vertical;font-size:12px;line-height:1.5;">'+esc(item&&item.aplicacao||'')+'</textarea></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    +'<div><label class="f-label">URL do artigo (opcional)</label>'
+    +'<input class="f-input" id="ak-url" placeholder="https://..." value="'+esc(item&&item.url||'')+'"></div>'
+    +'<div><label class="f-label">Nota de relevância (0-10) *</label>'
+    +'<input class="f-input" type="number" id="ak-nota" min="0" max="10" step="1" value="'+(item&&item.nota!=null?item.nota:8)+'"></div>'
+    +'</div>'
+    +'<div class="login-err" id="ak-err"></div>'
+    +'</div>'
+    +'<div style="padding:0 20px 20px;display:flex;gap:10px;">'
+    +'<button class="btn btn-primary" id="ak-save-btn" onclick="salvarConhecimentoManual(\''+(editId||'')+'\')"><i class="ti ti-check"></i> Salvar</button>'
+    +'<button class="btn btn-outline" onclick="document.getElementById(\'modal-add-conhecimento\').remove()">Cancelar</button>'
+    +'</div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+async function salvarConhecimentoManual(editId){
+  var titulo=(document.getElementById('ak-titulo').value||'').trim();
+  var cat=document.getElementById('ak-cat').value;
+  var fonte=(document.getElementById('ak-fonte').value||'').trim()||'Manual';
+  var tags=(document.getElementById('ak-tags').value||'').split(',').map(function(t){return t.trim().toLowerCase().replace(/\s+/g,'-');}).filter(Boolean);
+  var resumoRaw=(document.getElementById('ak-resumo').value||'').trim();
+  var resumo=resumoRaw.split('\n').map(function(l){return l.trim();}).filter(Boolean);
+  var aplicacao=(document.getElementById('ak-aplicacao').value||'').trim();
+  var url=(document.getElementById('ak-url').value||'').trim();
+  var nota=parseInt(document.getElementById('ak-nota').value)||8;
+  var errEl=document.getElementById('ak-err');
+  if(!titulo){errEl.textContent='Informe o título.';return;}
+  if(resumo.length<1){errEl.textContent='Adicione ao menos 1 bullet no resumo.';return;}
+  if(nota<1||nota>10){errEl.textContent='Nota deve ser entre 1 e 10.';return;}
+  var btn=document.getElementById('ak-save-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Salvando...';}
+  var payload={
+    data:new Date().toISOString().slice(0,10),
+    fonte:fonte,url:url,titulo:titulo,
+    categoria:cat,tags:tags,resumo:resumo,
+    aplicacao:aplicacao,nota:nota
+  };
+  try{
+    if(editId){await fbDb.ref('conhecimento/'+editId).update(payload);}
+    else{await fbDb.ref('conhecimento').push(payload);}
+    _conhecimento=null; // limpa cache
+    document.getElementById('modal-add-conhecimento').remove();
+    showSheetToast('✅ Item salvo na base de conhecimento!');
+    // Recarrega a base e re-renderiza
+    await loadConhecimento();
+    intelRenderBase();
+    intelRenderStats();
+  }catch(e){
+    errEl.textContent='Erro ao salvar: '+e.message;
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Salvar';}
+  }
+}
+
+async function excluirConhecimento(id){
+  if(!confirm('Excluir este item da base de conhecimento?'))return;
+  if(!fbDb){showSheetToast('Firebase não conectado');return;}
+  try{
+    await fbDb.ref('conhecimento/'+id).remove();
+    _conhecimento=null;
+    document.getElementById('modal-intel-item')?.remove();
+    showSheetToast('Item excluído da base.');
+    await loadConhecimento();
+    intelRenderBase();
+    intelRenderStats();
+  }catch(e){showSheetToast('Erro ao excluir: '+e.message);}
+}
 
 // Seed 3 itens de exemplo na base (chamar do console: seedConhecimento())
 async function seedConhecimento(){
