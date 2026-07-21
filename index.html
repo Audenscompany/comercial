@@ -9257,12 +9257,12 @@ function renderReunioes(){
 
   // 6 KPI cards
   H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px;">'+
-    kpiCard('Reuniões Agendadas',agendadas,pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg)+
-    kpiCard('Realizadas',realizadas,taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal)+
-    kpiCard('No-shows',noshows,pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',rows.map(function(m,i){return i===rows.length-1?noshows:0;}))+
-    kpiCard('Propostas',propostas,txProp+'% das realizadas',dStr(propostas,(prevRows.filter(isProp).length),false),'#3b82f6','ti-file-description',rows.map(function(m,i){return propostas;}))+
-    kpiCard('Vendas',vendas,txVenda+'% das propostas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend)+
-    kpiCard('Receita Gerada',fmtR(receita),'Ticket médio: '+fmtR(ticket),dStr(receita,pRec,false),'#f59e0b','ti-currency-dollar',histReal.map(function(v){return v;}))+ // use real as proxy
+    kpiCard('Reuniões Agendadas','<span id="rv-ag">'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg)+
+    kpiCard('Realizadas','<span id="rv-real">'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal)+
+    kpiCard('No-shows','<span id="rv-ns">'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',rows.map(function(m,i){return i===rows.length-1?noshows:0;}))+
+    kpiCard('Propostas','<span id="rv-prop">'+propostas+'</span>',txProp+'% das realizadas',dStr(propostas,(prevRows.filter(isProp).length),false),'#3b82f6','ti-file-description',rows.map(function(m,i){return propostas;}))+
+    kpiCard('Vendas','<span id="rv-vend">'+vendas+'</span>',txVenda+'% das propostas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend)+
+    kpiCard('Receita Gerada','<span id="rv-rec">'+fmtR(receita)+'</span>','Ticket médio: '+fmtR(ticket),dStr(receita,pRec,false),'#f59e0b','ti-currency-dollar',histReal.map(function(v){return v;}))+ // use real as proxy
   '</div>';
 
   // Row: Funil | Evolução | Insights
@@ -13370,8 +13370,6 @@ async function loadFunilReunioes(){
   var curM=now.getMonth(), curY=now.getFullYear();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:curM;
   var filtY=_reunMesFiltro?_reunMesFiltro.y:curY;
-  // Mês atual: Firebase já tem dados em tempo real — não sobrescrever
-  if(filtM===curM&&filtY===curY) return;
   if(typeof isGcalConnected!=='function'||!isGcalConnected()) return;
 
   try{
@@ -13405,10 +13403,44 @@ async function loadFunilReunioes(){
     }).length;
     var shTx=shTotal>0?Math.round(shReal/shTotal*100):0;
 
-    // Atualiza KPI cards
+    // Atualiza KPI cards — tanto renderReunioesPersonal (rp-*) quanto renderReunioes premium (rv-*)
     var elR=document.getElementById('rp-real-v');  if(elR)elR.textContent=shReal;
     var elN=document.getElementById('rp-ns-v');    if(elN)elN.textContent=shNoshow;
     var elT=document.getElementById('rp-tc-v');    if(elT)elT.textContent=shTx+'%';
+    var elRvAg=document.getElementById('rv-ag');   if(elRvAg)elRvAg.textContent=shTotal;
+    var elRvRe=document.getElementById('rv-real'); if(elRvRe)elRvRe.textContent=shReal;
+    var elRvNs=document.getElementById('rv-ns');   if(elRvNs)elRvNs.textContent=shNoshow;
+    // Vendas e receita: Firebase com filtro de cancelados (mesmo que Dashboard Comercial)
+    (function(){
+      try{
+        loadContratos().then(function(){
+          var _filtM=_reunMesFiltro?_reunMesFiltro.m:curM;
+          var _filtY=_reunMesFiltro?_reunMesFiltro.y:curY;
+          var curMonthStart=new Date(_filtY,_filtM,1);
+          var nextMonthStart=new Date(_filtY,_filtM+1,1);
+          var vendCount=0,recSum=0;
+          function _mrr2(fu){var v=parseFloat(fu.mensalidade||fu.contrato||0)||0;return v;}
+          Object.keys(followups||{}).forEach(function(fid){
+            var fu=followups[fid];
+            if(!fu||fu.resultado!=='venda')return;
+            if(isVendaCancelada(fu))return;
+            var m2=meetings[fu.meetingId]||meetings[fid];
+            var dt=_vendaDate(fu,m2);
+            if(!dt&&fu.dataInicio)dt=new Date(fu.dataInicio+'T12:00:00');
+            if(!dt&&m2&&m2.dtISO)dt=new Date(m2.dtISO);
+            if(!dt||isNaN(dt.getTime()))return;
+            if(dt<curMonthStart||dt>=nextMonthStart)return;
+            vendCount++;recSum+=_mrr2(fu);
+          });
+          function _fmtR2(n){if(!n)return'R$ 0';if(n>=1000000)return'R$'+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return'R$'+(n/1000).toFixed(0)+'k';return'R$'+Math.round(n);}
+          var elRvV=document.getElementById('rv-vend'); if(elRvV)elRvV.textContent=vendCount;
+          var elRvRc=document.getElementById('rv-rec');  if(elRvRc)elRvRc.textContent=_fmtR2(recSum);
+          var elRvP=document.getElementById('rv-prop');
+          // propostas: vendas + leads com proposta enviada (aproximação via Firebase)
+          if(elRvP){var propCount=0;Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||(fu.resultado!=='proposta'&&fu.resultado!=='venda'))return;var m2=meetings[fu.meetingId]||meetings[fid];var dt=_vendaDate(fu,m2);if(!dt&&fu.dataInicio)dt=new Date(fu.dataInicio+'T12:00:00');if(!dt&&m2&&m2.dtISO)dt=new Date(m2.dtISO);if(!dt||isNaN(dt.getTime()))return;if(dt>=curMonthStart&&dt<nextMonthStart)propCount++;});elRvP.textContent=propCount;}
+        });
+      }catch(e){console.warn('[loadFunilReunioes vendas]',e);}
+    })();
 
     // Atualiza Funil
     var fbVendas=Object.values(window._rpClMap||{}).reduce(function(s,c){return s+(c.vendas||0);},0);
