@@ -13651,16 +13651,31 @@ function renderReunioesNoshow(){
   function initials(n){return (n||'?').split(' ').slice(0,2).map(function(p){return p[0]||'';}).join('').toUpperCase();}
   function av(n){return '<div style="width:26px;height:26px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;">'+initials(n)+'</div>';}
 
-  var nsRows=rows.filter(isNs);
-  var elegiveis=rows.filter(function(m){return isReal(m)||isNs(m);}).length;
+  // Dedup por lead (mesmo lead mesmo mês = conta 1 vez; realizada > no-show)
+  function dedupLeadsNs(arr){
+    var seen={};var out=[];
+    arr.forEach(function(m){
+      var k=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
+      if(!k){out.push(m);return;}
+      if(!seen[k]){seen[k]=m;out.push(m);}
+      else if(isNs(seen[k])&&isReal(m)){out[out.indexOf(seen[k])]=m;seen[k]=m;}
+    });
+    return out;
+  }
+  var eligibleAll=rows.filter(function(m){return isReal(m)||isNs(m);});
+  var dedupedAll=dedupLeadsNs(eligibleAll);
+  var nsRows=dedupedAll.filter(isNs);
+  var elegiveis=dedupedAll.length;
   var totalNs=nsRows.length;
   var taxaNs=pct(totalNs,elegiveis);
   var qualifs=nsRows.filter(function(m){return getFat(m)>0;}).length;
   var opR=nsRows.reduce(function(s,m){var fu=getFu(m);return s+parseFloat((fu&&fu.mensalidade)||0)||0;},0);
   var recuperados=nsRows.filter(isRecup).length;
   var txRecup=pct(recuperados,totalNs);
-  var prevNs=prevRows.filter(isNs).length;
-  var prevEleg=prevRows.filter(function(m){return isReal(m)||isNs(m);}).length;
+  var prevEligAll=prevRows.filter(function(m){return isReal(m)||isNs(m);});
+  var prevDedupAll=dedupLeadsNs(prevEligAll);
+  var prevNs=prevDedupAll.filter(isNs).length;
+  var prevEleg=prevDedupAll.length;
   var prevTaxaNs=pct(prevNs,prevEleg);
 
   function dInv(c,p){if(!p&&!c)return '';var d=c-p;var col=d<=0?'#22c55e':'#ef4444';return '<span style="font-size:11px;color:'+col+';font-weight:700;">'+(d>0?'↑':'↓')+Math.abs(d)+'pp vs anterior</span>';}
@@ -13670,8 +13685,10 @@ function renderReunioesNoshow(){
   for(var hi=6;hi>=0;hi--){
     var hDate=new Date(filtY,filtM-hi,1);var hm=hDate.getMonth(),hy=hDate.getFullYear();
     var hR=allM.filter(function(m){if(!m.dtISO)return false;var d=new Date(m.dtISO);return d.getMonth()===hm&&d.getFullYear()===hy;});
-    var hEleg=hR.filter(function(m){return isReal(m)||isNs(m);}).length;
-    var hNs=hR.filter(isNs).length;
+    var hEligRaw=hR.filter(function(m){return isReal(m)||isNs(m);});
+    var hDedup=dedupLeadsNs(hEligRaw);
+    var hEleg=hDedup.length;
+    var hNs=hDedup.filter(isNs).length;
     histNsTx.push(hEleg>0?Math.round(hNs/hEleg*100):0);
     histNsAbs.push(hNs);
     histLb.push(_mns[hm]);
@@ -13724,22 +13741,22 @@ function renderReunioesNoshow(){
   function trow(cells,hdr){var tag=hdr?'th':'td';return '<tr>'+cells.map(function(c){return '<'+tag+' style="padding:8px 10px;font-size:'+(hdr?'10':'12')+'px;'+(hdr?'font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);':'border-bottom:1px solid rgba(255,255,255,0.04);')+'">'+c+'</'+tag+'>';}).join('')+'</tr>';}
   function tbl(hdrs,rows2){return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead>'+trow(hdrs,true)+'</thead><tbody>'+rows2.join('')+'</tbody></table></div>';}
 
-  // Canal breakdown
-  var canais=['Trafego Pago','Cold Call','Indicacao','Organico','Outros'];
+  // Canal breakdown — todos os canais individualmente, dedupedAll
+  function normCanalNs(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
-  canais.forEach(function(c){canalMap[c]={ag:0,ns:0};});
-  rows.forEach(function(m){var o=categorizeOrigem(m.origem||'');var k=canalMap[o]?o:'Outros';canalMap[k].ag++;if(isNs(m))canalMap[k].ns++;});
-  var canalCols={'Trafego Pago':'#9333ea','Cold Call':'#3b82f6','Indicacao':'#22c55e','Organico':'#f59e0b','Outros':'#6b7280'};
+  dedupedAll.forEach(function(m){var o=normCanalNs(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,ns:0};canalMap[o].ag++;if(isNs(m))canalMap[o].ns++;});
+  var canais=Object.keys(canalMap).sort(function(a,b){return canalMap[b].ag-canalMap[a].ag;});
+  function canalColNs(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
   var maxNs2=Math.max.apply(null,canais.map(function(c){return canalMap[c].ns;}))||1;
 
-  // Faixas
+  // Faixas — dedupedAll
   var fatFaixas=[{label:'Até R$20 mil',min:0,max:20000,ag:0,ns:0},{label:'R$20-R$40 mil',min:20000,max:40000,ag:0,ns:0},{label:'R$40-R$90 mil',min:40000,max:90000,ag:0,ns:0},{label:'R$90-R$150 mil',min:90000,max:150000,ag:0,ns:0},{label:'Acima de R$150 mil',min:150000,max:1e9,ag:0,ns:0}];
   var fatNI={label:'Não info.',ag:0,ns:0};
-  rows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isNs(m))fatNI.ns++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isNs(m))f.ns++;found=true;}});if(!found){fatNI.ag++;if(isNs(m))fatNI.ns++;}});
+  dedupedAll.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isNs(m))fatNI.ns++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isNs(m))f.ns++;found=true;}});if(!found){fatNI.ag++;if(isNs(m))fatNI.ns++;}});
 
-  // Ranking closer
+  // Ranking closer — dedupedAll
   var closerMap={};
-  rows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={ag:0,real:0,ns:0,qual:0,recup:0};closerMap[c].ag++;if(isReal(m))closerMap[c].real++;if(isNs(m)){closerMap[c].ns++;if(getFat(m)>0)closerMap[c].qual++;if(isRecup(m))closerMap[c].recup++;}});
+  dedupedAll.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={ag:0,real:0,ns:0,qual:0,recup:0};closerMap[c].ag++;if(isReal(m))closerMap[c].real++;if(isNs(m)){closerMap[c].ns++;if(getFat(m)>0)closerMap[c].qual++;if(isRecup(m))closerMap[c].recup++;}});
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return pct(b.d.ns,b.d.ag)-pct(a.d.ns,a.d.ag);});
 
   // Heatmap: day × hour
@@ -13819,7 +13836,7 @@ function renderReunioesNoshow(){
   canalAtivos.forEach(function(c){
     var d=canalMap[c],tx=pct(d.ns,d.ag);
     var barW=Math.max(2,Math.round(d.ns/maxNs2*100));
-    var col2=canalCols[c]||'#6b7280';
+    var col2=canalColNs(c);
     H+='<div><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:12px;color:var(--white);">'+c+'</span><div style="display:flex;gap:10px;align-items:center;"><span style="font-size:12px;font-weight:700;color:#ef4444;">'+d.ns+'</span><span style="font-size:11px;font-weight:700;color:'+(tx>=30?'#ef4444':tx>=20?'#f59e0b':'#22c55e')+';">'+tx+'%</span></div></div>'+
     '<div style="background:rgba(255,255,255,0.07);border-radius:4px;height:7px;"><div style="width:'+barW+'%;background:'+col2+';height:100%;border-radius:4px;"></div></div></div>';
   });
