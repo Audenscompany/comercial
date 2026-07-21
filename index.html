@@ -7670,15 +7670,33 @@ async function dispararWebhookVenda(id){
       ? Math.round((parseFloat(vd.valorTotal||vd.contrato)||0)/planoDur)
       : (parseFloat(vd.mensalidade||vd.valorParcela)||0);
     // Fallback: busca nos followups pelo telefone se mensalidade ainda for 0
+    // e cura o registro Firebase com vendaData correto
     if(!mensalidade){
-      Object.values(followups||{}).forEach(function(fu){
+      var _fuMatch=null;
+      Object.entries(followups||{}).forEach(function(entry){
+        var fu=entry[1];
         if(fu.resultado!=='venda') return;
         var m=meetings[fu.meetingId]||meetings[fu.id]||null;
         var mTel=m?(m.tel||'').replace(/\D/g,''):'';
         if(mTel&&(mTel===telRaw||mTel.endsWith(telRaw)||telRaw.endsWith(mTel))){
           mensalidade=parseFloat(fu.mensalidade||fu.contrato)||mensalidade;
+          if(!_fuMatch) _fuMatch=fu;
         }
       });
+      // Cura o Firebase: salva vendaData correto na assinatura
+      if(mensalidade&&_fuMatch&&fbDb){
+        var _curedVd={
+          plano:_fuMatch.plano||vd.plano||'',
+          duracaoMeses:parseInt(_fuMatch.duracao||_fuMatch.duracaoMeses)||planoDur,
+          dataInicio:_fuMatch.dataInicio||vd.dataInicio||'',
+          tipoValor:_fuMatch.tipoValor||'mensalidade',
+          mensalidade:mensalidade,
+          contrato:mensalidade*(parseInt(_fuMatch.duracao||_fuMatch.duracaoMeses)||planoDur),
+          cnpj:r.cnpj||''
+        };
+        fbDb.ref('assinaturas/'+id+'/vendaData').set(_curedVd);
+        console.log('[Webhook] vendaData curado no Firebase para assinatura '+id);
+      }
     }
     // Mapeamento de plano para o enum do Cockpit
     var planoRaw=(vd.plano||'').toLowerCase();
