@@ -9609,6 +9609,9 @@ function buildDashComHTML(data){
   var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamentoLead(l)>=40000;}).length;
   var txQualifTrafego=leadsTrafegoCount>0?Math.round(leadsTrafegoQ/leadsTrafegoCount*100):0;
 
+  // Meetings de-duplicadas (deve estar antes de reunRealTrafego)
+  var reunioesDD=crmDedupSheets(reunioesF);
+
   // ---- TRÁFEGO: reuniões e clientes atribuídos a Tráfego Pago (via ORIGEM) ----
   var reunRealTrafego=reunioesDD.filter(function(r){
     var o=categorizeOrigem(col(r,['ORIGEM','Origem','origem']));
@@ -9647,8 +9650,7 @@ function buildDashComHTML(data){
   var adRanking=Object.keys(adMap).map(function(a){return{ad:a,count:adMap[a]};})
     .sort(function(a,b){return b.count-a.count;}).slice(0,10);
 
-  // Meetings — só realizadas+no-show, de-duplicadas por lead
-  var reunioesDD=crmDedupSheets(reunioesF);
+  // Meetings — só realizadas+no-show, de-duplicadas por lead (declarado após adRanking)
   var reunAgend=reunioesDD.length;
   var reunReal=reunioesDD.filter(_shIsReal).length;
   var reunNoShow=reunioesDD.filter(_shIsNs).length;
