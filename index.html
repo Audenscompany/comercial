@@ -3212,6 +3212,120 @@ async function fetchMetaAdAccounts(){
   finally{if(btn){btn.disabled=false;btn.textContent='Buscar Contas';}}
 }
 
+// ===== META ADS CENTER =====
+var _metaAdsSubTab='overview';
+var _metaAdsCache=null;
+var _metaAdsCacheTs=0;
+var _metaAdsCacheTTL=5*60*1000;
+var _metaAdsSelectedAcc='all';
+var _metaCampSearch='';
+var _metaCampSort={col:'daily',dir:-1};
+var _metaCampFilters={type:'',budget:'',delivery:''};
+var _metaN8nWebhook=localStorage.getItem('audens_meta_n8n')||'';
+var _metaIntelHistory=[];
+
+async function fetchMetaCenter(force){
+  if(!isMetaConnected()||!metaAccountId)return{error:'not_connected'};
+  if(!force&&_metaAdsCache&&(Date.now()-_metaAdsCacheTs)<_metaAdsCacheTTL)return _metaAdsCache;
+  var now=new Date();
+  var today=now.toISOString().slice(0,10);
+  var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
+  var campaigns=[],todaySpend=0,hourlyMap={},accountNames={};
+  for(var i=0;i<ids.length;i++){
+    var accId=ids[i];
+    try{
+      // Account name
+      var aNr=await fetch('https://graph.facebook.com/v20.0/act_'+accId+'?fields=name&access_token='+metaToken.access_token);
+      var aNd=await aNr.json();
+      if(aNd.error&&aNd.error.code===190)return{error:'token_expired',msg:aNd.error.message};
+      accountNames[accId]=aNd.error?('Conta '+accId):(aNd.name||'Conta '+accId);
+      // Campaigns with budgets + today insights
+      var tr=encodeURIComponent(JSON.stringify({since:today,until:today}));
+      var url='https://graph.facebook.com/v20.0/act_'+accId+'/campaigns'
+        +'?fields=id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,stop_time'
+        +',adsets{id,name,status,daily_budget,lifetime_budget,budget_remaining,stop_time}'
+        +',insights{spend}'
+        +'&time_range='+tr
+        +'&effective_status=["ACTIVE"]&limit=200&access_token='+metaToken.access_token;
+      var cr=await fetch(url);var cd=await cr.json();
+      if(cd.error){if(cd.error.code===190)return{error:'token_expired',msg:cd.error.message};console.error('Meta camps',cd.error);continue;}
+      (cd.data||[]).forEach(function(c){c._accId=accId;c._accName=accountNames[accId];campaigns.push(c);});
+      // Account-level today spend
+      var sr=await fetch('https://graph.facebook.com/v20.0/act_'+accId+'/insights?fields=spend&time_range='+tr+'&level=account&access_token='+metaToken.access_token);
+      var sd=await sr.json();
+      if(!sd.error&&sd.data&&sd.data[0])todaySpend+=parseFloat(sd.data[0].spend)||0;
+      // Hourly breakdown
+      var hr=await fetch('https://graph.facebook.com/v20.0/act_'+accId+'/insights?fields=spend,hourly_stats_aggregated_by_advertiser_time_zone&time_range='+tr+'&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&level=account&access_token='+metaToken.access_token);
+      var hd=await hr.json();
+      if(!hd.error)(hd.data||[]).forEach(function(row){
+        var h=parseInt((row.hourly_stats_aggregated_by_advertiser_time_zone||'00:00').split(':')[0]);
+        hourlyMap[h]=(hourlyMap[h]||0)+(parseFloat(row.spend)||0);
+      });
+    }catch(e){console.error('fetchMetaCenter acc '+accId,e);}
+  }
+  // Compute budget per campaign
+  campaigns.forEach(function(c){c._bud=calcCampBudget(c,now);});
+  var totalProg=campaigns.reduce(function(s,c){return s+c._bud.dayTotal;},0);
+  var cboCount=campaigns.filter(function(c){return c._bud.type==='CBO';}).length;
+  var aboCount=campaigns.filter(function(c){return c._bud.type==='ABO';}).length;
+  var lifetimeCount=campaigns.filter(function(c){return c._bud.budgetType==='lifetime'||c._bud.budgetType==='mixed';}).length;
+  var totalSaldo=campaigns.reduce(function(s,c){return s+(c._bud.saldo||0);},0);
+  // Month spend
+  var monthSpend=await fetchMetaSpend(getCurrentPeriod())||0;
+  var prevDate=new Date(now.getFullYear(),now.getMonth()-1,1);
+  var prevPeriod=String(prevDate.getMonth()+1).padStart(2,'0')+'/'+prevDate.getFullYear();
+  var prevMonthSpend=await fetchMetaSpend(prevPeriod)||0;
+  var result={campaigns,todaySpend,hourlyMap,totalProg,accountNames,ids,
+    monthSpend,prevMonthSpend,cboCount,aboCount,lifetimeCount,totalSaldo,
+    updatedAt:new Date()};
+  _metaAdsCache=result;_metaAdsCacheTs=Date.now();
+  return result;
+}
+
+function calcCampBudget(camp,now){
+  var r={type:'CBO',budgetType:'daily',dayTotal:0,dailyBudget:0,lifetimeDayEq:0,saldo:0,daysLeft:null,spendToday:0};
+  var ins=camp.insights&&camp.insights.data&&camp.insights.data[0];
+  r.spendToday=ins?parseFloat(ins.spend)||0:0;
+  var cd=parseFloat(camp.daily_budget)||0,cl=parseFloat(camp.lifetime_budget)||0,cr=parseFloat(camp.budget_remaining)||0;
+  if(cd>0||cl>0){
+    r.type='CBO';
+    if(cd>0){r.budgetType='daily';r.dailyBudget=cd/100;r.dayTotal=cd/100;}
+    else{r.budgetType='lifetime';r.saldo=cr/100;var dl=camp.stop_time?Math.max(1,Math.ceil((new Date(camp.stop_time)-now)/86400000)):30;r.daysLeft=dl;r.lifetimeDayEq=r.saldo/dl;r.dayTotal=r.lifetimeDayEq;}
+  }else{
+    r.type='ABO';var adsets=(camp.adsets&&camp.adsets.data)||[];
+    adsets.forEach(function(a){
+      if((a.status||'').toUpperCase()!=='ACTIVE')return;
+      var ad=parseFloat(a.daily_budget)||0,al=parseFloat(a.lifetime_budget)||0,ar=parseFloat(a.budget_remaining)||0;
+      if(ad>0){r.dailyBudget+=ad/100;r.dayTotal+=ad/100;}
+      else if(al>0){var adl=a.stop_time?Math.max(1,Math.ceil((new Date(a.stop_time)-now)/86400000)):30;r.saldo+=ar/100;var eq=(ar/100)/adl;r.lifetimeDayEq+=eq;r.dayTotal+=eq;if(!r.daysLeft||adl<r.daysLeft)r.daysLeft=adl;}
+    });
+    r.budgetType=r.dailyBudget>0&&r.saldo>0?'mixed':r.saldo>0?'lifetime':'daily';
+  }
+  return r;
+}
+
+function _maFmt(n){if(!n)return'R$ 0';if(n>=1000000)return'R$'+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return'R$'+(n/1000).toFixed(1).replace('.',',')+'k';return'R$ '+n.toFixed(2).replace('.',',');}
+function _maFmtI(n){if(!n)return'R$ 0';if(n>=1000000)return'R$'+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return'R$'+(n/1000).toFixed(0)+'k';return'R$ '+Math.round(n);}
+function _deliveryStatus(pctOfDay,pctDelivered){
+  var diff=pctDelivered-pctOfDay;
+  if(Math.abs(diff)<=10)return{label:'Dentro do ritmo',col:'#22c55e',bg:'rgba(34,197,94,0.12)'};
+  if(diff<-30)return{label:'Subentrega crítica',col:'#ef4444',bg:'rgba(239,68,68,0.12)'};
+  if(diff<-10)return{label:'Abaixo do ritmo',col:'#f59e0b',bg:'rgba(245,158,11,0.12)'};
+  return{label:'Acima do ritmo',col:'#9333ea',bg:'rgba(147,51,234,0.12)'};
+}
+function _campDeliveryStatus(camp,totalProg){
+  var b=camp._bud;if(!b.dayTotal)return{label:'Sem orçamento',col:'#6b7280',bg:'rgba(107,114,128,0.1)'};
+  if(b.spendToday<=0)return{label:'Sem gasto',col:'#ef4444',bg:'rgba(239,68,68,0.12)'};
+  var now=new Date(),hourFrac=(now.getHours()*60+now.getMinutes())/(24*60);
+  var expected=b.dayTotal*hourFrac,pct=b.dayTotal>0?Math.round(b.spendToday/b.dayTotal*100):0,diff=b.spendToday-expected;
+  if(pct>=95&&pct<=115)return{label:'Dentro do ritmo',col:'#22c55e',bg:'rgba(34,197,94,0.12)',pct};
+  if(b.spendToday<expected*0.7)return{label:'Subentrega',col:'#ef4444',bg:'rgba(239,68,68,0.12)',pct};
+  if(b.spendToday<expected*0.9)return{label:'Abaixo do ritmo',col:'#f59e0b',bg:'rgba(245,158,11,0.12)',pct};
+  if(b.daysLeft&&b.daysLeft<=2)return{label:'Encerrando em breve',col:'#f97316',bg:'rgba(249,115,22,0.12)',pct};
+  return{label:'Acima do ritmo',col:'#9333ea',bg:'rgba(147,51,234,0.12)',pct};
+}
+
+
 // ===== SHEETS API =====
 function parseSheetUrl(url){
   if(!url)return null;
@@ -3914,6 +4028,7 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
+    {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
@@ -3994,6 +4109,7 @@ function buildNav(){
       'ligar':{id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
       'dash-comercial':{id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
       'analise-ads':{id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
+      'meta-ads':{id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
       'reunioes':{id:'reunioes',icon:'ti-calendar-check',label:'Reunioes'},
       'calendario':{id:'calendario',icon:'ti-calendar',label:'Calendario'},
       'meu-hist':{id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
@@ -4115,7 +4231,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,'criativos':renderCriativos,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -10618,6 +10734,391 @@ function renderAnaliseAds(){
   setTimeout(refreshAnaliseAds, 80);
   return html;
 }
+
+
+function renderMetaAds(){
+  var H='<div class="page active" id="meta-ads-page">';
+  H+=_buildMetaHeader();
+  H+='<div id="meta-ads-body" style="padding:0 20px 24px;">';
+  H+=_buildMetaSubTabs();
+  H+='<div id="meta-ads-content" style="margin-top:16px;">';
+  H+='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:36px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Carregando dados Meta Ads...</div></div>';
+  H+='</div></div></div>';
+  setTimeout(function(){refreshMetaAds(false);},80);
+  return H;
+}
+
+function _buildMetaHeader(){
+  var ids=(metaAccountId||'').split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
+  var accOpts='<option value="all">Todas as contas</option>';
+  ids.forEach(function(id){accOpts+='<option value="'+id+'"'+(id===_metaAdsSelectedAcc?' selected':'')+'>Conta '+id+'</option>';});
+  var st=isMetaConnected()?'<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#22c55e;font-weight:600;"><span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;"></span>Conectado</span>':'<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#ef4444;font-weight:600;"><span style="width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block;"></span>Desconectado</span>';
+  return '<div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">'
+    +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:3px;color:var(--white);">META ADS</div>'
+    +'<div style="font-size:11px;color:var(--muted);">Investimento, orçamento e ritmo de entrega em tempo real</div></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    +(ids.length>1?'<select onchange="_metaAdsSelectedAcc=this.value;refreshMetaAds(true);" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 10px;font-size:12px;font-weight:600;outline:none;">'+accOpts+'</select>':'')
+    +st
+    +'<span id="meta-last-upd" style="font-size:10px;color:var(--muted);"></span>'
+    +'<button onclick="refreshMetaAds(true)" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-refresh"></i> Atualizar</button>'
+    +'<button onclick="showPage(\'config\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:7px 12px;font-size:12px;cursor:pointer;"><i class="ti ti-settings"></i></button>'
+    +'</div></div>';
+}
+
+function _buildMetaSubTabs(){
+  var tabs=[{id:'overview',label:'Visão Geral',ic:'ti-layout-dashboard'},{id:'campaigns',label:'Campanhas e Orçamentos',ic:'ti-table'},{id:'intelligence',label:'Inteligência',ic:'ti-brain'}];
+  return '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);">'
+    +tabs.map(function(t){var a=_metaAdsSubTab===t.id;return '<button onclick="_metaAdsSubTab=\''+t.id+'\';_renderMetaContent(window._metaAdsLastData);" style="background:none;border:none;border-bottom:'+(a?'2px solid var(--purple3)':'2px solid transparent')+';color:'+(a?'var(--white)':'var(--muted)')+';padding:10px 18px;font-size:12px;font-weight:'+(a?'700':'600')+';letter-spacing:1px;text-transform:uppercase;cursor:pointer;font-family:Barlow Condensed,sans-serif;"><i class="ti '+t.ic+'" style="margin-right:5px;"></i>'+t.label+'</button>';}).join('')
+    +'</div>';
+}
+
+async function refreshMetaAds(force){
+  if(!isMetaConnected()){
+    var el=document.getElementById('meta-ads-content');
+    if(el)el.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted);"><i class="ti ti-brand-meta" style="font-size:48px;display:block;margin-bottom:16px;color:var(--purple3);"></i><div style="font-size:14px;font-weight:600;">Meta Ads não conectado</div><div style="font-size:12px;margin-top:8px;">Configure o token de acesso em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Configurações</a></div></div>';
+    return;
+  }
+  var data=await fetchMetaCenter(force);
+  window._metaAdsLastData=data;
+  if(data.error){
+    var el2=document.getElementById('meta-ads-content');
+    if(el2){
+      if(data.error==='token_expired')el2.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted);"><i class="ti ti-alert-triangle" style="font-size:40px;color:#ef4444;display:block;margin-bottom:12px;"></i><div style="font-size:14px;font-weight:600;color:#ef4444;">Token Meta Ads expirado</div><div style="font-size:12px;margin-top:8px;">Reconecte em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Configurações</a></div></div>';
+      else el2.innerHTML='<div style="padding:30px;color:#ef4444;font-size:13px;">Erro: '+data.error+'</div>';
+    }
+    return;
+  }
+  var lu=document.getElementById('meta-last-upd');
+  if(lu)lu.textContent='Atualizado às '+data.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  _renderMetaContent(data);
+}
+
+function _renderMetaContent(data){
+  if(!data)return;
+  var el=document.getElementById('meta-ads-content');
+  if(!el)return;
+  // Filter by account
+  var d=Object.assign({},data);
+  if(_metaAdsSelectedAcc!=='all'){
+    d.campaigns=(data.campaigns||[]).filter(function(c){return c._accId===_metaAdsSelectedAcc;});
+    d.totalProg=d.campaigns.reduce(function(s,c){return s+c._bud.dayTotal;},0);
+    d.todaySpend=d.campaigns.reduce(function(s,c){return s+c._bud.spendToday;},0);
+  }
+  if(_metaAdsSubTab==='overview')el.innerHTML=_renderMetaOverview(d);
+  else if(_metaAdsSubTab==='campaigns'){el.innerHTML=_renderMetaCampaigns(d);}
+  else el.innerHTML=_renderMetaIntelligence(d);
+}
+
+function _renderMetaOverview(d){
+  var now=new Date(),camps=d.campaigns||[];
+  var hourFrac=Math.min(1,(now.getHours()*60+now.getMinutes())/(24*60));
+  var expectedNow=d.totalProg*hourFrac;
+  var proj=hourFrac>0.05?Math.min(d.totalProg*1.05,d.todaySpend/hourFrac):d.totalProg;
+  var pctDelivered=d.totalProg>0?Math.round(d.todaySpend/d.totalProg*100):0;
+  var pctDay=Math.round(hourFrac*100);
+  var ds=_deliveryStatus(pctDay,pctDelivered);
+  var monthDiff=d.prevMonthSpend>0?Math.round((d.monthSpend-d.prevMonthSpend)/d.prevMonthSpend*100):null;
+  // Alerts
+  var alerts=[];
+  if(pctDelivered<pctDay-30)alerts.push({ic:'ti-alert-triangle',col:'#ef4444',title:'Subentrega crítica',msg:'O gasto real está '+(pctDay-pctDelivered)+'pp abaixo do ritmo esperado para '+now.getHours()+'h.'});
+  camps.forEach(function(c){if(c._bud.dayTotal>0&&c._bud.spendToday<=0)alerts.push({ic:'ti-ad-2',col:'#f59e0b',title:'Campanha sem gasto',msg:'"'+c.name+'" está ativa mas não registrou investimento hoje.'});});
+  camps.forEach(function(c){if(c._bud.daysLeft&&c._bud.daysLeft<=2&&c._bud.saldo>0)alerts.push({ic:'ti-clock-hour-3',col:'#f97316',title:'Vitalício encerrando',msg:'"'+c.name+'" termina em '+c._bud.daysLeft+' dia(s) com '+_maFmt(c._bud.saldo)+' de saldo.'});});
+  if(!isMetaConnected())alerts.push({ic:'ti-plug',col:'#ef4444',title:'Token expirado',msg:'A conexão com a Meta expirou. <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Reconectar</a>'});
+
+  var H='';
+  // 6 KPI cards
+  function kpi(label,val,sub,col,ic,extra){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">'+label+'</span><i class="ti '+ic+'" style="font-size:17px;color:'+col+';"></i></div>'
+    +'<div style="font-family:Bebas Neue,sans-serif;font-size:34px;line-height:1.1;color:'+col+';">'+val+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>'
+    +(extra?'<div style="margin-top:8px;">'+extra+'</div>':'')
+    +'</div>';}
+  function prog(pct,col){return '<div style="background:rgba(255,255,255,0.07);border-radius:99px;height:5px;"><div style="width:'+Math.min(100,pct)+'%;background:'+col+';height:100%;border-radius:99px;transition:width .4s;"></div></div>';}
+  H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px;">'
+    +kpi('Orçamento Hoje',_maFmt(d.totalProg),'Diário: '+_maFmtI(camps.reduce(function(s,c){return s+c._bud.dailyBudget;},0))+' · Vitalícios: '+_maFmtI(camps.reduce(function(s,c){return s+c._bud.lifetimeDayEq;},0)),'#9333ea','ti-wallet')
+    +kpi('Gasto Real Hoje',_maFmt(d.todaySpend),pctDelivered+'% do programado',ds.col,'ti-trending-up',prog(pctDelivered,ds.col))
+    +kpi('Projeção do Dia',_maFmt(proj),'Projeção de '+Math.round(proj/(d.totalProg||1)*100)+'% do programado','#3b82f6','ti-chart-line')
+    +kpi('Gasto do Mês',_maFmtI(d.monthSpend),monthDiff!==null?(monthDiff>=0?'+':'')+monthDiff+'% vs mês anterior':'—','#22c55e','ti-calendar-stats')
+    +kpi('Campanhas',camps.length+' ativas',camps.filter(function(c){return c._bud.type==='CBO';}).length+' CBO · '+camps.filter(function(c){return c._bud.type==='ABO';}).length+' ABO · '+d.lifetimeCount+' vitalícios','#f59e0b','ti-speakerphone')
+    +kpi('Saldo Vitalícios',_maFmtI(d.totalSaldo),d.totalSaldo>0&&d.totalProg>0?_maFmt(camps.filter(function(c){return c._bud.saldo>0;}).reduce(function(s,c){return s+c._bud.lifetimeDayEq;},0))+'/dia necessários':'Sem orçamentos vitalícios ativos','#06b6d4','ti-piggy-bank')
+    +'</div>';
+
+  // Main row: chart + alerts
+  H+='<div style="display:grid;grid-template-columns:1fr 320px;gap:14px;margin-bottom:14px;">';
+  // Delivery chart
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">';
+  H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">RITMO DE ENTREGA DO DIA</div>';
+  H+='<div style="display:flex;gap:16px;font-size:11px;">'
+    +'<span style="color:var(--muted);">Programado: <b style="color:var(--white);">'+_maFmt(d.totalProg)+'</b></span>'
+    +'<span style="color:var(--muted);">Gasto: <b style="color:#9333ea;">'+_maFmt(d.todaySpend)+'</b></span>'
+    +'<span style="color:var(--muted);">Diferença: <b style="color:'+(d.todaySpend>=expectedNow?'#22c55e':'#ef4444')+'">'+(d.todaySpend>=expectedNow?'+':'')+_maFmt(d.todaySpend-expectedNow)+'</b></span>'
+    +'<span style="color:var(--muted);">Entregue: <b style="color:'+ds.col+';">'+pctDelivered+'%</b></span>'
+    +'</div></div>';
+  H+=_buildDeliveryChart(d.hourlyMap,d.totalProg,d.todaySpend,now);
+  H+='</div>';
+  // Alerts panel
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;">';
+  H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">ALERTAS E OPORTUNIDADES</div>';
+  if(!alerts.length)H+='<div style="text-align:center;padding:30px 0;color:var(--muted);font-size:12px;"><i class="ti ti-circle-check" style="font-size:28px;color:#22c55e;display:block;margin-bottom:8px;"></i>Tudo dentro do ritmo</div>';
+  else alerts.forEach(function(a){H+='<div style="background:'+a.col.replace('#','rgba(').slice(0,-1)+',0.08);border-left:3px solid '+a.col+';border-radius:8px;padding:10px 12px;">'
+    +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><i class="ti '+a.ic+'" style="color:'+a.col+';font-size:13px;"></i><span style="font-size:11px;font-weight:700;color:'+a.col+';">'+a.title+'</span></div>'
+    +'<div style="font-size:11px;color:var(--muted);">'+a.msg+'</div></div>';});
+  H+='</div>';
+  H+='</div>'; // end main row
+
+  // Second row: budget by campaign + donut CBO/ABO
+  H+='<div style="display:grid;grid-template-columns:1fr 280px;gap:14px;">';
+  H+=_buildBudgetBars(camps);
+  H+=_buildCboAboDonut(camps,d.totalProg);
+  H+='</div>';
+  return H;
+}
+
+function _buildDeliveryChart(hourlyMap,totalProg,todaySpend,now){
+  var hours=[0,2,4,6,8,10,12,14,16,18,20,22],w=700,h=200,pL=50,pR=20,pT=15,pB=28;
+  var cw=w-pL-pR,ch=h-pT-pB,n=hours.length;
+  var maxV=Math.max(totalProg*1.1,todaySpend*1.1)||100;
+  function lx(i){return pL+i/(n-1)*cw;}
+  function ly(v){return pT+ch-Math.min(1,v/maxV)*ch;}
+  // Build cumulative actual spend from hourlyMap
+  var cumReal=[],cumProg=[],cumAt=0;
+  hours.forEach(function(hr){
+    cumAt+=(hourlyMap[hr]||0)+(hourlyMap[hr+1]||0);
+    cumReal.push(Math.min(cumAt,todaySpend));
+    cumProg.push(totalProg*((hr+2)/24));
+  });
+  var svg='<svg viewBox="0 0 '+w+' '+h+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:160px;">';
+  // Grid lines
+  for(var gi=0;gi<=4;gi++){var gy=pT+gi*ch/4;svg+='<line x1="'+pL+'" y1="'+gy+'" x2="'+(w-pR)+'" y2="'+gy+'" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>';svg+='<text x="'+(pL-4)+'" y="'+(gy+4)+'" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.3)">'+_maFmtI(maxV*(4-gi)/4)+'</text>';}
+  // Hour labels
+  hours.forEach(function(hr,i){svg+='<text x="'+lx(i)+'" y="'+(h-4)+'" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.35)">'+String(hr).padStart(2,'0')+'h</text>';});
+  // Area under programado
+  var areaPts=hours.map(function(_,i){return lx(i)+','+ly(cumProg[i]);}).join(' ');
+  svg+='<polyline points="'+pL+','+ly(0)+' '+areaPts+' '+(w-pR)+','+ly(cumProg[n-1])+'" fill="rgba(147,51,234,0.06)" stroke="none"/>';
+  // Programado line
+  var progPts=hours.map(function(_,i){return lx(i)+','+ly(cumProg[i]);}).join(' ');
+  svg+='<polyline points="'+progPts+'" fill="none" stroke="rgba(147,51,234,0.5)" stroke-width="1.5" stroke-dasharray="5,3"/>';
+  // Real spend line
+  var curHour=now.getHours(),realPts=[];
+  hours.forEach(function(hr,i){if(hr<=curHour)realPts.push(lx(i)+','+ly(cumReal[i]));});
+  if(realPts.length>1)svg+='<polyline points="'+realPts.join(' ')+'" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+  // Current time marker
+  var cxF=curHour/22,cx=pL+cxF*cw;
+  svg+='<line x1="'+cx+'" y1="'+pT+'" x2="'+cx+'" y2="'+(pT+ch)+'" stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="3,3"/>';
+  svg+='</svg>';
+  return '<div style="display:flex;gap:16px;margin-bottom:8px;"><span style="font-size:10px;color:#9333ea;display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:16px;height:2px;background:#9333ea;"></span>Gasto real</span><span style="font-size:10px;color:rgba(147,51,234,0.6);display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:16px;height:2px;background:rgba(147,51,234,0.5);border-top:1px dashed rgba(147,51,234,0.5);"></span>Programado</span></div>'+svg;
+}
+
+function _buildBudgetBars(camps){
+  var sorted=camps.slice().sort(function(a,b){return b._bud.dayTotal-a._bud.dayTotal;}).slice(0,10);
+  var maxB=sorted.length?sorted[0]._bud.dayTotal||1:1;
+  var H='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+    +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">ORÇAMENTO POR CAMPANHA</div>'
+    +'<span style="font-size:10px;color:var(--muted);">Top 10 por orçamento diário</span>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;">';
+  sorted.forEach(function(c){
+    var b=c._bud,bw=maxB>0?Math.round(b.dayTotal/maxB*100):0;
+    var col=b.type==='CBO'?'#9333ea':'#3b82f6';
+    var ds=_campDeliveryStatus(c);
+    H+='<div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">'
+      +'<div style="display:flex;align-items:center;gap:6px;min-width:0;"><span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;background:'+col+'22;color:'+col+';flex-shrink:0;">'+b.type+'</span><span style="font-size:12px;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;" title="'+c.name+'">'+c.name+'</span></div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;"><span style="font-size:11px;font-weight:700;color:var(--white);">'+_maFmt(b.dayTotal)+'</span>'
+      +'<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:'+ds.bg+';color:'+ds.col+';">'+ds.label+'</span></div>'
+      +'</div>'
+      +'<div style="background:rgba(255,255,255,0.07);border-radius:4px;height:6px;"><div style="width:'+bw+'%;background:'+col+';height:100%;border-radius:4px;"></div></div>'
+      +'</div>';
+  });
+  H+='</div></div>';
+  return H;
+}
+
+function _buildCboAboDonut(camps,totalProg){
+  var cboDaily=camps.filter(function(c){return c._bud.type==='CBO'&&c._bud.budgetType==='daily';}).reduce(function(s,c){return s+c._bud.dayTotal;},0);
+  var cboLife=camps.filter(function(c){return c._bud.type==='CBO'&&c._bud.budgetType==='lifetime';}).reduce(function(s,c){return s+c._bud.dayTotal;},0);
+  var aboDaily=camps.filter(function(c){return c._bud.type==='ABO'&&c._bud.budgetType==='daily';}).reduce(function(s,c){return s+c._bud.dayTotal;},0);
+  var aboLife=camps.filter(function(c){return c._bud.type==='ABO'&&(c._bud.budgetType==='lifetime'||c._bud.budgetType==='mixed');}).reduce(function(s,c){return s+c._bud.dayTotal;},0);
+  var segs=[{v:cboDaily,col:'#9333ea',label:'CBO Diário'},{v:cboLife,col:'#a855f7',label:'CBO Vitalício'},{v:aboDaily,col:'#3b82f6',label:'ABO Diário'},{v:aboLife,col:'#60a5fa',label:'ABO Vitalício'}].filter(function(s){return s.v>0;});
+  var total=segs.reduce(function(s,x){return s+x.v;},0)||1;
+  // SVG donut
+  var cx=100,cy=100,r=72,ri=48,tw=200;
+  var svg='<svg viewBox="0 0 '+tw+' 200" style="width:160px;height:160px;display:block;margin:0 auto;">';
+  var startA=-Math.PI/2;
+  segs.forEach(function(seg){
+    var arc=2*Math.PI*(seg.v/total);
+    var x1=cx+r*Math.cos(startA),y1=cy+r*Math.sin(startA);
+    var x2=cx+r*Math.cos(startA+arc),y2=cy+r*Math.sin(startA+arc);
+    var xi1=cx+ri*Math.cos(startA),yi1=cy+ri*Math.sin(startA);
+    var xi2=cx+ri*Math.cos(startA+arc),yi2=cy+ri*Math.sin(startA+arc);
+    var la=arc>Math.PI?1:0;
+    svg+='<path d="M '+x1+' '+y1+' A '+r+' '+r+' 0 '+la+' 1 '+x2+' '+y2+' L '+xi2+' '+yi2+' A '+ri+' '+ri+' 0 '+la+' 0 '+xi1+' '+yi1+' Z" fill="'+seg.col+'" opacity="0.85"/>';
+    startA+=arc;
+  });
+  svg+='<text x="'+cx+'" y="'+(cy-8)+'" text-anchor="middle" font-family="Bebas Neue,sans-serif" font-size="16" fill="white">'+_maFmt(totalProg)+'</text>';
+  svg+='<text x="'+cx+'" y="'+(cy+10)+'" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.5)">Total programado</text>';
+  svg+='</svg>';
+  var legend=segs.map(function(s){return '<div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:2px;background:'+s.col+';flex-shrink:0;"></span><span style="font-size:11px;color:var(--muted);">'+s.label+'</span><span style="font-size:11px;font-weight:600;color:var(--white);margin-left:auto;">'+_maFmt(s.v)+'</span></div>';}).join('');
+  return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px;">'
+    +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">COMPOSIÇÃO DO ORÇAMENTO</div>'
+    +svg
+    +'<div style="display:flex;flex-direction:column;gap:6px;">'+legend+'</div>'
+    +'</div>';
+}
+
+function _renderMetaCampaigns(d){
+  var camps=d.campaigns||[];
+  // Apply account filter
+  if(_metaAdsSelectedAcc!=='all')camps=camps.filter(function(c){return c._accId===_metaAdsSelectedAcc;});
+  // Apply search
+  if(_metaCampSearch)camps=camps.filter(function(c){return c.name.toLowerCase().includes(_metaCampSearch.toLowerCase());});
+  // Apply filters
+  if(_metaCampFilters.type)camps=camps.filter(function(c){return c._bud.type===_metaCampFilters.type;});
+  if(_metaCampFilters.budget)camps=camps.filter(function(c){return c._bud.budgetType===_metaCampFilters.budget;});
+  if(_metaCampFilters.delivery){
+    camps=camps.filter(function(c){
+      var s=_campDeliveryStatus(c);
+      if(_metaCampFilters.delivery==='ok')return s.col==='#22c55e';
+      if(_metaCampFilters.delivery==='warn')return s.col==='#f59e0b'||s.col==='#f97316';
+      if(_metaCampFilters.delivery==='crit')return s.col==='#ef4444';
+      return true;
+    });
+  }
+  // Sort
+  camps=camps.slice().sort(function(a,b){
+    var av2=0,bv=0;
+    if(_metaCampSort.col==='daily'){av2=a._bud.dayTotal;bv=b._bud.dayTotal;}
+    else if(_metaCampSort.col==='spend'){av2=a._bud.spendToday;bv=b._bud.spendToday;}
+    else if(_metaCampSort.col==='pct'){av2=a._bud.dayTotal?a._bud.spendToday/a._bud.dayTotal:0;bv=b._bud.dayTotal?b._bud.spendToday/b._bud.dayTotal:0;}
+    else if(_metaCampSort.col==='saldo'){av2=a._bud.saldo;bv=b._bud.saldo;}
+    return (bv-av2)*_metaCampSort.dir;
+  });
+  var now=new Date();
+  // Summary bar
+  var totalProg=camps.reduce(function(s,c){return s+c._bud.dayTotal;},0);
+  var totalSpend=camps.reduce(function(s,c){return s+c._bud.spendToday;},0);
+  var pctDay=Math.round((now.getHours()*60+now.getMinutes())/(24*60)*100);
+  var H='';
+  // Summary cards
+  H+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">';
+  function miniKpi(l,v,col){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;"><div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">'+l+'</div><div style="font-family:Bebas Neue,sans-serif;font-size:24px;color:'+(col||'var(--white)')+';">'+v+'</div></div>';}
+  H+=miniKpi('Campanhas',camps.length+'','')
+    +miniKpi('Orçamento Diário',_maFmt(totalProg),'#9333ea')
+    +miniKpi('Gasto Hoje',_maFmt(totalSpend),'#3b82f6')
+    +miniKpi('Saldo Vitalícios',_maFmtI(camps.reduce(function(s,c){return s+c._bud.saldo;},0)),'#f59e0b');
+  H+='</div>';
+  // Filters & search
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">';
+  H+='<input type="text" placeholder="Buscar campanha..." value="'+_metaCampSearch+'" oninput="_metaCampSearch=this.value;_renderMetaContent(window._metaAdsLastData);" style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 10px;font-size:12px;outline:none;flex:1;min-width:160px;">';
+  function fsel(id,opts,val){return '<select onchange="_metaCampFilters[\''+id+'\']=this.value;_renderMetaContent(window._metaAdsLastData);" style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 10px;font-size:12px;outline:none;">'+opts.map(function(o){return '<option value="'+o.v+'"'+(o.v===val?' selected':'')+'>'+o.l+'</option>';}).join('')+'</select>';}
+  H+=fsel('type',[{v:'',l:'CBO + ABO'},{v:'CBO',l:'Só CBO'},{v:'ABO',l:'Só ABO'}],_metaCampFilters.type);
+  H+=fsel('budget',[{v:'',l:'Todos os tipos'},{v:'daily',l:'Diário'},{v:'lifetime',l:'Vitalício'},{v:'mixed',l:'Misto'}],_metaCampFilters.budget);
+  H+=fsel('delivery',[{v:'',l:'Toda entrega'},{v:'ok',l:'No ritmo'},{v:'warn',l:'Atenção'},{v:'crit',l:'Crítico'}],_metaCampFilters.delivery);
+  H+='<span style="font-size:11px;color:var(--muted);">'+camps.length+' campanhas</span>';
+  H+='</div>';
+  // Table
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">';
+  H+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">';
+  function th(label,sortK){var active=_metaCampSort.col===sortK;return '<th onclick="_metaCampSort={col:\''+sortK+'\',dir:_metaCampSort.col===\''+sortK+'\'?-_metaCampSort.dir:-1};_renderMetaContent(window._metaAdsLastData);" style="padding:10px 12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+(active?'var(--purple3)':'var(--muted)')+';border-bottom:1px solid var(--border);text-align:left;cursor:pointer;white-space:nowrap;">'+label+(active?(_metaCampSort.dir>0?' ↑':' ↓'):'')+'</th>';}
+  H+='<thead><tr>'+th('Conta','acc')+th('Campanha','name')+th('Tipo','type')+th('Orçamento','budget')+th('Equiv./dia','daily')+th('Gasto hoje','spend')+th('Entrega','pct')+th('Saldo','saldo')+th('Término','end')+'<th style="padding:10px 12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">STATUS</th></tr></thead>';
+  H+='<tbody>';
+  if(!camps.length)H+='<tr><td colspan="10" style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhuma campanha ativa</td></tr>';
+  camps.forEach(function(c,ci){
+    var b=c._bud,ds2=_campDeliveryStatus(c);
+    var pct=b.dayTotal>0?Math.round(b.spendToday/b.dayTotal*100):0;
+    var endStr=c.stop_time?new Date(c.stop_time).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'—';
+    var typeCol=b.type==='CBO'?'#9333ea':'#3b82f6';
+    var budLabel=b.budgetType==='daily'?'Diário':b.budgetType==='lifetime'?'Vitalício':'Misto';
+    H+='<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'
+      +'<td style="padding:10px 12px;font-size:11px;color:var(--muted);white-space:nowrap;">'+c._accName+'</td>'
+      +'<td style="padding:10px 12px;font-size:12px;color:var(--white);max-width:220px;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+c.name+'">'+c.name+'</div></td>'
+      +'<td style="padding:10px 12px;"><span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:'+typeCol+'22;color:'+typeCol+';">'+b.type+'</span></td>'
+      +'<td style="padding:10px 12px;font-size:11px;color:var(--muted);">'+budLabel+'</td>'
+      +'<td style="padding:10px 12px;font-size:12px;font-weight:700;color:var(--white);">'+_maFmt(b.dayTotal)+'</td>'
+      +'<td style="padding:10px 12px;font-size:12px;color:#3b82f6;font-weight:600;">'+_maFmt(b.spendToday)+'</td>'
+      +'<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:6px;"><div style="background:rgba(255,255,255,0.07);border-radius:4px;height:5px;width:60px;"><div style="width:'+Math.min(100,pct)+'%;background:'+ds2.col+';height:100%;border-radius:4px;"></div></div><span style="font-size:11px;color:'+ds2.col+';">'+pct+'%</span></div></td>'
+      +'<td style="padding:10px 12px;font-size:11px;color:var(--muted);">'+(b.saldo>0?_maFmt(b.saldo):'—')+'</td>'
+      +'<td style="padding:10px 12px;font-size:11px;color:var(--muted);">'+endStr+'</td>'
+      +'<td style="padding:10px 12px;"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:'+ds2.bg+';color:'+ds2.col+';">'+ds2.label+'</span></td>'
+      +'</tr>';
+  });
+  H+='</tbody></table></div></div>';
+  return H;
+}
+
+function _renderMetaIntelligence(d){
+  var camps=d.campaigns||[];
+  var totalProg=d.totalProg||0,todaySpend=d.todaySpend||0;
+  var pctDelivered=totalProg>0?Math.round(todaySpend/totalProg*100):0;
+  var now=new Date(),hourFrac=(now.getHours()*60+now.getMinutes())/(24*60);
+  var pctDay=Math.round(hourFrac*100);
+  var sugs=['Quanto está programado para hoje?','Estamos gastando dentro do ritmo?','Qual campanha está mais atrasada?','Quanto os vitalícios precisam gastar por dia?','Existe campanha ativa sem entrega?'];
+  var ctx={atualizadoEm:d.updatedAt?(d.updatedAt.toISOString()):'—',programadoHoje:totalProg,gastoHoje:todaySpend,gastoMes:d.monthSpend||0,percentualDia:pctDay,percentualEntregue:pctDelivered,contas:Object.entries(d.accountNames||{}).map(function(e){return{id:e[0],nome:e[1]};}),campanhas:camps.slice(0,20).map(function(c){return{nome:c.name,tipo:c._bud.type,budgetTipo:c._bud.budgetType,orcamentoDia:+(c._bud.dayTotal||0).toFixed(2),gastoHoje:+(c._bud.spendToday||0).toFixed(2),saldo:+(c._bud.saldo||0).toFixed(2),diasRestantes:c._bud.daysLeft||null};})};
+  var H='<div style="display:grid;grid-template-columns:280px 1fr;gap:14px;">';
+  // Context panel
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;">';
+  H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">DADOS DISPONÍVEIS</div>';
+  function ctxRow(ic,txt){return '<div style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);"><i class="ti '+ic+'" style="color:var(--purple3);font-size:13px;flex-shrink:0;"></i>'+txt+'</div>';}
+  H+=ctxRow('ti-clock','Atualizado às '+(d.updatedAt?d.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'));
+  H+=ctxRow('ti-speakerphone',camps.length+' campanhas ativas');
+  H+=ctxRow('ti-wallet',_maFmt(totalProg)+' programados hoje');
+  H+=ctxRow('ti-trending-up',_maFmt(todaySpend)+' investidos');
+  H+=ctxRow('ti-calendar-stats',_maFmtI(d.monthSpend||0)+' investidos no mês');
+  H+=ctxRow('ti-piggy-bank',d.lifetimeCount+' campanhas vitalícias');
+  H+='<div style="margin-top:8px;padding-top:10px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);">O chat usa exclusivamente os dados carregados acima. Configure o webhook n8n em Configurações para habilitar a IA.</div>';
+  H+='<input type="text" placeholder="URL do webhook n8n..." value="'+_metaN8nWebhook+'" oninput="_metaN8nWebhook=this.value;localStorage.setItem(\'audens_meta_n8n\',this.value);" style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:7px 10px;font-size:11px;outline:none;margin-top:4px;">';
+  H+='</div>';
+  // Chat panel
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;">';
+  H+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-brain" style="font-size:18px;color:var(--purple3);"></i><div><div style="font-size:13px;font-weight:700;">Meta Intelligence</div><div style="font-size:11px;color:var(--muted);">Análise de dados de tráfego com IA</div></div></div>';
+  // History
+  H+='<div id="meta-intel-hist" style="flex:1;min-height:280px;max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">';
+  if(!_metaIntelHistory.length)H+='<div style="text-align:center;padding:40px;color:var(--muted);font-size:12px;"><i class="ti ti-message-circle" style="font-size:32px;display:block;margin-bottom:10px;color:var(--purple3);"></i>Faça uma pergunta sobre os dados de tráfego</div>';
+  _metaIntelHistory.forEach(function(msg){
+    if(msg.role==='user')H+='<div style="display:flex;justify-content:flex-end;"><div style="background:var(--purple3);color:#fff;padding:9px 13px;border-radius:12px 12px 4px 12px;font-size:12px;max-width:80%;">'+msg.text+'</div></div>';
+    else H+='<div style="display:flex;justify-content:flex-start;"><div style="background:var(--card2,#1e2535);border:1px solid var(--border);padding:9px 13px;border-radius:12px 12px 12px 4px;font-size:12px;max-width:85%;color:var(--white);white-space:pre-wrap;">'+msg.text+'</div></div>';
+  });
+  H+='</div>';
+  // Suggestions
+  H+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+  sugs.forEach(function(s){H+='<button onclick="_metaIntelSend(\''+s.replace(/'/g,"\\'")+'\')" style="background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.3);border-radius:20px;color:var(--white);padding:5px 10px;font-size:11px;cursor:pointer;">'+s+'</button>';});
+  H+='</div>';
+  // Input
+  H+='<div style="display:flex;gap:8px;">';
+  H+='<input id="meta-intel-inp" type="text" placeholder="Pergunte algo sobre os seus dados de tráfego..." style="flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:9px 12px;font-size:12px;outline:none;" onkeydown="if(event.key===\'Enter\'){var v=this.value.trim();if(v)_metaIntelSend(v);}">'
+    +'<button onclick="var v=document.getElementById(\'meta-intel-inp\').value.trim();if(v)_metaIntelSend(v);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;"><i class="ti ti-send"></i></button>';
+  H+='</div>';
+  H+='</div>';
+  H+='</div>';
+  // Store context for use in send
+  window._metaIntelCtx=ctx;
+  return H;
+}
+
+async function _metaIntelSend(q){
+  if(!q)return;
+  var inp=document.getElementById('meta-intel-inp');if(inp)inp.value='';
+  _metaIntelHistory.push({role:'user',text:q});
+  _renderMetaContent(window._metaAdsLastData);
+  var hist=document.getElementById('meta-intel-hist');if(hist)hist.scrollTop=hist.scrollHeight;
+  if(!_metaN8nWebhook){
+    _metaIntelHistory.push({role:'assistant',text:'Configure a URL do webhook n8n no painel à esquerda para habilitar a IA. O contexto dos dados está pronto para ser enviado.'});
+    _renderMetaContent(window._metaAdsLastData);return;
+  }
+  try{
+    var r=await fetch(_metaN8nWebhook,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pergunta:q,contexto:window._metaIntelCtx||{}})});
+    var rd=await r.json();
+    var ans=rd.resposta||rd.response||rd.text||rd.output||JSON.stringify(rd);
+    _metaIntelHistory.push({role:'assistant',text:ans});
+  }catch(e){
+    _metaIntelHistory.push({role:'assistant',text:'Erro ao conectar com o webhook n8n: '+e.message+'. Verifique a URL e tente novamente.'});
+  }
+  _renderMetaContent(window._metaAdsLastData);
+  var h2=document.getElementById('meta-intel-hist');if(h2)h2.scrollTop=h2.scrollHeight;
+}
+
 
 function changeAdsPeriod(p){
   _adsPeriod=p;_adsStart=null;_adsEnd=null;
