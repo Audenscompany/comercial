@@ -9457,11 +9457,19 @@ function renderReunioes(){
   var _mns=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   var _mnsL=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   var mesLabel=_mnsL[filtM]+' '+filtY;
+  var tab=window._reunOvTab||'hoje';
 
   var allM=Object.values(meetings).filter(function(m){return !m._retorno;});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
   var rows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),filtM,filtY);});
   var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
+
+  // Today's meetings (use local date, not filtered month)
+  var todayMeets=allM.filter(function(m){
+    if(!m.dtISO)return false;
+    var d=new Date(m.dtISO);
+    return d.getDate()===now.getDate()&&d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  }).sort(function(a,b){return(a.dtISO||'').localeCompare(b.dtISO||'');});
 
   function getFu(m){return followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;});}
   function isConf(m){var fu=getFu(m);return !!(m.confirmado||m.confirmacao||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
@@ -9475,18 +9483,15 @@ function renderReunioes(){
   function fmtR(n){if(!n)return 'R$ 0';if(n>=1000000)return 'R$'+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return 'R$'+(n/1000).toFixed(0)+'k';return 'R$'+Math.round(n);}
   function initials(n){return (n||'?').split(' ').slice(0,2).map(function(p){return p[0]||'';}).join('').toUpperCase();}
   function _closerEmailR(n){var r=null;Object.keys(USERS).forEach(function(em){if((USERS[em].closer||'').toLowerCase()===(n||'').toLowerCase())r=em;});return r;}
-  function av(n){var em=_closerEmailR(n);return em?renderUserAvatar(em,28,11,'rgba(167,139,250,0.15)'):'<div style="width:28px;height:28px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">'+initials(n)+'</div>';}
+  function av(n,sz){sz=sz||28;var em=_closerEmailR(n);return em?renderUserAvatar(em,sz,Math.floor(sz*0.38),'rgba(167,139,250,0.15)'):'<div style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:'+(Math.floor(sz*0.38))+'px;font-weight:700;color:#fff;flex-shrink:0;">'+initials(n)+'</div>';}
 
-  // Apenas realizadas + no-shows, de-duplicando por lead (mesmo tel/nome = mesmo lead)
   function dedupLeads(arr){
     var seen={};var out=[];
     arr.forEach(function(m){
       var k=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
       if(!k)return;
       if(!seen[k]){seen[k]=m;out.push(m);}
-      else if(isNs(seen[k])&&isReal(m)){
-        out[out.indexOf(seen[k])]=m;seen[k]=m;
-      }
+      else if(isNs(seen[k])&&isReal(m)){out[out.indexOf(seen[k])]=m;seen[k]=m;}
     });
     return out;
   }
@@ -9514,7 +9519,7 @@ function renderReunioes(){
     if(!p&&!c)return '';
     var d=p>0?Math.round((c-p)/p*100):(c>0?100:0);
     var good=inv?d<=0:d>=0;
-    return '<span style="font-size:11px;color:'+(good?'#22c55e':'#ef4444')+';font-weight:700;">'+(d>=0?'↑':'↓')+Math.abs(d)+'% vs anterior</span>';
+    return '<span style="font-size:10px;color:'+(good?'#22c55e':'#ef4444')+';font-weight:700;">'+(d>=0?'↑':'↓')+Math.abs(d)+'% vs anterior</span>';
   }
 
   // Historical 7 months
@@ -9525,127 +9530,45 @@ function renderReunioes(){
     var hR=allM.filter(function(m){if(!m.dtISO)return false;var d=new Date(m.dtISO);return d.getMonth()===hm&&d.getFullYear()===hy;});
     var hDd=dedupLeads(hR.filter(function(m){return isReal(m)||isNs(m);}));
     histAg.push(hDd.length);
-    var hr=hDd.filter(isReal).length;
-    histReal.push(hr);
+    var hrr=hDd.filter(isReal).length;
+    histReal.push(hrr);
     histVend.push(hDd.filter(isVenda).length);
-    histTc.push(hDd.length>0?Math.round(hr/hDd.length*100):0);
+    histTc.push(hDd.length>0?Math.round(hrr/hDd.length*100):0);
     histLb.push(_mns[hm]);
   }
 
-  // Sparkline SVG
   function mkSpark(vals,col,w,h){
     if(!vals||vals.length<2)return '<div style="height:'+h+'px;"></div>';
     var max=Math.max.apply(null,vals)||1,min=Math.min.apply(null,vals),rng=max-min||1;
     var pts=vals.map(function(v,i){return Math.round(i/(vals.length-1)*(w-4)+2)+','+(Math.round((1-(v-min)/rng)*(h-6)+3));}).join(' ');
-    return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:block;"><polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
 
-  // KPI card
   function kpiCard(lbl,val,sub,delta,col,ic,sparkVals){
-    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 18px 12px;display:flex;flex-direction:column;gap:4px;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;">'+
-        '<span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">'+lbl+'</span>'+
-        '<i class="ti '+ic+'" style="font-size:18px;color:'+col+';"></i>'+
-      '</div>'+
-      '<div style="font-family:Bebas Neue,sans-serif;font-size:42px;line-height:1.1;color:'+col+';">'+val+'</div>'+
-      '<div style="font-size:11px;color:var(--muted);">'+sub+'</div>'+
-      (delta?'<div>'+delta+'</div>':'')+
-      '<div style="margin-top:6px;">'+mkSpark(sparkVals,col,180,36)+'</div>'+
-    '</div>';
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 16px 10px;display:flex;flex-direction:column;gap:3px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;">'
+      +'<span style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">'+lbl+'</span>'
+      +'<i class="ti '+ic+'" style="font-size:16px;color:'+col+';opacity:0.8;"></i>'
+      +'</div>'
+      +'<div style="font-family:Bebas Neue,sans-serif;font-size:36px;line-height:1.05;color:'+col+';">'+val+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);">'+sub+'</div>'
+      +(delta?'<div>'+delta+'</div>':'')
+      +'<div style="margin-top:6px;">'+mkSpark(sparkVals,col,160,28)+'</div>'
+      +'</div>';
   }
 
-  // Evolution SVG chart
-  function mkEvChart(labels,s1,s2,s3,w,h){
-    var pL=38,pR=38,pT=15,pB=24,cw=w-pL-pR,ch=h-pT-pB,n=labels.length;
-    var lMax=Math.max.apply(null,s1.vals.concat(s3.vals))||1;
-    function lx(i){return pL+i/(n-1)*cw;}
-    function ly(v,mx){return pT+ch-v/mx*ch;}
-    var svg='<svg viewBox="0 0 '+w+' '+h+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:160px;">';
-    // Grid
-    for(var gi=0;gi<=4;gi++){var gy=pT+gi*ch/4;
-      svg+='<line x1="'+pL+'" y1="'+gy+'" x2="'+(w-pR)+'" y2="'+gy+'" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>';
-      svg+='<text x="'+(pL-3)+'" y="'+(gy+4)+'" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.3)">'+Math.round(lMax*(4-gi)/4)+'</text>';
-      svg+='<text x="'+(w-pR+3)+'" y="'+(gy+4)+'" text-anchor="start" font-size="9" fill="rgba(255,255,255,0.3)">'+Math.round(100*(4-gi)/4)+'%</text>';
-    }
-    // X labels
-    labels.forEach(function(lb,i){svg+='<text x="'+lx(i)+'" y="'+(h-4)+'" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.4)">'+lb+'</text>';});
-    // Series: s1=realizadas(left), s2=taxa%(right), s3=vendas(left)
-    [[s1,false],[s3,false],[s2,true]].forEach(function(pair){
-      var s=pair[0],isRight=pair[1];
-      var mx=isRight?100:lMax;
-      var pts=s.vals.map(function(v,i){return lx(i)+','+ly(v,mx);}).join(' ');
-      svg+='<polyline points="'+pts+'" fill="none" stroke="'+s.color+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
-      s.vals.forEach(function(v,i){svg+='<circle cx="'+lx(i)+'" cy="'+ly(v,mx)+'" r="3.5" fill="'+s.color+'" stroke="#111827" stroke-width="1.5"/>';});
-    });
-    svg+='</svg>';
-    // Legend
-    svg='<div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:14px;margin-bottom:4px;">'+
-        '<span style="font-size:10px;color:'+s1.color+';"><span style="display:inline-block;width:16px;height:2px;background:'+s1.color+';vertical-align:middle;margin-right:4px;"></span>'+s1.label+'</span>'+
-        '<span style="font-size:10px;color:'+s2.color+';"><span style="display:inline-block;width:16px;height:2px;background:'+s2.color+';vertical-align:middle;margin-right:4px;"></span>'+s2.label+'</span>'+
-        '<span style="font-size:10px;color:'+s3.color+';"><span style="display:inline-block;width:16px;height:2px;background:'+s3.color+';vertical-align:middle;margin-right:4px;"></span>'+s3.label+'</span>'+
-      '</div>'+svg+'</div>';
-    return svg;
-  }
-
-  // Trapezoid Funnel (horizontal bars with varying heights)
-  function mkFunil(steps){
-    var maxVal=steps[0].val||1;
-    var cols=['#7c3aed','#6366f1','#22c55e','#3b82f6','#f59e0b'];
-    var html='<div style="display:flex;align-items:flex-end;gap:3px;height:100px;position:relative;">';
-    steps.forEach(function(s,i){
-      var h=Math.max(20,Math.round(s.val/maxVal*96));
-      var col=cols[i];
-      html+='<div style="flex:1;height:'+h+'px;background:'+col+';border-radius:6px 6px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;overflow:hidden;" title="'+s.label+': '+s.val+'">'+
-        '<div style="font-family:Bebas Neue,sans-serif;font-size:'+(h>40?22:14)+'px;color:#fff;line-height:1;">'+s.val+'</div>'+
-        (h>30?'<div style="font-size:9px;color:rgba(255,255,255,0.8);">'+s.pct+'%</div>':'')+
-      '</div>';
-    });
-    html+='</div>';
-    html+='<div style="display:flex;gap:3px;margin-top:6px;">';
-    steps.forEach(function(s,i){
-      html+='<div style="flex:1;text-align:center;font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);">'+s.label+'</div>';
-    });
-    html+='</div>';
-    return html;
-  }
-
-  // Donut SVG
-  function mkDonut(pctVal,col,size){
-    var r=size/2-8,cx=size/2,cy=size/2;
-    var circ=2*Math.PI*r;
-    var dash=circ*pctVal/100;
-    return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" style="display:block;">'+
-      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10"/>'+
-      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="10" stroke-dasharray="'+dash+' '+(circ-dash)+'" stroke-dashoffset="'+(circ*0.25)+'" stroke-linecap="round"/>'+
-      '<text x="'+cx+'" y="'+(cy+1)+'" text-anchor="middle" dominant-baseline="middle" font-family="Bebas Neue,sans-serif" font-size="'+(size*0.22)+'px" fill="'+col+'">'+pctVal+'%</text>'+
-    '</svg>';
-  }
-
-  // Month selector
-  var opts='';
-  for(var mi=0;mi<18;mi++){var mo=new Date(now.getFullYear(),now.getMonth()-mi,1);var mv='{"m":'+mo.getMonth()+',"y":'+mo.getFullYear()+'}';var isSel=(mo.getMonth()===filtM&&mo.getFullYear()===filtY);opts+='<option value="'+mv.replace(/"/g,'&quot;')+'"'+(isSel?' selected':'')+'>'+_mnsL[mo.getMonth()]+' '+mo.getFullYear()+'</option>';}
-  var mesSelect='<select onchange="_rvMesCh(this.value)" style="background:#1e2535;border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 10px;font-size:12px;font-weight:600;outline:none;">'+opts+'</select>';
-
-  function trow(cells,hdr){var tag=hdr?'th':'td';return '<tr>'+cells.map(function(c){return '<'+tag+' style="padding:9px 12px;font-size:'+(hdr?'10px':'13px')+';'+(hdr?'font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);':'border-bottom:1px solid rgba(255,255,255,0.04);')+'">'+c+'</'+tag+'>';}).join('')+'</tr>';}
-  function tbl(hdrs,rows2){return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead>'+trow(hdrs,true)+'</thead><tbody>'+rows2.join('')+'</tbody></table></div>';}
-  function statusBadge(m){var fu=getFu(m);if(fu){if(fu.resultado==='venda')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Venda</span>';if(fu.resultado==='proposta')return '<span style="background:rgba(59,130,246,0.15);color:#3b82f6;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Proposta</span>';if(fu.comparecimento==='nao')return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">No-show</span>';if(fu.comparecimento==='sim')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Realizada</span>';}var st=(m.status||'').toLowerCase();if(st.includes('noshow')||st.includes('no-show'))return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">No-show</span>';if(isRealizada(m.status))return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Realizada</span>';return '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Agendada</span>';}
-  function fmtDt(iso){if(!iso)return '—';var d=new Date(iso);return d.getDate().toString().padStart(2,'0')+'/'+(d.getMonth()+1).toString().padStart(2,'0')+' '+d.getHours().toString().padStart(2,'0')+'h';}
-
-  // Canal breakdown — todos os canais individualmente, Tráfego normalizado
+  // Canal breakdown
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
-  // Vendas/receita: usa _vendaDate (prioriza fu.dataInicio, fu.dt) para não perder vendas com meeting em mês anterior
   Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
-  // Faixas — ag/real de dedupedRows; vend de followups direto (mesmo critério do KPI)
-  var fatFaixas=[{label:'Até R$20 mil',min:0,max:20000},{label:'R$20-R$40 mil',min:20000,max:40000},{label:'R$40-R$90 mil',min:40000,max:90000},{label:'R$90-R$150 mil',min:90000,max:150000},{label:'Acima de R$100 mil',min:150000,max:1e9}];
+  // Faixas
+  var fatFaixas=[{label:'Até R$20 mil',min:0,max:20000},{label:'R$20-R$40 mil',min:20000,max:40000},{label:'R$40-R$90 mil',min:40000,max:90000},{label:'R$90-R$150 mil',min:90000,max:150000},{label:'Acima de R$150 mil',min:150000,max:1e9}];
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
   dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
-  // Vendas: usa _vendaDate para não perder vendas com meeting em mês anterior
   Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
@@ -9653,187 +9576,348 @@ function renderReunioes(){
   dedupedRows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};if(isReal(m))closerMap[c].real++;if(isProp(m))closerMap[c].prop++;if(isVenda(m)){closerMap[c].vend++;closerMap[c].rec+=getReceita(m);}});
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return b.d.vend-a.d.vend||b.d.real-a.d.real;});
 
-  // SDR ranking (with confirmadas)
+  // SDR ranking
   var sdrMap={};
   dedupedRows.forEach(function(m){var s=(m.sdrName||m.sdr||'—').trim()||'—';if(!sdrMap[s])sdrMap[s]={ag:0,conf:0,real:0,ns:0};sdrMap[s].ag++;if(isConf(m))sdrMap[s].conf++;if(isReal(m))sdrMap[s].real++;if(isNs(m))sdrMap[s].ns++;});
   var sdrRank=Object.keys(sdrMap).map(function(s){return{name:s,d:sdrMap[s]};}).sort(function(a,b){return b.d.real-a.d.real;});
 
-  // Insights
-  var insights=[];
-  var dComp=pA>0&&prevRows.length>0?Math.round(realizadas/agendadas*100)-Math.round(pR/pA*100):null;
-  if(dComp!==null&&Math.abs(dComp)>=3)insights.push({ic:'ti-chart-line',col:dComp>=0?'#22c55e':'#ef4444',tit:(dComp>=0?'Comparecimento em alta':'Comparecimento em queda'),txt:'A taxa '+(dComp>=0?'subiu':'caiu')+' de '+pct(pR,pA)+'% para '+taxaComp+'% no período atual.'});
-  var bestCanal=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return pct(canalMap[b].vend,canalMap[b].real)-pct(canalMap[a].vend,canalMap[a].real);})[0];
-  if(bestCanal&&canalMap[bestCanal].vend>0)insights.push({ic:'ti-star',col:'#9333ea',tit:'Melhor origem',txt:bestCanal+' possui a maior conversão em vendas: '+pct(canalMap[bestCanal].vend,canalMap[bestCanal].real)+'%.'});
-  var avgTc=sdrRank.length>0?Math.round(sdrRank.reduce(function(s,r){return s+pct(r.d.real,r.d.ag);},0)/sdrRank.length):0;
-  var worstSdr=sdrRank.filter(function(s){return s.d.ag>=3;}).sort(function(a,b){return pct(a.d.real,a.d.ag)-pct(b.d.real,b.d.ag);})[0];
-  if(worstSdr){var sdrTc=pct(worstSdr.d.real,worstSdr.d.ag);if(avgTc-sdrTc>=10)insights.push({ic:'ti-alert-triangle',col:'#f59e0b',tit:'Atenção ao SDR '+worstSdr.name.split(' ')[0],txt:'A taxa de comparecimento das reuniões agendadas por ele está '+((avgTc-sdrTc))+' pontos abaixo da média.'});}
-  var convG=pct(vendas,agendadas);
-  insights.push({ic:'ti-target',col:'#3b82f6',tit:'Oportunidade comercial',txt:'Conversão geral do funil: '+convG+'%. '+vendas+' vendas de '+agendadas+' agendadas.'});
-  var fatHigh=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.ag;},0);
-  if(fatHigh>0&&agendadas>0){var fatHighPct=pct(fatHigh,agendadas);var fatHighVend=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.vend;},0);if(vendas>0&&pct(fatHighVend,vendas)>40)insights.push({ic:'ti-currency-dollar',col:'#22c55e',tit:'Alta concentração premium',txt:'Leads acima de R$60 mil representam '+fatHighPct+'% das reuniões, mas geram '+pct(fatHighVend,vendas)+'% das vendas.'});}
-
-  // Capacidade agenda
-  var hoursSlots=rows.filter(function(m){return m.dtISO;}).map(function(m){return new Date(m.dtISO).getHours();}).filter(function(h){return h>=8&&h<=19;});
+  // Capacidade
   var slotsDisp=60,slotsOcup=Math.min(60,rows.length),slotsReal=realizadas;
   var ocupPct=pct(slotsOcup,slotsDisp),aprovPct=pct(slotsReal,slotsDisp);
+  function mkDonut(pctVal,col,size){var r=size/2-8,cx=size/2,cy=size/2;var circ=2*Math.PI*r;var dash=circ*pctVal/100;return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" style="display:block;"><circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10"/><circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="10" stroke-dasharray="'+dash+' '+(circ-dash)+'" stroke-dashoffset="'+(circ*0.25)+'" stroke-linecap="round"/><text x="'+cx+'" y="'+(cy+1)+'" text-anchor="middle" dominant-baseline="middle" font-family="Bebas Neue,sans-serif" font-size="'+(size*0.22)+'px" fill="'+col+'">'+pctVal+'%</text></svg>';}
 
-  // Últimas 8 reuniões
-  var lastMeets=rows.slice().sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');}).slice(0,8);
-  function resSpan(m){var fu=getFu(m);if(!fu)return '—';var map={venda:'<span style="color:#22c55e;">Venda</span>',proposta:'<span style="color:#3b82f6;">Proposta</span>',perdido:'<span style="color:#ef4444;">Perdido</span>',followup:'<span style="color:#f59e0b;">Follow-up</span>'};return map[fu.resultado]||'—';}
+  // Month selector
+  var opts='';
+  for(var mi=0;mi<18;mi++){var mo=new Date(now.getFullYear(),now.getMonth()-mi,1);var mv='{"m":'+mo.getMonth()+',"y":'+mo.getFullYear()+'}';var isSel=(mo.getMonth()===filtM&&mo.getFullYear()===filtY);opts+='<option value="'+mv.replace(/"/g,'&quot;')+'"'+(isSel?' selected':'')+'>'+_mnsL[mo.getMonth()]+' '+mo.getFullYear()+'</option>';}
+  var mesSelect='<select onchange="_rvMesCh(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 10px;font-size:12px;font-weight:600;outline:none;">'+opts+'</select>';
 
-  // ─── BUILD HTML ───
-  var H='';
+  function trow(cells,hdr){var tag=hdr?'th':'td';return '<tr>'+cells.map(function(c){return '<'+tag+' style="padding:9px 12px;font-size:'+(hdr?'9px':'12px')+';'+(hdr?'font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;':'border-bottom:1px solid rgba(255,255,255,0.04);vertical-align:middle;')+'">'+c+'</'+tag+'>';}).join('')+'</tr>';}
+  function tbl(hdrs,rows2){return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead>'+trow(hdrs,true)+'</thead><tbody>'+(rows2.length?rows2.join(''):'<tr><td colspan="'+hdrs.length+'" style="padding:32px;text-align:center;color:var(--muted);font-size:12px;">Nenhuma reunião no período</td></tr>')+'</tbody></table></div>';}
 
-  // Header
-  H+='<div class="page active" style="padding:22px;max-width:1500px;margin:0 auto;">';
-  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px;">'+
-    '<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;">VISÃO GERAL DE REUNIÕES</div>'+
-    '<div style="font-size:11px;color:var(--muted);">Panorama completo da performance comercial · '+mesLabel+'</div></div>'+
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
-      mesSelect+
-      '<button onclick="showPage(\'reunioes\')" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:1px;">↻ ATUALIZAR</button>'+
-    '</div>'+
-  '</div>';
-
-  // 6 KPI cards
-  H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px;">'+
-    kpiCard('Reuniões Agendadas','<span id="rv-ag">'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg)+
-    kpiCard('Realizadas','<span id="rv-real">'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal)+
-    kpiCard('No-shows','<span id="rv-ns">'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',rows.map(function(m,i){return i===rows.length-1?noshows:0;}))+
-    kpiCard('Propostas','<span id="rv-prop">'+propostas+'</span>',txProp+'% das realizadas',dStr(propostas,(prevRows.filter(isProp).length),false),'#3b82f6','ti-file-description',rows.map(function(m,i){return propostas;}))+
-    kpiCard('Vendas','<span id="rv-vend">'+vendas+'</span>',txVenda+'% das propostas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend)+
-    kpiCard('Receita Gerada','<span id="rv-rec">'+fmtR(receita)+'</span>','Ticket médio: '+fmtR(ticket),dStr(receita,pRec,false),'#f59e0b','ti-currency-dollar',histReal.map(function(v){return v;}))+ // use real as proxy
-  '</div>';
-
-  // Row: Funil | Evolução | Insights
-  H+='<div style="display:grid;grid-template-columns:2fr 3fr 2fr;gap:14px;margin-bottom:14px;">';
-
-  // Funil Comercial
-  var funilSteps=[
-    {label:'AGENDADAS',val:agendadas,pct:100},
-    {label:'CONFIRMADAS',val:confirmadas,pct:pct(confirmadas,agendadas)},
-    {label:'REALIZADAS',val:realizadas,pct:taxaComp},
-    {label:'PROPOSTAS',val:propostas,pct:pct(propostas,agendadas)},
-    {label:'VENDAS',val:vendas,pct:pct(vendas,agendadas)}
-  ];
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">FUNIL COMERCIAL</div>'+
-    mkFunil(funilSteps)+
-    '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">'+
-      '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;letter-spacing:1px;">CONVERSÃO GERAL DO FUNIL</div>'+
-      '<div style="display:flex;align-items:baseline;gap:10px;">'+
-        '<span style="font-family:Bebas Neue,sans-serif;font-size:32px;color:#9333ea;">'+pct(vendas,agendadas)+'%</span>'+
-        '<span style="font-size:11px;color:var(--muted);">agendada → venda</span>'+
-        '<span style="margin-left:auto;font-size:11px;background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:20px;padding:2px 10px;font-weight:700;">Meta: 20%</span>'+
-      '</div>'+
-      (agendadas>realizadas?'<div style="font-size:11px;color:var(--muted);margin-top:6px;">⚠ '+(agendadas-realizadas)+' reuniões foram perdidas entre agendamento e comparecimento.</div>':'')+
-    '</div>'+
-  '</div>';
-
-  // Evolução de Performance
-  var evChart=mkEvChart(histLb,
-    {label:'Reuniões realizadas',color:'#22c55e',vals:histReal},
-    {label:'Taxa de comparecimento (%)',color:'#3b82f6',vals:histTc},
-    {label:'Vendas',color:'#f59e0b',vals:histVend},
-    560,200);
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">EVOLUÇÃO DE PERFORMANCE</div>'+
-    evChart+
-  '</div>';
+  function statusBadge(m){
+    var fu=getFu(m);
+    if(fu){
+      if(fu.resultado==='venda')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">🏆 Venda</span>';
+      if(fu.resultado==='proposta')return '<span style="background:rgba(59,130,246,0.15);color:#3b82f6;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Proposta</span>';
+      if(fu.comparecimento==='nao')return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">No-show</span>';
+      if(fu.comparecimento==='sim')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Realizada</span>';
+    }
+    var st=(m.status||'').toLowerCase();
+    if(st.includes('noshow')||st.includes('no-show'))return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">No-show</span>';
+    if(isRealizada(m.status))return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Realizada</span>';
+    var dt=m.dtISO?new Date(m.dtISO):null;
+    if(dt&&dt<now)return '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">⏳ Pendente</span>';
+    return '<span style="background:rgba(107,114,128,0.15);color:#9ca3af;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Agendada</span>';
+  }
+  function fmtDt(iso){if(!iso)return '—';var d=new Date(iso);return d.getDate().toString().padStart(2,'0')+'/'+(d.getMonth()+1).toString().padStart(2,'0')+' '+d.getHours().toString().padStart(2,'0')+'h';}
+  function fmtTime(iso){if(!iso)return '—';var d=new Date(iso);return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');}
 
   // Insights
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">INSIGHTS E ALERTAS</div>'+
-    '<div style="display:flex;flex-direction:column;gap:10px;">';
-  if(insights.length===0)H+='<div style="color:var(--muted);font-size:12px;">Dados insuficientes.</div>';
-  insights.slice(0,5).forEach(function(ins){
-    H+='<div style="display:flex;gap:10px;padding:10px;background:rgba(255,255,255,0.04);border-radius:8px;border-left:3px solid '+ins.col+';">'+
-      '<i class="ti '+ins.ic+'" style="font-size:15px;color:'+ins.col+';flex-shrink:0;margin-top:1px;"></i>'+
-      '<div><div style="font-size:12px;font-weight:700;color:'+ins.col+';margin-bottom:2px;">'+ins.tit+'</div>'+
-      '<div style="font-size:11px;color:var(--white);line-height:1.4;">'+ins.txt+'</div></div>'+
-    '</div>';
-  });
-  H+='</div></div>';
-  H+='</div>'; // end row
+  var insights=[];
+  var bestCanal=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return pct(canalMap[b].vend,canalMap[b].real)-pct(canalMap[a].vend,canalMap[a].real);})[0];
+  if(bestCanal&&canalMap[bestCanal].vend>0)insights.push({ic:'ti-star',col:'#9333ea',tit:'Melhor origem',txt:bestCanal+' tem a maior conversão: '+pct(canalMap[bestCanal].vend,canalMap[bestCanal].real)+'%.'});
+  var dComp=pA>0?Math.round(realizadas/agendadas*100)-Math.round(pR/pA*100):null;
+  if(dComp!==null&&Math.abs(dComp)>=3)insights.push({ic:'ti-chart-line',col:dComp>=0?'#22c55e':'#ef4444',tit:'Comparecimento '+(dComp>=0?'em alta':'em queda'),txt:'Taxa '+(dComp>=0?'subiu':'caiu')+' de '+pct(pR,pA)+'% para '+taxaComp+'%.'});
+  insights.push({ic:'ti-target',col:'#3b82f6',tit:'Conversão do funil',txt:pct(vendas,agendadas)+'% de agendamento → venda. '+vendas+' vendas de '+agendadas+' agendadas.'});
+  var fatHigh=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.ag;},0);
+  var fatHighV=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.vend;},0);
+  if(fatHigh>0&&agendadas>0)insights.push({ic:'ti-currency-dollar',col:'#22c55e',tit:'Alta concentração premium',txt:'Leads acima de R$60k = '+pct(fatHigh,agendadas)+'% das reuniões, mas '+pct(fatHighV,vendas||1)+'% das vendas.'});
 
-  // Row: Canal | Faixas
-  H+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">';
-  // Canal
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">PERFORMANCE POR CANAL</div>'+
-    tbl(['Canal','Agend.','Realizadas','Vendas','Conversão','Receita'],
-      Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].ag-canalMap[a].ag;}).map(function(c){
-        var d=canalMap[c],cv=pct(d.vend,d.real),col2=canalColor(c);
-        return trow(['<span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:'+col2+';flex-shrink:0;"></span>'+c+'</span>',d.ag,d.real,'<b style="color:#22c55e;">'+d.vend+'</b>','<span style="color:'+(cv>=25?'#22c55e':cv>=15?'#f59e0b':'#ef4444')+';">'+cv+'%</span>',fmtR(d.rec)]);
-      })
-    )+
-    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;">'+
-      (function(){var bv=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].ag-canalMap[a].ag;})[0]||'';var bc=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return pct(canalMap[b].vend,canalMap[b].real)-pct(canalMap[a].vend,canalMap[a].real);})[0]||'';var br=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].rec-canalMap[a].rec;})[0]||'';return (bv?'<span style="font-size:11px;color:var(--muted);">📊 Maior volume: <b style="color:#fff;">'+bv+'</b></span>':'')+(bc?'<span style="font-size:11px;color:var(--muted);">🏆 Melhor conversão: <b style="color:#fff;">'+bc+'</b></span>':'')+(br?'<span style="font-size:11px;color:var(--muted);">💰 Maior receita: <b style="color:#fff;">'+br+'</b></span>':'');})()
-    +
-    '</div>'+
-  '</div>';
-  // Faixas
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">PERFORMANCE POR FAIXA DE FATURAMENTO</div>'+
-    tbl(['Faixa de Faturamento','Reuniões','Comparecimento','Vendas','Conversão'],
-      fatFaixas.concat([fatNI]).map(function(f){
-        var tc=pct(f.real,f.ag),cv=pct(f.vend,f.real);
-        return trow([f.label,f.ag,'<span style="color:'+(tc>=60?'#22c55e':tc>=40?'#f59e0b':'#ef4444')+';">'+tc+'%</span>',f.vend,'<span style="color:'+(cv>=20?'#22c55e':'var(--muted)')+';">'+cv+'%</span>']);
-      })
-    )+
-    (function(){var highAg=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.ag;},0);var highVend=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.vend;},0);return agendadas>0&&highAg>0?'<div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:11px;color:var(--muted);">Leads acima de R$60 mil representam <b style="color:#fff;">'+pct(highAg,agendadas)+'%</b> das reuniões, mas geram <b style="color:#22c55e;">'+pct(highVend,vendas||1)+'%</b> das vendas.</div>':'';})()+
-  '</div>';
+  // ─── BUILD HTML ───────────────────────────────────────────────────────────
+  var H='<div class="page active" style="padding:22px;max-width:1600px;margin:0 auto;">';
+
+  // Header
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px;">'
+    +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;">VISÃO GERAL DE REUNIÕES</div>'
+    +'<div style="font-size:11px;color:var(--muted);">Panorama completo da performance comercial · '+mesLabel+'</div></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    +mesSelect
+    +'<button onclick="showPage(\'reunioes\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:12px;"></i> Atualizar</button>'
+    +'</div></div>';
+
+  // Sub-tabs
+  var tabDefs=[{id:'hoje',ic:'ti-calendar-day',lbl:'Reuniões de Hoje'},{id:'mes',ic:'ti-list',lbl:'Lista do Mês'},{id:'analytics',ic:'ti-chart-bar',lbl:'Analytics'}];
+  H+='<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:18px;">';
+  tabDefs.forEach(function(t){
+    var a=tab===t.id;
+    H+='<button onclick="window._reunOvTab=\''+t.id+'\';showPage(\'reunioes\');" style="background:none;border:none;border-bottom:'+(a?'2px solid var(--purple3)':'2px solid transparent')+';color:'+(a?'var(--white)':'var(--muted)')+';padding:10px 18px;font-size:12px;font-weight:'+(a?'700':'600')+';letter-spacing:1px;text-transform:uppercase;cursor:pointer;font-family:Barlow Condensed,sans-serif;display:flex;align-items:center;gap:6px;"><i class="ti '+t.ic+'"></i>'+t.lbl+'</button>';
+  });
   H+='</div>';
 
-  // Row: Ranking SDR | Ranking Closer | Capacidade | Últimas
-  H+='<div style="display:grid;grid-template-columns:1fr 1.2fr 0.9fr 1.5fr;gap:14px;margin-bottom:16px;">';
+  // ═══ TAB: HOJE ══════════════════════════════════════════════════════════════
+  if(tab==='hoje'){
+    // Mini KPIs for today
+    var tReal=todayMeets.filter(isReal).length;
+    var tNs=todayMeets.filter(isNs).length;
+    var tPend=todayMeets.filter(function(m){var fu=getFu(m);if(fu)return false;var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt<=now;}).length;
+    var tFut=todayMeets.filter(function(m){var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt>now;}).length;
 
-  // SDR
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">RANKING DE SDR</div>'+
-    tbl(['#','SDR','Agend.','Conf.','Realiz.','Taxa'],
-      sdrRank.map(function(s,i){var tc=pct(s.d.real,s.d.ag);return trow(['<b style="color:var(--muted);">'+(i+1)+'</b>','<div style="display:flex;align-items:center;gap:7px;">'+av(s.name)+'<span style="font-size:12px;">'+s.name+'</span></div>',s.d.ag,s.d.conf,s.d.real,'<span style="color:'+(tc>=60?'#22c55e':tc>=40?'#f59e0b':'#ef4444')+';font-weight:700;">'+tc+'%</span>']);})
-    )+
-  '</div>';
+    H+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">';
+    function miniKpi(ic,col,lbl,val,sub){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;"><div style="width:40px;height:40px;border-radius:10px;background:'+col.replace('#','rgba(').slice(0,-1)+',0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+ic+'" style="font-size:18px;color:'+col+';"></i></div><div><div style="font-family:Bebas Neue,sans-serif;font-size:28px;line-height:1;color:'+col+';">'+val+'</div><div style="font-size:10px;color:var(--muted);margin-top:1px;">'+lbl+'</div><div style="font-size:10px;color:var(--muted);">'+sub+'</div></div></div>';}
+    H+=miniKpi('ti-calendar-event','#9333ea','Reuniões hoje',todayMeets.length,todayMeets.length===0?'Sem reuniões agendadas':tFut+' ainda por acontecer');
+    H+=miniKpi('ti-check','#22c55e','Realizadas hoje',tReal,tReal>0?pct(tReal,todayMeets.length)+'% de comparecimento':'—');
+    H+=miniKpi('ti-user-off','#ef4444','No-shows hoje',tNs,tNs>0?pct(tNs,todayMeets.length)+'% das reuniões':'—');
+    H+=miniKpi('ti-clock','#f59e0b','Pendentes hoje',tPend,tPend>0?'Aguardando registro de resultado':'Tudo registrado ✓');
+    H+='</div>';
 
-  // Closer
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">RANKING DE CLOSER</div>'+
-    tbl(['#','Closer','Realiz.','Prop.','Vendas','Conv.','Receita'],
-      closerRank.map(function(s,i){var cv=pct(s.d.vend,s.d.real);var recCol=i===0?'#22c55e':i===1?'#f59e0b':'#ef4444';return trow(['<b style="color:var(--muted);">'+(i+1)+'</b>','<div style="display:flex;align-items:center;gap:7px;">'+av(s.name)+'<span style="font-size:12px;">'+s.name+'</span></div>',s.d.real,s.d.prop,'<b style="color:#22c55e;">'+s.d.vend+'</b>','<span style="color:'+(cv>=20?'#22c55e':'var(--muted)')+';">'+cv+'%</span>','<span style="color:'+recCol+';font-weight:700;">'+fmtR(s.d.rec)+'</span>']);})
-    )+
-  '</div>';
+    if(todayMeets.length===0){
+      H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:60px;text-align:center;color:var(--muted);">'
+        +'<i class="ti ti-calendar-off" style="font-size:48px;display:block;margin-bottom:14px;color:rgba(147,51,234,0.3);"></i>'
+        +'<div style="font-size:14px;font-weight:600;margin-bottom:6px;">Nenhuma reunião para hoje</div>'
+        +'<div style="font-size:12px;">As reuniões do dia aparecem aqui automaticamente.</div>'
+        +'</div>';
+    } else {
+      H+='<div style="display:flex;flex-direction:column;gap:10px;">';
+      todayMeets.forEach(function(m){
+        var fu=getFu(m);
+        var closer=normCloserName(m.responsavel||'')||'—';
+        var sdr=(m.sdrName||m.sdr||'—');
+        var hasResult=!!(fu&&(fu.comparecimento));
+        var isPast=(m.dtISO&&new Date(m.dtISO)<now);
+        var needsAction=isPast&&!hasResult;
+        var isVend=isVenda(m);
+        var borderCol=isVend?'#22c55e':isNs(m)?'#ef4444':isReal(m)?'#22c55e':needsAction?'#f59e0b':'var(--border)';
 
-  // Capacidade agenda
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;">'+
-    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;align-self:flex-start;">CAPACIDADE DA AGENDA</div>'+
-    '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;">'+
-      mkDonut(ocupPct,'#9333ea',110)+
-      '<div style="font-size:11px;color:var(--muted);text-align:center;">Ocupação</div>'+
-    '</div>'+
-    '<div style="width:100%;margin-top:12px;display:flex;flex-direction:column;gap:6px;">'+
-      '<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Horários disponíveis</span><span style="font-weight:700;">'+slotsDisp+'</span></div>'+
-      '<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Horários ocupados</span><span style="font-weight:700;color:#9333ea;">'+slotsOcup+'</span></div>'+
-      '<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Reuniões realizadas</span><span style="font-weight:700;color:#22c55e;">'+realizadas+'</span></div>'+
-      '<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Capacidade aproveitada</span><span style="font-weight:700;color:#f59e0b;">'+aprovPct+'%</span></div>'+
-    '</div>'+
-  '</div>';
+        H+='<div style="background:var(--card);border:1px solid '+borderCol+';border-left:3px solid '+borderCol+';border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
+        // Time
+        H+='<div style="min-width:48px;text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:22px;color:var(--white);line-height:1;">'+fmtTime(m.dtISO)+'</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">hoje</div></div>';
+        // Divider
+        H+='<div style="width:1px;height:40px;background:var(--border);flex-shrink:0;"></div>';
+        // Lead info
+        H+='<div style="flex:1;min-width:160px;">'
+          +'<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;">'+(m.nome||'Lead sem nome')+'</div>'
+          +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+          +(m.origem?'<span style="font-size:10px;background:'+canalColor(normCanal(m.origem)).replace('#','rgba(').slice(0,-1)+',0.15);color:'+canalColor(normCanal(m.origem))+';padding:1px 7px;border-radius:10px;">'+normCanal(m.origem)+'</span>':'')
+          +(m.tel||m.telefone?'<span style="font-size:10px;color:var(--muted);"><i class="ti ti-phone" style="font-size:9px;"></i> '+(m.tel||m.telefone)+'</span>':'')
+          +'</div></div>';
+        // SDR → Closer
+        H+='<div style="display:flex;align-items:center;gap:6px;">'
+          +'<div style="text-align:center;"><div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px;">SDR</div>'+av(sdr,26)+'<div style="font-size:9px;color:var(--muted);margin-top:2px;">'+sdr+'</div></div>'
+          +'<i class="ti ti-arrow-right" style="font-size:12px;color:var(--muted);"></i>'
+          +'<div style="text-align:center;"><div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px;">Closer</div>'+av(closer,26)+'<div style="font-size:9px;color:var(--muted);margin-top:2px;">'+closer+'</div></div>'
+          +'</div>';
+        // Status
+        H+='<div>'+statusBadge(m)+(needsAction?'<div style="font-size:9px;color:#f59e0b;margin-top:4px;text-align:center;">Ação necessária</div>':'')+'</div>';
+        // Action buttons
+        H+='<div style="display:flex;gap:6px;flex-shrink:0;">';
+        if(!hasResult&&isPast){
+          H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],false);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"><i class="ti ti-clipboard-check" style="font-size:12px;"></i> Registrar</button>';
+        } else if(hasResult){
+          H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;white-space:nowrap;"><i class="ti ti-pencil" style="font-size:12px;"></i> Editar resultado</button>';
+        }
+        H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 10px;font-size:12px;cursor:pointer;" title="Editar reunião"><i class="ti ti-settings"></i></button>';
+        H+='</div>';
+        H+='</div>'; // end card
+      });
+      H+='</div>';
+    }
+  }
 
-  // Últimas reuniões
-  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
-      '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">ÚLTIMAS REUNIÕES</div>'+
-    '</div>'+
-    tbl(['Data','Lead','Origem','SDR','Closer','Status','Resultado'],
-      lastMeets.map(function(m){return trow([fmtDt(m.dtISO),'<span style="font-size:12px;">'+(m.nome||'—')+'</span>',(m.origem||'—'),(m.sdrName||m.sdr||'—'),normCloserName(m.responsavel||''),statusBadge(m),resSpan(m)]);})
-    )+
-  '</div>';
+  // ═══ TAB: LISTA DO MÊS ══════════════════════════════════════════════════════
+  else if(tab==='mes'){
+    // Sort month meetings by date desc
+    var sortedRows=rows.slice().sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
 
-  H+='</div>'; // end bottom row
+    H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;">';
+    H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
+    H+=kpiCard('Realizadas','<span>'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal);
+    H+=kpiCard('No-shows','<span>'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',histAg.map(function(){return noshows;}));
+    H+=kpiCard('Propostas','<span>'+propostas+'</span>',txProp+'% das realizadas','','#3b82f6','ti-file-description',histReal.map(function(){return propostas;}));
+    H+=kpiCard('Vendas','<span>'+vendas+'</span>',txVenda+'% das propostas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend);
+    H+=kpiCard('Receita','<span>'+fmtR(receita)+'</span>','Ticket médio: '+fmtR(ticket),dStr(receita,pRec,false),'#f59e0b','ti-currency-dollar',histReal);
+    H+='</div>';
+
+    // Search / filter bar
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">';
+    H+='<i class="ti ti-search" style="color:var(--muted);font-size:14px;"></i>';
+    H+='<input type="text" id="reun-search" placeholder="Buscar por nome, origem, SDR..." oninput="_rvFilter()" style="flex:1;background:none;border:none;color:var(--white);font-size:12px;outline:none;min-width:180px;">';
+    H+='<span style="font-size:11px;color:var(--muted);">'+sortedRows.length+' reuniões no mês</span>';
+    H+='</div>';
+
+    // Editable table
+    H+='<div id="reun-mes-tbl" style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">';
+    H+='<div style="overflow-x:auto;"><table id="reun-mes-table" style="width:100%;border-collapse:collapse;">';
+    H+='<thead><tr>';
+    ['Data','Lead','Origem','SDR','Closer','Status','Resultado','Ações'].forEach(function(h){
+      H+='<th style="padding:10px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;">'+h+'</th>';
+    });
+    H+='</tr></thead><tbody>';
+    if(!sortedRows.length){
+      H+='<tr><td colspan="8" style="padding:40px;text-align:center;color:var(--muted);">Nenhuma reunião neste período.</td></tr>';
+    }
+    sortedRows.forEach(function(m){
+      var fu=getFu(m);
+      var closer=normCloserName(m.responsavel||'')||'—';
+      var sdr=(m.sdrName||m.sdr||'—');
+      var hasResult=!!(fu&&fu.comparecimento);
+      var isVend=isVenda(m);
+      var rowBg=isVend?'rgba(34,197,94,0.04)':isNs(m)?'rgba(239,68,68,0.03)':'';
+      var res='—';
+      if(fu){if(fu.resultado==='venda')res='<span style="color:#22c55e;font-weight:700;">🏆 Venda</span>';else if(fu.resultado==='proposta')res='<span style="color:#3b82f6;">Proposta</span>';else if(fu.resultado==='perdido')res='<span style="color:#ef4444;">Perdida</span>';else if(fu.resultado==='followup'||fu.resultado==='retorno')res='<span style="color:#f59e0b;">Follow-up</span>';else if(fu.comparecimento==='nao')res='<span style="color:#ef4444;">—</span>';}
+
+      H+='<tr data-nome="'+(m.nome||'').toLowerCase()+'" data-origem="'+(m.origem||'').toLowerCase()+'" data-sdr="'+sdr.toLowerCase()+'" style="border-bottom:1px solid rgba(255,255,255,0.04);background:'+rowBg+';transition:background .15s;" onmouseover="if(!this.style.background||!this.style.background.includes(\'0.04\'))this.style.background=\'rgba(255,255,255,0.02)\';" onmouseout="this.style.background=\''+rowBg+'\'">';
+      H+='<td style="padding:10px 12px;font-size:11px;color:var(--muted);white-space:nowrap;">'+fmtDt(m.dtISO)+'</td>';
+      H+='<td style="padding:10px 12px;"><div style="font-size:12px;color:var(--white);font-weight:500;">'+(m.nome||'—')+'</div>'+(m.tel||m.telefone?'<div style="font-size:10px;color:var(--muted);">'+(m.tel||m.telefone)+'</div>':'')+'</td>';
+      H+='<td style="padding:10px 12px;"><span style="font-size:10px;color:'+canalColor(normCanal(m.origem||''))+';background:'+canalColor(normCanal(m.origem||'')).replace('#','rgba(').slice(0,-1)+',0.12);padding:2px 8px;border-radius:10px;">'+(m.origem?normCanal(m.origem):'—')+'</span></td>';
+      // SDR — clickable to edit
+      H+='<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:5px;">'+av(sdr,22)+'<span style="font-size:11px;color:var(--white);">'+sdr+'</span><button onclick="_openReunEdit(\''+m.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;font-size:11px;" title="Editar"><i class="ti ti-pencil" style="font-size:10px;"></i></button></div></td>';
+      // Closer — clickable to edit
+      H+='<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:5px;">'+av(closer,22)+'<span style="font-size:11px;color:var(--white);">'+closer+'</span><button onclick="_openReunEdit(\''+m.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;font-size:11px;" title="Editar"><i class="ti ti-pencil" style="font-size:10px;"></i></button></div></td>';
+      H+='<td style="padding:10px 12px;">'+statusBadge(m)+'</td>';
+      H+='<td style="padding:10px 12px;font-size:11px;">'+res+'</td>';
+      // Actions
+      H+='<td style="padding:10px 12px;"><div style="display:flex;gap:4px;">';
+      if(!hasResult){
+        H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],false);" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:5px 9px;font-size:10px;font-weight:700;cursor:pointer;" title="Registrar resultado"><i class="ti ti-clipboard-check"></i></button>';
+      } else {
+        H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:6px;color:var(--purple3);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar resultado"><i class="ti ti-edit"></i></button>';
+      }
+      H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar dados da reunião"><i class="ti ti-settings"></i></button>';
+      H+='</div></td>';
+      H+='</tr>';
+    });
+    H+='</tbody></table></div></div>';
+  }
+
+  // ═══ TAB: ANALYTICS ═════════════════════════════════════════════════════════
+  else {
+    // 6 KPI cards
+    H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;">';
+    H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
+    H+=kpiCard('Realizadas','<span>'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal);
+    H+=kpiCard('No-shows','<span>'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',histAg.map(function(){return noshows;}));
+    H+=kpiCard('Propostas','<span>'+propostas+'</span>',txProp+'% das realizadas','','#3b82f6','ti-file-description',histReal.map(function(){return propostas;}));
+    H+=kpiCard('Vendas','<span>'+vendas+'</span>',txVenda+'% das propostas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend);
+    H+=kpiCard('Receita','<span>'+fmtR(receita)+'</span>','Ticket: '+fmtR(ticket),dStr(receita,pRec,false),'#f59e0b','ti-currency-dollar',histReal);
+    H+='</div>';
+
+    // Canal + Faixas
+    H+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">';
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">PERFORMANCE POR CANAL</div>'
+      +tbl(['Canal','Agend.','Realizadas','Vendas','Conversão','Receita'],
+        Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].ag-canalMap[a].ag;}).map(function(c){
+          var d=canalMap[c],cv=pct(d.vend,d.real),col=canalColor(c);
+          return trow(['<span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:'+col+';"></span>'+c+'</span>',d.ag,d.real,'<b style="color:#22c55e;">'+d.vend+'</b>','<span style="color:'+(cv>=25?'#22c55e':cv>=15?'#f59e0b':'#ef4444')+';">'+cv+'%</span>',fmtR(d.rec)]);
+        })
+      )
+      +(function(){var bv=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].ag-canalMap[a].ag;})[0]||'';var bc=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return pct(canalMap[b].vend,canalMap[b].real)-pct(canalMap[a].vend,canalMap[a].real);})[0]||'';var br=Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].rec-canalMap[a].rec;})[0]||'';return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:14px;flex-wrap:wrap;">'+(bv?'<span style="font-size:10px;color:var(--muted);">📊 Maior volume: <b style="color:#fff;">'+bv+'</b></span>':'')+(bc?'<span style="font-size:10px;color:var(--muted);">🏆 Melhor conversão: <b style="color:#fff;">'+bc+'</b></span>':'')+(br?'<span style="font-size:10px;color:var(--muted);">💰 Maior receita: <b style="color:#fff;">'+br+'</b></span>':'')+'</div>';})()
+      +'</div>';
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">PERFORMANCE POR FAIXA DE FATURAMENTO</div>'
+      +tbl(['Faixa','Reuniões','Comparecimento','Vendas','Conversão'],
+        fatFaixas.concat([fatNI]).map(function(f){
+          var tc=pct(f.real,f.ag),cv=pct(f.vend,f.real);
+          return trow([f.label,f.ag,'<span style="color:'+(tc>=60?'#22c55e':tc>=40?'#f59e0b':'#ef4444')+';">'+tc+'%</span>',f.vend,'<span style="color:'+(cv>=20?'#22c55e':'var(--muted)')+';">'+cv+'%</span>']);
+        })
+      )
+      +(function(){var ha=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.ag;},0);var hv=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.vend;},0);return agendadas>0&&ha>0?'<div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:10px;color:var(--muted);">Leads acima de R$60k = <b style="color:#fff;">'+pct(ha,agendadas)+'%</b> das reuniões, mas <b style="color:#22c55e;">'+pct(hv,vendas||1)+'%</b> das vendas.</div>':'';})()+
+      '</div>';
+    H+='</div>';
+
+    // SDR + Closer + Capacidade + Últimas
+    H+='<div style="display:grid;grid-template-columns:1fr 1.2fr 220px 1.4fr;gap:14px;">';
+    // SDR
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">RANKING DE SDR</div>'
+      +tbl(['#','SDR','Agend.','Conf.','Realiz.','Taxa'],
+        sdrRank.map(function(s,i){var tc=pct(s.d.real,s.d.ag);return trow(['<b style="color:var(--muted);">'+(i+1)+'</b>','<div style="display:flex;align-items:center;gap:6px;">'+av(s.name,24)+'<span style="font-size:11px;">'+s.name+'</span></div>',s.d.ag,s.d.conf,s.d.real,'<span style="color:'+(tc>=60?'#22c55e':tc>=40?'#f59e0b':'#ef4444')+';font-weight:700;">'+tc+'%</span>']);})
+      )+'</div>';
+    // Closer
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">RANKING DE CLOSER</div>'
+      +tbl(['#','Closer','Realiz.','Prop.','Vendas','Conv.','Receita'],
+        closerRank.map(function(s,i){var cv=pct(s.d.vend,s.d.real);var rc=i===0?'#22c55e':i===1?'#f59e0b':'#ef4444';return trow(['<b style="color:var(--muted);">'+(i+1)+'</b>','<div style="display:flex;align-items:center;gap:6px;">'+av(s.name,24)+'<span style="font-size:11px;">'+s.name+'</span></div>',s.d.real,s.d.prop,'<b style="color:#22c55e;">'+s.d.vend+'</b>','<span style="color:'+(cv>=20?'#22c55e':'var(--muted)')+';">'+cv+'%</span>','<span style="color:'+rc+';font-weight:700;">'+fmtR(s.d.rec)+'</span>']);})
+      )+'</div>';
+    // Capacidade
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:center;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;align-self:flex-start;">CAPACIDADE DA AGENDA</div>'
+      +mkDonut(ocupPct,'#9333ea',110)
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:12px;margin-top:4px;">Ocupação</div>'
+      +'<div style="width:100%;display:flex;flex-direction:column;gap:7px;">'
+      +'<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Horários disponíveis</span><b>'+slotsDisp+'</b></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Horários ocupados</span><b style="color:#9333ea;">'+slotsOcup+'</b></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Reuniões realizadas</span><b style="color:#22c55e;">'+realizadas+'</b></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Capacidade aproveitada</span><b style="color:#f59e0b;">'+aprovPct+'%</b></div>'
+      +'</div></div>';
+    // Últimas reuniões
+    var lastMeets=rows.slice().sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');}).slice(0,8);
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">ÚLTIMAS REUNIÕES</div>'
+      +'<button onclick="window._reunOvTab=\'mes\';showPage(\'reunioes\');" style="background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.25);border-radius:6px;color:var(--purple3);padding:3px 8px;font-size:10px;cursor:pointer;">Ver todas →</button>'
+      +'</div>'
+      +tbl(['Data','Lead','Origem','SDR','Closer','Status'],
+        lastMeets.map(function(m){return trow([fmtDt(m.dtISO),'<span style="font-size:11px;">'+(m.nome||'—')+'</span>',(m.origem?normCanal(m.origem):'—'),(m.sdrName||m.sdr||'—'),normCloserName(m.responsavel||''),statusBadge(m)]);})
+      )+'</div>';
+    H+='</div>'; // end bottom grid
+  }
+
   H+='</div>'; // end page
   return H;
 }
+
 function _rvMesCh(v){try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;}showPage('reunioes');}
+
+function _rvFilter(){
+  var q=(document.getElementById('reun-search')||{}).value||'';q=q.toLowerCase().trim();
+  var rows=document.querySelectorAll('#reun-mes-table tbody tr[data-nome]');
+  rows.forEach(function(r){
+    var match=!q||r.dataset.nome.includes(q)||r.dataset.origem.includes(q)||r.dataset.sdr.includes(q);
+    r.style.display=match?'':'none';
+  });
+}
+
+function _openReunEdit(mid){
+  var m=meetings[mid];if(!m)return;
+  var closer=normCloserName(m.responsavel||'')||'';
+  var sdr=m.sdrName||m.sdr||'';
+  var origen=m.origem||'';
+  var cOpts=CLOSERS.map(function(c){return'<option value="'+c+'"'+(c===closer?' selected':'')+'>'+c+'</option>';}).join('');
+  var sOpts=['João','Gustavo','Lucas'].map(function(s){return'<option value="'+s+'"'+(s===sdr?' selected':'')+'>'+s+'</option>';}).join('');
+  var origOpts=['Tráfego Pago','Cold Call','Indicação','Orgânico','Social Selling','Recuperação','Manual'].map(function(o){return'<option value="'+o+'"'+(o===origen?' selected':'')+'>'+o+'</option>';}).join('');
+  // Remove existing modal if any
+  var old=document.getElementById('_reunEditModal');if(old)old.remove();
+  var div=document.createElement('div');
+  div.id='_reunEditModal';
+  div.innerHTML='<div onclick="document.getElementById(\'_reunEditModal\').remove()" style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;">'
+    +'<div onclick="event.stopPropagation()" style="background:#1a1f35;border:1px solid rgba(147,51,234,0.3);border-radius:14px;padding:24px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+    +'<div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:1px;">EDITAR REUNIÃO</div>'
+    +'<button onclick="document.getElementById(\'_reunEditModal\').remove()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>'
+    +'</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.08);">'+(m.nome||'Reunião')+'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:12px;">'
+    +'<div><label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Closer Responsável</label>'
+    +'<select id="_rEdit_closer" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;padding:8px 10px;font-size:12px;outline:none;">'+cOpts+'</select></div>'
+    +'<div><label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">SDR</label>'
+    +'<select id="_rEdit_sdr" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;padding:8px 10px;font-size:12px;outline:none;">'+sOpts+'</select></div>'
+    +'<div><label style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;">Origem</label>'
+    +'<select id="_rEdit_origem" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;padding:8px 10px;font-size:12px;outline:none;">'+origOpts+'</select></div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:18px;">'
+    +'<button onclick="document.getElementById(\'_reunEditModal\').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--muted);padding:9px;font-size:12px;cursor:pointer;">Cancelar</button>'
+    +'<button onclick="_saveReunEdit(\''+mid+'\')" style="flex:2;background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:9px;font-size:12px;font-weight:700;cursor:pointer;">Salvar alterações</button>'
+    +'</div></div></div>';
+  document.body.appendChild(div);
+}
+
+async function _saveReunEdit(mid){
+  var closer=document.getElementById('_rEdit_closer').value;
+  var sdr=document.getElementById('_rEdit_sdr').value;
+  var origem=document.getElementById('_rEdit_origem').value;
+  var m=meetings[mid];if(!m)return;
+  var updated=Object.assign({},m,{responsavel:closer,sdrName:sdr,sdr:sdr,origem:origem});
+  meetings[mid]=updated;
+  try{
+    await saveMeetingFB(mid,{responsavel:closer,sdrName:sdr,sdr:sdr,origem:origem});
+    showToast('Reunião atualizada com sucesso','success');
+  }catch(e){showToast('Erro ao salvar: '+e.message,'error');}
+  var modal=document.getElementById('_reunEditModal');if(modal)modal.remove();
+  showPage('reunioes');
+}
+
+
 
 function changeDashPeriod(p){_dashPeriod=p;_dashStart=null;_dashEnd=null;refreshDashCom();}
 function applyDashDateRange(){
