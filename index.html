@@ -4160,6 +4160,7 @@ function buildNav(){
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
+    {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
       {id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
       {id:'reunioes-noshow',icon:'ti-user-off',label:'No-show'}
@@ -4199,6 +4200,7 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
+    {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {id:'reunioes',icon:'ti-calendar-check',label:'Minhas Reunioes'},
     {group:'Financeiro',icon:'ti-report-money',items:[
@@ -4369,7 +4371,8 @@ function showPage(id){
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinDashboard,'fin-dashboard':renderFinDashboard,'fin-receitas':renderFinReceitas,'fin-despesas':renderFinDespesas,'fin-lancamentos':renderFinLancamentos,'fin-contas':renderFinContas,
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,
-    'avaliacoes':renderAvaliacoes,'vendas':renderVendas
+    'avaliacoes':renderAvaliacoes,'vendas':renderVendas,
+    'followup':renderFollowup
   };
   var area=document.getElementById('content');
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
@@ -14519,6 +14522,533 @@ function renderSDRRegistrar(){
 }
 
 // ===== REATIVACAO (No-shows recentes + Leads frios 30+ dias) =====
+
+// ═══════════════════════ CENTRAL DE FOLLOW-UP ═══════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// CENTRAL DE FOLLOW-UP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var _fuTab='visao-geral';
+
+function _fuScore(m,fu,ke,daysSinceMeeting){
+  var score=0;
+  var fat=ke?parseFaturamento(ke.faturamento||''):0;
+  var now=Date.now();
+  // Realizou reunião e não fechou
+  if(fu&&fu.comparecimento==='sim'&&fu.resultado!=='venda')score+=40;
+  // Lead qualificado (fat >= 40k)
+  if(fat>=40000)score+=25;
+  // Proposta enviada
+  if(fu&&(fu.resultado==='proposta'))score+=20;
+  // Respondeu nos últimos 7 dias
+  var lastC=fu&&fu.updatedAt?fu.updatedAt:(m.scheduledAt||0);
+  if(lastC&&(now-lastC)<7*86400000)score+=15;
+  // Pediu novo contato
+  if(fu&&(fu.resultado==='followup'||fu.resultado==='retorno'))score+=10;
+  // -15 três tentativas sem resposta
+  var att=fu&&fu.tentativas?parseInt(fu.tentativas)||0:0;
+  if(att>=3)score-=15;
+  // -20 mais de 90 dias inativo
+  if(daysSinceMeeting>90)score-=20;
+  return Math.max(0,Math.min(100,score));
+}
+
+function _fuTemp(score){
+  if(score>=70)return{label:'Quente',col:'#ef4444',bg:'rgba(239,68,68,0.12)',ic:'ti-flame'};
+  if(score>=40)return{label:'Morno',col:'#f59e0b',bg:'rgba(245,158,11,0.12)',ic:'ti-temperature'};
+  return{label:'Frio',col:'#3b82f6',bg:'rgba(59,130,246,0.12)',ic:'ti-snowflake'};
+}
+
+function _fuFmtDays(days){
+  if(days<1)return'Hoje';
+  if(days===1)return'1 dia';
+  if(days<7)return days+'d';
+  if(days<30)return Math.floor(days/7)+'sem';
+  return Math.floor(days/30)+'m';
+}
+
+function _fuFmtFat(n){
+  if(!n)return'—';
+  if(n>=1000000)return'R$'+(n/1000000).toFixed(1)+'M';
+  if(n>=1000)return'R$'+(n/1000).toFixed(0)+'k';
+  return'R$'+n;
+}
+
+function _fuMotivo(fu,ke){
+  if(!fu)return'Sem registro';
+  var r=fu.resultado||'';
+  if(r==='proposta')return'Proposta enviada';
+  if(r==='followup')return'Follow-up';
+  if(r==='retorno')return'Pediu retorno';
+  if(r==='perdido')return fu.motivoPerda||'Perdido';
+  var obs=(fu.observacoes||fu.obs||'').trim();
+  return obs||'Sem resposta';
+}
+
+function _fuBuildUniverse(){
+  var now=new Date();
+  var universe=[];
+  var vendaTels=new Set();
+  // Step 1: index closed deals
+  Object.values(followups).forEach(function(fu){
+    if(fu.resultado==='venda'){
+      var m2=meetings[fu.meetingId]||meetings[Object.keys(followups).find(function(k){return followups[k]===fu;})];
+      var tel=(fu.tel||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+      if(tel)vendaTels.add(tel);
+      if(m2&&m2.tel){var t2=(m2.tel||'').replace(/\D/g,'');if(t2.length>9)t2=t2.slice(-9);if(t2)vendaTels.add(t2);}
+    }
+  });
+  // Step 2: index followups by meetingId
+  var fuByMid={};
+  Object.keys(followups).forEach(function(fid){
+    var fu=followups[fid];
+    var mid=fu.meetingId||fid;
+    fuByMid[mid]=fu;
+    fuByMid[fid]=fu;
+  });
+  // Step 3: process meetings
+  var processedTels=new Set();
+  Object.values(meetings).forEach(function(m){
+    if(m._hidden)return;
+    var tel=(m.tel||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+    if(tel&&vendaTels.has(tel))return;
+    if(tel&&processedTels.has(tel)){return;}
+    if(tel)processedTels.add(tel);
+    var fu=fuByMid[m.id];
+    var ke=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var fat=ke?parseFaturamento(ke.faturamento||''):0;
+    var isQual=fat>=40000;
+    var dtISO=m.dtISO||(m.scheduledAt?new Date(m.scheduledAt).toISOString():null);
+    var meetDate=dtISO?new Date(dtISO):null;
+    var days=meetDate?Math.floor((now-meetDate)/86400000):999;
+    var stNorm=(m.status||'').toLowerCase();
+    var isNoshow=fu?(fu.comparecimento==='nao'):(stNorm.includes('noshow')||stNorm.includes('no-show')||stNorm==='no_show');
+    var isReal=fu?(fu.comparecimento==='sim'):(stNorm==='done'||stNorm==='realizada'||stNorm==='completed');
+    var isPerdido=fu&&fu.resultado==='perdido';
+    var isVenda=fu&&fu.resultado==='venda';
+    if(isVenda)return;
+    // Category
+    var cat;
+    if(isPerdido)cat='perdido';
+    else if(isNoshow&&isQual)cat='noshow';
+    else if(isReal)cat='nao_fechou';
+    else if(days>30&&!isReal&&!isNoshow)cat='reativacao';
+    else return;
+    var score=_fuScore(m,fu,ke,days);
+    var temp=_fuTemp(score);
+    var closer=normCloserName(m.responsavel||'')||(fu&&fu.closer)||'—';
+    var sdr=(m.sdrName||m.sdr||(ke&&ke.sdr)||'—');
+    universe.push({
+      id:m.id,mid:m.id,
+      nome:(ke&&ke.nome)||m.nome||'—',
+      empresa:(ke&&ke.empresa)||m.nome||'—',
+      tel:m.tel||'',
+      faturamento:fat,
+      origem:m.origem||(ke&&ke.origem)||'',
+      sdr:sdr,closer:closer,
+      meetDate:meetDate,days:days,
+      fu:fu,fid:Object.keys(followups).find(function(k){return followups[k]===fu;})||m.id,
+      category:cat,score:score,temp:temp,
+      motivo:_fuMotivo(fu,ke),
+      resultado:fu?fu.resultado||'':'',
+      dtISO:dtISO,ke:ke
+    });
+  });
+  // Step 4: Kanban leads without meetings (sem reunião) — qualificados 40k+
+  Object.keys(kanbanData).forEach(function(key){
+    var ke=kanbanData[key];
+    if(!ke||!ke.nome)return;
+    var fat=parseFaturamento(ke.faturamento||'');
+    if(fat<40000)return;
+    var tel=(ke.telefone||ke.tel||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+    if(tel&&(vendaTels.has(tel)||processedTels.has(tel)))return;
+    // Check if they have a meeting
+    var hasMeeting=Object.values(meetings).some(function(m){
+      var mt=(m.tel||'').replace(/\D/g,'');if(mt.length>9)mt=mt.slice(-9);
+      return (mt&&mt===tel)||(m.kanbanKey===key);
+    });
+    if(hasMeeting)return;
+    var stNorm=(ke.status||'').toLowerCase();
+    if(stNorm==='fechado'||stNorm==='perdido')return;
+    // Check created date
+    var created=ke._createdAt?new Date(ke._createdAt):null;
+    var days2=created?Math.floor((now-created)/86400000):0;
+    var score=_fuScore(null,null,ke,days2);
+    var temp=_fuTemp(score);
+    universe.push({
+      id:key,mid:null,
+      nome:ke.nome||'—',empresa:ke.empresa||ke.nome||'—',
+      tel:ke.telefone||ke.tel||'',
+      faturamento:fat,origem:ke.origem||'',
+      sdr:ke.sdr||'—',closer:normCloserName(ke.responsavel||'')||'—',
+      meetDate:null,days:days2,fu:null,fid:null,
+      category:'sem_reuniao',score:score,temp:temp,
+      motivo:'Sem reunião agendada',resultado:'',
+      dtISO:null,ke:ke
+    });
+  });
+  // Step 5: Recuperados
+  Object.keys(followups).forEach(function(fid){
+    var fu=followups[fid];
+    if(fu.resultado!=='venda')return;
+    var m=meetings[fu.meetingId]||meetings[fid];
+    if(!m)return;
+    var tel=(m.tel||fu.tel||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+    // Only include if meeting date was old (recovery scenario)
+    var dtISO=m.dtISO||(m.scheduledAt?new Date(m.scheduledAt).toISOString():null);
+    var meetDate=dtISO?new Date(dtISO):null;
+    var days3=meetDate?Math.floor((now-meetDate)/86400000):0;
+    if(days3<1)return; // same-day close, not a recovery
+    var ke=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var fat=ke?parseFaturamento(ke.faturamento||''):0;
+    universe.push({
+      id:fid,mid:m.id,
+      nome:(ke&&ke.nome)||m.nome||'—',
+      empresa:(ke&&ke.empresa)||m.nome||'—',
+      tel:m.tel||'',faturamento:fat,
+      origem:m.origem||(ke&&ke.origem)||'',
+      sdr:m.sdrName||m.sdr||'—',closer:normCloserName(m.responsavel||'')||'—',
+      meetDate:meetDate,days:days3,fu:fu,fid:fid,
+      category:'recuperado',score:100,temp:{label:'Venda',col:'#22c55e',bg:'rgba(34,197,94,0.12)',ic:'ti-trophy'},
+      motivo:'Venda recuperada',resultado:'venda',dtISO:dtISO,ke:ke
+    });
+  });
+  return universe.sort(function(a,b){return b.score-a.score;});
+}
+
+function renderFollowup(){
+  var tab=window._fuTab||'visao-geral';
+  var universe=_fuBuildUniverse();
+
+  // Counts per category
+  var counts={nao_fechou:0,noshow:0,sem_reuniao:0,reativacao:0,recuperado:0,perdido:0};
+  universe.forEach(function(l){if(counts[l.category]!==undefined)counts[l.category]++;});
+  var hotCount=universe.filter(function(l){return l.temp.label==='Quente'&&l.category!=='recuperado'&&l.category!=='perdido';}).length;
+  var atrasados=universe.filter(function(l){return l.days>7&&l.category!=='recuperado'&&l.category!=='perdido';}).length;
+
+  // Sub-tabs
+  var tabs=[
+    {id:'visao-geral',ic:'ti-layout-dashboard',lbl:'Visão Geral'},
+    {id:'nao_fechou',ic:'ti-message-circle-exclamation',lbl:'Não Fechou',cnt:counts.nao_fechou},
+    {id:'noshow',ic:'ti-user-off',lbl:'No-show',cnt:counts.noshow},
+    {id:'sem_reuniao',ic:'ti-calendar-x',lbl:'Sem Reunião',cnt:counts.sem_reuniao},
+    {id:'reativacao',ic:'ti-rotate-clockwise-2',lbl:'Reativação',cnt:counts.reativacao},
+    {id:'recuperado',ic:'ti-trophy',lbl:'Recuperados',cnt:counts.recuperado},
+    {id:'perdido',ic:'ti-archive',lbl:'Perdidos',cnt:counts.perdido}
+  ];
+
+  var H='<div class="page active" style="padding:22px;max-width:1600px;margin:0 auto;">';
+
+  // Header
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px;">'
+    +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;">CENTRAL DE FOLLOW-UP</div>'
+    +'<div style="font-size:11px;color:var(--muted);">Gestão de recuperação comercial · '+(universe.filter(function(l){return l.category!=='recuperado'&&l.category!=='perdido';}).length)+' leads ativos</div></div>'
+    +'<button onclick="window._fuTab=window._fuTab;showPage(\'followup\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:12px;"></i> Atualizar</button>'
+    +'</div>';
+
+  // Sub-tabs
+  H+='<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto;">';
+  tabs.forEach(function(t){
+    var a=tab===t.id;
+    var badge=t.cnt>0?'<span style="background:'+(a?'rgba(255,255,255,0.2)':'var(--purple3)')+';color:#fff;font-size:9px;padding:1px 5px;border-radius:10px;font-weight:700;">'+t.cnt+'</span>':'';
+    H+='<button onclick="window._fuTab=\''+t.id+'\';showPage(\'followup\')" style="background:none;border:none;border-bottom:'+(a?'2px solid var(--purple3)':'2px solid transparent')+';color:'+(a?'var(--white)':'var(--muted)')+';padding:10px 16px;font-size:11px;font-weight:'+(a?'700':'600')+';letter-spacing:1px;text-transform:uppercase;cursor:pointer;font-family:Barlow Condensed,sans-serif;display:flex;align-items:center;gap:6px;white-space:nowrap;"><i class="ti '+t.ic+'"></i>'+t.lbl+badge+'</button>';
+  });
+  H+='</div>';
+
+  if(tab==='visao-geral') H+=_fuRenderVisaoGeral(universe,counts,hotCount,atrasados);
+  else if(tab==='nao_fechou') H+=_fuRenderLeadTable(universe,'nao_fechou','Reunião Realizada — Não Fechou','Leads que realizaram reunião mas não compraram');
+  else if(tab==='noshow') H+=_fuRenderLeadTable(universe,'noshow','No-show Qualificado','Leads qualificados que não compareceram à reunião');
+  else if(tab==='sem_reuniao') H+=_fuRenderLeadTable(universe,'sem_reuniao','Qualificados Sem Reunião','Leads qualificados que ainda não agendaram');
+  else if(tab==='reativacao') H+=_fuRenderLeadTable(universe,'reativacao','Reativação','Leads parados há mais de 30 dias');
+  else if(tab==='recuperado') H+=_fuRenderLeadTable(universe,'recuperado','Recuperados','Leads que voltaram a avançar e fecharam');
+  else if(tab==='perdido') H+=_fuRenderLeadTable(universe,'perdido','Perdidos e Arquivados','Leads fora da fila principal');
+
+  H+='</div>';
+  return H;
+}
+
+function _fuRenderVisaoGeral(universe,counts,hotCount,atrasados){
+  var now=new Date();
+  var ativos=universe.filter(function(l){return l.category!=='recuperado'&&l.category!=='perdido';});
+  var recVendas=universe.filter(function(l){return l.category==='recuperado';});
+  var recReceita=recVendas.reduce(function(s,l){return s+(l.fu?parseFloat(l.fu.mensalidade||l.fu.contrato||0):0);},0);
+  function fmtR(n){if(!n)return'R$ 0';if(n>=1000)return'R$ '+(n/1000).toFixed(1).replace('.0','').replace('.',',')+' mil';return'R$ '+n;}
+
+  // KPI cards
+  function kpi(ic,col,lbl,val,sub){
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+      +'<span style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">'+lbl+'</span>'
+      +'<i class="ti '+ic+'" style="font-size:16px;color:'+col+';opacity:0.8;"></i>'
+      +'</div>'
+      +'<div style="font-family:Bebas Neue,sans-serif;font-size:34px;line-height:1;color:'+col+';">'+val+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-top:4px;">'+sub+'</div>'
+      +'</div>';
+  }
+  var H='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">';
+  H+=kpi('ti-users','#9333ea','Em Follow-up',ativos.length,'leads ativos na fila');
+  H+=kpi('ti-flame','#ef4444','Leads Quentes',hotCount,'score ≥ 70');
+  H+=kpi('ti-clock-exclamation','#f59e0b','Atrasados',atrasados,'sem contato há 7+ dias');
+  H+=kpi('ti-trophy','#22c55e','Recuperados',recVendas.length,recVendas.length>0?fmtR(recReceita)+' gerados':'—');
+  H+='</div>';
+
+  // Funnel
+  var funTot=ativos.length||1;
+  function funRow(lbl,n,col){var pct=Math.min(100,Math.round(n/funTot*100));return '<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:11px;"><span style="color:var(--muted);">'+lbl+'</span><span style="font-weight:700;color:'+col+';">'+n+'</span></div><div style="height:5px;background:rgba(255,255,255,0.07);border-radius:3px;"><div style="height:5px;width:'+pct+'%;background:'+col+';border-radius:3px;"></div></div></div>';}
+
+  H+='<div style="display:grid;grid-template-columns:1.4fr 1fr 1.4fr;gap:14px;margin-bottom:14px;">';
+  // Funil
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+    +'<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;">FUNIL DE RECUPERAÇÃO</div>'
+    +funRow('Reunião não fechou',counts.nao_fechou,'#9333ea')
+    +funRow('No-show qualificado',counts.noshow,'#f59e0b')
+    +funRow('Sem reunião',counts.sem_reuniao,'#3b82f6')
+    +funRow('Reativação',counts.reativacao,'#6b7280')
+    +'<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:11px;"><span style="color:var(--muted);">Recuperados</span><span style="color:#22c55e;font-weight:700;">'+counts.recuperado+'</span></div>'
+    +'</div>';
+
+  // Temperatura
+  var tempC={Quente:0,Morno:0,Frio:0};
+  ativos.forEach(function(l){tempC[l.temp.label]=(tempC[l.temp.label]||0)+1;});
+  var total=ativos.length||1;
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;">'
+    +'<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:18px;align-self:flex-start;">TEMPERATURA</div>'
+    +'<div style="display:flex;flex-direction:column;gap:12px;width:100%;">';
+  [['Quente','#ef4444','ti-flame'],['Morno','#f59e0b','ti-temperature'],['Frio','#3b82f6','ti-snowflake']].forEach(function(t){
+    var n=tempC[t[0]]||0;var pct=Math.round(n/total*100);
+    H+='<div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+      +'<div style="display:flex;align-items:center;gap:6px;"><i class="ti '+t[2]+'" style="color:'+t[1]+';font-size:13px;"></i><span style="font-size:11px;color:var(--muted);">'+t[0]+'</span></div>'
+      +'<span style="font-size:11px;font-weight:700;color:'+t[1]+';">'+n+' ('+pct+'%)</span>'
+      +'</div><div style="height:5px;background:rgba(255,255,255,0.07);border-radius:3px;"><div style="height:5px;width:'+pct+'%;background:'+t[1]+';border-radius:3px;"></div></div></div>';
+  });
+  H+='</div></div>';
+
+  // Closer ranking
+  var closerMap={};
+  ativos.forEach(function(l){var c=l.closer;if(!closerMap[c])closerMap[c]={total:0,hot:0};closerMap[c].total++;if(l.temp.label==='Quente')closerMap[c].hot++;});
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;">'
+    +'<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">POR RESPONSÁVEL</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;">';
+  Object.keys(closerMap).sort(function(a,b){return closerMap[b].total-closerMap[a].total;}).slice(0,6).forEach(function(c){
+    var d=closerMap[c];
+    H+='<div style="display:flex;align-items:center;justify-content:space-between;">'
+      +'<div style="display:flex;align-items:center;gap:8px;">'+renderUserAvatar(_fuCloserEmail(c),22,9,'rgba(147,51,234,0.15)')+'<span style="font-size:11px;color:var(--white);">'+c+'</span></div>'
+      +'<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;color:var(--muted);">'+d.total+' leads</span>'+(d.hot>0?'<span style="font-size:10px;background:rgba(239,68,68,0.1);color:#ef4444;padding:1px 5px;border-radius:8px;">'+d.hot+' 🔥</span>':'')+'</div>'
+      +'</div>';
+  });
+  H+='</div></div>';
+  H+='</div>'; // end 3-col grid
+
+  // Priority queue
+  var priority=ativos.filter(function(l){return l.category!=='perdido';}).sort(function(a,b){return b.score-a.score;}).slice(0,8);
+  H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">'
+    +'<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'
+    +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;">FILA PRIORITÁRIA DO DIA</div>'
+    +'<span style="font-size:11px;color:var(--muted);">ordenado por prioridade automática</span>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:0;">';
+  if(!priority.length){
+    H+='<div style="padding:40px;text-align:center;color:var(--muted);font-size:12px;">Nenhum lead na fila. 🎉</div>';
+  }
+  priority.forEach(function(l,i){
+    var catLabel={nao_fechou:'Reunião não fechou',noshow:'No-show',sem_reuniao:'Sem reunião',reativacao:'Reativação'}[l.category]||l.category;
+    var tel=(l.tel||'').replace(/\D/g,'');
+    var wa=tel?'https://wa.me/55'+tel:'#';
+    H+='<div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:'+(i<priority.length-1?'1px solid rgba(255,255,255,0.04)':'none')+';transition:background .15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.02)\'" onmouseout="this.style.background=\'\';">'
+      +'<div style="font-family:Bebas Neue,sans-serif;font-size:20px;color:var(--muted);width:22px;text-align:center;">'+(i+1)+'</div>'
+      +'<div style="width:7px;height:7px;border-radius:50%;background:'+l.temp.col+';flex-shrink:0;box-shadow:0 0 5px '+l.temp.col+'66;"></div>'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      +'<span style="font-size:12px;font-weight:700;color:var(--white);">'+(l.empresa!==l.nome?l.empresa:l.nome)+'</span>'
+      +'<span style="font-size:10px;background:rgba(147,51,234,0.12);color:#a78bfa;padding:1px 6px;border-radius:8px;">'+catLabel+'</span>'
+      +'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-top:2px;">'
+      +(l.meetDate?_fuFmtDays(l.days)+' atrás':'')+(l.faturamento?' · '+_fuFmtFat(l.faturamento):'')+(l.motivo?' · '+l.motivo:'')
+      +'</div></div>'
+      +'<div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">'
+      +(l.tel?'<a href="'+wa+'" target="_blank" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:7px;color:#22c55e;padding:5px 8px;font-size:11px;text-decoration:none;display:flex;align-items:center;gap:4px;"><i class="ti ti-brand-whatsapp"></i></a>':'')
+      +(l.mid?'<button onclick="openFollowup(meetings[\''+l.mid+'\'],true)" style="background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.25);border-radius:7px;color:#a78bfa;padding:5px 8px;font-size:11px;cursor:pointer;"><i class="ti ti-clipboard-check"></i></button>':'')
+      +'<button onclick="_fuOpenLead(\''+l.id+'\')" style="background:var(--bg);border:1px solid var(--border2);border-radius:7px;color:var(--muted);padding:5px 8px;font-size:11px;cursor:pointer;"><i class="ti ti-chevron-right"></i></button>'
+      +'</div>'
+      +'</div>';
+  });
+  H+='</div></div>';
+  return H;
+}
+
+function _fuRenderLeadTable(universe,category,title,subtitle){
+  var leads=universe.filter(function(l){return l.category===category;});
+  var H='<div>';
+
+  // Filters
+  H+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">'
+    +'<div style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border2);border-radius:8px;display:flex;align-items:center;gap:8px;padding:7px 12px;">'
+    +'<i class="ti ti-search" style="color:var(--muted);font-size:13px;"></i>'
+    +'<input id="fu-search" type="text" placeholder="Buscar lead, empresa, closer..." oninput="_fuFilterTable()" style="flex:1;background:none;border:none;color:var(--white);font-size:12px;outline:none;">'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);padding:0 4px;">'+leads.length+' lead'+(leads.length!==1?'s':'')+'</div>'
+    +'</div>';
+
+  if(!leads.length){
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:60px;text-align:center;color:var(--muted);">'
+      +'<i class="ti ti-check" style="font-size:40px;color:rgba(34,197,94,0.3);display:block;margin-bottom:12px;"></i>'
+      +'<div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:5px;">Nenhum lead aqui</div>'
+      +'<div style="font-size:11px;">'+subtitle+'</div>'
+      +'</div></div>';
+    return H;
+  }
+
+  // Table
+  var colHeaders={
+    nao_fechou:['Lead','Faturamento','Reunião','Closer','Motivo','Score','Temperatura',''],
+    noshow:['Lead','Faturamento','Data NS','SDR','Closer','Score','Temperatura',''],
+    sem_reuniao:['Lead','Faturamento','Origem','SDR','Qualificação','Score','Temperatura',''],
+    reativacao:['Lead','Faturamento','Última Interação','Closer','Score','Temperatura',''],
+    recuperado:['Lead','Faturamento','Data Reunião','Closer','MRR',''],
+    perdido:['Lead','Faturamento','Data','Closer','Motivo','']
+  };
+  var hdrs=colHeaders[category]||['Lead','Faturamento','Data','Closer','Status',''];
+
+  H+='<div id="fu-table-wrap" style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">'
+    +'<div style="overflow-x:auto;"><table id="fu-table" style="width:100%;border-collapse:collapse;">'
+    +'<thead><tr>'+hdrs.map(function(h){return'<th style="padding:10px 14px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;">'+h+'</th>';}).join('')+'</tr></thead>'
+    +'<tbody>';
+
+  leads.forEach(function(l){
+    var tel=(l.tel||'').replace(/\D/g,'');
+    var wa=tel?'https://wa.me/55'+tel:'#';
+    var daysLabel=l.meetDate?_fuFmtDays(l.days):'—';
+    var tempHtml='<span style="display:inline-flex;align-items:center;gap:4px;background:'+l.temp.bg+';color:'+l.temp.col+';padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;"><i class="ti '+l.temp.ic+'" style="font-size:10px;"></i>'+l.temp.label+'</span>';
+    var mrrVal=l.fu?parseFloat(l.fu.mensalidade||l.fu.contrato||0):0;
+
+    var cells=[];
+    // Lead cell
+    cells.push('<div style="min-width:140px;">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--white);" class="fu-nome">'+(l.empresa!==l.nome&&l.empresa!=='—'?l.empresa:l.nome)+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);">'+l.nome+(l.tel?' · '+l.tel:'')+'</div>'
+      +'</div>');
+    cells.push('<span style="font-size:12px;font-weight:700;color:'+(l.faturamento>=100000?'#22c55e':l.faturamento>=60000?'#f59e0b':'var(--white)')+';">'+_fuFmtFat(l.faturamento)+'</span>');
+    // Column 3 varies by category
+    if(category==='nao_fechou')cells.push('<span style="font-size:11px;color:var(--muted);">'+daysLabel+' atrás</span>');
+    else if(category==='noshow')cells.push('<span style="font-size:11px;color:var(--muted);">'+daysLabel+' atrás</span>');
+    else if(category==='sem_reuniao')cells.push('<span style="font-size:10px;background:rgba(147,51,234,0.1);color:#a78bfa;padding:1px 7px;border-radius:8px;">'+(l.origem||'—')+'</span>');
+    else if(category==='reativacao')cells.push('<span style="font-size:11px;color:'+( l.days>90?'#ef4444':l.days>60?'#f59e0b':'var(--muted)')+';">'+daysLabel+' atrás</span>');
+    else if(category==='recuperado')cells.push('<span style="font-size:11px;color:var(--muted);">'+daysLabel+' atrás</span>');
+    else cells.push('<span style="font-size:11px;color:var(--muted);">'+daysLabel+'</span>');
+    // SDR (some categories)
+    if(category==='noshow'||category==='sem_reuniao')cells.push('<span style="font-size:11px;color:var(--muted);">'+l.sdr+'</span>');
+    // Closer
+    cells.push('<div style="display:flex;align-items:center;gap:5px;">'+renderUserAvatar(_fuCloserEmail(l.closer),20,8,'rgba(147,51,234,0.15)')+'<span style="font-size:11px;">'+l.closer+'</span></div>');
+    // Motivo / MRR
+    if(category==='recuperado')cells.push('<span style="font-size:12px;font-weight:700;color:#22c55e;">'+(mrrVal>0?_fuFmtFat(mrrVal):'—')+'</span>');
+    else if(category!=='reativacao')cells.push('<span style="font-size:10px;color:var(--muted);max-width:140px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+l.motivo+'">'+l.motivo+'</span>');
+    // Score
+    if(category!=='recuperado'&&category!=='perdido'){
+      cells.push('<div style="display:flex;align-items:center;gap:6px;"><div style="width:32px;height:32px;border-radius:50%;border:2px solid '+l.temp.col+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:'+l.temp.col+';">'+l.score+'</div></div>');
+      cells.push(tempHtml);
+    }
+    // Actions
+    var actions='<div style="display:flex;gap:4px;flex-shrink:0;">'
+      +(l.tel?'<a href="'+wa+'" target="_blank" style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);border-radius:6px;color:#22c55e;padding:4px 8px;font-size:12px;text-decoration:none;" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i></a>':'')
+      +(l.mid&&category!=='recuperado'&&category!=='perdido'?'<button onclick="openFollowup(meetings[\''+l.mid+'\'],false)" style="background:rgba(147,51,234,0.1);border:1px solid rgba(147,51,234,0.25);border-radius:6px;color:#a78bfa;padding:4px 8px;font-size:12px;cursor:pointer;" title="Registrar contato"><i class="ti ti-clipboard-check"></i></button>':'')
+      +(l.mid&&(category==='noshow'||category==='sem_reuniao')?'<button onclick="_openReunEdit(\''+l.mid+'\')" style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#3b82f6;padding:4px 8px;font-size:12px;cursor:pointer;" title="Editar reunião"><i class="ti ti-calendar-plus"></i></button>':'')
+      +'<button onclick="_fuOpenLead(\''+l.id+'\')" style="background:var(--bg);border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:4px 8px;font-size:12px;cursor:pointer;" title="Ver detalhes"><i class="ti ti-chevron-right"></i></button>'
+      +'</div>';
+    cells.push(actions);
+
+    H+='<tr data-nome="'+(l.nome+' '+l.empresa).toLowerCase()+'" data-closer="'+l.closer.toLowerCase()+'" style="border-bottom:1px solid rgba(255,255,255,0.04);transition:background .15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.02)\'" onmouseout="this.style.background=\'\';">';
+    cells.forEach(function(c){H+='<td style="padding:10px 14px;vertical-align:middle;">'+c+'</td>';});
+    H+='</tr>';
+  });
+  H+='</tbody></table></div></div></div>';
+  return H;
+}
+
+function _fuFilterTable(){
+  var q=(document.getElementById('fu-search')||{}).value||'';q=q.toLowerCase().trim();
+  var rows=document.querySelectorAll('#fu-table tbody tr[data-nome]');
+  rows.forEach(function(r){
+    var m=!q||r.dataset.nome.includes(q)||r.dataset.closer.includes(q);
+    r.style.display=m?'':'none';
+  });
+}
+
+function _fuCloserEmail(name){
+  var em=null;
+  Object.keys(USERS||{}).forEach(function(e){if((USERS[e].closer||'').toLowerCase()===(name||'').toLowerCase())em=e;});
+  return em||'';
+}
+
+function _fuOpenLead(id){
+  var universe=_fuBuildUniverse();
+  var lead=universe.find(function(l){return l.id===id;});
+  if(!lead)return;
+  var m=lead.mid?meetings[lead.mid]:null;
+  var fu=lead.fu;
+  var now=new Date();
+  var old=document.getElementById('_fuLeadPanel');if(old)old.remove();
+  var tel=(lead.tel||'').replace(/\D/g,'');
+  var wa=tel?'https://wa.me/55'+tel:'#';
+
+  // Timeline events
+  var events=[];
+  if(m){
+    if(m.scheduledAt)events.push({dt:new Date(m.scheduledAt),ic:'ti-calendar',col:'#9333ea',txt:'Reunião agendada'});
+    if(lead.meetDate)events.push({dt:lead.meetDate,ic:'ti-users',col:'#22c55e',txt:'Reunião realizada'});
+  }
+  if(fu){
+    if(fu.resultado==='proposta')events.push({dt:new Date(fu.updatedAt||Date.now()),ic:'ti-file-description',col:'#3b82f6',txt:'Proposta enviada'});
+    if(fu.resultado==='perdido')events.push({dt:new Date(fu.updatedAt||Date.now()),ic:'ti-x',col:'#ef4444',txt:'Marcado como perdido'});
+    if(fu.resultado==='venda')events.push({dt:new Date(fu.updatedAt||Date.now()),ic:'ti-trophy',col:'#22c55e',txt:'Venda realizada!'});
+  }
+  events.sort(function(a,b){return a.dt-b.dt;});
+
+  var panel=document.createElement('div');
+  panel.id='_fuLeadPanel';
+  panel.innerHTML=
+    '<div onclick="document.getElementById(\'_fuLeadPanel\').remove()" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;">'
+    +'<div onclick="event.stopPropagation()" style="position:absolute;right:0;top:0;bottom:0;width:420px;background:#13152b;border-left:1px solid rgba(147,51,234,0.25);overflow-y:auto;display:flex;flex-direction:column;">'
+    // Header
+    +'<div style="padding:20px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:flex-start;justify-content:space-between;">'
+    +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:20px;letter-spacing:1px;">'+(lead.empresa!==lead.nome&&lead.empresa!=='—'?lead.empresa:lead.nome)+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+lead.nome+'</div>'
+    +'<div style="display:flex;gap:6px;margin-top:8px;">'
+    +'<span style="background:'+lead.temp.bg+';color:'+lead.temp.col+';padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;display:flex;align-items:center;gap:3px;"><i class="ti '+lead.temp.ic+'"></i>'+lead.temp.label+'</span>'
+    +'<span style="background:rgba(255,255,255,0.06);color:var(--muted);padding:2px 8px;border-radius:20px;font-size:10px;">Score: '+lead.score+'</span>'
+    +'</div></div>'
+    +'<button onclick="document.getElementById(\'_fuLeadPanel\').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0;">✕</button>'
+    +'</div>'
+    // Info grid
+    +'<div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;border-bottom:1px solid rgba(255,255,255,0.07);">'
+    +[['Faturamento',_fuFmtFat(lead.faturamento),'#22c55e'],['Closer',lead.closer,'#a78bfa'],['SDR',lead.sdr,'var(--white)'],['Origem',lead.origem||'—','var(--white)'],['Telefone',lead.tel||'—','var(--white)'],['Motivo',lead.motivo,'#f59e0b']].map(function(r){return'<div><div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:3px;">'+r[0]+'</div><div style="font-size:12px;font-weight:600;color:'+r[2]+';">'+r[1]+'</div></div>';}).join('')
+    +'</div>'
+    // Action buttons
+    +'<div style="padding:14px 16px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,0.07);">'
+    +(lead.tel?'<a href="'+wa+'" target="_blank" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:8px;color:#22c55e;padding:7px 12px;font-size:11px;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:5px;"><i class="ti ti-brand-whatsapp"></i>WhatsApp</a>':'')
+    +(lead.mid?'<button onclick="openFollowup(meetings[\''+lead.mid+'\'],false);document.getElementById(\'_fuLeadPanel\').remove()" style="background:rgba(147,51,234,0.12);border:1px solid rgba(147,51,234,0.3);border-radius:8px;color:#a78bfa;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-clipboard-check"></i> Registrar</button>':'')
+    +(lead.mid?'<button onclick="_openReunEdit(\''+lead.mid+'\');document.getElementById(\'_fuLeadPanel\').remove()" style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;"><i class="ti ti-settings"></i> Editar</button>':'')
+    +'</div>'
+    // Timeline
+    +'<div style="padding:16px;flex:1;">'
+    +'<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">HISTÓRICO COMERCIAL</div>'
+    +'<div style="display:flex;flex-direction:column;gap:0;">'
+    +(events.length?events.map(function(e){
+      return '<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+        +'<div style="width:28px;height:28px;background:'+e.col.replace('#','rgba(').slice(0,-1)+',0.12);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+e.ic+'" style="font-size:13px;color:'+e.col+';"></i></div>'
+        +'<div><div style="font-size:12px;color:var(--white);font-weight:500;">'+e.txt+'</div>'
+        +'<div style="font-size:10px;color:var(--muted);">'+e.dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})+'</div>'
+        +'</div></div>';
+    }).join(''):'<div style="color:var(--muted);font-size:11px;padding:20px 0;text-align:center;">Sem histórico registrado.</div>')
+    +'</div>'
+    // Observações
+    +(fu&&fu.observacoes?'<div style="margin-top:14px;padding:12px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:11px;color:var(--muted);line-height:1.5;"><b style="color:var(--white);">Observações:</b> '+fu.observacoes+'</div>':'')
+    +'</div>'
+    +'</div></div>';
+  document.body.appendChild(panel);
+}
+
+
+
 function renderReativacao(){
   return '<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Reativacao</div><div class="page-sub">Recontato de leads e no-shows</div></div></div>'+
