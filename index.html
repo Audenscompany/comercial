@@ -360,6 +360,13 @@ tbody tr:hover td{background:var(--pglow2);}
 </div>
 </div>
 <script>
+window.onerror=function(msg,src,line,col,err){
+  var area=document.getElementById('content');
+  if(area&&area.innerHTML.trim()===''){
+    area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;background:#1a0a0a;min-height:200px;"><b>Erro JS capturado:</b><br>'+msg+'<br>Linha: '+line+'<br><pre>'+(err?err.stack:'')+' </pre></div>';
+  }
+  return false;
+};
 // ===== SIGN PAGE IMMEDIATE CHECK (runs before DOMContentLoaded) =====
 (function(){
   var _sp=new URLSearchParams(window.location.search).get('sign');
