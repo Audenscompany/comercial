@@ -9255,13 +9255,10 @@ function renderReunioes(){
   function statusBadge(m){var fu=getFu(m);if(fu){if(fu.resultado==='venda')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Venda</span>';if(fu.resultado==='proposta')return '<span style="background:rgba(59,130,246,0.15);color:#3b82f6;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Proposta</span>';if(fu.comparecimento==='nao')return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">No-show</span>';if(fu.comparecimento==='sim')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Realizada</span>';}var st=(m.status||'').toLowerCase();if(st.includes('noshow')||st.includes('no-show'))return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">No-show</span>';if(isRealizada(m.status))return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Realizada</span>';return '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">Agendada</span>';}
   function fmtDt(iso){if(!iso)return '—';var d=new Date(iso);return d.getDate().toString().padStart(2,'0')+'/'+(d.getMonth()+1).toString().padStart(2,'0')+' '+d.getHours().toString().padStart(2,'0')+'h';}
 
-  // Canal breakdown
-  var canais=['Trafego Pago','Cold Call','Indicacao','Organico'];
+  // Canal breakdown — todos os canais individualmente (sem agrupar em Outros)
   var canalMap={};
-  canais.forEach(function(c){canalMap[c]={ag:0,real:0,vend:0,rec:0};});
-  canalMap['Outros']={ag:0,real:0,vend:0,rec:0};
-  dedupedRows.forEach(function(m){var o=categorizeOrigem(m.origem||'');var k=canalMap[o]?o:'Outros';canalMap[k].ag++;if(isReal(m))canalMap[k].real++;if(isVenda(m)){canalMap[k].vend++;canalMap[k].rec+=getReceita(m);}});
-  var canalIcons={'Trafego Pago':'#9333ea','Cold Call':'#3b82f6','Indicacao':'#22c55e','Organico':'#f59e0b','Outros':'#6b7280'};
+  dedupedRows.forEach(function(m){var o=(m.origem||'').trim()||'Não informado';if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;if(isVenda(m)){canalMap[o].vend++;canalMap[o].rec+=getReceita(m);}});
+  function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('trafego')||l.includes('pago')||l.includes('ads')||l.includes('meta'))return'#9333ea';if(l.includes('cold')||l.includes('call'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';return'#6b7280';}
 
   // Faixas
   var fatFaixas=[{label:'Até R$20 mil',min:0,max:20000},{label:'R$20-R$40 mil',min:20000,max:40000},{label:'R$40-R$90 mil',min:40000,max:90000},{label:'R$90-R$150 mil',min:90000,max:150000},{label:'Acima de R$100 mil',min:150000,max:1e9}];
@@ -9384,7 +9381,7 @@ function renderReunioes(){
     '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">PERFORMANCE POR CANAL</div>'+
     tbl(['Canal','Agend.','Realizadas','Vendas','Conversão','Receita'],
       Object.keys(canalMap).filter(function(c){return canalMap[c].ag>0;}).sort(function(a,b){return canalMap[b].ag-canalMap[a].ag;}).map(function(c){
-        var d=canalMap[c],cv=pct(d.vend,d.real),col2=canalIcons[c]||'#6b7280';
+        var d=canalMap[c],cv=pct(d.vend,d.real),col2=canalColor(c);
         return trow(['<span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:'+col2+';flex-shrink:0;"></span>'+c+'</span>',d.ag,d.real,'<b style="color:#22c55e;">'+d.vend+'</b>','<span style="color:'+(cv>=25?'#22c55e':cv>=15?'#f59e0b':'#ef4444')+';">'+cv+'%</span>',fmtR(d.rec)]);
       })
     )+
