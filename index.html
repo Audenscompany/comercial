@@ -7531,7 +7531,8 @@ async function loadAssinaturas(){
       var jaDisparou=r._webhookDisparado===true;
       var webhookBtn=jaTemVenda
         ? (jaDisparou
-            ? '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;"><i class="ti ti-send"></i> Enviado ao sistema</span>'
+            ? '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;"><i class="ti ti-check"></i> Enviado</span>'
+              +'<button id="wh-btn-'+id+'" class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.08);color:var(--purple3);border:1px solid rgba(99,102,241,0.25);" onclick="reenviarWebhookVenda(\''+id+'\',this)" title="Reenviar ao Cockpit"><i class="ti ti-refresh"></i> Reenviar</button>'
             : '<button id="wh-btn-'+id+'" class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.15);color:var(--purple3);border:1px solid rgba(99,102,241,0.35);" onclick="dispararWebhookVenda(\''+id+'\')" title="Enviar dados do cliente para o sistema externo"><i class="ti ti-send"></i> Enviar p/ sistema</button>')
         : '';
       // Botão PDF assinado — aparece após assinatura desenhada
@@ -7711,6 +7712,13 @@ async function dispararWebhookVenda(id){
     showSheetToast('❌ Erro ao disparar webhook: '+e.message,true);
   }
 }
+async function reenviarWebhookVenda(id, btn){
+  // Reset flag then resend
+  try{ if(fbDb) await fbDb.ref('assinaturas/'+id).update({_webhookDisparado:false}); }catch(e){}
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>'; }
+  await dispararWebhookVenda(id);
+}
+
 async function abrirModalAsaasAssinatura(id){
   var data=(await fbGet('assinaturas/'+id))||{};
   var vd=data.vendaData||{};
