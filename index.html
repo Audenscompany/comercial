@@ -1996,7 +1996,7 @@ function kanbanCardHtml(e,idx){
       '</div>'+
       (e.empresa?'<div class="kanban-card-sub"><i class="ti ti-building"></i> '+e.empresa+'</div>':'')+
       (e.faturamento?'<div class="kanban-card-sub'+fatClass+'"><i class="ti ti-currency-dollar"></i> '+e.faturamento+'</div>':'')+
-      (idx===0&&(e._createdAt||e._source==='import'&&e._createdAt)?(function(){var ms=Date.now()-(e._createdAt||0);if(!e._createdAt)return'';var mins=Math.floor(ms/60000);var lbl=mins<1?'agora':mins<60?mins+'min':Math.floor(mins/60)+'h';var hot=mins>10&&mins<9999;return '<div class="kanban-card-sub" style="color:'+(hot?'#f87171':'#4ade80')+';font-size:11px;"><i class="ti ti-clock" style="font-size:10px;"></i> Chegou há '+lbl+(hot?' ⚡':'')+'</div>';})():'')+
+      (idx<2&&e._createdAt?(function(){var ms=Date.now()-(e._createdAt||0);var mins=Math.floor(ms/60000);var lbl=mins<1?'agora':mins<60?mins+'min':Math.floor(mins/60)+'h '+Math.floor(mins%60)+'min';var hot=mins>10;var label=idx===0?'Chegou há':'No funil há';return '<div class="kanban-card-sub" style="color:'+(hot?'#f87171':'#4ade80')+';font-size:11px;"><i class="ti ti-clock" style="font-size:10px;"></i> '+label+' '+lbl+(hot?' ⚡':'')+'</div>';})():'')+
       (e.ad?'<div class="kanban-card-sub" style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+e.ad+'"><i class="ti ti-ad-2"></i> '+e.ad+'</div>':'')+
       (e.meetingDisplay?'<div class="kanban-card-sub"><i class="ti ti-calendar-event"></i> Reuniao: '+e.meetingDisplay+(e.responsavel?' ('+e.responsavel+')':'')+'</div>':'')+
       (e.retornoDisplay?'<div class="kanban-card-sub" style="color:var(--amber);"><i class="ti ti-calendar-due"></i> Retorno: '+e.retornoDisplay+'</div>':'')+
