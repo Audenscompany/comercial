@@ -9103,11 +9103,10 @@ function renderReunioes(){
   function dedupLeads(arr){
     var seen={};var out=[];
     arr.forEach(function(m){
-      var k=((m.tel||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
+      var k=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
       if(!k)return;
       if(!seen[k]){seen[k]=m;out.push(m);}
       else if(isNs(seen[k])&&isReal(m)){
-        // substituir no-show por realizada do mesmo lead
         out[out.indexOf(seen[k])]=m;seen[k]=m;
       }
     });
@@ -13656,7 +13655,7 @@ function renderReunioesNoshow(){
     var seen={};var out=[];
     arr.forEach(function(m){
       var k=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
-      if(!k){out.push(m);return;}
+      if(!k)return;
       if(!seen[k]){seen[k]=m;out.push(m);}
       else if(isNs(seen[k])&&isReal(m)){out[out.indexOf(seen[k])]=m;seen[k]=m;}
     });
