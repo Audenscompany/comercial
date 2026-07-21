@@ -299,10 +299,7 @@ tbody tr:hover td{background:var(--pglow2);}
     <div class="login-logo">AUDENS</div>
     <div class="login-sub">Company · CRM Comercial</div>
     <div class="login-div"></div>
-    <div class="role-tabs">
-      <button class="role-tab active" id="tab-gestor" onclick="selectRole('gestor')"><i class="ti ti-shield-check"></i> Gestor</button>
-      <button class="role-tab" id="tab-atendente" onclick="selectRole('atendente')"><i class="ti ti-headset"></i> Atendente</button>
-    </div>
+
     <label class="f-label">E-mail</label>
     <input class="f-input" id="login-email" type="email" placeholder="seu@email.com">
     <label class="f-label">Senha</label>
@@ -422,7 +419,7 @@ function nextBusinessDay(d){
 }
 
 // ===== STATE =====
-var CU=null,selRole='gestor';
+var CU=null;
 
 // Auto-restore session on page load
 window.addEventListener('DOMContentLoaded', function(){
@@ -3745,9 +3742,7 @@ async function createGcalEvent(meeting){
 
 // ===== AUTH =====
 function selectRole(r){
-  selRole=r;
-  document.getElementById('tab-gestor').classList.toggle('active',r==='gestor');
-  document.getElementById('tab-atendente').classList.toggle('active',r==='atendente');
+// selectRole removed — role determined by email
 }
 function doLogin(){
   if(!fbDb) initFirebase();
@@ -3755,32 +3750,34 @@ function doLogin(){
   var pw=document.getElementById('login-senha').value;
   var er=document.getElementById('login-err');
   var u=USERS[em];
-  if(!u){er.textContent='E-mail nao encontrado.';return;}
-  // Verificar também contra a senha padrão original do código (imune a corrupção no Firebase)
+  if(!u){er.textContent='E-mail não encontrado.';return;}
   var _defaultPw=USERS_DEFAULTS&&USERS_DEFAULTS[em];
+  // Se a senha não bate localmente, recarrega do Firebase e tenta de novo
   if(u.pw!==pw&&_defaultPw!==pw){
     er.textContent='Verificando...';
     loadUserPasswords().then(function(){
       var u2=USERS[em];
       if(!u2){er.textContent='Usuário não encontrado.';return;}
       if(u2.pw!==pw&&_defaultPw!==pw){er.textContent='Senha incorreta.';return;}
-      // Se passou com senha default mas Firebase tem valor diferente, reseta Firebase
       if(_defaultPw===pw&&u2.pw!==pw){
         if(fbDb){var fbKey=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey).remove();}
         u2.pw=pw;
       }
-      if(u2.role!==selRole){er.textContent='Perfil incorreto. Selecione '+(u2.role==='gestor'?'Gestor':'Atendente')+' acima.';return;}
-      er.textContent='';CU={email:em,role:u2.role,name:u2.name,initials:u2.initials,closer:u2.closer,funcao:u2.funcao||'closer'};localStorage.setItem('audens_session',JSON.stringify({email:em}));showMain();
+      er.textContent='';
+      CU={email:em,role:u2.role,name:u2.name,initials:u2.initials,closer:u2.closer,funcao:u2.funcao||'closer'};
+      localStorage.setItem('audens_session',JSON.stringify({email:em}));
+      showMain();
     });
     return;
   }
-  // Se senha bate com o default mas Firebase sobrescreveu localmente, reseta
   if(_defaultPw===pw&&u.pw!==pw){
     if(fbDb){var fbKey2=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey2).remove();}
     u.pw=pw;
   }
-  if(u.role!==selRole){er.textContent='Perfil incorreto. Selecione '+(u.role==='gestor'?'Gestor':'Atendente')+' acima.';return;}
-  er.textContent='';CU={email:em,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};localStorage.setItem('audens_session',JSON.stringify({email:em}));showMain();
+  er.textContent='';
+  CU={email:em,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
+  localStorage.setItem('audens_session',JSON.stringify({email:em}));
+  showMain();
 }
 function doLogout(){
   CU=null;localStorage.removeItem('audens_session');document.getElementById('login-email').value='';document.getElementById('login-senha').value='';
@@ -9391,7 +9388,6 @@ function renderReunioes(){
 }
 function _rvMesCh(v){try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;}showPage('reunioes');}
 
-}
 function changeDashPeriod(p){_dashPeriod=p;_dashStart=null;_dashEnd=null;refreshDashCom();}
 function applyDashDateRange(){
   var s=document.getElementById('dash-start');
