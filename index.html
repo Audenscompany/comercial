@@ -3274,6 +3274,37 @@ async function fetchMetaSpend(period){
   }
   return anyOk?totalSpend:null;
 }
+
+async function fetchMetaAdSpendMap(period){
+  if(!isMetaConnected()||!metaAccountId)return {};
+  var pp=period.split('/');
+  var month=parseInt(pp[0]),year=parseInt(pp[1]);
+  var since=year+'-'+String(month).padStart(2,'0')+'-01';
+  var now=new Date();
+  var isCurrent=(month===now.getMonth()+1&&year===now.getFullYear());
+  var until=isCurrent
+    ?now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
+    :year+'-'+String(month).padStart(2,'0')+'-'+String(new Date(year,month,0).getDate()).padStart(2,'0');
+  var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
+  var map={};
+  for(var i=0;i<ids.length;i++){
+    try{
+      var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights'
+        +'?fields=ad_name,spend'
+        +'&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')
+        +'&level=ad&limit=500'
+        +'&access_token='+metaToken.access_token;
+      var resp=await fetch(url);var data=await resp.json();
+      if(data.error){console.error('fetchMetaAdSpendMap',data.error);continue;}
+      (data.data||[]).forEach(function(row){
+        var n=(row.ad_name||'').trim();
+        var sp=parseFloat(row.spend)||0;
+        map[n]=(map[n]||0)+sp;
+      });
+    }catch(e){console.error('fetchMetaAdSpendMap acc '+ids[i],e);}
+  }
+  return map;
+}
 function saveMetaConfig(){
   var appEl=document.getElementById('meta-app-id');
   var accEl=document.getElementById('meta-account-id');
@@ -12016,6 +12047,7 @@ async function refreshAnaliseAds(){
       var period=_adsPeriod||getCurrentPeriod();
       var spend=await fetchMetaSpend(period);
       if(spend!==null){_investidoMes[period]=spend;saveAll();}
+      window._metaAdSpendMap=await fetchMetaAdSpendMap(period);
     }
     // Ads: lê leads, reuniões e clientes da planilha via loadDataHybrid (leads+reuniões+clientes em 3 requests)
     var dataAds=await loadDataHybrid();
@@ -12499,6 +12531,8 @@ function buildAnaliseAdsHTML(data){
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Leads</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Qualif.</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Taxa</th>'+
+          '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Gasto</th>'+
+          '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">CPL Qual.</th>'+
           '<th style="padding:10px 8px;text-align:center;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Decisao</th>'+
         '</tr>'+
       '</thead>'+
@@ -12523,6 +12557,16 @@ function buildAnaliseAdsHTML(data){
       '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:var(--white);">'+a.leads+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;color:var(--cyan);">'+a.qualif+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+qCol+';">'+q+'%</td>'+
+      (function(){
+        var _sm=window._metaAdSpendMap||{};
+        var _sp=_sm[a.ad]||0;
+        var _cplQ=(_sp>0&&a.qualif>0)?(_sp/a.qualif):0;
+        var _spFmt=_sp>0?'R$'+(_sp>=1000?(_sp/1000).toFixed(1)+'k':Math.round(_sp)):'—';
+        var _cplFmt=_cplQ>0?'R$'+Math.round(_cplQ):'—';
+        var _cplCol=_cplQ<=0?'var(--muted)':_cplQ<=150?'#4ade80':_cplQ<=300?'#fbbf24':'#f87171';
+        return '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+(_sp>0?'var(--white)':'var(--muted)')+';">'+_spFmt+'</td>'+
+               '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+_cplCol+';">'+_cplFmt+'</td>';
+      })()+
       '<td style="padding:10px 8px;text-align:center;">'+
         '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:'+decBg+';font-size:10px;font-weight:700;letter-spacing:1px;color:'+decCl+';">'+
           '<i class="ti '+decIc+'" style="font-size:10px;"></i>'+dec+
@@ -12531,7 +12575,7 @@ function buildAnaliseAdsHTML(data){
     '</tr>';
   });
   if(adsSorted.length===0){
-    html+='<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anuncio com dados no periodo.</td></tr>';
+    html+='<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anuncio com dados no periodo.</td></tr>';
   }
   html+='</tbody></table></div></div>';
 
