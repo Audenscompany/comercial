@@ -9735,6 +9735,44 @@ function buildDashComHTML(data){
   // All clientes for annual metrics
   var todosClientes=data.clientes.rows;
 
+  // ── UNIFICAÇÃO DE FONTE: mês atual vem do Firebase (fonte de verdade do CRM)
+  // Meses passados mantêm Planilha Google (CRM foi implementado no meio do mês passado)
+  (function(){
+    var now=new Date();
+    var curMonthStart=new Date(now.getFullYear(),now.getMonth(),1);
+    // Remover do Sheets as linhas do mês atual (Firebase substitui)
+    clientesF=clientesF.filter(function(c){
+      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+      return d&&d<curMonthStart;
+    });
+    // Adicionar vendas do mês atual vindas do Firebase
+    Object.values(followups||{}).forEach(function(fu){
+      if(fu.resultado!=='venda')return;
+      if(typeof isVendaCancelada==='function'&&isVendaCancelada(fu))return;
+      var m=fu.meetingId?meetings[fu.meetingId]:null;
+      var dt=null;
+      if(typeof _vendaDate==='function'){dt=_vendaDate(fu,m);}
+      if(!dt){if(fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}else if(m&&m.dtISO){dt=new Date(m.dtISO);}}
+      if(!dt||isNaN(dt.getTime())||dt<curMonthStart)return;
+      if(!inRange(dt))return;
+      var dtStr=String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
+      var closer=fu.closerNome||(m?normCloserName(m.responsavel||''):'')||'';
+      var sdr=fu.sdrNome||(m?(m.sdrName||m.sdr||''):'')||'';
+      var origem=fu.origem||(m?(m.origem||''):'')||'';
+      clientesF.push({
+        'DATA DE INICIO':dtStr,'DATA DE INÍCIO':dtStr,
+        'VALOR CONTRATO/MÊS':String(fu.mensalidade||0),
+        'VALOR CONTRATO/MES':String(fu.mensalidade||0),
+        'VALOR VENDIDO DO CONTRATO':String(fu.contrato||0),
+        'CLOSER':closer,'Closer':closer,
+        'SDR/BDR':sdr,'SDR':sdr,'Sdr':sdr,
+        'ORIGEM':origem,'Origem':origem,
+        'PLANO':fu.plano||'','Plano':fu.plano||'',
+        '_fb':true
+      });
+    });
+  })();
+
   // ---- BASE METRICS ----
   var totalLeads=leadsF.length;
   var leadsQ=leadsF.filter(function(l){return parseFaturamentoLead(l)>=40000;}).length;
