@@ -9260,23 +9260,23 @@ function renderReunioes(){
   var canalMap={};
   canais.forEach(function(c){canalMap[c]={ag:0,real:0,vend:0,rec:0};});
   canalMap['Outros']={ag:0,real:0,vend:0,rec:0};
-  rows.forEach(function(m){var o=categorizeOrigem(m.origem||'');var k=canalMap[o]?o:'Outros';canalMap[k].ag++;if(isReal(m))canalMap[k].real++;if(isVenda(m)){canalMap[k].vend++;canalMap[k].rec+=getReceita(m);}});
+  dedupedRows.forEach(function(m){var o=categorizeOrigem(m.origem||'');var k=canalMap[o]?o:'Outros';canalMap[k].ag++;if(isReal(m))canalMap[k].real++;if(isVenda(m)){canalMap[k].vend++;canalMap[k].rec+=getReceita(m);}});
   var canalIcons={'Trafego Pago':'#9333ea','Cold Call':'#3b82f6','Indicacao':'#22c55e','Organico':'#f59e0b','Outros':'#6b7280'};
 
   // Faixas
   var fatFaixas=[{label:'Até R$20 mil',min:0,max:20000},{label:'R$20-R$40 mil',min:20000,max:40000},{label:'R$40-R$90 mil',min:40000,max:90000},{label:'R$90-R$150 mil',min:90000,max:150000},{label:'Acima de R$100 mil',min:150000,max:1e9}];
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
-  rows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;if(isVenda(m))fatNI.vend++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;if(isVenda(m))f.vend++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;if(isVenda(m))fatNI.vend++;}});
+  dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;if(isVenda(m))fatNI.vend++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;if(isVenda(m))f.vend++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;if(isVenda(m))fatNI.vend++;}});
 
   // Closer ranking
   var closerMap={};
-  rows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};if(isReal(m))closerMap[c].real++;if(isProp(m))closerMap[c].prop++;if(isVenda(m)){closerMap[c].vend++;closerMap[c].rec+=getReceita(m);}});
+  dedupedRows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};if(isReal(m))closerMap[c].real++;if(isProp(m))closerMap[c].prop++;if(isVenda(m)){closerMap[c].vend++;closerMap[c].rec+=getReceita(m);}});
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return b.d.vend-a.d.vend||b.d.real-a.d.real;});
 
   // SDR ranking (with confirmadas)
   var sdrMap={};
-  rows.forEach(function(m){var s=(m.sdrName||m.sdr||'—').trim()||'—';if(!sdrMap[s])sdrMap[s]={ag:0,conf:0,real:0,ns:0};sdrMap[s].ag++;if(isConf(m))sdrMap[s].conf++;if(isReal(m))sdrMap[s].real++;if(isNs(m))sdrMap[s].ns++;});
+  dedupedRows.forEach(function(m){var s=(m.sdrName||m.sdr||'—').trim()||'—';if(!sdrMap[s])sdrMap[s]={ag:0,conf:0,real:0,ns:0};sdrMap[s].ag++;if(isConf(m))sdrMap[s].conf++;if(isReal(m))sdrMap[s].real++;if(isNs(m))sdrMap[s].ns++;});
   var sdrRank=Object.keys(sdrMap).map(function(s){return{name:s,d:sdrMap[s]};}).sort(function(a,b){return b.d.real-a.d.real;});
 
   // Insights
