@@ -13479,6 +13479,10 @@ async function loadFunilReunioes(){
     var elRvAg=document.getElementById('rv-ag');   if(elRvAg)elRvAg.textContent=shTotal;
     var elRvRe=document.getElementById('rv-real'); if(elRvRe)elRvRe.textContent=shReal;
     var elRvNs=document.getElementById('rv-ns');   if(elRvNs)elRvNs.textContent=shNoshow;
+    // Atualiza KPIs da página No-show com os mesmos dados da planilha
+    var elNsEl=document.getElementById('ns-eleg');  if(elNsEl)elNsEl.textContent=shTotal;
+    var elNsTo=document.getElementById('ns-total'); if(elNsTo)elNsTo.textContent=shNoshow;
+    var elNsTx=document.getElementById('ns-taxa');  if(elNsTx)elNsTx.textContent=shTotal>0?Math.round(shNoshow/shTotal*100):0;
     // Vendas e receita: Firebase com filtro de cancelados (mesmo que Dashboard Comercial)
     (function(){
       try{
@@ -13813,9 +13817,9 @@ function renderReunioesNoshow(){
 
   // 6 KPIs
   H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:14px;">'+
-    kpiCard('Reuniões Elegíveis',elegiveis,'Realizadas + no-shows','','var(--muted)','ti-calendar-check',histNsAbs.map(function(){return elegiveis;}))+
-    kpiCard('Total No-shows',totalNs,'De '+elegiveis+' elegíveis','','#ef4444','ti-user-off',histNsAbs)+
-    kpiCard('Taxa de No-show',taxaNs+'%','Meta: abaixo de 20%',dInv(taxaNs,prevTaxaNs),(taxaNs<=20?'#22c55e':taxaNs<=30?'#f59e0b':'#ef4444'),'ti-percent',histNsTx)+
+    kpiCard('Reuniões Elegíveis','<span id="ns-eleg">'+elegiveis+'</span>','Realizadas + no-shows','','var(--muted)','ti-calendar-check',histNsAbs.map(function(){return elegiveis;}))+
+    kpiCard('Total No-shows','<span id="ns-total">'+totalNs+'</span>','De '+elegiveis+' elegíveis','','#ef4444','ti-user-off',histNsAbs)+
+    kpiCard('Taxa de No-show','<span id="ns-taxa">'+taxaNs+'</span>%','Meta: abaixo de 20%',dInv(taxaNs,prevTaxaNs),(taxaNs<=20?'#22c55e':taxaNs<=30?'#f59e0b':'#ef4444'),'ti-percent',histNsTx)+
     kpiCard('Leads Qualificados',qualifs,'Com faturamento informado','','#3b82f6','ti-building',histNsAbs.map(function(){return qualifs;}))+
     kpiCard('Oportunidade Perdida',fmtR(opR),'Mensalidade est. ns','','#f59e0b','ti-currency-dollar',histNsAbs)+
     kpiCard('Taxa de Recuperação',txRecup+'%',''+recuperados+' de '+totalNs+' recuperados','','#9333ea','ti-refresh',histNsAbs.map(function(v){return v>0?txRecup:0;}))+
