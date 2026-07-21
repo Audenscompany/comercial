@@ -7665,7 +7665,21 @@ async function dispararWebhookVenda(id){
     });
     var planoDur=parseInt(vd.duracaoMeses||vd.duracao)||1;
     var isTcv=(vd.tipoValor||'').toLowerCase()==='tcv';
-    var mensalidade=isTcv?Math.round((parseFloat(vd.contrato)||0)/planoDur):(parseFloat(vd.mensalidade||vd.contrato)||0);
+    // Tenta múltiplas fontes de mensalidade (valorParcela, mensalidade, contrato/dur)
+    var mensalidade=isTcv
+      ? Math.round((parseFloat(vd.valorTotal||vd.contrato)||0)/planoDur)
+      : (parseFloat(vd.mensalidade||vd.valorParcela)||0);
+    // Fallback: busca nos followups pelo telefone se mensalidade ainda for 0
+    if(!mensalidade){
+      Object.values(followups||{}).forEach(function(fu){
+        if(fu.resultado!=='venda') return;
+        var m=meetings[fu.meetingId]||meetings[fu.id]||null;
+        var mTel=m?(m.tel||'').replace(/\D/g,''):'';
+        if(mTel&&(mTel===telRaw||mTel.endsWith(telRaw)||telRaw.endsWith(mTel))){
+          mensalidade=parseFloat(fu.mensalidade||fu.contrato)||mensalidade;
+        }
+      });
+    }
     // Mapeamento de plano para o enum do Cockpit
     var planoRaw=(vd.plano||'').toLowerCase();
     var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':planoRaw==='marketplaces'||planoRaw==='marketplace'?'Marketplace':(vd.plano||'');
@@ -8592,8 +8606,20 @@ async function reenviarAssinaturaContrato(btn){
       contratoNome:d.nomeArquivo.replace(/\.docx$/i,''),
       pdfUrl:pdfUrl,
       telefone:d.dados.telefone||'',
+      cnpj:d.dados.cnpjCliente||'',
       status:'pendente',
-      createdAt:Date.now()
+      createdAt:Date.now(),
+      vendaData:{
+        plano:d.dados.plano||'',
+        duracaoMeses:d.dados.duracaoMeses||1,
+        dataInicio:d.dados.dataInicio||'',
+        tipoValor:d.dados.tipoValor||'',
+        valorTotal:d.dados.valorTotal||0,
+        valorParcela:d.dados.valorParcela||0,
+        mensalidade:d.dados.valorParcela||d.dados.mensalidade||0,
+        cnpj:d.dados.cnpjCliente||''
+      },
+      comercial:{closer:d.dados.closer||'',sdrNome:d.dados.sdrNome||'',origem:d.dados.origem||''}
     });
     var signId=ref&&ref.key;
     if(signId){
