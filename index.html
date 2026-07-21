@@ -4353,7 +4353,7 @@ function showPage(id){
     if(id==='audens-day') setTimeout(loadAudensDay,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
-    if(id==='vendas') setTimeout(loadVendasSheets,50);
+    if(id==='vendas'){setTimeout(loadVendasSheets,50);setTimeout(autoSyncAssinaturas,200);}
     if(id==='financeiro'||id.startsWith('fin-')) setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -7662,6 +7662,110 @@ async function apagarAssinatura(id, nomeCliente){
     alert('Erro ao apagar: '+e.message);
   }
 }
+
+// Auto-sync: registra assinaturas assinadas que ainda não foram marcadas como venda
+// Chamado quando a página Vendas carrega — sem confirmações, sem redirecionar
+async function autoSyncAssinaturas(){
+  if(!fbDb) return;
+  var data;
+  try{ data=await fbGet('assinaturas'); }catch(e){ return; }
+  if(!data) return;
+  var now=new Date();
+  var pendentes=Object.keys(data).filter(function(id){
+    var r=data[id];
+    return r.status==='assinado' && !r._vendaRegistrada;
+  });
+  if(!pendentes.length) return;
+  var registradas=0;
+  for(var pi=0;pi<pendentes.length;pi++){
+    var id=pendentes[pi];
+    var r=data[id];
+    try{
+      var telRaw=(r.telefone||'').replace(/\D/g,'');
+      // Encontra meeting por telefone (mais recente)
+      var match=null;
+      Object.values(meetings).forEach(function(m){
+        var mTel=(m.tel||'').replace(/\D/g,'');
+        if(mTel===telRaw||mTel.endsWith(telRaw)||telRaw.endsWith(mTel)){
+          if(!match||((m.dtISO||'')>(match.dtISO||''))) match=m;
+        }
+      });
+      if(!match){
+        // Cria meeting sintética vinculada à assinatura
+        var synId='syn_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+        var signDt=r.signedAt?new Date(r.signedAt):now;
+        var synMeeting={id:synId,tel:telRaw,nome:r.cliente||'',
+          responsavel:(r.comercial&&r.comercial.closer)||'',
+          sdrName:(r.comercial&&r.comercial.sdrNome)||'',
+          sdr:(r.comercial&&r.comercial.sdrNome)||'',
+          origem:(r.comercial&&r.comercial.origem)||'',
+          dtISO:signDt.toISOString(),status:'done',_sintetico:true};
+        meetings[synId]=synMeeting;
+        saveMeetingFB(synId, synMeeting);
+        match=synMeeting;
+      }
+      var fid=match.id;
+      // Já tem followup de venda? Só marca _vendaRegistrada
+      var fuExist=followups[fid];
+      if(fuExist&&fuExist.resultado==='venda'){
+        fbDb.ref('assinaturas/'+id).update({_vendaRegistrada:true});
+        continue;
+      }
+      var vd=r.vendaData||{};
+      // Data de início: usa dataInicio do contrato se for no mês corrente ou passado; caso contrário usa data de assinatura
+      var diRaw=vd.dataInicio||'';
+      var diDate=diRaw?new Date(diRaw+'T12:00:00'):null;
+      var signedDate=r.signedAt?new Date(r.signedAt):now;
+      // Se dataInicio está em mês futuro em relação à data de assinatura, usa data de assinatura
+      var efDi=diDate&&(diDate.getFullYear()<signedDate.getFullYear()||(diDate.getFullYear()===signedDate.getFullYear()&&diDate.getMonth()<=signedDate.getMonth()))
+        ? diRaw
+        : signedDate.toISOString().split('T')[0];
+      // dt em formato DD/MM/YYYY para parseBRDate funcionar
+      var dtBR=String(signedDate.getDate()).padStart(2,'0')+'/'+String(signedDate.getMonth()+1).padStart(2,'0')+'/'+signedDate.getFullYear();
+      var mensBase=parseFloat(vd.mensalidade)||parseFloat(vd.valorParcela)||0;
+      var fuData={
+        meetingId:fid,tel:match.tel,nome:match.nome,
+        comparecimento:'sim',venda:'sim',resultado:'venda',
+        plano:vd.plano||'',duracao:parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||0,
+        dataInicio:efDi,tipoValor:vd.tipoValor||'mensalidade',
+        contrato:parseFloat(vd.contrato)||parseFloat(vd.valorTotal)||0,
+        mensalidade:mensBase,
+        frequencia:vd.frequencia||'mensal',vencimento:efDi,
+        bonusComp:BONUS_COMP,bonusVenda:mensBase*BONUS_VENDA_PCT,
+        motivo:'',retornoData:'',retornoTime:'',
+        dt:dtBR,
+        _fromContrato:id,_autoSync:true
+      };
+      followups[fid]=fuData;
+      if(meetings[fid]) meetings[fid].status='done';
+      saveMeetingFB(fid, meetings[fid]||match);
+      saveFollowupFB(fid, fuData);
+      fbDb.ref('assinaturas/'+id).update({_vendaRegistrada:true});
+      // Cria na coleção contratos
+      var _planoDur=parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||1;
+      var _planoNome=(vd.plano||'').toLowerCase();
+      var _planoLbl=_planoNome==='starter'?'Plano Starter':_planoNome==='premium'?'Plano Premium':_planoNome==='elite'?'Plano Elite':'Plano '+(_planoNome||'');
+      var _planoSuf=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
+      var _mrr=(vd.tipoValor||'')==='tcv'?Math.round((parseFloat(vd.contrato)||0)/_planoDur):(mensBase||parseFloat(vd.contrato)||0);
+      var _tcv=(vd.tipoValor||'')==='tcv'?(parseFloat(vd.contrato)||0):(_mrr*_planoDur);
+      saveContrato(null,{
+        cliente:r.cliente||match.nome,
+        dataInicio:efDi,valorMes:_mrr,valorVendido:_tcv,planoDuracao:_planoDur,
+        plano:_planoLbl+_planoSuf,gestor:'',
+        origem:(r.comercial&&r.comercial.origem)||match.origem||'',
+        closer:match.responsavel||'',sdr:match.sdr||'',
+        kanbanKey:match.kanbanKey||'',ativo:true,_fromAssinatura:id
+      }).catch(function(){});
+      if(match.kanbanKey) moveKanbanCard(match.kanbanKey,'fechado');
+      registradas++;
+    }catch(ex){ console.warn('[autoSyncAssinaturas] erro em '+id+':',ex); }
+  }
+  if(registradas>0){
+    showSheetToast('✅ '+registradas+' venda'+(registradas>1?'s':'')+' sincronizada'+(registradas>1?'s':'')+' dos contratos!');
+    renderVendas();
+  }
+}
+
 async function marcarContratoComoVenda(id){
   if(!confirm('Registrar esta venda no CRM? Isso vai contar a venda para o closer da reunião mais recente deste lead.')) return;
   var r;
