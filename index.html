@@ -9750,32 +9750,29 @@ function buildDashComHTML(data){
   var todosClientes=data.clientes.rows;
 
   // ── UNIFICAÇÃO DE FONTE DE VENDAS ──
-  // Antes de junho/2026: Planilha Google (histórico manual)
-  // Junho/2026 (1º mês do CRM): Planilha + Firebase (pré-CRM manual + CRM)
-  // Julho/2026 em diante: Firebase apenas (fonte de verdade do CRM)
+  // Até junho/2026: Planilha Google é fonte completa (igual aba Vendas usa loadVendasSheets)
+  // Julho/2026 em diante: Firebase é fonte de verdade (igual aba Vendas usa followups)
   (function(){
     var now=new Date();
-    var fbLaunch=new Date(2026,5,1);   // 01/jun/2026 — início do Firebase/CRM
-    var curMonthStart=new Date(now.getFullYear(),now.getMonth(),1); // 1º do mês atual
+    var curMonthStart=new Date(now.getFullYear(),now.getMonth(),1); // 1º do mês atual (julho/2026)
 
-    // Mês atual (julho+): remover Sheets → Firebase substitui totalmente
-    if(curMonthStart>fbLaunch){
-      clientesF=clientesF.filter(function(c){
-        var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
-        return d&&d<curMonthStart;
-      });
-    }
+    // Remover Sheets para o mês atual em diante (Firebase substitui)
+    clientesF=clientesF.filter(function(c){
+      var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
+      return d&&d<curMonthStart; // mantém apenas histórico (antes de julho)
+    });
 
-    // Adicionar Firebase: junho em diante (junho soma com Sheets, julho substitui)
-    Object.values(followups||{}).forEach(function(fu){
-      if(fu.resultado!=='venda')return;
+    // Adicionar Firebase para o mês atual em diante
+    // Usa mesma lógica da aba Vendas: meetings[fu.meetingId] || meetings[fid]
+    Object.keys(followups||{}).forEach(function(fid){
+      var fu=followups[fid];
+      if(!fu||fu.resultado!=='venda')return;
       if(typeof isVendaCancelada==='function'&&isVendaCancelada(fu))return;
-      var m=fu.meetingId?(meetings[fu.meetingId]||meetings[fu.meetingId]):null;
-      if(!m&&fu.meetingId)m=meetings[fu.meetingId];
-      var dt=null;
-      if(typeof _vendaDate==='function'){dt=_vendaDate(fu,m);}
-      if(!dt){if(fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}else if(m&&m.dtISO){dt=new Date(m.dtISO);}}
-      if(!dt||isNaN(dt.getTime())||dt<fbLaunch)return; // só a partir de junho/2026
+      var m=meetings[fu.meetingId]||meetings[fid]; // igual renderVendas
+      var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
+      if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
+      if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
+      if(!dt||isNaN(dt.getTime())||dt<curMonthStart)return; // só julho em diante
       if(!inRange(dt))return;
       var dtStr=String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
       var closer=fu.closerNome||(m?normCloserName(m.responsavel||''):'')||'';
