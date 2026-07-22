@@ -1749,8 +1749,10 @@ async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, respon
 // Chama o endpoint /vespera do Cloud Run com as reuniões do dia seguinte.
 // Lucas e Gustavo recebem apenas as próprias reuniões; João recebe todas.
 async function enviarLembreteVespera(){
-  var amanhaD = new Date(); amanhaD.setDate(amanhaD.getDate()+1);
-  var amanhaISO = amanhaD.toISOString().split('T')[0];
+  // Calcula amanhã em horário local (toISOString() daria UTC — errado no fuso Brasil UTC-3)
+  var amanhaD = new Date();
+  amanhaD.setDate(amanhaD.getDate()+1);
+  var amanhaISO = amanhaD.getFullYear()+'-'+String(amanhaD.getMonth()+1).padStart(2,'0')+'-'+String(amanhaD.getDate()).padStart(2,'0');
   var reunioesAmanha = Object.values(meetings).filter(function(m){
     if(m._hidden) return false;
     if(m._retorno) return false; // retornos têm fluxo próprio (/retorno), não recebem vespera
@@ -1758,9 +1760,14 @@ async function enviarLembreteVespera(){
     return iso && iso.startsWith(amanhaISO);
   }).map(function(m){
     var display = m.dtDisplay || m.meetingDisplay || '';
+    // Extrai horário do dtDisplay local (nunca do dtISO que é UTC)
+    var horarioLocal = display.split(' ')[1]||'';
+    // Garante formato HH:MM (remove segundos se houver)
+    if(horarioLocal.length>5) horarioLocal=horarioLocal.substring(0,5);
     return {
       nome: m.nome||'',
-      horario: display.split(' ')[1]||'',
+      horario: horarioLocal,
+      dtDisplay: display,
       responsavel: m.responsavel||'',
       meetLink: m.meetLink||''
     };
@@ -1783,8 +1790,7 @@ async function enviarLembreteVespera(){
     else console.warn('[Vespera] /vespera retornou',resp.status);
   }catch(e){
     console.error('[Vespera] Erro ao notificar equipe:',e);
-    // Remove flag para tentar novamente
-    localStorage.removeItem('_vespera_'+amanhaISO);
+    // NÃO remove a flag — se a mensagem foi enviada mas o ack falhou, não queremos reenviar
   }
 }
 
@@ -1804,7 +1810,10 @@ setInterval(tickVespera, 60000); // verifica a cada 1 minuto
 // ===== LEMBRETES AUTOMÁTICOS (2h, 1h e 10min antes da reunião) =====
 // O servidor (/lembretes) lê o Firebase, verifica horários, envia as mensagens
 // certas e atualiza as flags — o frontend só aciona o endpoint a cada 30s.
+var _lembretesBusy=false;
 async function tickLembretes(){
+  if(_lembretesBusy){return;}
+  _lembretesBusy=true;
   try{
     var resp = await fetch(RECEBERLEAD_URL+'/lembretes?secret='+WEBHOOK_SECRET, {
       method: 'POST',
@@ -1815,6 +1824,8 @@ async function tickLembretes(){
     else{ var d=await resp.json().catch(function(){return{};}); if(d.enviados&&d.enviados.length) console.log('[Lembretes] enviados:', d.enviados); }
   }catch(e){
     console.warn('[Lembretes] Erro ao chamar /lembretes:', e.message);
+  }finally{
+    _lembretesBusy=false;
   }
 }
 setInterval(tickLembretes, 30000); // aciona o servidor a cada 30s
