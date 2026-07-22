@@ -25228,7 +25228,7 @@ function _carSliderRow(inputId,label,stateKey,min,max){
 }
 
 function _carRR(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
-function _carCF(ctx,img,dx,dy,dw,dh){var s=Math.max(dw/img.width,dh/img.height),w=img.width*s,h=img.height*s;ctx.drawImage(img,dx+(dw-w)/2,dy+(dh-h)/2,w,h);}
+function _carCF(ctx,img,dx,dy,dw,dh,offX,offY,zoom){var s=Math.max(dw/img.width,dh/img.height)*(zoom||1),w=img.width*s,h=img.height*s;ctx.drawImage(img,dx+(dw-w)/2+(offX||0),dy+(dh-h)/2+(offY||0),w,h);}
 function _carWL(ctx,text,maxW){var words=(text||'').split(/\s+/).filter(Boolean),lines=[],cur='';for(var i=0;i<words.length;i++){var ww=words[i],t=cur?cur+' '+ww:ww;if(ctx.measureText(t).width<=maxW||!cur)cur=t;else{lines.push(cur);cur=ww;}}if(cur)lines.push(cur);return lines;}
 
 function _carDrawFooter(ctx,isLast){
@@ -25260,7 +25260,7 @@ function _carDrawVerified(ctx,cx,cy,r){
 }
 function _carDrawCover(ctx,slide){
   ctx.fillStyle='#000';ctx.fillRect(0,0,_carW,_carH);
-  if(slide.img){_carCF(ctx,slide.img,0,0,_carW,_carH);}else{var g=ctx.createRadialGradient(_carW/2,420,80,_carW/2,500,900);g.addColorStop(0,'#3a2a18');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,_carH);}
+  if(slide.img){_carCF(ctx,slide.img,0,0,_carW,_carH,slide.imgOffX||0,slide.imgOffY||0,slide.imgZoom||1);}else{var g=ctx.createRadialGradient(_carW/2,420,80,_carW/2,500,900);g.addColorStop(0,'#3a2a18');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,_carH);}
   var g2=ctx.createLinearGradient(0,0,0,_carH);g2.addColorStop(0,'rgba(0,0,0,0.25)');g2.addColorStop(.35,'rgba(0,0,0,0.05)');g2.addColorStop(.55,'rgba(0,0,0,0.45)');g2.addColorStop(.8,'rgba(0,0,0,0.86)');g2.addColorStop(1,'rgba(0,0,0,0.94)');ctx.fillStyle=g2;ctx.fillRect(0,0,_carW,_carH);
   var size=_carState.coverSize;ctx.textAlign='left';ctx.textBaseline='alphabetic';var lines;
   while(true){ctx.font='400 '+size+'px Anton';lines=_carWL(ctx,(slide.title||'').toUpperCase(),1000);if(lines.length<=5||size<=54)break;size-=4;}
@@ -25277,7 +25277,7 @@ function _carDrawCover(ctx,slide){
 function _carDrawBody(ctx,slide,isLast){
   ctx.fillStyle='#000';ctx.fillRect(0,0,_carW,_carH);
   var imgH=Math.round(_carH*_carState.imgHeight/100);
-  if(slide.img){ctx.save();ctx.beginPath();ctx.rect(0,0,_carW,imgH);ctx.clip();_carCF(ctx,slide.img,0,0,_carW,imgH);ctx.restore();}
+  if(slide.img){ctx.save();ctx.beginPath();ctx.rect(0,0,_carW,imgH);ctx.clip();_carCF(ctx,slide.img,0,0,_carW,imgH,slide.imgOffX||0,slide.imgOffY||0,slide.imgZoom||1);ctx.restore();}
   else{var g=ctx.createRadialGradient(_carW/2,imgH*0.45,60,_carW/2,imgH*0.5,760);g.addColorStop(0,'#31241a');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,imgH);}
   var fs=Math.round(imgH*0.55),g2=ctx.createLinearGradient(0,fs,0,imgH);g2.addColorStop(0,'rgba(0,0,0,0)');g2.addColorStop(1,'rgba(0,0,0,1)');ctx.fillStyle=g2;ctx.fillRect(0,fs,_carW,imgH-fs);
   var tSz=_carState.innerSize,bSz=_carState.bodySize,tLines,bLines,tLH,bLH,top;
@@ -25289,6 +25289,56 @@ function _carDrawBody(ctx,slide,isLast){
 function carDrawSlide(i){var s=_carState.slides[i];if(!s||!s._canvas)return;var ctx=s._canvas.getContext('2d');if(i===0)_carDrawCover(ctx,s);else _carDrawBody(ctx,s,i===_carState.slides.length-1);}
 function carDrawAll(){_carState.slides.forEach(function(_,i){carDrawSlide(i);});}
 
+function carEnquadrarModal(idx){
+  var slide=_carState.slides[idx];if(!slide||!slide.img){carToast('Adicione uma foto primeiro.');return;}
+  var PW=360,PH=450,SCALE=_carW/PW;
+  var offX=slide.imgOffX||0,offY=slide.imgOffY||0,zoom=slide.imgZoom||1;
+  var isBody=idx>0,imgH=isBody?Math.round(_carH*_carState.imgHeight/100):_carH;
+  var pImgH=Math.round(PH*(imgH/_carH));
+  var dragging=false,lastX=0,lastY=0,pinchDist=0;
+  var html='<div id="car-eq-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;">'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:18px;width:100%;max-width:440px;">'+
+    '<div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">'+
+      '<div style="font-size:15px;font-weight:700;color:var(--white);"><i class="ti ti-crop" style="color:var(--purple3);margin-right:6px;"></i>Enquadrar slide '+(idx===0?'Capa':(idx+1))+'</div>'+
+      '<button onclick="document.getElementById(\'car-eq-modal\').remove();" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;"><i class=\"ti ti-x\"></i></button>'+
+    '</div>'+
+    '<div style="padding:18px;text-align:center;">'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;"><i class="ti ti-hand-move" style="margin-right:4px;"></i>Arraste para reposicionar · scroll / slider para zoom</div>'+
+      '<canvas id="car-eq-cv" width="'+PW+'" height="'+pImgH+'" style="width:'+PW+'px;height:'+pImgH+'px;border-radius:10px;cursor:grab;border:1px solid var(--border);display:block;margin:0 auto 14px;touch-action:none;max-width:100%;"></canvas>'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">'+
+        '<i class="ti ti-zoom-out" style="color:var(--muted);font-size:14px;flex-shrink:0;"></i>'+
+        '<input type="range" id="car-eq-zoom" min="1" max="3" step="0.01" value="'+zoom+'" oninput="window._carEqZoom(+this.value);" style="flex:1;accent-color:var(--purple3);">'+
+        '<i class="ti ti-zoom-in" style="color:var(--muted);font-size:14px;flex-shrink:0;"></i>'+
+        '<span id="car-eq-zv" style="font-size:11px;color:var(--muted);width:32px;text-align:right;">'+Math.round(zoom*100)+'%</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+        '<button class="btn btn-outline" onclick="window._carEqReset()"><i class="ti ti-refresh"></i> Resetar</button>'+
+        '<button class="btn btn-primary" onclick="window._carEqApply()"><i class="ti ti-check"></i> Aplicar</button>'+
+      '</div>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  var cv=document.getElementById('car-eq-cv'),ctx2=cv.getContext('2d');
+  function draw2(){
+    ctx2.clearRect(0,0,PW,pImgH);ctx2.fillStyle='#000';ctx2.fillRect(0,0,PW,pImgH);
+    var img=slide.img,s=Math.max(PW/img.width,pImgH/img.height)*zoom;
+    var w2=img.width*s,h2=img.height*s;
+    ctx2.drawImage(img,(PW-w2)/2+offX/SCALE,(pImgH-h2)/2+offY/SCALE,w2,h2);
+    if(isBody){var fs=pImgH*0.55,g2=ctx2.createLinearGradient(0,fs,0,pImgH);g2.addColorStop(0,'rgba(0,0,0,0)');g2.addColorStop(1,'rgba(0,0,0,0.82)');ctx2.fillStyle=g2;ctx2.fillRect(0,fs,PW,pImgH-fs);}
+    else{var gco=ctx2.createLinearGradient(0,0,0,pImgH);gco.addColorStop(0,'rgba(0,0,0,0.2)');gco.addColorStop(0.4,'rgba(0,0,0,0)');gco.addColorStop(0.55,'rgba(0,0,0,0.5)');gco.addColorStop(1,'rgba(0,0,0,0.93)');ctx2.fillStyle=gco;ctx2.fillRect(0,0,PW,pImgH);}
+    ctx2.strokeStyle='rgba(123,47,255,0.4)';ctx2.lineWidth=2;ctx2.strokeRect(1,1,PW-2,pImgH-2);
+  }
+  draw2();
+  window._carEqZoom=function(v){zoom=v;document.getElementById('car-eq-zv').textContent=Math.round(v*100)+'%';draw2();};
+  window._carEqApply=function(){slide.imgOffX=offX;slide.imgOffY=offY;slide.imgZoom=zoom;carDrawSlide(idx);carScheduleSave();var m=document.getElementById('car-eq-modal');if(m)m.remove();carToast('Enquadramento aplicado!');};
+  window._carEqReset=function(){offX=0;offY=0;zoom=1;document.getElementById('car-eq-zoom').value=1;document.getElementById('car-eq-zv').textContent='100%';draw2();};
+  cv.addEventListener('mousedown',function(e){dragging=true;lastX=e.clientX;lastY=e.clientY;cv.style.cursor='grabbing';e.preventDefault();});
+  window.addEventListener('mousemove',function(e){if(!dragging)return;offX+=(e.clientX-lastX)*SCALE;offY+=(e.clientY-lastY)*SCALE;lastX=e.clientX;lastY=e.clientY;draw2();});
+  window.addEventListener('mouseup',function(){dragging=false;cv.style.cursor='grab';});
+  cv.addEventListener('wheel',function(e){zoom=Math.max(1,Math.min(3,zoom-e.deltaY*0.001));var zsl=document.getElementById('car-eq-zoom');if(zsl)zsl.value=zoom;document.getElementById('car-eq-zv').textContent=Math.round(zoom*100)+'%';draw2();e.preventDefault();},{passive:false});
+  cv.addEventListener('touchstart',function(e){if(e.touches.length===1){dragging=true;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;}else if(e.touches.length===2){pinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}e.preventDefault();},{passive:false});
+  cv.addEventListener('touchmove',function(e){if(e.touches.length===1&&dragging){offX+=(e.touches[0].clientX-lastX)*SCALE;offY+=(e.touches[0].clientY-lastY)*SCALE;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;draw2();}else if(e.touches.length===2){var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);zoom=Math.max(1,Math.min(3,zoom*(d/pinchDist)));pinchDist=d;var zsl=document.getElementById('car-eq-zoom');if(zsl)zsl.value=zoom;document.getElementById('car-eq-zv').textContent=Math.round(zoom*100)+'%';draw2();}e.preventDefault();},{passive:false});
+  cv.addEventListener('touchend',function(){dragging=false;pinchDist=0;});
+}
 function carRebuildGrid(){
   var grid=document.getElementById('car-grid'),empty=document.getElementById('car-empty'),cnt=document.getElementById('car-slide-count');
   if(!grid)return;grid.innerHTML='';
@@ -25311,10 +25361,12 @@ function carRebuildGrid(){
     bIA.onclick=(function(idx,b){return function(){carGerarImagemSlide(idx,b);};})(i,bIA);
     var bPng=document.createElement('button');bPng.textContent='PNG';bPng.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--white);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;text-transform:uppercase;';
     bPng.onclick=(function(idx){return function(){carDownloadSlide(idx);};})(i);
-    acts.append(bImg,bIA,bPng);bar.appendChild(acts);card.appendChild(bar);
+    var bEq=document.createElement('button');bEq.innerHTML='<i class="ti ti-crop"></i>';bEq.title='Enquadrar imagem';bEq.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--purple3);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;';
+    bEq.onclick=(function(idx){return function(){carEnquadrarModal(idx);};})(i);
+    acts.append(bImg,bIA,bEq,bPng);bar.appendChild(acts);card.appendChild(bar);
     card.addEventListener('dragover',function(e){e.preventDefault();card.style.borderColor='var(--accent)';});
     card.addEventListener('dragleave',function(){card.style.borderColor='var(--border)';});
-    card.addEventListener('drop',(function(idx){return function(e){e.preventDefault();card.style.borderColor='var(--border)';var f=[...e.dataTransfer.files].find(function(f){return f.type.startsWith('image/');});if(f){_carLoadImgFile(f).then(function(img){_carState.slides[idx].img=img;carDrawSlide(idx);carToast('Foto do '+(idx===0?'capa':'slide '+(idx+1))+' atualizada');});}};})(i));
+    card.addEventListener('drop',(function(idx){return function(e){e.preventDefault();card.style.borderColor='var(--border)';var f=[...e.dataTransfer.files].find(function(f){return f.type.startsWith('image/');});if(f){_carLoadImgFile(f).then(function(img){var sd=_carState.slides[idx];sd.img=img;sd.imgOffX=0;sd.imgOffY=0;sd.imgZoom=1;carDrawSlide(idx);carToast('Foto do '+(idx===0?'capa':'slide '+(idx+1))+' atualizada');});}};})(i));
     grid.appendChild(card);
   });
   carDrawAll();
@@ -25326,13 +25378,13 @@ function carApplyBatch(){
   if(!blocks.length){carToast('Cole o texto primeiro.');return;}
   var old=_carState.slides;
   _carState.slides=blocks.map(function(b,i){var lines=b.split('\n').map(function(l){return l.trim();}).filter(Boolean);return{title:lines[0]||'',body:lines.slice(1).join(' '),img:old[i]?old[i].img:null};});
-  carRebuildGrid();carToast(_carState.slides.length+' slides gerados');
+  carRebuildGrid();carScheduleSave();carToast(_carState.slides.length+' slides gerados');
 }
 
 function _carLoadImgFile(file){return new Promise(function(res){var r=new FileReader();r.onload=function(e){var img=new Image();img.onload=function(){res(img);};img.src=e.target.result;};r.readAsDataURL(file);});}
 async function carUploadAvatar(inp){if(!inp.files[0])return;_carState.profile.avatar=await _carLoadImgFile(inp.files[0]);var prev=document.getElementById('car-avatar-prev');if(prev){prev.style.backgroundImage='url('+_carState.profile.avatar.src+')';prev.textContent='';}carDrawAll();inp.value='';}
-async function carUploadSlide(inp){if(!inp.files[0]||_carTargetSlide<0)return;_carState.slides[_carTargetSlide].img=await _carLoadImgFile(inp.files[0]);carDrawSlide(_carTargetSlide);carToast('Foto atualizada');inp.value='';}
-async function carBulkImages(inp){var files=[...inp.files].filter(function(f){return f.type.startsWith('image/');}).sort(function(a,b){return a.name.localeCompare(b.name,undefined,{numeric:true});});if(!files.length)return;if(!_carState.slides.length){carToast('Aplique o texto primeiro.');inp.value='';return;}for(var i=0;i<files.length&&i<_carState.slides.length;i++){_carState.slides[i].img=await _carLoadImgFile(files[i]);}carDrawAll();carToast(Math.min(files.length,_carState.slides.length)+' fotos aplicadas');inp.value='';}
+async function carUploadSlide(inp){if(!inp.files[0]||_carTargetSlide<0)return;var sd=_carState.slides[_carTargetSlide];sd.img=await _carLoadImgFile(inp.files[0]);sd.imgOffX=0;sd.imgOffY=0;sd.imgZoom=1;carDrawSlide(_carTargetSlide);carScheduleSave();carToast('Foto atualizada');inp.value='';}
+async function carBulkImages(inp){var files=[...inp.files].filter(function(f){return f.type.startsWith('image/');}).sort(function(a,b){return a.name.localeCompare(b.name,undefined,{numeric:true});});if(!files.length)return;if(!_carState.slides.length){carToast('Aplique o texto primeiro.');inp.value='';return;}for(var i=0;i<files.length&&i<_carState.slides.length;i++){var sdi=_carState.slides[i];sdi.img=await _carLoadImgFile(files[i]);sdi.imgOffX=0;sdi.imgOffY=0;sdi.imgZoom=1;}carDrawAll();carScheduleSave();carToast(Math.min(files.length,_carState.slides.length)+' fotos aplicadas');inp.value='';}
 
 function carDownloadSlide(i){carDrawSlide(i);_carState.slides[i]._canvas.toBlob(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Slide '+(i+1)+'.png';a.click();setTimeout(function(){URL.revokeObjectURL(a.href);},5000);},'image/png');}
 async function carDownloadZip(){
@@ -25369,6 +25421,44 @@ async function carGerarRoteiro(){
 
 var _carExemplo='Como montar uma oferta irresistível: o método que faz o cliente clicar antes de comparar preço\n\nEscassez não salva produto ruim.\nSe você cria "últimas unidades" para algo que ninguém deseja, só acelera o fracasso. Urgência não cria desejo. Ela apenas amplifica o que já existe.\n\nAntes de falar em escassez, você precisa de um produto campeão.\nProduto campeão é aquele que já vende naturalmente. Já tem saída. Já tem prova. Ele performa mesmo sem desconto.\n\nO erro clássico.\nAnunciar "promoção por tempo limitado" levando para o cardápio inteiro. Isso dilui urgência. Escassez precisa de foco.\n\nComo identificar seu produto campeão.\nÉ o mais pedido da semana. É o que gera comentário. É o que o cliente recomenda. É o que vende mesmo quando você não empurra.\n\nAgora entra a escassez estratégica.\nQuantidade limitada. Tempo limitado. Lote especial. Versão exclusiva da semana. Escassez precisa parecer oportunidade, não liquidação.\n\nO método simples.\nEscolha o produto campeão. Crie uma variação especial. Aplique escassez real. Direcione todo o tráfego para ele.\n\nQuando você une produto campeão + escassez estratégica.\nO cliente não compara preço. Ele decide antes que acabe. E você vende com margem, não com desespero.';
 
+var _carSaveTimer=null;
+function carScheduleSave(){clearTimeout(_carSaveTimer);_carSaveTimer=setTimeout(carSaveSession,1500);}
+function _carLoadImgData(src){return new Promise(function(res){var img=new Image();img.onload=function(){res(img);};img.onerror=function(){res(null);};img.src=src;});}
+function carSaveSession(){
+  try{
+    var sess={v:2,savedAt:Date.now(),profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified},
+      footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,
+      avatarData:null,
+      slides:_carState.slides.map(function(s){
+        var imgData=null;
+        if(s.img){var tc=document.createElement('canvas');var sw=Math.min(s.img.width,540),sh=Math.round(sw*s.img.height/s.img.width);tc.width=sw;tc.height=sh;tc.getContext('2d').drawImage(s.img,0,0,sw,sh);imgData=tc.toDataURL('image/jpeg',0.72);}
+        return{title:s.title||'',body:s.body||'',imgOffX:s.imgOffX||0,imgOffY:s.imgOffY||0,imgZoom:s.imgZoom||1,imgData:imgData};
+      })};
+    if(_carState.profile.avatar){var ta=document.createElement('canvas');var av=_carState.profile.avatar;ta.width=Math.min(av.width,120);ta.height=Math.round(ta.width*av.height/av.width);ta.getContext('2d').drawImage(av,0,0,ta.width,ta.height);sess.avatarData=ta.toDataURL('image/jpeg',0.85);}
+    localStorage.setItem('audens_car_session',JSON.stringify(sess));
+  }catch(e){console.warn('carSaveSession:',e);}
+}
+async function carRestoreSession(){
+  try{
+    var raw=localStorage.getItem('audens_car_session');if(!raw)return false;
+    var sess=JSON.parse(raw);if(!sess||!sess.slides||!sess.slides.length||sess.v<2)return false;
+    if(sess.profile){_carState.profile.name=sess.profile.name||_carState.profile.name;_carState.profile.handle=sess.profile.handle||_carState.profile.handle;if(sess.profile.verified!==undefined)_carState.profile.verified=sess.profile.verified;}
+    if(sess.footerText!==undefined)_carState.footerText=sess.footerText;
+    if(sess.followBadge!==undefined)_carState.followBadge=sess.followBadge;
+    if(sess.coverSize)_carState.coverSize=sess.coverSize;
+    if(sess.innerSize)_carState.innerSize=sess.innerSize;
+    if(sess.bodySize)_carState.bodySize=sess.bodySize;
+    if(sess.imgHeight)_carState.imgHeight=sess.imgHeight;
+    if(sess.avatarData)_carState.profile.avatar=await _carLoadImgData(sess.avatarData);
+    _carState.slides=await Promise.all(sess.slides.map(async function(sd){
+      var img=null;if(sd.imgData)img=await _carLoadImgData(sd.imgData);
+      return{title:sd.title||'',body:sd.body||'',img:img,imgOffX:sd.imgOffX||0,imgOffY:sd.imgOffY||0,imgZoom:sd.imgZoom||1};
+    }));
+    return true;
+  }catch(e){console.warn('carRestoreSession:',e);return false;}
+}
+function carClearSession(){if(!confirm('Limpar sessão salva e começar do zero?'))return;localStorage.removeItem('audens_car_session');_carState.slides=[];carRebuildGrid();carToast('Sessão limpa.');}
+
 async function carInitPage(){
   // 1) Aguarda o CSS das fontes ser parseado (onload do <link>)
   await Promise.all([
@@ -25385,10 +25475,16 @@ async function carInitPage(){
       document.fonts.load('700 30px Poppins'),
     ]);
   }catch(e){}
+  var restored=await carRestoreSession();
   if(typeof CU!=='undefined'&&CU&&!_carState.profile.name){_carState.profile.name=CU.name||'Lucas Siqueira';_carState.profile.handle='@'+(CU.name||'lucas').toLowerCase().replace(/\s+/g,'');}
   var pn=document.getElementById('car-pname');if(pn)pn.value=_carState.profile.name;
   var ph=document.getElementById('car-phandle');if(ph)ph.value=_carState.profile.handle;
-  if(!_carState.slides.length){var bt=document.getElementById('car-batch');if(bt)bt.value=_carExemplo;carApplyBatch();}
+  if(restored){
+    var bt2=document.getElementById('car-batch');if(bt2)bt2.value=_carState.slides.map(function(s){return s.title+(s.body?'\n'+s.body:'');}).join('\n\n');
+    carRebuildGrid();
+    var sl=document.getElementById('car-img-height');if(sl){sl.value=_carState.imgHeight;var sv=document.getElementById('car-img-height-v');if(sv)sv.textContent=_carState.imgHeight;}
+    carToast('Sessão restaurada ('+_carState.slides.length+' slides)');
+  }else if(!_carState.slides.length){var bt=document.getElementById('car-batch');if(bt)bt.value=_carExemplo;carApplyBatch();}
   else{carRebuildGrid();}
   carUpdateEstimate();
 }
@@ -25405,11 +25501,26 @@ function carUpdateEstimate(){
   el.innerHTML='Custo estimado: <b>~US$ '+(p*n).toFixed(2)+'</b> para '+n+' slides (~US$ '+p.toFixed(3)+'/imagem).';
 }
 
-function _carBuildImgPrompt(slide){
+async function _carBuildImgPrompt(slide){
   var conceito=(slide.title||'')+(slide.body?'. '+slide.body:'');
   var styleEl=document.getElementById('car-img-style');
-  var style=styleEl?styleEl.value:'Fotografia cinematográfica e sombria: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista.';
-  return style+'\n\nCrie UMA cena que represente visualmente (com objetos e ambiente — de forma metafórica, nunca com texto escrito) o seguinte conceito: "'+conceito+'". Composição vertical, assunto principal na metade superior da imagem.';
+  var baseStyle=styleEl?styleEl.value:'Fotografia cinematográfica e sombria: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista.';
+  var ck=localStorage.getItem('audens_claude_key');
+  if(!ck){
+    return baseStyle+'\n\nCrie UMA cena que represente visualmente (com objetos e ambiente — de forma metafórica, nunca com texto escrito) o seguinte conceito: "'+conceito+'". Composição vertical, assunto principal na metade superior da imagem.';
+  }
+  try{
+    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'x-api-key':ck,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:280,
+        messages:[{role:'user',content:'Você é especialista em criar prompts para imagens de Instagram no estilo editorial escuro e cinematográfico. Gere um prompt em INGLÊS para DALL-E representar visualmente o conceito abaixo, usando objetos e atmosfera específicos — o produto padrão do cliente é hamburguer, mas use hambúrguer como elemento principal APENAS se o slide falar diretamente de produto. Se o conceito for abstrato (estratégia, urgência, tempo, lucro, identidade), use metáforas visuais diferentes (ampulheta, relógio, cofre, contraste claro/sombra, etc.). NUNCA inclua texto na imagem. Estilo base: fotografia editorial escura, luz quente dramática, fundo escuro, vapor sutil, madeira e metal rústicos, ultra-realista.\n\nConceito do slide: "'+conceito+'"\n\nResponda APENAS com o prompt em inglês, sem explicação, sem aspas, em 1-3 frases.'}]})});
+    var d=await r.json();
+    if(d.error||!d.content||!d.content[0])throw new Error('Claude fallback');
+    var vp=d.content[0].text.trim();
+    return vp+' Dark cinematic editorial photography, warm dramatic top lighting, dark background with subtle steam effects, rustic wood and black metal surfaces, ultra-realistic, vertical 2:3 composition, main subject centered in upper half of frame.';
+  }catch(e2){
+    return baseStyle+'\n\nCrie UMA cena que represente visualmente (com objetos e ambiente — de forma metafórica, nunca com texto escrito) o seguinte conceito: "'+conceito+'". Composição vertical, assunto principal na metade superior da imagem.';
+  }
 }
 
 async function _carFetchImagem(slide){
@@ -25421,7 +25532,7 @@ async function _carFetchImagem(slide){
   var r=await fetch('https://api.openai.com/v1/images/generations',{
     method:'POST',
     headers:{'content-type':'application/json','Authorization':'Bearer '+key},
-    body:JSON.stringify({model:mdl?mdl.value:'gpt-image-1.5',prompt:_carBuildImgPrompt(slide),size:'1024x1536',quality:ql?ql.value:'medium',n:1})
+    body:JSON.stringify({model:mdl?mdl.value:'gpt-image-1.5',prompt:await _carBuildImgPrompt(slide),size:'1024x1536',quality:ql?ql.value:'medium',n:1})
   });
   var d=await r.json();
   if(!r.ok)throw new Error(d.error&&d.error.message||('HTTP '+r.status));
@@ -25437,7 +25548,7 @@ async function carGerarImagemSlide(i,btn){
     if(btn){btn.disabled=true;btn.textContent='...';}
     if(st){st.style.color='var(--muted)';st.textContent='Gerando imagem do '+(i===0?'capa':'slide '+(i+1))+'...';}
     _carState.slides[i].img=await _carFetchImagem(_carState.slides[i]);
-    carDrawSlide(i);
+    carDrawSlide(i);carScheduleSave();
     if(st){st.style.color='#39d98a';st.textContent='Imagem do '+(i===0?'capa':'slide '+(i+1))+' pronta!';}
     carToast('Imagem gerada');
   }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}}
@@ -25536,6 +25647,7 @@ function renderCarrossel(){
         '</div>'+
         '<div style="padding:12px 20px;border-top:1px solid var(--border);">'+
           '<button onclick="carDownloadZip()" style="display:block;width:100%;padding:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:#fff;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">⬇ Baixar ZIP (todos os slides)</button>'+
+          '<div style="display:flex;gap:8px;margin-top:6px;"><button onclick="carSaveSession();carToast(\'Sessão salva!\')" style="flex:1;padding:9px 0;background:rgba(123,47,255,0.12);border:1px solid rgba(123,47,255,0.3);border-radius:10px;color:var(--purple3);font-weight:700;font-size:10px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-device-floppy"></i> Salvar sessão</button><button onclick="carClearSession()" style="padding:9px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:var(--red);font-size:11px;cursor:pointer;" title="Limpar sessão salva"><i class="ti ti-trash"></i></button></div>'+
           '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-brand-instagram"></i> Enviar para Calendário Instagram</button>'+
         '</div>'+
       '</div>'+
