@@ -25589,7 +25589,15 @@ function carApplyBatch(){
   var blocks=txt.value.split(/\n\s*\n/).map(function(b){return b.trim();}).filter(Boolean);
   if(!blocks.length){carToast('Cole o texto primeiro.');return;}
   var old=_carState.slides;
-  _carState.slides=blocks.map(function(b,i){var lines=b.split('\n').map(function(l){return l.trim();}).filter(Boolean);return{title:lines[0]||'',body:lines.slice(1).join(' '),img:old[i]?old[i].img:null};});
+  var parsed=blocks.map(function(b,i){
+    var lines=b.split('\n').map(function(l){return l.trim();}).filter(Boolean);
+    var title=lines[0]||'';
+    // Filtra blocos vazios ou com placeholder (---, ___, etc.)
+    if(!title||/^[-_=.]{2,}$/.test(title)||title.toLowerCase()==='slide') return null;
+    return{title:title,body:lines.slice(1).join(' '),img:old[i]?old[i].img:null};
+  }).filter(Boolean);
+  if(!parsed.length){carToast('Nenhum slide válido encontrado.');return;}
+  _carState.slides=parsed;
   carRebuildGrid();carScheduleSave();carToast(_carState.slides.length+' slides gerados');
 }
 
@@ -25606,7 +25614,7 @@ async function carDownloadZip(){
   if(window.JSZip){doZip();}else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=doZip;document.head.appendChild(s);}
 }
 
-var _carAISys='Você é um copywriter especialista em carrosséis de Instagram para hamburguerias e delivery. Estilo: direto, contraintuitivo, tom de autoridade — vira a chave de uma crença do leitor.\n\nREGRAS DE FORMATO (CRÍTICO — siga à risca):\n\n1. Cada slide = 1 bloco separado por UMA linha em branco.\n2. Linha 1 do bloco = TÍTULO (curto, impactante, máx. 7 palavras).\n3. Linhas 2+ do bloco = CORPO (2 a 3 frases curtas que desenvolvem o título).\n4. Capa (slide 1): APENAS o título, sem corpo.\n5. Último slide: APENAS o título (CTA: "Comenta X se você quer Y."), sem corpo.\n6. NUNCA coloque o título e o corpo na mesma linha. NUNCA.\n7. Sem numeração, sem markdown, sem asteriscos, sem emojis.\n\nEXEMPLO DE SAÍDA CORRETA:\n\nO iFood não é o seu vilão.\n\nDuas hamburguerias. Mesmo bairro. Taxas iguais. Uma fatura 3x mais.\nA diferença não é a plataforma. É quem sabe jogar com as regras que já existem.\nUma reclamai do iFood. A outra aprendeu a ganhar com ele.\n\nO cardápio deles vende. O seu só existe.\nNome genérico, foto ruim, combo sem lógica de margem.\nO cardápio deles tem nome que cria desejo, foto que para o scroll e combo que aumenta o ticket.\nIsso não é sorte. É estratégia.\n\nComenta IFOOD e eu te mostro onde está o seu gargalo.\n\nFIM DO EXEMPLO — gere o roteiro completo com a mesma estrutura.';
+var _carAISys='Você é um copywriter especialista em carrosséis de Instagram para hamburguerias e delivery. Estilo: direto, contraintuitivo, tom de autoridade — vira a chave de uma crença do leitor.\n\nREGRAS DE FORMATO (OBRIGATÓRIO — qualquer violação invalida o roteiro):\n\n1. Cada slide = 1 bloco separado por EXATAMENTE UMA linha em branco.\n2. Linha 1 do bloco = TÍTULO. MÁXIMO 6 PALAVRAS. Sem pontuação longa. Sem subtítulo.\n3. Linhas 2+ do bloco = CORPO. 2 a 3 frases curtas. NUNCA na mesma linha do título.\n4. Capa (slide 1): SÓ o título. Sem corpo. Sem explicação.\n5. Último slide: SÓ o título (CTA curto tipo "Comenta X"). Sem corpo.\n6. PROIBIDO: ---  ___  ===  numeração  markdown  asterisco  emoji  placeholder.\n7. PROIBIDO: título com mais de 6 palavras. Corte palavras desnecessárias.\n\nTESTES DO TÍTULO (faça estes testes antes de escrever):\n- "Conta as palavras: são 6 ou menos?" → se não, reescreva.\n- "O título sozinho para o scroll?" → se não, reescreva.\n- "Tem subtítulo ou explicação junto?" → se sim, mova para o corpo.\n\nEXEMPLO CORRETO:\n\nO iFood não é o vilão.\n\nDuas hamburguerias. Mesmo bairro. Taxas iguais. Uma fatura 3x mais.\nA diferença não é a plataforma. É quem sabe jogar com o sistema.\n\nCardápio deles vende. O seu existe.\nNome genérico, foto ruim, combo sem lógica de margem.\nNome que cria desejo, foto que para o scroll, combo que aumenta o ticket.\n\nTráfego não resolve cardápio ruim.\nAnúncio leva o cliente até a loja. O cardápio decide se ele volta.\nQuem cresce resolve os dois ao mesmo tempo.\n\nComenta CARDÁPIO e eu analiso o seu.\n\nFIM DO EXEMPLO.\n\nERRO COMUM (NUNCA FAÇA):\nX: "Quanto custa não ter estratégia? Veja o que hamburguerias de R$40k, R$80k e R$150k têm de diferente" (18 palavras — ERRADO)\n✓: "Estratégia separa R$40k de R$150k." (6 palavras — CERTO)\n\nAgora gere o roteiro completo seguindo exatamente este formato.';
 
 async function carGerarRoteiro(){
   var claudeKey=localStorage.getItem('audens_claude_key');
