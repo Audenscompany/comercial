@@ -12353,6 +12353,7 @@ function buildAnaliseAdsHTML(data){
   // Step 3a: attribute sheet reuniões to ads via phone→telAdMap
   // Usa a planilha de reuniões (mesma fonte do Funil) para atribuição histórica
   var _step3Phones=new Set(); // controle de dupla contagem
+  var _adTelSeen={}; // dedup por telefone dentro de cada ad (evita dupla atribuição mesmo critério)
   (data.reunioes&&data.reunioes.rows?data.reunioes.rows:[]).forEach(function(r){
     var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
     if(!inAdsRange(d)) return;
@@ -12367,6 +12368,8 @@ function buildAnaliseAdsHTML(data){
     var adKey=adInfo.ad;
     if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
+    // Dedup: se já contamos esta reunião (mesmo telefone) para este ad, pula
+    if(rTel){if(!_adTelSeen[adKey])_adTelSeen[adKey]=new Set();if(_adTelSeen[adKey].has(rTel))return;_adTelSeen[adKey].add(rTel);}
     entry.reunioes++;
     var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
