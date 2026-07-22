@@ -13902,7 +13902,7 @@ function renderConfig(){
 
   var igConfigHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
     '<div class="cb-title"><i class="ti ti-brand-instagram" style="color:#e1306c;margin-right:6px;"></i>Instagram / Meta</div>'+
-    '<div style="font-size:11px;color:var(--muted);">'+(_igConfig.igUserId&&_igConfig.accessToken?'<span style="color:var(--green);">✓ Configurado</span>':'Não configurado')+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);">'+(_igConfig.igUserId&&(_igConfig.accessToken||(metaToken&&metaToken.access_token))?'<span style="color:var(--green);">✓ Configurado</span>':(_igConfig.igUserId?'<span style="color:var(--amber);">Token ausente</span>':'Não configurado'))+'</div>'+
     '</div><div style="padding:20px;">'+
     '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Token de longa duração da Business Manager. A Graph API aceita chamadas diretas do navegador.</div>'+
     '<div class="modal-grid2" style="margin-bottom:12px;">'+
@@ -13914,6 +13914,7 @@ function renderConfig(){
     '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
       '<button class="btn btn-primary" style="background:#e1306c;" onclick="igSaveConfig()"><i class="ti ti-device-floppy"></i> Salvar</button>'+
       '<button class="btn btn-outline" onclick="igTestarConexao()"><i class="ti ti-plug"></i> Testar conexão</button>'+
+      (isMetaConnected()?'<button class="btn btn-outline" style="border-color:rgba(0,119,255,0.4);color:#4c9eff;" onclick="igUsarTokenMeta()"><i class="ti ti-brand-facebook"></i> Usar token do Meta Ads</button>':'')+
       (_igConfig.igUserId&&_igConfig.accessToken?'<button class="btn btn-outline" onclick="showPage(\'instagram\')"><i class="ti ti-brand-instagram"></i> Ir para Instagram</button>':'')+
     '</div>'+
     '<div id="ig-cfg-result" style="font-size:13px;color:var(--muted);"></div>'+
@@ -24774,9 +24775,15 @@ async function igSaveConfig(){
   try{await fbDb.ref('instagram/config').set(_igConfig);showSheetToast('Config Instagram salva!',false);showPage('config');}
   catch(e){showSheetToast('Erro ao salvar: '+e.message,true);}
 }
+function igUsarTokenMeta(){
+  if(!metaToken||!metaToken.access_token){showSheetToast('Meta Ads não conectado. Configure em Configurações → Meta Ads.',true);return;}
+  var tk=document.getElementById('ig-cfg-token');if(tk){tk.value=metaToken.access_token;tk.type='text';setTimeout(function(){if(tk)tk.type='password';},2000);}
+  showSheetToast('Token do Meta Ads preenchido — ajuste o IG User ID se necessário e salve.',false);
+  var res=document.getElementById('ig-cfg-result');if(res)res.innerHTML='<span style="color:var(--cyan);">Token do Meta Ads inserido. Clique em "Testar conexão" para validar.</span>';
+}
 async function igTestarConexao(){
   var res=document.getElementById('ig-cfg-result');
-  var tk=(document.getElementById('ig-cfg-token')||{value:''}).value||_igConfig.accessToken;
+  var tk=(document.getElementById('ig-cfg-token')||{value:''}).value||_igConfig.accessToken||(metaToken&&metaToken.access_token)||'';
   var uid=(document.getElementById('ig-cfg-userid')||{value:''}).value||_igConfig.igUserId;
   if(!tk||!uid){if(res)res.innerHTML='<span style="color:var(--red);">Preencha token e IG User ID.</span>';return;}
   if(res)res.innerHTML='<span style="color:var(--muted);">Testando...</span>';
@@ -24806,7 +24813,8 @@ function igSwitchTab(tab){
   igRenderCurrentTab();
 }
 function renderInstagram(){
-  if(!_igConfig.accessToken||!_igConfig.igUserId){
+  var _igEffectiveToken=_igConfig.accessToken||(metaToken&&metaToken.access_token)||'';
+  if(!_igEffectiveToken||!_igConfig.igUserId){
     return '<div class="page active"><div class="page-header"><div><div class="page-title">Instagram</div></div></div>'+
     '<div class="cb" style="max-width:520px;margin:40px auto;"><div style="padding:32px;text-align:center;">'+
     '<i class="ti ti-brand-instagram" style="font-size:52px;color:#e1306c;margin-bottom:16px;display:block;"></i>'+
@@ -24901,7 +24909,7 @@ async function igSyncData(){
   var p=document.getElementById('ig-pane-overview');
   var ss=function(m){var el=document.getElementById('ig-sync-st');if(el)el.textContent=m;};
   if(p)p.innerHTML='<div style="text-align:center;padding:60px;"><div style="font-size:14px;font-weight:600;color:var(--white);">Sincronizando...</div><div style="color:var(--muted);font-size:12px;margin-top:8px;" id="ig-sync-st">Buscando perfil...</div></div>';
-  var tk=_igConfig.accessToken,uid=_igConfig.igUserId;
+  var tk=_igConfig.accessToken||(metaToken&&metaToken.access_token)||"",uid=_igConfig.igUserId;
   if(!tk||!uid){if(p)p.innerHTML='<div style="color:var(--red);padding:20px;">Configure token e IG User ID em Configurações → Instagram / Meta.</div>';return;}
   try{
     var pr=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'?fields=username,followers_count,media_count&access_token='+tk)).json();
@@ -25136,14 +25144,14 @@ function igRenderPublicar(){
   igFetchLimit().then(function(u){var el=document.getElementById('ig-pub-lim');if(el)el.innerHTML='<i class="ti ti-info-circle" style="color:var(--amber);margin-right:4px;"></i>Limite diário: <b style="color:var(--white);">'+u+'/100</b> publicações usadas hoje';}).catch(function(){var el=document.getElementById('ig-pub-lim');if(el)el.innerHTML='';});
 }
 async function igFetchLimit(){
-  if(!_igConfig.accessToken||!_igConfig.igUserId)return '?';
-  var r=await fetch('https://graph.facebook.com/v21.0/'+_igConfig.igUserId+'/content_publishing_limit?fields=config,quota_usage&access_token='+_igConfig.accessToken);
+  var _tk=_igConfig.accessToken||(metaToken&&metaToken.access_token)||'';if(!_tk||!_igConfig.igUserId)return '?';
+  var r=await fetch('https://graph.facebook.com/v21.0/'+_igConfig.igUserId+'/content_publishing_limit?fields=config,quota_usage&access_token='+_tk);
   var d=await r.json();return(d.data&&d.data[0])?d.data[0].quota_usage||0:'?';
 }
 async function igPublicar(id){
   var ev=_igCalendario[id];if(!ev){showSheetToast('Post não encontrado',true);return;}
   var btn=document.getElementById('ig-pb-'+id);if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Publicando...';}
-  var tk=_igConfig.accessToken,uid=_igConfig.igUserId;
+  var tk=_igConfig.accessToken||(metaToken&&metaToken.access_token)||'',uid=_igConfig.igUserId;
   try{
     await fbDb.ref('instagram/calendario/'+id).update({status:'publicando'});
     var slides=ev.slides||[];
