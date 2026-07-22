@@ -25479,21 +25479,13 @@ async function carGerarRoteiro(){
 async function carGerarLegenda(){
   var claudeKey=localStorage.getItem('audens_claude_key');
   var st=document.getElementById('car-leg-status'),btn=document.getElementById('car-leg-btn');
-  if(!claudeKey){if(st){st.style.color='#ff5c7a';st.textContent='Configure a Claude Key em ⚙ Configurações do Jarvis.';}return;}
+  if(!claudeKey){if(st){st.style.color='#ff5c7a';st.textContent='Configure a Claude Key em \u2699 Configurações do Jarvis.';}return;}
   if(!_carState.slides.length){if(st){st.style.color='#ff5c7a';st.textContent='Aplique o conteúdo dos slides primeiro.';}return;}
   if(st){st.style.color='var(--muted)';st.textContent='Gerando legenda...';}
   if(btn)btn.disabled=true;
-  var conteudo=_carState.slides.map(function(s,i){return '['+(i===0?'Capa':'Slide '+(i+1))+'] '+s.title+(s.body?'
-'+s.body:'');}).join('
-
-');
-  var tema=(_carState.slides[0]?_carState.slides[0].title:'');
-  var sysPt='Você é um especialista em copywriting para Instagram de hamburguerias e delivery no Brasil. Escreva legendas de alta conversão, com voz de autoridade e CTA estratégico. Regras: (1) Comece com um gancho de 1 linha que cause curiosidade ou identidade — sem "Você já?", sem "Sabia que?". (2) Desenvolva em 2-4 parágrafos curtos, usando quebras de linha para legibilidade. (3) Termine com CTA de palavra-chave: "Comenta PALAVRA para receber [benefício]" ou "Salva esse post". (4) Adicione 8-12 hashtags relevantes no final, separadas por linha. (5) Use emojis estrategicamente — não excessivamente. (6) Tom: direto, confiante, dono de hamburgueria que entende de negócios.';
-  var userMsg='Conteúdo dos slides:
-
-'+conteudo+'
-
-Gere a legenda completa para o Instagram baseada nesse carrossel.';
+  var conteudo=_carState.slides.map(function(s,i){return '['+(i===0?'Capa':'Slide '+(i+1))+'] '+s.title+(s.body?'\n'+s.body:'');}).join('\n\n');
+  var sysPt='Você é um especialista em copywriting para Instagram de hamburguerias e delivery no Brasil. Escreva legendas de alta conversão, com voz de autoridade e CTA estratégico. Regras: (1) Comece com um gancho forte de 1 linha. (2) Desenvolva em 2-4 parágrafos curtos. (3) Termine com CTA: "Comenta PALAVRA para receber [benefício]". (4) Adicione 8-12 hashtags no final. (5) Use emojis estrategicamente. (6) Tom: direto, confiante.';
+  var userMsg='Conteúdo dos slides:\n\n'+conteudo+'\n\nGere a legenda completa para o Instagram.';
   try{
     var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1500,system:sysPt,messages:[{role:'user',content:userMsg}]})});
     if(!resp.ok)throw new Error('Claude '+resp.status);
@@ -25503,26 +25495,6 @@ Gere a legenda completa para o Instagram baseada nesse carrossel.';
     if(st){st.style.color='#39d98a';st.textContent='Legenda gerada! Revise antes de enviar.';}
   }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}}
   if(btn)btn.disabled=false;
-}
-
-var _carExemplo='Como montar uma oferta irresistível: o método que faz o cliente clicar antes de comparar preço\n\nEscassez não salva produto ruim.\nSe você cria "últimas unidades" para algo que ninguém deseja, só acelera o fracasso. Urgência não cria desejo. Ela apenas amplifica o que já existe.\n\nAntes de falar em escassez, você precisa de um produto campeão.\nProduto campeão é aquele que já vende naturalmente. Já tem saída. Já tem prova. Ele performa mesmo sem desconto.\n\nO erro clássico.\nAnunciar "promoção por tempo limitado" levando para o cardápio inteiro. Isso dilui urgência. Escassez precisa de foco.\n\nComo identificar seu produto campeão.\nÉ o mais pedido da semana. É o que gera comentário. É o que o cliente recomenda. É o que vende mesmo quando você não empurra.\n\nAgora entra a escassez estratégica.\nQuantidade limitada. Tempo limitado. Lote especial. Versão exclusiva da semana. Escassez precisa parecer oportunidade, não liquidação.\n\nO método simples.\nEscolha o produto campeão. Crie uma variação especial. Aplique escassez real. Direcione todo o tráfego para ele.\n\nQuando você une produto campeão + escassez estratégica.\nO cliente não compara preço. Ele decide antes que acabe. E você vende com margem, não com desespero.';
-
-var _carSaveTimer=null;
-function carScheduleSave(){clearTimeout(_carSaveTimer);_carSaveTimer=setTimeout(carSaveSession,1500);}
-function _carLoadImgData(src){return new Promise(function(res){var img=new Image();img.onload=function(){res(img);};img.onerror=function(){res(null);};img.src=src;});}
-function carSaveSession(){
-  try{
-    var sess={v:2,savedAt:Date.now(),profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified},
-      footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,
-      avatarData:null,
-      slides:_carState.slides.map(function(s){
-        var imgData=null;
-        if(s.img){var tc=document.createElement('canvas');var sw=Math.min(s.img.width,540),sh=Math.round(sw*s.img.height/s.img.width);tc.width=sw;tc.height=sh;tc.getContext('2d').drawImage(s.img,0,0,sw,sh);imgData=tc.toDataURL('image/jpeg',0.72);}
-        return{title:s.title||'',body:s.body||'',imgOffX:s.imgOffX||0,imgOffY:s.imgOffY||0,imgZoom:s.imgZoom||1,imgDesc:s.imgDesc||'',imgData:imgData};
-      })};
-    if(_carState.profile.avatar){var ta=document.createElement('canvas');var av=_carState.profile.avatar;ta.width=Math.min(av.width,120);ta.height=Math.round(ta.width*av.height/av.width);ta.getContext('2d').drawImage(av,0,0,ta.width,ta.height);sess.avatarData=ta.toDataURL('image/jpeg',0.85);}
-    localStorage.setItem('audens_car_session',JSON.stringify(sess));
-  }catch(e){console.warn('carSaveSession:',e);}
 }
 async function carRestoreSession(){
   try{
