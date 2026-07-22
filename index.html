@@ -25155,7 +25155,10 @@ function igRenderCalendario(){
           '<div style="font-size:11px;color:var(--muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+(ev.legenda||'Sem legenda').substring(0,55)+'</div>'+
         '</div>'+
         '<span style="font-size:10px;font-weight:700;color:'+statusCol(ev.status)+';background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:5px;text-transform:uppercase;white-space:nowrap;">'+ev.status+'</span>'+
+        '<div style="display:flex;gap:6px;">'+
+        (ev.origem==='gerador'?'<button title="Baixar ZIP" onclick="igDownloadCarZip(\''+id+'\')" style="padding:4px 9px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:7px;color:var(--purple3);cursor:pointer;font-size:11px;"><i class=\'ti ti-download\'></i></button>':'')+
         '<button class="btn btn-outline" style="font-size:11px;padding:4px 8px;" onclick="igModalPost(\''+id+'\')"><i class="ti ti-edit"></i></button>'+
+        '</div>'+
       '</div>';
     }).join(''):'<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Nenhum post agendado para este mês</div>')+
   '</div></div>';
@@ -25178,6 +25181,10 @@ function igModalPost(id){
     '<label class="f-label">Status</label><select class="f-input" id="igm-status" style="margin-bottom:14px;">'+['rascunho','pronto'].map(function(s){return '<option value="'+s+'"'+(ev.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select>'+
     '<label class="f-label">Legenda (com CTA)</label><textarea class="f-input" id="igm-leg" rows="4" style="margin-bottom:14px;resize:vertical;">'+(ev.legenda||'')+'</textarea>'+
     (prevSlides.length?'<div style="margin-bottom:14px;"><div class="f-label">Slides ('+prevSlides.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap;">'+prevSlides.map(function(u,i){return '<div style="width:50px;height:50px;border-radius:6px;background:var(--bg);border:1px solid var(--border);overflow:hidden;"><img src="'+u+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'"></div>';}).join('')+'</div></div>':'')+
+    (id&&ev.origem==='gerador'?'<div style="margin-bottom:16px;padding:12px;background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;">'+
+      '<span style="font-size:11px;color:var(--purple3);font-weight:600;"><i class=\'ti ti-photo\' style=\"margin-right:5px;\"></i>'+ev.slidesCount+' slides salvos</span>'+
+      '<button onclick="igDownloadCarZip(\\\''+id+'\\\')" style="padding:6px 14px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;"><i class=\'ti ti-download\'></i> Baixar ZIP</button>'+
+    '</div>':'')+''+
     '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">'+
       (id?'<button class="btn" style="color:var(--red);border:1px solid rgba(239,68,68,0.3);background:transparent;font-size:12px;" onclick="igDelPost(\''+id+'\')"><i class="ti ti-trash"></i> Excluir</button>':'')+
       '<button class="btn btn-outline" onclick="document.getElementById(\'ig-modal-post\').remove();">Cancelar</button>'+
@@ -25293,27 +25300,121 @@ async function igPublicar(id){
   }
 }
 
-async function carEnviarCalendario(){
-  if(!_carState.slides.length){showSheetToast('Gere o conteúdo no carrossel antes de enviar.',true);return;}
-  if(typeof firebase==='undefined'){showSheetToast('Firebase não disponível.',true);return;}
-  var st;try{st=firebase.storage();}catch(e){showSheetToast('Firebase Storage não carregado — adicione o script firebase-storage-compat.',true);return;}
-  showSheetToast('Enviando '+_carState.slides.length+' slides para o Storage...',false);
-  carDrawAll();
-  var urls=[];
+// ── IndexedDB helpers para carrosseis ──────────────────────────────────────────
+var _carIDB=null;
+function _carOpenIDB(){
+  return new Promise(function(res,rej){
+    if(_carIDB){res(_carIDB);return;}
+    var req=indexedDB.open('audens_carrosseis',1);
+    req.onupgradeneeded=function(e){e.target.result.createObjectStore('events',{keyPath:'id'});};
+    req.onsuccess=function(e){_carIDB=e.target.result;res(_carIDB);};
+    req.onerror=rej;
+  });
+}
+async function _carSaveIDB(eventId,blobs,legenda){
+  var db=await _carOpenIDB();
+  return new Promise(function(res,rej){
+    var tx=db.transaction('events','readwrite');
+    tx.objectStore('events').put({id:eventId,blobs:blobs,legenda:legenda,savedAt:Date.now()});
+    tx.oncomplete=res;tx.onerror=rej;
+  });
+}
+async function _carGetIDB(eventId){
+  var db=await _carOpenIDB();
+  return new Promise(function(res,rej){
+    var tx=db.transaction('events','readonly');
+    var req=tx.objectStore('events').get(eventId);
+    req.onsuccess=function(){res(req.result);};req.onerror=rej;
+  });
+}
+async function _carDelIDB(eventId){
+  var db=await _carOpenIDB();
+  return new Promise(function(res,rej){
+    var tx=db.transaction('events','readwrite');
+    tx.objectStore('events').delete(eventId);
+    tx.oncomplete=res;tx.onerror=rej;
+  });
+}
+
+// ── Enviar para Calendário — abre modal de data ────────────────────────────────
+function carEnviarCalendario(){
+  if(!_carState.slides.length){carToast('Gere o conteúdo primeiro.');return;}
+  var legEl=document.getElementById('car-legenda');
+  var leg=legEl?legEl.value.trim():'';
+  var def=new Date(Date.now()+86400000);def.setHours(9,0,0,0);
+  var defStr=def.toISOString().slice(0,16);
+  var ex=document.getElementById('_carCalModal');if(ex)ex.remove();
+  var mhtml='<div id="_carCalModal" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;">'+
+    '<div style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:min(400px,92vw);padding:26px;">'+
+      '<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px;">Salvar no Calendário</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:18px;">'+_carState.slides.length+' slides · '+(leg.length?leg.substring(0,50)+'...':'Sem legenda ainda')+'</div>'+
+      '<label style="display:block;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Data e hora de postagem</label>'+
+      '<input id="_carCalDt" type="datetime-local" value="'+defStr+'" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#fff;font-size:13px;padding:10px 12px;outline:none;box-sizing:border-box;margin-bottom:20px;">'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button onclick="document.getElementById(\'_carCalModal\').remove()" style="flex:1;padding:11px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--muted);cursor:pointer;font-size:12px;">Cancelar</button>'+
+        '<button id="_carCalBtn" onclick="_carConfirmarCalendario()" style="flex:2;padding:11px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:10px;color:#fff;font-weight:700;cursor:pointer;font-size:12px;"><i class="ti ti-calendar-plus"></i> Salvar no Calendário</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',mhtml);
+}
+
+async function _carConfirmarCalendario(){
+  var dtEl=document.getElementById('_carCalDt');
+  if(!dtEl||!dtEl.value){carToast('Escolha uma data.');return;}
+  var dt=dtEl.value;
+  var btn=document.getElementById('_carCalBtn');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Salvando...';}
   try{
-    var grpId=fbDb.ref('instagram/calendario').push().key;
-    for(var i=0;i<_carState.slides.length;i++){
-      var s=_carState.slides[i];if(!s._canvas)continue;
-      var blob=await new Promise(function(res){s._canvas.toBlob(res,'image/png');});
-      var ref=st.ref('instagram/posts/'+grpId+'/slide-'+(i+1)+'.png');
-      await ref.put(blob,{contentType:'image/png'});
-      urls.push(await ref.getDownloadURL());
+    carDrawAll();
+    var blobs=await Promise.all(_carState.slides.map(function(s){
+      return new Promise(function(res){
+        if(s&&s._canvas)s._canvas.toBlob(function(b){res(b);},'image/png');
+        else res(null);
+      });
+    }));
+    var legEl=document.getElementById('car-legenda');
+    var leg=legEl?legEl.value.trim():'';
+    var ref=fbDb.ref('instagram/calendario').push();
+    var eventId=ref.key;
+    await ref.set({dataHora:dt,tipo:'carrossel',status:'rascunho',legenda:leg,slidesCount:blobs.filter(Boolean).length,slideTitles:_carState.slides.map(function(s){return s.title||'';}),origem:'gerador',localKey:eventId,resultado:{},erro:''});
+    await _carSaveIDB(eventId,blobs.filter(Boolean),leg);
+    var m=document.getElementById('_carCalModal');if(m)m.remove();
+    var dtFmt=new Date(dt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    carToast('✅ Salvo para '+dtFmt+'! Abrindo calendário...');
+    setTimeout(function(){_igCurTab='calendario';showPage('instagram');},1200);
+  }catch(e){
+    carToast('Erro: '+e.message);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Salvar no Calendário';}
+  }
+}
+
+// ── Download ZIP do carrossel salvo ────────────────────────────────────────────
+async function igDownloadCarZip(eventId){
+  try{
+    showSheetToast('Preparando ZIP...',false);
+    var data=await _carGetIDB(eventId);
+    if(!data||!data.blobs||!data.blobs.length){
+      showSheetToast('Slides não encontrados. Foram salvos neste dispositivo?',true);return;
     }
-    var tm=new Date(Date.now()+86400000).toISOString().slice(0,16);
-    var legEl=document.getElementById('car-legenda');var leg=legEl?legEl.value.trim():'';
-    await fbDb.ref('instagram/calendario').push({dataHora:tm,tipo:'carrossel',status:'rascunho',legenda:leg,slides:urls,origem:'gerador',resultado:{},erro:''});
-    showSheetToast('✅ '+urls.length+' slides enviados! Acesse Instagram → Calendário para editar.',false);
-    setTimeout(function(){_igCurTab='calendario';showPage('instagram');},1000);
+    if(typeof JSZip==='undefined'){
+      await new Promise(function(res,rej){
+        var s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        s.onload=res;s.onerror=rej;document.head.appendChild(s);
+      });
+    }
+    var zip=new JSZip();
+    for(var i=0;i<data.blobs.length;i++){
+      if(data.blobs[i])zip.file('Slide '+(i+1)+'.png',data.blobs[i]);
+    }
+    var out=await zip.generateAsync({type:'blob'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(out);
+    a.download='carrossel-'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.zip';
+    a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href);},5000);
+    showSheetToast('✅ ZIP com '+data.blobs.length+' slides baixado!',false);
   }catch(e){showSheetToast('Erro: '+e.message,true);}
 }
 
@@ -25794,7 +25895,7 @@ function renderCarrossel(){
             '<textarea id="car-legenda" rows="4" placeholder="Escreva ou gere com IA a legenda do post..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;box-sizing:border-box;line-height:1.5;"></textarea>'+
             '<div id="car-leg-status" style="font-size:10.5px;color:var(--muted);margin-top:4px;min-height:14px;"></div>'+
           '</div>'+
-          '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-brand-instagram"></i> Enviar para Calendário Instagram</button>'+
+          '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:linear-gradient(135deg,rgba(131,58,180,0.2),rgba(225,48,108,0.2));border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Salvar no Calendário com Data</button>'+
         '</div>'+
       '</div>'+
       '<div style="flex:1;">'+
