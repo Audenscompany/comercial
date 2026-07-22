@@ -8508,13 +8508,16 @@ function renderFollowupBody(){
           '<div><label class="f-label">Valor Total do Contrato (R$)</label><input class="f-input" type="number" id="fu-contrato" placeholder="0" style="margin-bottom:0;" oninput="updateBonusPreview()"></div>'+
           '<div id="fu-mensalidade-wrap" style="display:none;"><label class="f-label">Valor da Mensalidade (R$)</label><input class="f-input" type="number" id="fu-mensalidade" placeholder="0" style="margin-bottom:0;" oninput="updateBonusPreview()"></div>'+
         '</div>'+
-        '<div id="fu-frequencia-wrap" class="modal-grid2" style="margin-top:12px;display:none;">'+
-          '<div><label class="f-label">Frequencia de Pagamento</label><select class="f-input" id="fu-frequencia" style="margin-bottom:0;">'+
+        '<div id="fu-frequencia-wrap" style="margin-top:12px;display:none;">'+
+          '<label class="f-label">Frequencia de Pagamento</label><select class="f-input" id="fu-frequencia" style="margin-bottom:12px;">'+
             '<option value="mensal">Mensal</option>'+
             '<option value="quinzenal">Quinzenal</option>'+
             '<option value="semanal">Semanal</option>'+
-          '</select></div>'+
-          '<div><label class="f-label">Vencimento</label><input class="f-input" type="text" id="fu-vencimento" placeholder="Ex: todo dia 10 / toda quarta-feira / dias 15 e 30" style="margin-bottom:0;"></div>'+
+          '</select>'+
+        '</div>'+
+        '<div style="margin-top:12px;">'+
+          '<label class="f-label">Vencimento / Condição de Pagamento</label>'+
+          '<input class="f-input" type="text" id="fu-vencimento" placeholder="Ex: todo dia 10 / 50% entrada + 50% em 30d / dias 15 e 30" style="margin-bottom:0;">'+
         '</div>'+
         '<div id="fu-bonus-preview" style="padding:10px 12px;background:rgba(253,224,71,0.08);border:1px solid rgba(253,224,71,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#fde047;margin-top:10px;"></div>'+
         '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
@@ -8612,7 +8615,7 @@ function toggleMensalidadeField(){
   var isTCV=tipo.value==='tcv';
   if(wrap) wrap.style.display=isTCV?'none':'block';
   var freqWrap=document.getElementById('fu-frequencia-wrap');
-  if(freqWrap) freqWrap.style.display=isTCV?'none':'grid';
+  if(freqWrap) freqWrap.style.display=isTCV?'none':'block';
   var duracaoWrap=document.getElementById('fu-duracao-wrap');
   var _planoEl=document.getElementById('fu-plano');
   var _isStarterNow=_planoEl&&_planoEl.value==='starter';
@@ -9066,7 +9069,7 @@ function saveFollowup(){
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
   var mensalidade=venda?(parseFloat(document.getElementById('fu-mensalidade').value)||0):0;
   var frequencia=(venda&&tipoValor!=='tcv')?document.getElementById('fu-frequencia').value:'';
-  var vencimento=(venda&&tipoValor!=='tcv')?document.getElementById('fu-vencimento').value.trim():'';
+  var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
   var retornoData='';
@@ -9323,7 +9326,7 @@ function saveFollowupEdit(){
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
   var mensalidade=venda?(parseFloat(document.getElementById('fu-mensalidade').value)||0):0;
   var frequencia=(venda&&tipoValor!=='tcv')?document.getElementById('fu-frequencia').value:'';
-  var vencimento=(venda&&tipoValor!=='tcv')?document.getElementById('fu-vencimento').value.trim():'';
+  var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
   var retornoData=(choice==='retorno')?(document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:''):'';
