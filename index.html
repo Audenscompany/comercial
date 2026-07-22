@@ -10394,6 +10394,27 @@ function buildDashComHTML(data){
     byAd[k].count++;
     if(parseFaturamentoLead(l)>=40000)byAd[k].q++;
   });
+  // Vendas por anúncio: mapeia tel → adKey via leadsF, depois conta followups de venda
+  var _telToAdKey={};
+  leadsF.forEach(function(l){
+    var tel=(col(l,['Telefone','TELEFONE','Tel','telefone'])||'').replace(/\D/g,'');
+    if(tel.length>9)tel=tel.slice(-9);
+    if(!tel)return;
+    var ad=col(l,['Ad','AD','ad'])||'--';
+    var camp=col(l,['Campanha','CAMPANHA','Campaign'])||'--';
+    var conj=col(l,['Conjunto','CONJUNTO','conjunto'])||'--';
+    _telToAdKey[tel]=ad+'||'+camp+'||'+conj;
+  });
+  Object.keys(followups||{}).forEach(function(fid){
+    var fu=followups[fid];
+    if(!fu||fu.resultado!=='venda')return;
+    if(typeof isVendaCancelada==='function'&&isVendaCancelada(fu))return;
+    var m=meetings[fu.meetingId]||meetings[fid];
+    var tel=((m&&m.tel)||fu.tel||'').replace(/\D/g,'');
+    if(tel.length>9)tel=tel.slice(-9);
+    var k=tel?_telToAdKey[tel]:null;
+    if(k&&byAd[k])byAd[k].vendas=(byAd[k].vendas||0)+1;
+  });
   var adRows=Object.values(byAd).sort(function(a,b){return b.count-a.count;}).slice(0,10);
 
   // ========== BUILD HTML ==========
@@ -10726,6 +10747,7 @@ function buildDashComHTML(data){
         '<th>Leads</th>'+
         '<th>Qualif. (40k+)</th>'+
         '<th>Taxa Qualif.</th>'+
+        '<th style="color:#22c55e;">Vendas</th>'+
         '<th>Decisão</th>'+
       '</tr></thead><tbody>'+
       adRows.map(function(a,idx){
@@ -10742,6 +10764,7 @@ function buildDashComHTML(data){
           '<td style="text-align:center;font-weight:700;">'+a.count+'</td>'+
           '<td style="text-align:center;color:var(--purple3);">'+a.q+'</td>'+
           '<td style="text-align:center;color:'+(q>=25?'#4ade80':q>=15?'#fbbf24':'#f87171')+';">'+q+'%</td>'+
+          '<td style="text-align:center;font-weight:700;color:'+(a.vendas>0?'#22c55e':'var(--muted)');+';">'+(a.vendas||0)+'</td>'+
           '<td style="text-align:center;"><span style="display:inline-flex;align-items:center;gap:4px;background:'+decBg+';color:'+decCl+';border:1px solid '+decCl+';border-radius:12px;padding:4px 12px;font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:700;"><i class="ti '+decIc+'" style="font-size:11px;"></i>'+dec+'</span></td>'+
         '</tr>';
       }).join('')+
