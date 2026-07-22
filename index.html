@@ -5,6 +5,7 @@
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-database-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-auth-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-storage-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.2.0/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -833,6 +834,10 @@ function startRealtimeSync(){
       if(JSON.stringify(_navPermissions)!==prevPerm) buildNav();
     }
   });
+  fbDb.ref('instagram/config').on('value',function(s){if(s.val())_igConfig=Object.assign(_igConfig,s.val());});
+  fbDb.ref('instagram/cache').on('value',function(s){if(s.val())_igCache=s.val();});
+  fbDb.ref('instagram/analises').on('value',function(s){_igAnalises=s.val()||{};});
+  fbDb.ref('instagram/calendario').on('value',function(s){_igCalendario=s.val()||{};});
 
   // Sync gcal_token in realtime (per usuario)
   fbDb.ref('gcal_token/'+gcalUserKey()).on('value', function(snap){
@@ -4171,6 +4176,7 @@ function buildNav(){
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
     {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
+    {id:'instagram',icon:'ti-brand-instagram',label:'Instagram'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
@@ -4375,7 +4381,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'instagram':renderInstagram,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -4400,6 +4406,7 @@ function showPage(id){
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
+    if(id==='instagram') setTimeout(igInitPage,50);
     if(id==='vendas'){setTimeout(loadVendasSheets,50);setTimeout(autoSyncAssinaturas,200);}
     if(id==='financeiro'||id.startsWith('fin-')) setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
@@ -13893,9 +13900,35 @@ function renderConfig(){
     '<pre style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--purple3);overflow-x:auto;margin:0;line-height:1.6;">POST '+(webhookVendaUrl||'<url>')+'\nAuthorization: Bearer <segredo>\n\n{\n  "cliente":  { "nome", "telefone", "cnpj" },\n  "contrato": { "data_inicio", "plano", "duracao_meses", "tipo_valor": "MRR"|"TCV", "mensalidade" },\n  "comercial":{ "closer", "sdr_nome", "origem" }\n}</pre>'+
   '</div></div>';
 
+  var igConfigHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
+    '<div class="cb-title"><i class="ti ti-brand-instagram" style="color:#e1306c;margin-right:6px;"></i>Instagram / Meta</div>'+
+    '<div style="font-size:11px;color:var(--muted);">'+(_igConfig.igUserId&&_igConfig.accessToken?'<span style="color:var(--green);">✓ Configurado</span>':'Não configurado')+'</div>'+
+    '</div><div style="padding:20px;">'+
+    '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Token de longa duração da Business Manager. A Graph API aceita chamadas diretas do navegador.</div>'+
+    '<div class="modal-grid2" style="margin-bottom:12px;">'+
+      '<div><label class="f-label">Access Token</label>'+
+        '<input class="f-input" id="ig-cfg-token" type="password" value="'+(_igConfig.accessToken||'')+'" placeholder="EAAxxxxxxx..." style="margin-bottom:0;font-family:monospace;font-size:11px;"></div>'+
+      '<div><label class="f-label">IG User ID</label>'+
+        '<input class="f-input" id="ig-cfg-userid" value="'+(_igConfig.igUserId||'')+'" placeholder="17841462350021993" style="margin-bottom:0;font-family:monospace;"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
+      '<button class="btn btn-primary" style="background:#e1306c;" onclick="igSaveConfig()"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+      '<button class="btn btn-outline" onclick="igTestarConexao()"><i class="ti ti-plug"></i> Testar conexão</button>'+
+      (_igConfig.igUserId&&_igConfig.accessToken?'<button class="btn btn-outline" onclick="showPage(\'instagram\')"><i class="ti ti-brand-instagram"></i> Ir para Instagram</button>':'')+
+    '</div>'+
+    '<div id="ig-cfg-result" style="font-size:13px;color:var(--muted);"></div>'+
+    (_igConfig.tokenSavedAt&&(Date.now()-_igConfig.tokenSavedAt)>50*86400000?
+      '<div class="warn-note" style="margin-top:12px;"><i class="ti ti-alert-triangle"></i> Token salvo há mais de 50 dias — verifique se ainda é válido (tokens de usuário expiram em 60 dias).</div>':'')+
+    '<div style="margin-top:14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:2;">'+
+      '<div style="font-weight:700;color:var(--white);margin-bottom:6px;">Como obter o token:</div>'+
+      '<div>1. <a href="https://developers.facebook.com/tools/explorer" target="_blank" style="color:var(--cyan);">Graph API Explorer</a> → gere token com: instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement</div>'+
+      '<div>2. Troque por token de longa duração: GET /oauth/access_token?grant_type=fb_exchange_token&amp;client_id=APP_ID&amp;client_secret=SECRET&amp;fb_exchange_token=TOKEN</div>'+
+      '<div>3. IG User ID: GET /me/accounts → instagram_business_account.id de cada página</div>'+
+    '</div>'+
+  '</div></div>';
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Configuracoes</div></div></div>'+
-  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml+contatosHtml+asaasConfigHtml+integracoesHtml:integracoesHtml)+
+  (CU&&CU.role==='gestor'?sheetsHtml+metaHtml+igConfigHtml+contatosHtml+asaasConfigHtml+integracoesHtml:integracoesHtml)+
   '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-brand-google" style="color:var(--cyan);margin-right:6px;"></i>Google Calendar + Sheets</div></div>'+
   '<div style="padding:20px;">'+
     '<div class="gcal-status '+(connected?'connected':'disconnected')+'">'+
@@ -24723,6 +24756,457 @@ function renderBonus(){
     }).join('')+'</tbody></table></div>':'<div style="text-align:center;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;padding:20px;">Nenhuma venda registrada ainda</div>')+
   '</div></div>';
 }
+// ==================== MÓDULO INSTAGRAM ====================
+var _igConfig={accessToken:'',igUserId:'',tokenSavedAt:0};
+var _igCache=null;
+var _igAnalises={};
+var _igCalendario={};
+var _igCurTab='overview';
+var _igCalMonth=new Date();
+
+async function igSaveConfig(){
+  var tk=document.getElementById('ig-cfg-token');
+  var uid=document.getElementById('ig-cfg-userid');
+  if(!tk||!uid){showSheetToast('Campos não encontrados',true);return;}
+  _igConfig.accessToken=tk.value.trim();
+  _igConfig.igUserId=uid.value.trim();
+  _igConfig.tokenSavedAt=Date.now();
+  try{await fbDb.ref('instagram/config').set(_igConfig);showSheetToast('Config Instagram salva!',false);showPage('config');}
+  catch(e){showSheetToast('Erro ao salvar: '+e.message,true);}
+}
+async function igTestarConexao(){
+  var res=document.getElementById('ig-cfg-result');
+  var tk=(document.getElementById('ig-cfg-token')||{value:''}).value||_igConfig.accessToken;
+  var uid=(document.getElementById('ig-cfg-userid')||{value:''}).value||_igConfig.igUserId;
+  if(!tk||!uid){if(res)res.innerHTML='<span style="color:var(--red);">Preencha token e IG User ID.</span>';return;}
+  if(res)res.innerHTML='<span style="color:var(--muted);">Testando...</span>';
+  try{
+    var r=await fetch('https://graph.facebook.com/v21.0/'+uid+'?fields=username,followers_count,media_count&access_token='+tk);
+    var d=await r.json();
+    if(d.error){if(res)res.innerHTML='<span style="color:var(--red);">Erro: '+d.error.message+'</span>';return;}
+    if(res)res.innerHTML='<span style="color:var(--green);">✓ @'+d.username+' · '+Number(d.followers_count).toLocaleString('pt-BR')+' seguidores · '+d.media_count+' posts</span>';
+  }catch(e){if(res)res.innerHTML='<span style="color:var(--red);">Falha de rede: '+e.message+'</span>';}
+}
+function igInitPage(){
+  var area=document.getElementById('content');
+  if(!area||area.getAttribute('data-page')!=='instagram')return;
+  igRenderCurrentTab();
+}
+function igRenderCurrentTab(){
+  if(_igCurTab==='overview'){igRenderOverview();if(!_igCache||!_igCache.ts||(Date.now()-_igCache.ts)>3600000)igSyncData();}
+  else if(_igCurTab==='analise'){igRenderAnalise();igAutoAnalise();}
+  else if(_igCurTab==='calendario')igRenderCalendario();
+  else if(_igCurTab==='publicar')igRenderPublicar();
+}
+function igSwitchTab(tab){
+  _igCurTab=tab;
+  document.querySelectorAll('.ig-tab').forEach(function(el){var a=el.dataset.igtab===tab;el.style.color=a?'#fff':'var(--muted)';el.style.borderBottom=a?'2px solid #e1306c':'2px solid transparent';});
+  document.querySelectorAll('.ig-pane').forEach(function(el){el.style.display='none';});
+  var p=document.getElementById('ig-pane-'+tab);if(p)p.style.display='block';
+  igRenderCurrentTab();
+}
+function renderInstagram(){
+  if(!_igConfig.accessToken||!_igConfig.igUserId){
+    return '<div class="page active"><div class="page-header"><div><div class="page-title">Instagram</div></div></div>'+
+    '<div class="cb" style="max-width:520px;margin:40px auto;"><div style="padding:32px;text-align:center;">'+
+    '<i class="ti ti-brand-instagram" style="font-size:52px;color:#e1306c;margin-bottom:16px;display:block;"></i>'+
+    '<div style="font-size:16px;font-weight:700;color:var(--white);margin-bottom:8px;">Configure o Instagram</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:20px;">Adicione Access Token e IG User ID em Configurações.</div>'+
+    '<button class="btn btn-primary" style="background:#e1306c;" onclick="showPage(\'config\')"><i class="ti ti-settings"></i> Ir para Configurações</button>'+
+    '</div></div></div>';
+  }
+  var tabs=['overview','analise','calendario','publicar'];
+  var tl={overview:'Visão Geral',analise:'Análise IA',calendario:'Calendário',publicar:'Publicar'};
+  var ti={overview:'ti-chart-bar',analise:'ti-sparkles',calendario:'ti-calendar',publicar:'ti-send'};
+  return '<div class="page active">'+
+  '<div class="page-header"><div>'+
+    '<div class="page-title">Instagram</div>'+
+    '<div class="page-sub"><i class="ti ti-brand-instagram" style="color:#e1306c;"></i> '+(_igCache&&_igCache.perfil?'@'+_igCache.perfil.username:_igConfig.igUserId||'')+'</div>'+
+  '</div></div>'+
+  '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto;">'+
+    tabs.map(function(t){return '<div class="ig-tab" data-igtab="'+t+'" onclick="igSwitchTab(\''+t+'\')" style="padding:12px 20px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;border-bottom:2px solid '+(t===_igCurTab?'#e1306c':'transparent')+';color:'+(t===_igCurTab?'#fff':'var(--muted)')+'"><i class="ti '+ti[t]+'" style="margin-right:6px;"></i>'+tl[t]+'</div>';}).join('')+
+  '</div>'+
+  tabs.map(function(t){return '<div class="ig-pane" id="ig-pane-'+t+'" style="display:'+(t===_igCurTab?'block':'none')+'"><div style="color:var(--muted);padding:20px;text-align:center;font-size:13px;">Carregando...</div></div>';}).join('')+
+  '</div>';
+}
+
+var _igSortCol='reach',_igSortDir=-1;
+
+function igRenderOverview(){
+  var p=document.getElementById('ig-pane-overview');if(!p)return;
+  var c=_igCache;
+  if(!c||!c.perfil){
+    p.innerHTML='<div style="text-align:center;padding:40px;">'+
+    '<button class="btn btn-primary" style="background:#e1306c;" onclick="igSyncData()"><i class="ti ti-refresh"></i> Sincronizar agora</button>'+
+    '<div style="color:var(--muted);font-size:12px;margin-top:12px;">Nenhum dado ainda.</div></div>';return;
+  }
+  var perf=c.perfil,posts=c.posts||[],serie=c.serie||[];
+  var now=Date.now(),day=86400000,seg7=0,seg30=0,cnt7=0,cnt30=0;
+  serie.forEach(function(d){var dt=new Date(d.date).getTime();if(now-dt<=7*day){seg7+=d.value||0;cnt7++;}if(now-dt<=30*day){seg30+=d.value||0;cnt30++;}});
+  var a7=cnt7?Math.round(seg7/cnt7):0,a30=cnt30?Math.round(seg30/cnt30):0;
+  var p30=posts.filter(function(x){return(now-new Date(x.timestamp).getTime())<=30*day;});
+  var ar=p30.length?Math.round(p30.reduce(function(a,b){return a+(b.reach||0);},0)/p30.length):0;
+  var sorted=posts.slice().sort(function(a,b){return _igSortDir*((b[_igSortCol]||0)-(a[_igSortCol]||0));});
+  var ks='background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;';
+  var g=function(col,v){return '<div style="font-size:26px;font-weight:800;color:'+col+';">'+v+'</div>';};
+  var kpi='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;">'+
+    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seguidores</div>'+g('var(--white)',(perf.followers_count||0).toLocaleString('pt-BR'))+'</div>'+
+    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seg/dia 7d</div>'+g(a7>=0?'var(--green)':'var(--red)',(a7>=0?'+':'')+a7)+'</div>'+
+    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seg/dia 30d</div>'+g(a30>=0?'var(--green)':'var(--red)',(a30>=0?'+':'')+a30)+'</div>'+
+    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Alcance médio</div>'+g('var(--purple3)',ar.toLocaleString('pt-BR'))+'</div>'+
+    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Posts 30d</div>'+g('var(--cyan)',p30.length)+'</div>'+
+  '</div>';
+  var chart='<div class="cb" style="margin-bottom:20px;"><div class="cb-hd">'+
+    '<div class="cb-title"><i class="ti ti-trending-up" style="color:var(--green);margin-right:6px;"></i>Seguidores/dia (30d)</div>'+
+    '<button class="btn btn-outline" style="font-size:11px;" onclick="igSyncData()"><i class="ti ti-refresh"></i> Sincronizar</button>'+
+  '</div><div style="padding:16px;"><canvas id="ig-chart" style="width:100%;height:160px;display:block;"></canvas></div></div>';
+  var sb=function(k){return '<span onclick="igSortTable(\''+k+'\')" style="cursor:pointer;margin-left:4px;opacity:0.5;">'+(_igSortCol===k?(_igSortDir===-1?'↓':'↑'):'⇅')+'</span>';};
+  var cols=[
+    {k:'timestamp',l:'Data',r:function(v){return v?new Date(v).toLocaleDateString('pt-BR'):'—';}},
+    {k:'media_type',l:'Tipo',r:function(v){return '<span style="font-size:10px;background:rgba(123,47,255,0.15);color:var(--purple3);padding:2px 7px;border-radius:5px;">'+(v||'—')+'</span>';}},
+    {k:'reach',l:'Alcance',r:function(v){return (v||0).toLocaleString('pt-BR');}},
+    {k:'saved',l:'Salv.',r:function(v){return (v||0).toLocaleString('pt-BR');}},
+    {k:'shares',l:'Comp.',r:function(v){return (v||0).toLocaleString('pt-BR');}},
+    {k:'follows',l:'Seg. ganhos',r:function(v){return (v||0).toLocaleString('pt-BR');}},
+    {k:'like_count',l:'Curtidas',r:function(v){return (v||0).toLocaleString('pt-BR');}},
+    {k:'caption',l:'Legenda',r:function(v,row){var cap=(v||'').substring(0,35);return '<a href="'+(row.permalink||'#')+'" target="_blank" style="color:var(--purple3);font-size:11px;">'+cap+(v&&v.length>35?'…':'')+'</a>';}},
+  ];
+  var tbl='<div class="cb"><div class="cb-hd"><div class="cb-title"><i class="ti ti-table" style="color:var(--purple3);margin-right:6px;"></i>Posts</div><div style="font-size:11px;color:var(--muted);">'+sorted.length+' posts · clique ⇅ para ordenar</div></div>'+
+  '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
+  '<thead><tr>'+cols.map(function(col){return '<th style="padding:9px 12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;">'+col.l+sb(col.k)+'</th>';}).join('')+'</tr></thead>'+
+  '<tbody>'+sorted.map(function(row,i){return '<tr style="border-bottom:1px solid var(--border);'+(i%2?'background:rgba(123,47,255,0.03)':'')+'">'+cols.map(function(col){return '<td style="padding:8px 12px;font-size:12px;color:var(--white);">'+col.r(row[col.k],row)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div></div>';
+  p.innerHTML='<div>'+kpi+chart+tbl+'</div>';
+  setTimeout(function(){
+    var cv=document.getElementById('ig-chart');if(!cv)return;
+    var ctx=cv.getContext('2d');var W=cv.offsetWidth||800,H=160;
+    var dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=H*dpr;ctx.scale(dpr,dpr);
+    var data=serie.slice(-30);if(!data.length)return;
+    var vals=data.map(function(d){return d.value||0;});
+    var mx=Math.max.apply(null,vals.concat([1])),mn=Math.min.apply(null,vals.concat([0]));
+    var rng=Math.max(mx-mn,1);
+    var pd={l:38,r:12,t:12,b:28},cw=W-pd.l-pd.r,ch=H-pd.t-pd.b;
+    var bw=Math.max(3,cw/data.length-2);
+    ctx.clearRect(0,0,W,H);
+    data.forEach(function(d,i){var x=pd.l+i*(cw/data.length),v=d.value||0,h=Math.max(2,ch*(v-mn)/rng),y=pd.t+ch-h,col=v>=0?'#22c55e':'#ef4444';ctx.fillStyle=col+'44';ctx.fillRect(x,y,bw,h);ctx.fillStyle=col;ctx.fillRect(x,y,bw,3);});
+    ctx.strokeStyle='rgba(112,112,160,0.25)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pd.l,pd.t+ch);ctx.lineTo(W-pd.r,pd.t+ch);ctx.stroke();
+    ctx.fillStyle='rgba(112,112,160,0.7)';ctx.font='11px Inter,sans-serif';
+    ctx.textAlign='left';if(data[0])ctx.fillText(new Date(data[0].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}),pd.l,H-6);
+    ctx.textAlign='right';if(data[data.length-1])ctx.fillText(new Date(data[data.length-1].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}),W-pd.r,H-6);
+    ctx.textAlign='right';ctx.fillText(mx,pd.l-4,pd.t+12);ctx.fillText(mn,pd.l-4,pd.t+ch);
+  },80);
+}
+function igSortTable(col){if(_igSortCol===col)_igSortDir*=-1;else{_igSortCol=col;_igSortDir=-1;}igRenderOverview();}
+
+async function igSyncData(){
+  var p=document.getElementById('ig-pane-overview');
+  var ss=function(m){var el=document.getElementById('ig-sync-st');if(el)el.textContent=m;};
+  if(p)p.innerHTML='<div style="text-align:center;padding:60px;"><div style="font-size:14px;font-weight:600;color:var(--white);">Sincronizando...</div><div style="color:var(--muted);font-size:12px;margin-top:8px;" id="ig-sync-st">Buscando perfil...</div></div>';
+  var tk=_igConfig.accessToken,uid=_igConfig.igUserId;
+  if(!tk||!uid){if(p)p.innerHTML='<div style="color:var(--red);padding:20px;">Configure token e IG User ID em Configurações → Instagram / Meta.</div>';return;}
+  try{
+    var pr=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'?fields=username,followers_count,media_count&access_token='+tk)).json();
+    if(pr.error)throw new Error(pr.error.message);
+    ss('Buscando posts...');
+    var ninetyAgo=Date.now()-90*86400000,allMedia=[],cursor='';
+    for(var pg=0;pg<10;pg++){
+      var mu='https://graph.facebook.com/v21.0/'+uid+'/media?fields=id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count&limit=50&access_token='+tk+(cursor?'&after='+cursor:'');
+      var md=await (await fetch(mu)).json();if(md.error)throw new Error(md.error.message);
+      var stop=false;
+      (md.data||[]).forEach(function(it){if(new Date(it.timestamp).getTime()<ninetyAgo)stop=true;else allMedia.push(it);});
+      if(stop||!md.paging||!md.paging.next)break;
+      cursor=(md.paging.cursors||{}).after||'';
+    }
+    ss('Insights de '+allMedia.length+' posts...');
+    var fm='reach,saved,shares,views,total_interactions,follows,profile_visits';
+    var rm='reach,saved,shares,views,total_interactions';
+    for(var i=0;i<allMedia.length;i++){
+      var m=allMedia[i];var isR=m.media_type==='VIDEO'||m.media_product_type==='REELS';
+      try{
+        var id2=await (await fetch('https://graph.facebook.com/v21.0/'+m.id+'/insights?metric='+(isR?rm:fm)+'&access_token='+tk)).json();
+        if(id2.data)id2.data.forEach(function(ins){m[ins.name]=ins.values?ins.values[0].value:ins.value;});
+        else if(!isR&&id2.error){
+          var id3=await (await fetch('https://graph.facebook.com/v21.0/'+m.id+'/insights?metric=reach,saved,shares&access_token='+tk)).json();
+          if(id3.data)id3.data.forEach(function(ins){m[ins.name]=ins.values?ins.values[0].value:ins.value;});
+        }
+      }catch(e2){console.warn('insights',m.id,e2);}
+      if(i>0&&i%10===0){ss('Insights '+i+'/'+allMedia.length+'...');await new Promise(function(r){setTimeout(r,200);});}
+    }
+    ss('Série diária...');
+    var serie=[];
+    try{
+      var sr=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'/insights?metric=follower_count&period=day&since='+(Math.floor(Date.now()/1000)-30*86400)+'&access_token='+tk)).json();
+      if(sr.data&&sr.data[0]&&sr.data[0].values)serie=sr.data[0].values.map(function(v){return{date:new Date(v.end_time).toISOString().split('T')[0],value:v.value};});
+    }catch(e2){console.warn('serie',e2);}
+    ss('Salvando...');
+    var cache={ts:Date.now(),perfil:pr,posts:allMedia,serie:serie};
+    await fbDb.ref('instagram/cache').set(cache);_igCache=cache;
+    ss('Concluído!');setTimeout(function(){igRenderOverview();},200);
+  }catch(e){
+    if(p)p.innerHTML='<div style="color:var(--red);padding:20px;"><b>Erro:</b> '+e.message+'<br><br><button class="btn btn-outline" onclick="igSyncData()"><i class="ti ti-refresh"></i> Tentar novamente</button></div>';
+    showSheetToast('Erro Instagram: '+e.message,true);
+  }
+}
+
+var _igSysPrompt='Você é um estrategista de Instagram especialista em perfis de autoridade no nicho de marketing para delivery/hamburgueria. Você receberá um JSON com métricas do perfil @lucasramong_ (dono da Audens, assessoria de marketing para hamburguerias; público: donos de delivery, 58% homens 25-44, Brasil inteiro).\n\nAnalise e responda em markdown, em PT-BR, nesta estrutura:\n1. **Diagnóstico do dia** — 2 a 4 frases: o que mudou desde a última análise (seguidores/dia, alcance, cadência de posts). Seja direto e use números.\n2. **O que está funcionando** — top 3 posts do período por desempenho real (priorize: seguidores ganhos > compartilhamentos > salvamentos > alcance). Explique O PORQUÊ de cada um ter funcionado (gancho, formato, tema).\n3. **O que está travando** — 1 a 3 pontos objetivos (ex.: queda de cadência, posts com alcance morto, tema que não performa).\n4. **Ação de hoje** — exatamente 3 ações práticas e específicas para hoje/amanhã.\n5. **Ideias de conteúdo** — 3 temas de carrossel prontos (título de capa + ângulo em 1 frase), baseados nos formatos que comprovadamente funcionam neste perfil: números concretos em faixas/tabela (tema dinheiro do dono), case antes/depois com R$, e quebra de crença contraintuitiva. Sempre sugerir CTA de palavra-chave nos comentários.\n\nRegras: nada de elogio vazio, nada de genérico ("poste com consistência" só se tiver número mostrando queda de cadência). Toda afirmação deve citar um número do JSON.';
+
+async function igAutoAnalise(){
+  var today=new Date().toISOString().split('T')[0].replace(/-/g,'_');
+  if(_igAnalises&&_igAnalises[today])return;
+  await igGerarAnalise();
+}
+async function igGerarAnalise(){
+  var sb=document.getElementById('ig-analise-btn');if(sb){sb.disabled=true;sb.textContent='Gerando...';}
+  var ck=localStorage.getItem('audens_claude_key');
+  if(!ck){showSheetToast('Configure a chave Claude em Configurações',true);if(sb){sb.disabled=false;sb.innerHTML='<i class="ti ti-sparkles"></i> Nova análise';}return;}
+  if(!_igCache||!_igCache.posts){showSheetToast('Sincronize os dados primeiro (aba Visão Geral)',true);if(sb){sb.disabled=false;sb.innerHTML='<i class="ti ti-sparkles"></i> Nova análise';}return;}
+  var today=new Date().toISOString().split('T')[0].replace(/-/g,'_');
+  var post30=(_igCache.posts||[]).slice(0,30).map(function(m){return{id:m.id,tipo:m.media_type,ts:m.timestamp,reach:m.reach||0,saved:m.saved||0,shares:m.shares||0,follows:m.follows||0,likes:m.like_count||0,cap:(m.caption||'').substring(0,100)};});
+  var prevDate=Object.keys(_igAnalises||{}).sort().reverse().find(function(d){return d<today;});
+  var payload={perfil:_igCache.perfil,posts30d:post30,serie_seguidores_30d:_igCache.serie||[],analise_anterior:prevDate?{data:prevDate.replace(/_/g,'-'),resumo:(_igAnalises[prevDate]||'').substring(0,500)}:null};
+  try{
+    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'x-api-key':ck,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,system:_igSysPrompt,messages:[{role:'user',content:JSON.stringify(payload)}]})});
+    var d=await r.json();if(d.error)throw new Error(d.error.message);
+    var text=d.content[0].text;
+    await fbDb.ref('instagram/analises/'+today).set(text);
+    _igAnalises[today]=text;window._igSelDate=today;igRenderAnalise();
+  }catch(e){showSheetToast('Erro análise IA: '+e.message,true);}
+  if(sb){sb.disabled=false;sb.innerHTML='<i class="ti ti-sparkles"></i> Nova análise';}
+}
+function igRenderAnalise(){
+  var p=document.getElementById('ig-pane-analise');if(!p)return;
+  var dates=Object.keys(_igAnalises||{}).sort().reverse();
+  var today=new Date().toISOString().split('T')[0].replace(/-/g,'_');
+  if(!window._igSelDate)window._igSelDate=today;
+  var sel=window._igSelDate;if(!_igAnalises[sel]&&dates.length)sel=dates[0];window._igSelDate=sel;
+  var bs='padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--white);';
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+dates.map(function(d){var ds=d.replace(/_/g,'-');return '<button onclick="window._igSelDate=\''+d+'\';igRenderAnalise();" style="'+bs+(d===sel?'border-color:#e1306c;color:#e1306c;background:rgba(225,48,108,0.1);':'')+'">'+(ds.substring(5))+'</button>';}).join('')+'</div>'+
+    '<button id="ig-analise-btn" class="btn btn-outline" onclick="igGerarAnalise()" style="font-size:12px;"><i class="ti ti-sparkles" style="color:#e1306c;"></i> Nova análise</button>'+
+  '</div>';
+  if(_igAnalises[sel])html+='<div class="cb" style="padding:24px;line-height:1.7;">'+igMarkdown(_igAnalises[sel])+'</div>';
+  else html+='<div style="text-align:center;padding:40px;color:var(--muted);">Nenhuma análise para esta data.<br>Clique em "Nova análise" para gerar.</div>';
+  p.innerHTML=html;
+}
+function igMarkdown(md){
+  return (md||'')
+    .replace(/^### (.+)$/gm,'<h3 style="font-size:15px;font-weight:700;color:var(--purple3);margin:20px 0 6px;">$1</h3>')
+    .replace(/^## (.+)$/gm,'<h2 style="font-size:17px;font-weight:700;color:var(--white);margin:22px 0 8px;border-bottom:1px solid var(--border);padding-bottom:6px;">$1</h2>')
+    .replace(/^# (.+)$/gm,'<h1 style="font-size:20px;font-weight:700;color:var(--white);margin:0 0 16px;">$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong style="color:var(--white);">$1</strong>')
+    .replace(/`(.+?)`/g,'<code style="background:rgba(123,47,255,0.15);color:var(--purple3);padding:1px 5px;border-radius:4px;font-size:12px;">$1</code>')
+    .replace(/^(\d+)\. (.+)$/gm,'<div style="margin:14px 0 4px;font-size:14px;color:var(--white);"><span style="color:#e1306c;font-weight:700;">$1.</span> $2</div>')
+    .replace(/^- (.+)$/gm,'<div style="padding:4px 0 4px 16px;border-left:2px solid var(--border2);margin:3px 0;font-size:13px;color:var(--white);">$1</div>')
+    .replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+}
+
+function igRenderCalendario(){
+  var p=document.getElementById('ig-pane-calendario');if(!p)return;
+  var now=_igCalMonth,y=now.getFullYear(),m=now.getMonth();
+  var firstDay=new Date(y,m,1).getDay(),daysInMonth=new Date(y,m+1,0).getDate();
+  var monthName=now.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  var eventos={};
+  Object.values(_igCalendario||{}).forEach(function(ev){
+    if(!ev||!ev.dataHora)return;var d=new Date(ev.dataHora);
+    if(d.getFullYear()===y&&d.getMonth()===m){var k=d.getDate();if(!eventos[k])eventos[k]=[];eventos[k].push(ev);}
+  });
+  var wd=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  var statusCol=function(s){return {rascunho:'var(--muted)',pronto:'var(--cyan)',publicando:'var(--amber)',publicado:'var(--green)',erro:'var(--red)'}[s]||'var(--muted)';};
+  var cal='<div class="cb" style="margin-bottom:20px;"><div class="cb-hd">'+
+    '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<button class="btn btn-outline" style="font-size:12px;padding:5px 10px;" onclick="_igCalMonth=new Date(_igCalMonth.getFullYear(),_igCalMonth.getMonth()-1,1);igRenderCalendario();"><i class="ti ti-chevron-left"></i></button>'+
+      '<div class="cb-title" style="text-transform:capitalize;min-width:180px;text-align:center;">'+monthName+'</div>'+
+      '<button class="btn btn-outline" style="font-size:12px;padding:5px 10px;" onclick="_igCalMonth=new Date(_igCalMonth.getFullYear(),_igCalMonth.getMonth()+1,1);igRenderCalendario();"><i class="ti ti-chevron-right"></i></button>'+
+    '</div>'+
+    '<button class="btn btn-primary" style="background:#e1306c;font-size:12px;" onclick="igModalPost(null)"><i class="ti ti-plus"></i> Novo post</button>'+
+  '</div>'+
+  '<div style="padding:16px;">'+
+  '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:5px;">'+wd.map(function(d){return '<div style="text-align:center;font-size:10px;font-weight:700;color:var(--muted);padding:5px 0;letter-spacing:.5px;">'+d+'</div>';}).join('')+'</div>'+
+  '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">'+
+    Array(firstDay).fill('<div></div>').join('')+
+    Array.from({length:daysInMonth},function(_,i){
+      var day=i+1,isT=new Date().getFullYear()===y&&new Date().getMonth()===m&&new Date().getDate()===day,evs=eventos[day]||[];
+      return '<div style="min-height:72px;background:'+(isT?'rgba(225,48,108,0.1)':'var(--bg2)')+';border:1px solid '+(isT?'#e1306c':'var(--border)')+';border-radius:7px;padding:5px;cursor:pointer;" onclick="igModalDay('+y+','+m+','+day+')">'+
+        '<div style="font-size:11px;font-weight:700;color:'+(isT?'#e1306c':'var(--muted)')+';margin-bottom:3px;">'+day+'</div>'+
+        evs.slice(0,3).map(function(ev){return '<div style="font-size:9px;background:rgba(123,47,255,0.15);border-left:2px solid '+statusCol(ev.status)+';padding:2px 4px;border-radius:3px;margin-bottom:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--white);">'+(ev.tipo||'post')+'</div>';}).join('')+
+        (evs.length>3?'<div style="font-size:9px;color:var(--muted);">+'+(evs.length-3)+' mais</div>':'')+
+      '</div>';
+    }).join('')+
+  '</div></div></div>';
+  var items=Object.entries(_igCalendario||{}).filter(function(e){if(!e[1]||!e[1].dataHora)return false;var d=new Date(e[1].dataHora);return d.getFullYear()===y&&d.getMonth()===m;}).sort(function(a,b){return new Date(a[1].dataHora)-new Date(b[1].dataHora);});
+  var lista='<div class="cb"><div class="cb-hd"><div class="cb-title">Posts de '+monthName+'</div><div style="font-size:11px;color:var(--muted);">'+items.length+' agendados</div></div><div style="padding:0;">'+
+    (items.length?items.map(function(e){
+      var id=e[0],ev=e[1];
+      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);">'+
+        '<div style="width:36px;height:36px;background:rgba(225,48,108,0.1);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-instagram" style="color:#e1306c;font-size:15px;"></i></div>'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-size:12px;font-weight:600;color:var(--white);">'+new Date(ev.dataHora).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+(ev.legenda||'Sem legenda').substring(0,55)+'</div>'+
+        '</div>'+
+        '<span style="font-size:10px;font-weight:700;color:'+statusCol(ev.status)+';background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:5px;text-transform:uppercase;white-space:nowrap;">'+ev.status+'</span>'+
+        '<button class="btn btn-outline" style="font-size:11px;padding:4px 8px;" onclick="igModalPost(\''+id+'\')"><i class="ti ti-edit"></i></button>'+
+      '</div>';
+    }).join(''):'<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Nenhum post agendado para este mês</div>')+
+  '</div></div>';
+  p.innerHTML=cal+lista;
+}
+
+function igModalPost(id){
+  var ev=id?(_igCalendario[id]||{}):{};
+  var tm=new Date(Date.now()+86400000).toISOString().slice(0,16);
+  var prevSlides=(ev.slides||[]);
+  var html='<div id="ig-modal-post" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;">'+
+  '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;">'+
+  '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">'+
+    '<div style="font-size:16px;font-weight:700;color:var(--white);">'+(id?'Editar post':'Novo post agendado')+'</div>'+
+    '<button onclick="document.getElementById(\'ig-modal-post\').remove();" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;"><i class="ti ti-x"></i></button>'+
+  '</div>'+
+  '<div style="padding:20px;">'+
+    '<label class="f-label">Data e hora</label><input class="f-input" id="igm-dh" type="datetime-local" value="'+(ev.dataHora?ev.dataHora.substring(0,16):tm)+'" style="margin-bottom:14px;">'+
+    '<label class="f-label">Tipo</label><select class="f-input" id="igm-tipo" style="margin-bottom:14px;"><option value="carrossel"'+(ev.tipo==='carrossel'?' selected':'')+'>Carrossel</option><option value="imagem"'+(ev.tipo==='imagem'?' selected':'')+'>Imagem única</option></select>'+
+    '<label class="f-label">Status</label><select class="f-input" id="igm-status" style="margin-bottom:14px;">'+['rascunho','pronto'].map(function(s){return '<option value="'+s+'"'+(ev.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select>'+
+    '<label class="f-label">Legenda (com CTA)</label><textarea class="f-input" id="igm-leg" rows="4" style="margin-bottom:14px;resize:vertical;">'+(ev.legenda||'')+'</textarea>'+
+    (prevSlides.length?'<div style="margin-bottom:14px;"><div class="f-label">Slides ('+prevSlides.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap;">'+prevSlides.map(function(u,i){return '<div style="width:50px;height:50px;border-radius:6px;background:var(--bg);border:1px solid var(--border);overflow:hidden;"><img src="'+u+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'"></div>';}).join('')+'</div></div>':'')+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">'+
+      (id?'<button class="btn" style="color:var(--red);border:1px solid rgba(239,68,68,0.3);background:transparent;font-size:12px;" onclick="igDelPost(\''+id+'\')"><i class="ti ti-trash"></i> Excluir</button>':'')+
+      '<button class="btn btn-outline" onclick="document.getElementById(\'ig-modal-post\').remove();">Cancelar</button>'+
+      '<button class="btn btn-primary" style="background:#e1306c;" onclick="igSalvarPost('+(id?'\''+id+'\'':'null')+')"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+    '</div>'+
+  '</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function igModalDay(y,m,day){
+  var evs=Object.entries(_igCalendario||{}).filter(function(e){if(!e[1]||!e[1].dataHora)return false;var d=new Date(e[1].dataHora);return d.getFullYear()===y&&d.getMonth()===m&&d.getDate()===day;});
+  if(!evs.length)igModalPost(null);else igModalPost(evs[0][0]);
+}
+async function igSalvarPost(id){
+  var dh=document.getElementById('igm-dh'),tp=document.getElementById('igm-tipo'),st=document.getElementById('igm-status'),lg=document.getElementById('igm-leg');
+  if(!dh||!dh.value){showSheetToast('Preencha a data',true);return;}
+  var ev={dataHora:dh.value,tipo:tp.value,status:st.value,legenda:lg.value,slides:id&&_igCalendario[id]?(_igCalendario[id].slides||[]):[],origem:id?(_igCalendario[id].origem||'manual'):'manual',resultado:id&&_igCalendario[id]?(_igCalendario[id].resultado||{}):{},'erro':''};
+  try{
+    if(id)await fbDb.ref('instagram/calendario/'+id).update(ev);
+    else await fbDb.ref('instagram/calendario').push(ev);
+    var m=document.getElementById('ig-modal-post');if(m)m.remove();
+    showSheetToast('Post salvo!',false);
+  }catch(e){showSheetToast('Erro: '+e.message,true);}
+}
+async function igDelPost(id){
+  if(!confirm('Excluir este post do calendário?'))return;
+  try{await fbDb.ref('instagram/calendario/'+id).remove();var m=document.getElementById('ig-modal-post');if(m)m.remove();showSheetToast('Post excluído',false);}
+  catch(e){showSheetToast('Erro: '+e.message,true);}
+}
+
+function igRenderPublicar(){
+  var p=document.getElementById('ig-pane-publicar');if(!p)return;
+  var now=Date.now();
+  var all=Object.entries(_igCalendario||{}).sort(function(a,b){return new Date(a[1].dataHora)-new Date(b[1].dataHora);});
+  var prontos=all.filter(function(e){return e[1]&&e[1].status==='pronto';});
+  var sc=function(s){return{rascunho:'var(--muted)',pronto:'var(--cyan)',publicando:'var(--amber)',publicado:'var(--green)',erro:'var(--red)'}[s]||'var(--muted)';};
+  var html='<div id="ig-pub-lim" style="margin-bottom:14px;font-size:13px;color:var(--muted);"><i class="ti ti-loader"></i> Verificando limite...</div>'+
+    '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-send" style="color:#e1306c;margin-right:6px;"></i>Prontos para publicar</div><div style="font-size:11px;color:var(--muted);">'+prontos.length+' posts</div></div><div style="padding:0;">'+
+    (prontos.length?prontos.map(function(e){var id=e[0],ev=e[1];var isU=new Date(ev.dataHora).getTime()<=now;
+      return '<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);'+(isU?'background:rgba(225,48,108,0.05)':'')+'">'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-size:13px;font-weight:600;color:'+(isU?'#e1306c':'var(--white)')+';margin-bottom:2px;">'+
+            new Date(ev.dataHora).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+
+            (isU?' <span style="font-size:10px;background:#e1306c;color:white;padding:1px 6px;border-radius:4px;margin-left:6px;">AGORA</span>':'')+
+          '</div>'+
+          '<div style="font-size:11px;color:var(--muted);">'+(ev.tipo||'post')+' · '+(ev.slides||[]).length+' slides</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;">'+
+          '<button class="btn btn-outline" style="font-size:11px;padding:4px 8px;" onclick="igModalPost(\''+id+'\')"><i class="ti ti-edit"></i></button>'+
+          '<button class="btn btn-primary" style="background:#e1306c;font-size:12px;" id="ig-pb-'+id+'" onclick="igPublicar(\''+id+'\')"><i class="ti ti-send"></i> Publicar</button>'+
+        '</div>'+
+      '</div>';}).join(''):'<div style="padding:24px;text-align:center;color:var(--muted);"><i class="ti ti-check" style="font-size:24px;display:block;margin-bottom:8px;color:var(--green);"></i>Nenhum post com status "pronto"<br><span style="font-size:12px;">Mude o status no Calendário para publicar.</span></div>')+
+    '</div></div>'+
+    '<div class="cb"><div class="cb-hd"><div class="cb-title">Todos os posts</div><div style="font-size:11px;color:var(--muted);">'+all.length+' total</div></div><div style="padding:0;">'+
+    (all.length?all.map(function(e){var id=e[0],ev=e[1];
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);">'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-size:12px;font-weight:600;color:var(--white);">'+new Date(ev.dataHora).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);">'+(ev.tipo||'post')+'</div>'+
+        '</div>'+
+        '<span style="font-size:10px;font-weight:700;color:'+sc(ev.status)+';background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:5px;text-transform:uppercase;">'+ev.status+'</span>'+
+        (ev.resultado&&ev.resultado.permalink?'<a href="'+ev.resultado.permalink+'" target="_blank" style="color:var(--purple3);font-size:13px;" title="Ver no Instagram"><i class="ti ti-external-link"></i></a>':'')+
+        (ev.erro?'<span title="'+ev.erro.substring(0,200)+'" style="color:var(--red);cursor:help;font-size:13px;"><i class="ti ti-alert-circle"></i></span>':'')+
+      '</div>';}).join(''):'<div style="padding:24px;text-align:center;color:var(--muted);">Nenhum post no calendário</div>')+
+    '</div></div>';
+  p.innerHTML=html;
+  igFetchLimit().then(function(u){var el=document.getElementById('ig-pub-lim');if(el)el.innerHTML='<i class="ti ti-info-circle" style="color:var(--amber);margin-right:4px;"></i>Limite diário: <b style="color:var(--white);">'+u+'/100</b> publicações usadas hoje';}).catch(function(){var el=document.getElementById('ig-pub-lim');if(el)el.innerHTML='';});
+}
+async function igFetchLimit(){
+  if(!_igConfig.accessToken||!_igConfig.igUserId)return '?';
+  var r=await fetch('https://graph.facebook.com/v21.0/'+_igConfig.igUserId+'/content_publishing_limit?fields=config,quota_usage&access_token='+_igConfig.accessToken);
+  var d=await r.json();return(d.data&&d.data[0])?d.data[0].quota_usage||0:'?';
+}
+async function igPublicar(id){
+  var ev=_igCalendario[id];if(!ev){showSheetToast('Post não encontrado',true);return;}
+  var btn=document.getElementById('ig-pb-'+id);if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Publicando...';}
+  var tk=_igConfig.accessToken,uid=_igConfig.igUserId;
+  try{
+    await fbDb.ref('instagram/calendario/'+id).update({status:'publicando'});
+    var slides=ev.slides||[];
+    if(!slides.length)throw new Error('Nenhum slide/imagem configurado. Use o Gerador de Carrossel → "Instagram" para adicionar imagens.');
+    var contId;
+    if(slides.length===1){
+      var r1=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'/media',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image_url:slides[0],caption:ev.legenda||'',access_token:tk})})).json();
+      if(r1.error)throw new Error(r1.error.message);contId=r1.id;
+    }else{
+      var cids=[];
+      for(var i2=0;i2<Math.min(slides.length,10);i2++){
+        var rc=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'/media',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image_url:slides[i2],is_carousel_item:true,access_token:tk})})).json();
+        if(rc.error)throw new Error('Slide '+(i2+1)+': '+rc.error.message);cids.push(rc.id);
+      }
+      var rp=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'/media',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({media_type:'CAROUSEL',children:cids.join(','),caption:ev.legenda||'',access_token:tk})})).json();
+      if(rp.error)throw new Error(rp.error.message);contId=rp.id;
+    }
+    var ready=false;
+    for(var t=0;t<45;t++){
+      await new Promise(function(r){setTimeout(r,2000);});
+      var ds=await (await fetch('https://graph.facebook.com/v21.0/'+contId+'?fields=status_code&access_token='+tk)).json();
+      if(ds.status_code==='FINISHED'){ready=true;break;}
+      if(ds.status_code==='ERROR')throw new Error('Processamento falhou (ERROR). Verifique se as URLs das imagens são públicas e acessíveis.');
+    }
+    if(!ready)throw new Error('Timeout: processamento demorou mais de 90s.');
+    var dpub=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'/media_publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({creation_id:contId,access_token:tk})})).json();
+    if(dpub.error)throw new Error(dpub.error.message);
+    var dlink=await (await fetch('https://graph.facebook.com/v21.0/'+dpub.id+'?fields=permalink&access_token='+tk)).json();
+    var res={igMediaId:dpub.id,permalink:dlink.permalink||'',publicadoEm:new Date().toISOString()};
+    await fbDb.ref('instagram/calendario/'+id).update({status:'publicado',resultado:res,erro:''});
+    showSheetToast('✅ Publicado! '+res.permalink,false);igRenderPublicar();
+  }catch(e){
+    await fbDb.ref('instagram/calendario/'+id).update({status:'erro',erro:e.message});
+    showSheetToast('Erro ao publicar: '+e.message,true);
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Tentar novamente';}
+    igRenderPublicar();
+  }
+}
+
+async function carEnviarCalendario(){
+  if(!_carState.slides.length){showSheetToast('Gere o conteúdo no carrossel antes de enviar.',true);return;}
+  if(typeof firebase==='undefined'){showSheetToast('Firebase não disponível.',true);return;}
+  var st;try{st=firebase.storage();}catch(e){showSheetToast('Firebase Storage não carregado — adicione o script firebase-storage-compat.',true);return;}
+  showSheetToast('Enviando '+_carState.slides.length+' slides para o Storage...',false);
+  carDrawAll();
+  var urls=[];
+  try{
+    var grpId=fbDb.ref('instagram/calendario').push().key;
+    for(var i=0;i<_carState.slides.length;i++){
+      var s=_carState.slides[i];if(!s._canvas)continue;
+      var blob=await new Promise(function(res){s._canvas.toBlob(res,'image/png');});
+      var ref=st.ref('instagram/posts/'+grpId+'/slide-'+(i+1)+'.png');
+      await ref.put(blob,{contentType:'image/png'});
+      urls.push(await ref.getDownloadURL());
+    }
+    var tm=new Date(Date.now()+86400000).toISOString().slice(0,16);
+    await fbDb.ref('instagram/calendario').push({dataHora:tm,tipo:'carrossel',status:'rascunho',legenda:'',slides:urls,origem:'gerador',resultado:{},erro:''});
+    showSheetToast('✅ '+urls.length+' slides enviados! Acesse Instagram → Calendário para editar.',false);
+    setTimeout(function(){_igCurTab='calendario';showPage('instagram');},1000);
+  }catch(e){showSheetToast('Erro: '+e.message,true);}
+}
+
+
 // ==================== GERADOR DE CARROSSEL ====================
 var _carState={slides:[],profile:{name:'',handle:'',verified:true,avatar:null},footerText:'Arrasta para o lado >',followBadge:true,coverSize:80,innerSize:86,bodySize:42,imgHeight:52};
 var _carTargetSlide=-1,_carW=1080,_carH=1350;
@@ -25052,6 +25536,7 @@ function renderCarrossel(){
         '</div>'+
         '<div style="padding:12px 20px;border-top:1px solid var(--border);">'+
           '<button onclick="carDownloadZip()" style="display:block;width:100%;padding:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:#fff;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">⬇ Baixar ZIP (todos os slides)</button>'+
+          '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-brand-instagram"></i> Enviar para Calendário Instagram</button>'+
         '</div>'+
       '</div>'+
       '<div style="flex:1;">'+
