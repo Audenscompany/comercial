@@ -13920,11 +13920,25 @@ function renderConfig(){
     '<div id="ig-cfg-result" style="font-size:13px;color:var(--muted);"></div>'+
     (_igConfig.tokenSavedAt&&(Date.now()-_igConfig.tokenSavedAt)>50*86400000?
       '<div class="warn-note" style="margin-top:12px;"><i class="ti ti-alert-triangle"></i> Token salvo há mais de 50 dias — verifique se ainda é válido (tokens de usuário expiram em 60 dias).</div>':'')+
-    '<div style="margin-top:14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:2;">'+
-      '<div style="font-weight:700;color:var(--white);margin-bottom:6px;">Como obter o token:</div>'+
-      '<div>1. <a href="https://developers.facebook.com/tools/explorer" target="_blank" style="color:var(--cyan);">Graph API Explorer</a> → gere token com: instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement</div>'+
-      '<div>2. Troque por token de longa duração: GET /oauth/access_token?grant_type=fb_exchange_token&amp;client_id=APP_ID&amp;client_secret=SECRET&amp;fb_exchange_token=TOKEN</div>'+
-      '<div>3. IG User ID: GET /me/accounts → instagram_business_account.id de cada página</div>'+
+    '<div style="margin-top:14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.9;">'+
+      '<div style="font-weight:700;color:var(--white);margin-bottom:8px;"><i class="ti ti-info-circle" style="color:var(--cyan);margin-right:6px;"></i>O token do Meta Ads <b style="color:var(--amber);">não funciona</b> para o Instagram — precisa de um token específico:</div>'+
+      '<div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:10px 14px;margin-bottom:8px;">'+
+        '<div style="color:var(--white);font-weight:600;margin-bottom:4px;">Passo 1 — Gerar token no Graph API Explorer</div>'+
+        '<div>Acesse <a href="https://developers.facebook.com/tools/explorer/?method=GET&path=me%2Faccounts&version=v21.0" target="_blank" style="color:var(--cyan);">Graph API Explorer</a></div>'+
+        '<div>Selecione seu App → clique em <b style="color:var(--white);">Add a Permission</b> e marque:</div>'+
+        '<div style="margin:4px 0 4px 12px;"><code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 6px;border-radius:4px;font-size:11px;">instagram_basic</code> &nbsp; <code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 6px;border-radius:4px;font-size:11px;">instagram_manage_insights</code></code> &nbsp; <code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 6px;border-radius:4px;font-size:11px;">pages_show_list</code></div>'+
+        '<div>Clique em <b style="color:var(--white);">Generate Access Token</b> → autorize → copie o token</div>'+
+      '</div>'+
+      '<div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:10px 14px;margin-bottom:8px;">'+
+        '<div style="color:var(--white);font-weight:600;margin-bottom:4px;">Passo 2 — Descobrir o IG User ID</div>'+
+        '<div>No mesmo Explorer, faça: <code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 6px;border-radius:4px;font-size:11px;">GET /me/accounts?fields=instagram_business_account{id,username}</code></div>'+
+        '<div>Copie o <b style="color:var(--white);">id</b> da conta Instagram da resposta</div>'+
+      '</div>'+
+      '<div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:10px 14px;">'+
+        '<div style="color:var(--white);font-weight:600;margin-bottom:4px;">Passo 3 — Token de longa duração (60 dias)</div>'+
+        '<div>No Explorer: <code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 6px;border-radius:4px;font-size:11px;">GET /oauth/access_token?grant_type=fb_exchange_token&client_id=APP_ID&client_secret=SECRET&fb_exchange_token=TOKEN</code></div>'+
+        '<div>Use este token aqui para não precisar renovar por 60 dias</div>'+
+      '</div>'+
     '</div>'+
   '</div></div>';
   return '<div class="page active">'+
@@ -24790,7 +24804,13 @@ async function igTestarConexao(){
   try{
     var r=await fetch('https://graph.facebook.com/v21.0/'+uid+'?fields=username,followers_count,media_count&access_token='+tk);
     var d=await r.json();
-    if(d.error){if(res)res.innerHTML='<span style="color:var(--red);">Erro: '+d.error.message+'</span>';return;}
+    if(d.error){
+      var isPermErr=d.error.code===200||d.error.code===10||d.error.type==='OAuthException'||(d.error.message||'').toLowerCase().includes('permission')||(d.error.message||'').toLowerCase().includes('missing');
+      if(res)res.innerHTML='<span style="color:var(--red);">'+
+        (isPermErr?'<b>Erro de permissão:</b> o token não tem acesso ao Instagram. Gere um token específico com <code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 5px;border-radius:3px;">instagram_basic</code> e <code style="background:rgba(123,47,255,0.2);color:var(--purple3);padding:1px 5px;border-radius:3px;">instagram_manage_insights</code> no Graph API Explorer (veja o guia abaixo).':
+        'Erro: '+d.error.message)+
+      '</span>';return;
+    }
     if(res)res.innerHTML='<span style="color:var(--green);">✓ @'+d.username+' · '+Number(d.followers_count).toLocaleString('pt-BR')+' seguidores · '+d.media_count+' posts</span>';
   }catch(e){if(res)res.innerHTML='<span style="color:var(--red);">Falha de rede: '+e.message+'</span>';}
 }
