@@ -24884,16 +24884,25 @@ async function carGerarRoteiro(){
 
 var _carExemplo='Como montar uma oferta irresistível: o método que faz o cliente clicar antes de comparar preço\n\nEscassez não salva produto ruim.\nSe você cria "últimas unidades" para algo que ninguém deseja, só acelera o fracasso. Urgência não cria desejo. Ela apenas amplifica o que já existe.\n\nAntes de falar em escassez, você precisa de um produto campeão.\nProduto campeão é aquele que já vende naturalmente. Já tem saída. Já tem prova. Ele performa mesmo sem desconto.\n\nO erro clássico.\nAnunciar "promoção por tempo limitado" levando para o cardápio inteiro. Isso dilui urgência. Escassez precisa de foco.\n\nComo identificar seu produto campeão.\nÉ o mais pedido da semana. É o que gera comentário. É o que o cliente recomenda. É o que vende mesmo quando você não empurra.\n\nAgora entra a escassez estratégica.\nQuantidade limitada. Tempo limitado. Lote especial. Versão exclusiva da semana. Escassez precisa parecer oportunidade, não liquidação.\n\nO método simples.\nEscolha o produto campeão. Crie uma variação especial. Aplique escassez real. Direcione todo o tráfego para ele.\n\nQuando você une produto campeão + escassez estratégica.\nO cliente não compara preço. Ele decide antes que acabe. E você vende com margem, não com desespero.';
 
-function carInitPage(){
+async function carInitPage(){
   _carLoadFont('car-anton','https://fonts.googleapis.com/css2?family=Anton&display=swap');
   _carLoadFont('car-poppins','https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
   if(typeof CU!=='undefined'&&CU&&!_carState.profile.name){_carState.profile.name=CU.name||'Lucas Siqueira';_carState.profile.handle='@'+(CU.name||'lucas').toLowerCase().replace(/\s+/g,'');}
   var pn=document.getElementById('car-pname');if(pn)pn.value=_carState.profile.name;
   var ph=document.getElementById('car-phandle');if(ph)ph.value=_carState.profile.handle;
+  // Aguarda Anton e Poppins carregarem antes de renderizar o canvas
+  try{
+    await Promise.all([
+      document.fonts.load('400 86px Anton'),
+      document.fonts.load('400 42px Poppins'),
+      document.fonts.load('500 30px Poppins'),
+      document.fonts.load('600 46px Poppins'),
+      document.fonts.load('700 30px Poppins'),
+    ]);
+  }catch(e){}
   if(!_carState.slides.length){var bt=document.getElementById('car-batch');if(bt)bt.value=_carExemplo;carApplyBatch();}
   else{carRebuildGrid();}
-  document.fonts.ready.then(carDrawAll);
-  setTimeout(carUpdateEstimate,100);
+  carUpdateEstimate();
 }
 
 // ---- CARROSSEL: IMAGE IA ----
