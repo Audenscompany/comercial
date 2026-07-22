@@ -4170,6 +4170,7 @@ function buildNav(){
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
+    {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
@@ -4374,7 +4375,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -24721,7 +24722,249 @@ function renderBonus(){
     }).join('')+'</tbody></table></div>':'<div style="text-align:center;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;padding:20px;">Nenhuma venda registrada ainda</div>')+
   '</div></div>';
 }
-</script>
-</body>
-</html>
+// ==================== GERADOR DE CARROSSEL ====================
+var _carState={slides:[],profile:{name:'',handle:'',verified:true,avatar:null},footerText:'Arrasta para o lado >',followBadge:true,coverSize:80,innerSize:86,bodySize:42,imgHeight:52};
+var _carTargetSlide=-1,_carW=1080,_carH=1350;
 
+function _carLoadFont(id,href){if(!document.getElementById(id)){var l=document.createElement('link');l.id=id;l.rel='stylesheet';l.href=href;document.head.appendChild(l);}}
+
+function carToast(msg){var t=document.getElementById('car-toast');if(!t)return;t.textContent=msg;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2600);}
+
+function carSwitchTab(tab){
+  document.querySelectorAll('.car-tab').forEach(function(el){var a=el.dataset.cartab===tab;el.style.color=a?'#fff':'var(--muted)';el.style.borderBottom=a?'2px solid var(--accent)':'2px solid transparent';});
+  ['conteudo','ia','design'].forEach(function(p){var el=document.getElementById('car-pane-'+p);if(el)el.style.display=p===tab?'block':'none';});
+}
+
+function _carSliderRow(inputId,label,stateKey,min,max){
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><label style="font-size:11px;color:var(--muted);width:120px;">'+label+'</label>'+
+    '<input type="range" id="'+inputId+'" min="'+min+'" max="'+max+'" value="'+(_carState[stateKey])+'" oninput="_carState.'+stateKey+'=+this.value;document.getElementById(\''+inputId+'-v\').textContent=this.value;carDrawAll();" style="flex:1;accent-color:var(--accent);">'+
+    '<span id="'+inputId+'-v" style="width:30px;text-align:right;font-size:11px;color:var(--white);">'+(_carState[stateKey])+'</span></div>';
+}
+
+function _carRR(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function _carCF(ctx,img,dx,dy,dw,dh){var s=Math.max(dw/img.width,dh/img.height),w=img.width*s,h=img.height*s;ctx.drawImage(img,dx+(dw-w)/2,dy+(dh-h)/2,w,h);}
+function _carWL(ctx,text,maxW){var words=(text||'').split(/\s+/).filter(Boolean),lines=[],cur='';for(var i=0;i<words.length;i++){var ww=words[i],t=cur?cur+' '+ww:ww;if(ctx.measureText(t).width<=maxW||!cur)cur=t;else{lines.push(cur);cur=ww;}}if(cur)lines.push(cur);return lines;}
+
+function _carDrawFooter(ctx,isLast){
+  var y=1252,h=62,r=31,p=_carState.profile;
+  ctx.font='600 30px Poppins';var nw=ctx.measureText(p.name).width,w1=nw+56;
+  var g=ctx.createLinearGradient(40,0,40+w1,0);g.addColorStop(0,'#ffa000');g.addColorStop(.5,'#ff1b5e');g.addColorStop(1,'#8a2be2');
+  ctx.fillStyle=g;_carRR(ctx,40,y,w1,h,r);ctx.fill();
+  ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(p.name,68,y+h/2+2);
+  ctx.font='500 30px Poppins';var hw=ctx.measureText(p.handle).width,x2=40+w1+22,w2=hw+56;
+  ctx.fillStyle='#161616';_carRR(ctx,x2,y,w2,h,r);ctx.fill();ctx.strokeStyle='#2f2f2f';ctx.lineWidth=2;_carRR(ctx,x2+1,y+1,w2-2,h-2,r-1);ctx.stroke();
+  ctx.fillStyle='#fff';ctx.fillText(p.handle,x2+28,y+h/2+2);
+  if(isLast&&_carState.followBadge){ctx.font='600 30px Poppins';var nameW=ctx.measureText(p.name).width,bx=1040-nameW-76,by=y+2,bs=56;ctx.fillStyle='#ff2c55';_carRR(ctx,bx,by,bs,bs,15);ctx.fill();ctx.beginPath();ctx.moveTo(bx+12,by+bs-2);ctx.lineTo(bx+4,by+bs+10);ctx.lineTo(bx+24,by+bs-2);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(bx+26,by+22,9,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(bx+26,by+46,14,Math.PI,0);ctx.fill();ctx.font='700 24px Poppins';ctx.fillText('+',bx+38,by+19);ctx.font='600 30px Poppins';ctx.fillStyle='#fff';ctx.fillText(p.name,bx+bs+16,y+h/2+2);}
+  else{ctx.font='400 28px Poppins';ctx.fillStyle='#8f8f8f';ctx.textAlign='right';ctx.fillText(_carState.footerText,1040,y+h/2+2);ctx.textAlign='left';}
+  ctx.textBaseline='alphabetic';
+}
+function _carDrawAR(ctx,cx,cy,r){
+  var p=_carState.profile,g=ctx.createLinearGradient(cx-r,cy+r,cx+r,cy-r);
+  g.addColorStop(0,'#ffa000');g.addColorStop(.5,'#ff1b5e');g.addColorStop(1,'#8a2be2');ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,r-7,0,Math.PI*2);ctx.clip();
+  if(p.avatar){var s=Math.max((r*2-14)/p.avatar.width,(r*2-14)/p.avatar.height);ctx.drawImage(p.avatar,cx-p.avatar.width*s/2,cy-p.avatar.height*s/2,p.avatar.width*s,p.avatar.height*s);}
+  else{ctx.fillStyle='#26262b';ctx.fillRect(cx-r,cy-r,r*2,r*2);ctx.fillStyle='#8f8f96';ctx.font='700 '+Math.round(r*0.9)+'px Poppins';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((p.name||'?').trim().charAt(0).toUpperCase(),cx,cy+3);ctx.textAlign='left';ctx.textBaseline='alphabetic';}
+  ctx.restore();
+}
+function _carDrawVerified(ctx,cx,cy,r){
+  ctx.fillStyle='#0095f6';ctx.beginPath();var sp=16;
+  for(var i=0;i<=sp*2;i++){var ang=(i/(sp*2))*Math.PI*2,rad=i%2===0?r:r*0.86;i===0?ctx.moveTo(cx+Math.cos(ang)*rad,cy+Math.sin(ang)*rad):ctx.lineTo(cx+Math.cos(ang)*rad,cy+Math.sin(ang)*rad);}
+  ctx.closePath();ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=r*0.22;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();ctx.moveTo(cx-r*0.42,cy+r*0.02);ctx.lineTo(cx-r*0.1,cy+r*0.34);ctx.lineTo(cx+r*0.46,cy-r*0.3);ctx.stroke();
+}
+function _carDrawCover(ctx,slide){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,_carW,_carH);
+  if(slide.img){_carCF(ctx,slide.img,0,0,_carW,_carH);}else{var g=ctx.createRadialGradient(_carW/2,420,80,_carW/2,500,900);g.addColorStop(0,'#3a2a18');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,_carH);}
+  var g2=ctx.createLinearGradient(0,0,0,_carH);g2.addColorStop(0,'rgba(0,0,0,0.25)');g2.addColorStop(.35,'rgba(0,0,0,0.05)');g2.addColorStop(.55,'rgba(0,0,0,0.45)');g2.addColorStop(.8,'rgba(0,0,0,0.86)');g2.addColorStop(1,'rgba(0,0,0,0.94)');ctx.fillStyle=g2;ctx.fillRect(0,0,_carW,_carH);
+  var size=_carState.coverSize;ctx.textAlign='left';ctx.textBaseline='alphabetic';var lines;
+  while(true){ctx.font='400 '+size+'px Anton';lines=_carWL(ctx,(slide.title||'').toUpperCase(),1000);if(lines.length<=5||size<=54)break;size-=4;}
+  var lineH=Math.round(size*1.18),bodyLines=[],bodyLineH=0;
+  if(slide.body){ctx.font='400 '+Math.max(34,_carState.bodySize-4)+'px Poppins';bodyLines=_carWL(ctx,slide.body,1000);bodyLineH=Math.round((_carState.bodySize-4)*1.5);}
+  var bodyBlockH=bodyLines.length?bodyLines.length*bodyLineH+30:0,titleBottom=1205-bodyBlockH,titleTop=titleBottom-lines.length*lineH,py=titleTop-95;
+  _carDrawAR(ctx,97,py,57);ctx.fillStyle='#fff';ctx.font='600 46px Poppins';ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=12;ctx.fillText(_carState.profile.name,172,py-4);
+  if(_carState.profile.verified){var nw2=ctx.measureText(_carState.profile.name).width;ctx.shadowBlur=0;_carDrawVerified(ctx,172+nw2+34,py-18,21);}
+  ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=12;ctx.fillStyle='#c9c9c9';ctx.font='400 38px Poppins';ctx.fillText(_carState.profile.handle,172,py+48);
+  ctx.fillStyle='#fff';ctx.font='400 '+size+'px Anton';ctx.shadowColor='rgba(0,0,0,0.75)';ctx.shadowBlur=22;lines.forEach(function(ln,i){ctx.fillText(ln,40,titleTop+lineH*(i+0.85));});
+  if(bodyLines.length){ctx.font='400 '+Math.max(34,_carState.bodySize-4)+'px Poppins';ctx.fillStyle='#ececec';bodyLines.forEach(function(ln,i){ctx.fillText(ln,40,titleBottom+40+bodyLineH*(i+0.7));});}
+  ctx.shadowBlur=0;_carDrawFooter(ctx,false);
+}
+function _carDrawBody(ctx,slide,isLast){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,_carW,_carH);
+  var imgH=Math.round(_carH*_carState.imgHeight/100);
+  if(slide.img){ctx.save();ctx.beginPath();ctx.rect(0,0,_carW,imgH);ctx.clip();_carCF(ctx,slide.img,0,0,_carW,imgH);ctx.restore();}
+  else{var g=ctx.createRadialGradient(_carW/2,imgH*0.45,60,_carW/2,imgH*0.5,760);g.addColorStop(0,'#31241a');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,imgH);}
+  var fs=Math.round(imgH*0.55),g2=ctx.createLinearGradient(0,fs,0,imgH);g2.addColorStop(0,'rgba(0,0,0,0)');g2.addColorStop(1,'rgba(0,0,0,1)');ctx.fillStyle=g2;ctx.fillRect(0,fs,_carW,imgH-fs);
+  var tSz=_carState.innerSize,bSz=_carState.bodySize,tLines,bLines,tLH,bLH,top;
+  for(var att=0;att<6;att++){ctx.font='400 '+tSz+'px Anton';tLines=_carWL(ctx,(slide.title||'').toUpperCase(),1000);tLH=Math.round(tSz*1.16);ctx.font='400 '+bSz+'px Poppins';bLines=slide.body?_carWL(ctx,slide.body,1000):[];bLH=Math.round(bSz*1.5);top=imgH+60;var tot=tLines.length*tLH+(bLines.length?40+bLines.length*bLH:0);if(top+tot<=1225)break;if(top+tot-1225<120&&top>imgH*0.86)top=imgH*0.86;tSz=Math.max(60,tSz-5);bSz=Math.max(32,bSz-2);}
+  ctx.fillStyle='#fff';ctx.font='400 '+tSz+'px Anton';tLines.forEach(function(ln,i){ctx.fillText(ln,40,top+tLH*(i+0.85));});
+  var bTop=top+tLines.length*tLH+40;ctx.fillStyle='#ececec';ctx.font='400 '+bSz+'px Poppins';bLines.forEach(function(ln,i){ctx.fillText(ln,40,bTop+bLH*(i+0.7));});
+  _carDrawFooter(ctx,isLast);
+}
+function carDrawSlide(i){var s=_carState.slides[i];if(!s||!s._canvas)return;var ctx=s._canvas.getContext('2d');if(i===0)_carDrawCover(ctx,s);else _carDrawBody(ctx,s,i===_carState.slides.length-1);}
+function carDrawAll(){_carState.slides.forEach(function(_,i){carDrawSlide(i);});}
+
+function carRebuildGrid(){
+  var grid=document.getElementById('car-grid'),empty=document.getElementById('car-empty'),cnt=document.getElementById('car-slide-count');
+  if(!grid)return;grid.innerHTML='';
+  if(empty)empty.style.display=_carState.slides.length?'none':'block';
+  if(cnt)cnt.textContent=_carState.slides.length?_carState.slides.length+' slides':'';
+  _carState.slides.forEach(function(s,i){
+    var card=document.createElement('div');
+    card.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;';
+    var cv=document.createElement('canvas');cv.width=_carW;cv.height=_carH;
+    cv.style.cssText='width:100%;display:block;aspect-ratio:1080/1350;background:#000;cursor:pointer;';
+    cv.title='Clique para trocar foto';
+    cv.onclick=(function(idx){return function(){_carTargetSlide=idx;document.getElementById('car-file-slide').click();};})(i);
+    s._canvas=cv;card.appendChild(cv);
+    var bar=document.createElement('div');bar.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:8px 10px;';
+    bar.innerHTML='<span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;">'+(i===0?'Capa':'Slide '+(i+1))+'</span>';
+    var acts=document.createElement('div');acts.style.cssText='display:flex;gap:6px;';
+    var bImg=document.createElement('button');bImg.textContent='Foto';bImg.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--white);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;text-transform:uppercase;';
+    bImg.onclick=(function(idx){return function(){_carTargetSlide=idx;document.getElementById('car-file-slide').click();};})(i);
+    var bPng=document.createElement('button');bPng.textContent='PNG';bPng.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--white);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;text-transform:uppercase;';
+    bPng.onclick=(function(idx){return function(){carDownloadSlide(idx);};})(i);
+    acts.append(bImg,bPng);bar.appendChild(acts);card.appendChild(bar);
+    card.addEventListener('dragover',function(e){e.preventDefault();card.style.borderColor='var(--accent)';});
+    card.addEventListener('dragleave',function(){card.style.borderColor='var(--border)';});
+    card.addEventListener('drop',(function(idx){return function(e){e.preventDefault();card.style.borderColor='var(--border)';var f=[...e.dataTransfer.files].find(function(f){return f.type.startsWith('image/');});if(f){_carLoadImgFile(f).then(function(img){_carState.slides[idx].img=img;carDrawSlide(idx);carToast('Foto do '+(idx===0?'capa':'slide '+(idx+1))+' atualizada');});}};})(i));
+    grid.appendChild(card);
+  });
+  carDrawAll();
+}
+
+function carApplyBatch(){
+  var txt=document.getElementById('car-batch');if(!txt)return;
+  var blocks=txt.value.split(/\n\s*\n/).map(function(b){return b.trim();}).filter(Boolean);
+  if(!blocks.length){carToast('Cole o texto primeiro.');return;}
+  var old=_carState.slides;
+  _carState.slides=blocks.map(function(b,i){var lines=b.split('\n').map(function(l){return l.trim();}).filter(Boolean);return{title:lines[0]||'',body:lines.slice(1).join(' '),img:old[i]?old[i].img:null};});
+  carRebuildGrid();carToast(_carState.slides.length+' slides gerados');
+}
+
+function _carLoadImgFile(file){return new Promise(function(res){var r=new FileReader();r.onload=function(e){var img=new Image();img.onload=function(){res(img);};img.src=e.target.result;};r.readAsDataURL(file);});}
+async function carUploadAvatar(inp){if(!inp.files[0])return;_carState.profile.avatar=await _carLoadImgFile(inp.files[0]);var prev=document.getElementById('car-avatar-prev');if(prev){prev.style.backgroundImage='url('+_carState.profile.avatar.src+')';prev.textContent='';}carDrawAll();inp.value='';}
+async function carUploadSlide(inp){if(!inp.files[0]||_carTargetSlide<0)return;_carState.slides[_carTargetSlide].img=await _carLoadImgFile(inp.files[0]);carDrawSlide(_carTargetSlide);carToast('Foto atualizada');inp.value='';}
+async function carBulkImages(inp){var files=[...inp.files].filter(function(f){return f.type.startsWith('image/');}).sort(function(a,b){return a.name.localeCompare(b.name,undefined,{numeric:true});});if(!files.length)return;if(!_carState.slides.length){carToast('Aplique o texto primeiro.');inp.value='';return;}for(var i=0;i<files.length&&i<_carState.slides.length;i++){_carState.slides[i].img=await _carLoadImgFile(files[i]);}carDrawAll();carToast(Math.min(files.length,_carState.slides.length)+' fotos aplicadas');inp.value='';}
+
+function carDownloadSlide(i){carDrawSlide(i);_carState.slides[i]._canvas.toBlob(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Slide '+(i+1)+'.png';a.click();setTimeout(function(){URL.revokeObjectURL(a.href);},5000);},'image/png');}
+async function carDownloadZip(){
+  if(!_carState.slides.length){carToast('Nenhum slide para exportar.');return;}
+  carToast('Gerando ZIP...');carDrawAll();
+  function doZip(){var zip=new JSZip();var ps=_carState.slides.map(function(s,i){return new Promise(function(res){s._canvas.toBlob(function(blob){zip.file('Slide '+(i+1)+'.png',blob);res();},'image/png');});});Promise.all(ps).then(function(){zip.generateAsync({type:'blob'}).then(function(out){var a=document.createElement('a');a.href=URL.createObjectURL(out);a.download='carrossel.zip';a.click();setTimeout(function(){URL.revokeObjectURL(a.href);},5000);carToast('ZIP com '+_carState.slides.length+' slides baixado');});});}
+  if(window.JSZip){doZip();}else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=doZip;document.head.appendChild(s);}
+}
+
+var _carAISys='Você é um copywriter especialista em carrosséis de Instagram para negócios locais. Escreva roteiros no estilo direto, contraintuitivo e de autoridade: frases curtas, sem enrolação, sempre virando a chave de uma crença comum do leitor.\n\nCada slide tem UM título forte em tom de manchete (máx. 9 palavras, terminando em ponto final) e um corpo de 2 a 4 frases curtas que desenvolvem a ideia.\n\nESTRUTURA:\n- Slide 1 (capa): só o título — um gancho "COMO..." / "O QUE..." / pergunta forte / promessa com números. Sem corpo.\n- Slides do meio: quebram a crença, mostram o erro, explicam o mecanismo, dão o método.\n- Último slide: conclusão forte que amarra a promessa da capa.\n\nFORMATO DE SAÍDA (obrigatório):\n- Cada slide é um bloco separado por UMA linha vazia.\n- Linha 1 = título. Linhas seguintes = corpo.\n- A capa tem só o título.\n- Não numere os slides. Sem markdown, asteriscos, emojis ou rótulos. Responda APENAS com o roteiro.';
+
+async function carGerarRoteiro(){
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  var st=document.getElementById('car-ai-status'),btn=document.getElementById('car-ai-btn');
+  if(!claudeKey){if(st){st.style.color='#ff5c7a';st.textContent='Configure a Claude API Key em ⚙ Configurações do Jarvis.';}return;}
+  var tema=(document.getElementById('car-tema').value||'').trim();
+  var n=document.getElementById('car-nslides').value;
+  var nicho=(document.getElementById('car-nicho').value||'').trim();
+  if(!tema){if(st){st.style.color='#ff5c7a';st.textContent='Descreva o tema do carrossel.';}return;}
+  if(st){st.style.color='var(--muted)';st.textContent='Gerando roteiro...';}if(btn)btn.disabled=true;
+  var userMsg='Nicho: '+nicho+'\nTema: '+tema+'\nQuantidade: '+n+' slides (1 capa + '+(parseInt(n)-1)+' slides).\nGere o roteiro agora.';
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,system:_carAISys,messages:[{role:'user',content:userMsg}]})});
+    if(!resp.ok)throw new Error('Claude API '+resp.status+': '+await resp.text());
+    var data=await resp.json();
+    var text=(data.content&&data.content[0]&&data.content[0].text)||'';
+    var bEl=document.getElementById('car-batch');if(bEl)bEl.value=text.trim();
+    carApplyBatch();
+    if(st){st.style.color='#39d98a';st.textContent='Roteiro gerado e aplicado!';}
+    carSwitchTab('conteudo');
+  }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}}
+  if(btn)btn.disabled=false;
+}
+
+var _carExemplo='Como montar uma oferta irresistível: o método que faz o cliente clicar antes de comparar preço\n\nEscassez não salva produto ruim.\nSe você cria "últimas unidades" para algo que ninguém deseja, só acelera o fracasso. Urgência não cria desejo. Ela apenas amplifica o que já existe.\n\nAntes de falar em escassez, você precisa de um produto campeão.\nProduto campeão é aquele que já vende naturalmente. Já tem saída. Já tem prova. Ele performa mesmo sem desconto.\n\nO erro clássico.\nAnunciar "promoção por tempo limitado" levando para o cardápio inteiro. Isso dilui urgência. Escassez precisa de foco.\n\nComo identificar seu produto campeão.\nÉ o mais pedido da semana. É o que gera comentário. É o que o cliente recomenda. É o que vende mesmo quando você não empurra.\n\nAgora entra a escassez estratégica.\nQuantidade limitada. Tempo limitado. Lote especial. Versão exclusiva da semana. Escassez precisa parecer oportunidade, não liquidação.\n\nO método simples.\nEscolha o produto campeão. Crie uma variação especial. Aplique escassez real. Direcione todo o tráfego para ele.\n\nQuando você une produto campeão + escassez estratégica.\nO cliente não compara preço. Ele decide antes que acabe. E você vende com margem, não com desespero.';
+
+function carInitPage(){
+  _carLoadFont('car-anton','https://fonts.googleapis.com/css2?family=Anton&display=swap');
+  _carLoadFont('car-poppins','https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+  if(typeof CU!=='undefined'&&CU&&!_carState.profile.name){_carState.profile.name=CU.name||'Lucas Siqueira';_carState.profile.handle='@'+(CU.name||'lucas').toLowerCase().replace(/\s+/g,'');}
+  var pn=document.getElementById('car-pname');if(pn)pn.value=_carState.profile.name;
+  var ph=document.getElementById('car-phandle');if(ph)ph.value=_carState.profile.handle;
+  if(!_carState.slides.length){var bt=document.getElementById('car-batch');if(bt)bt.value=_carExemplo;carApplyBatch();}
+  else{carRebuildGrid();}
+  document.fonts.ready.then(carDrawAll);
+}
+
+function renderCarrossel(){
+  var H='<div class="page active" id="pg-carrossel">'+
+    '<div class="page-header"><div><div class="page-title">Gerador de Carrossel</div><div class="page-sub">Slides para Instagram com IA · canvas 1080×1350px</div></div></div>'+
+    '<div style="display:flex;gap:20px;align-items:flex-start;">'+
+      '<div style="width:340px;min-width:340px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;">'+
+        '<div style="display:flex;border-bottom:1px solid var(--border);">'+
+          '<div class="car-tab" data-cartab="conteudo" onclick="carSwitchTab(\'conteudo\')" style="flex:1;padding:12px 0;text-align:center;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#fff;border-bottom:2px solid var(--accent);">Conteúdo</div>'+
+          '<div class="car-tab" data-cartab="ia" onclick="carSwitchTab(\'ia\')" style="flex:1;padding:12px 0;text-align:center;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:2px solid transparent;">Roteiro IA</div>'+
+          '<div class="car-tab" data-cartab="design" onclick="carSwitchTab(\'design\')" style="flex:1;padding:12px 0;text-align:center;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:2px solid transparent;">Design</div>'+
+        '</div>'+
+        '<div style="padding:18px 20px 24px;overflow-y:auto;max-height:calc(100vh - 230px);">'+
+          // ── Conteúdo ──
+          '<div id="car-pane-conteudo">'+
+            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Texto em lote</div>'+
+            '<textarea id="car-batch" style="width:100%;min-height:180px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:11px 12px;outline:none;resize:vertical;line-height:1.5;" placeholder="Título (Linha 1)&#10;Corpo (Linhas seguintes)&#10;&#10;Linha vazia separa slides. 1º bloco = capa."></textarea>'+
+            '<button onclick="carApplyBatch()" style="display:block;width:100%;margin-top:10px;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Aplicar texto</button>'+
+            '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;margin-bottom:18px;">1ª linha = título · restante = corpo · 1º bloco = capa</div>'+
+            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Perfil</div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nome</label><input type="text" id="car-pname" value="" oninput="_carState.profile.name=this.value;carDrawAll();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">@Arroba</label><input type="text" id="car-phandle" value="" oninput="_carState.profile.handle=this.value;carDrawAll();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+            '<div id="car-avatar-drop" onclick="document.getElementById(\'car-file-avatar\').click()" style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px dashed var(--border2,#333);border-radius:12px;padding:10px 12px;cursor:pointer;margin-bottom:8px;">'+
+              '<div id="car-avatar-prev" style="width:46px;height:46px;border-radius:50%;background:#26262b center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>'+
+              '<div style="font-size:12px;color:var(--muted);">Clique p/ foto de perfil<br><span style="font-size:10.5px;">aparece na capa com anel gradiente</span></div>'+
+            '</div>'+
+            '<input type="file" id="car-file-avatar" accept="image/*" style="display:none;" onchange="carUploadAvatar(this)">'+
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--white);margin-bottom:18px;"><input type="checkbox" id="car-verified" checked onchange="_carState.profile.verified=this.checked;carDrawAll();" style="accent-color:var(--accent);width:15px;height:15px;"> Selo verificado azul</label>'+
+            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Imagens de fundo</div>'+
+            '<button onclick="document.getElementById(\'car-file-bulk\').click()" style="display:block;width:100%;padding:12px 0;background:linear-gradient(90deg,#ffa000,#ff1b5e,#8a2be2);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Subir fotos em lote</button>'+
+            '<input type="file" id="car-file-bulk" accept="image/*" multiple style="display:none;" onchange="carBulkImages(this)">'+
+            '<input type="file" id="car-file-slide" accept="image/*" style="display:none;" onchange="carUploadSlide(this)">'+
+            '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;">1ª foto→capa, 2ª→slide 2... Arraste sobre o slide para trocar individualmente.</div>'+
+          '</div>'+
+          // ── Roteiro IA ──
+          '<div id="car-pane-ia" style="display:none;">'+
+            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Gerar roteiro com IA</div>'+
+            '<div style="margin-bottom:12px;font-size:11.5px;color:var(--muted);background:rgba(123,47,255,0.1);border:1px solid rgba(123,47,255,0.3);border-radius:8px;padding:10px 12px;">Usa a chave Claude de <b style="color:#fff;">⚙ Configurações do Jarvis</b>.</div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Tema do carrossel</label><textarea id="car-tema" style="width:100%;min-height:80px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;resize:vertical;" placeholder="Ex: por que aumentar o ticket médio vale mais do que atrair cliente novo"></textarea></div>'+
+            '<div style="display:flex;gap:8px;margin-bottom:10px;">'+
+              '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nº de slides</label><select id="car-nslides" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;"><option>8</option><option selected>10</option><option>12</option></select></div>'+
+              '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nicho</label><input type="text" id="car-nicho" value="hamburgueria / delivery" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+            '</div>'+
+            '<button onclick="carGerarRoteiro()" id="car-ai-btn" style="display:block;width:100%;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Gerar roteiro</button>'+
+            '<div id="car-ai-status" style="font-size:11.5px;margin-top:10px;line-height:1.5;min-height:16px;"></div>'+
+          '</div>'+
+          // ── Design ──
+          '<div id="car-pane-design" style="display:none;">'+
+            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Tipografia</div>'+
+            _carSliderRow('car-cs','Título da capa','coverSize',56,104)+
+            _carSliderRow('car-is','Título interno','innerSize',60,110)+
+            _carSliderRow('car-bs','Corpo','bodySize',28,60)+
+            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;margin-top:16px;">Layout</div>'+
+            _carSliderRow('car-ih','Altura da imagem %','imgHeight',30,80)+
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--white);margin-top:10px;margin-bottom:10px;"><input type="checkbox" id="car-follow" checked onchange="_carState.followBadge=this.checked;carDrawAll();" style="accent-color:var(--accent);width:15px;height:15px;"> Selo "Siga" no último slide</label>'+
+            '<div><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Texto do rodapé</label><input type="text" id="car-footer-txt" value="Arrasta para o lado >" oninput="_carState.footerText=this.value;carDrawAll();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="padding:12px 20px;border-top:1px solid var(--border);">'+
+          '<button onclick="carDownloadZip()" style="display:block;width:100%;padding:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:#fff;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">⬇ Baixar ZIP (todos os slides)</button>'+
+        '</div>'+
+      '</div>'+
+      '<div style="flex:1;">'+
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;">'+
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Prévia dos slides</div>'+
+          '<span id="car-slide-count" style="font-size:11px;color:var(--muted);"></span>'+
+        '</div>'+
+        '<div id="car-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;"></div>'+
+        '<div id="car-empty" style="color:var(--muted);text-align:center;margin-top:80px;line-height:1.8;">Aplique o texto para ver os slides aqui.</div>'+
+      '</div>'+
+    '</div>'+
+    '<div id="car-toast" style="position:fixed;bottom:22px;right:22px;background:#1c1c22;border:1px solid var(--border);padding:12px 18px;border-radius:10px;font-size:12.5px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;"></div>'+
+  '</div>';
+  document.getElementById('main-content').innerHTML=H;
+  carInitPage();
+}
+
+</script>
