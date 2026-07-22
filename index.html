@@ -13902,15 +13902,17 @@ function renderConfig(){
 
   var igConfigHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
     '<div class="cb-title"><i class="ti ti-brand-instagram" style="color:#e1306c;margin-right:6px;"></i>Instagram / Meta</div>'+
-    '<div style="font-size:11px;color:var(--muted);">'+(_igConfig.igUserId&&(_igConfig.accessToken||(metaToken&&metaToken.access_token))?'<span style="color:var(--green);">✓ Configurado</span>':(_igConfig.igUserId?'<span style="color:var(--amber);">Token ausente</span>':'Não configurado'))+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);">'+(_igConfig.windsorKey?'<span style="color:var(--green);">✓ Windsor conectado</span>':(_igConfig.igUserId&&(_igConfig.accessToken||(metaToken&&metaToken.access_token))?'<span style="color:var(--amber);">Token legado</span>':'<span style="color:var(--red);">Não configurado</span>'))+'</div>'+
     '</div><div style="padding:20px;">'+
     '<div class="info-note" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i> Token de longa duração da Business Manager. A Graph API aceita chamadas diretas do navegador.</div>'+
     '<div class="modal-grid2" style="margin-bottom:12px;">'+
-      '<div><label class="f-label">Access Token</label>'+
-        '<input class="f-input" id="ig-cfg-token" type="password" value="'+(_igConfig.accessToken||'')+'" placeholder="EAAxxxxxxx..." style="margin-bottom:0;font-family:monospace;font-size:11px;"></div>'+
-      '<div><label class="f-label">IG User ID</label>'+
-        '<input class="f-input" id="ig-cfg-userid" value="'+(_igConfig.igUserId||'')+'" placeholder="17841462350021993" style="margin-bottom:0;font-family:monospace;"></div>'+
+      '<div><label class="f-label">Windsor API Key <span style="color:var(--green);font-size:10px;font-weight:600;">✓ Métricas</span></label>'+
+        '<input class="f-input" id="ig-cfg-windsor-key" type="password" value="'+(_igConfig.windsorKey||'')+'" placeholder="Chave da API Windsor.ai..." style="margin-bottom:0;font-family:monospace;font-size:11px;"></div>'+
+      '<div><label class="f-label">Access Token <span style="color:var(--muted);font-size:10px;">(publicação)</span></label>'+
+        '<input class="f-input" id="ig-cfg-token" type="password" value="'+(_igConfig.accessToken||'')+'" placeholder="EAAxxxxxxx... (opcional)" style="margin-bottom:0;font-family:monospace;font-size:11px;"></div>'+
     '</div>'+
+    '<div style="margin-bottom:12px;"><label class="f-label">IG User ID</label>'+
+      '<input class="f-input" id="ig-cfg-userid" value="'+(_igConfig.igUserId||'')+'" placeholder="17841462350021993" style="font-family:monospace;font-size:12px;"></div>'+
     '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
       '<button class="btn btn-primary" style="background:#e1306c;" onclick="igSaveConfig()"><i class="ti ti-device-floppy"></i> Salvar</button>'+
       '<button class="btn btn-outline" onclick="igTestarConexao()"><i class="ti ti-plug"></i> Testar conexão</button>'+
@@ -24772,7 +24774,7 @@ function renderBonus(){
   '</div></div>';
 }
 // ==================== MÓDULO INSTAGRAM ====================
-var _igConfig={accessToken:'',igUserId:'',tokenSavedAt:0};
+var _igConfig={accessToken:'',igUserId:'',tokenSavedAt:0,windsorKey:''};
 var _igCache=null;
 var _igAnalises={};
 var _igCalendario={};
@@ -24786,6 +24788,7 @@ async function igSaveConfig(){
   _igConfig.accessToken=tk.value.trim();
   _igConfig.igUserId=uid.value.trim();
   _igConfig.tokenSavedAt=Date.now();
+  var wkEl=document.getElementById('ig-cfg-windsor-key');if(wkEl)_igConfig.windsorKey=wkEl.value.trim();
   try{await fbDb.ref('instagram/config').set(_igConfig);showSheetToast('Config Instagram salva!',false);showPage('config');}
   catch(e){showSheetToast('Erro ao salvar: '+e.message,true);}
 }
@@ -24928,50 +24931,52 @@ function igSortTable(col){if(_igSortCol===col)_igSortDir*=-1;else{_igSortCol=col
 async function igSyncData(){
   var p=document.getElementById('ig-pane-overview');
   var ss=function(m){var el=document.getElementById('ig-sync-st');if(el)el.textContent=m;};
-  if(p)p.innerHTML='<div style="text-align:center;padding:60px;"><div style="font-size:14px;font-weight:600;color:var(--white);">Sincronizando...</div><div style="color:var(--muted);font-size:12px;margin-top:8px;" id="ig-sync-st">Buscando perfil...</div></div>';
-  var tk=_igConfig.accessToken||(metaToken&&metaToken.access_token)||"",uid=_igConfig.igUserId;
-  if(!tk||!uid){if(p)p.innerHTML='<div style="color:var(--red);padding:20px;">Configure token e IG User ID em Configurações → Instagram / Meta.</div>';return;}
+  if(p)p.innerHTML='<div style="text-align:center;padding:60px;"><div style="font-size:14px;font-weight:600;color:var(--white);">Sincronizando via Windsor...</div><div style="color:var(--muted);font-size:12px;margin-top:8px;" id="ig-sync-st">Conectando...</div></div>';
+  var wk=_igConfig.windsorKey||localStorage.getItem('audens_windsor_key')||'';
+  if(!wk){
+    if(p)p.innerHTML='<div style="color:var(--amber);padding:20px;text-align:center;"><i class="ti ti-key" style="font-size:32px;margin-bottom:12px;display:block;"></i><b>Windsor API Key não configurada</b><br><div style="margin-top:10px;font-size:13px;color:var(--muted);">Acesse <b>Configurações → Instagram / Meta</b> e insira sua chave Windsor.</div><br><a href="https://onboard.windsor.ai/token_login?access_token=xJqXKHG7LelMSEdjLNePLLmekuWp3rGMSQIZJ7AIde&next=/app/api-key" target="_blank" class="btn btn-outline" style="font-size:12px;"><i class="ti ti-external-link"></i> Pegar chave Windsor</a></div>';
+    return;
+  }
+  var baseUrl='https://connectors.windsor.ai/instagram';
+  var today=new Date().toISOString().split('T')[0];
+  var d90=new Date(Date.now()-90*86400000).toISOString().split('T')[0];
+  var d30=new Date(Date.now()-30*86400000).toISOString().split('T')[0];
   try{
-    var pr=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'?fields=username,followers_count,media_count&access_token='+tk)).json();
-    if(pr.error)throw new Error(pr.error.message);
+    // 1. Profile info
+    ss('Buscando perfil...');
+    var prRes=await fetch(baseUrl+'?api_key='+encodeURIComponent(wk)+'&fields=username,followers_count,media_count&date_from='+today+'&date_to='+today);
+    var prData=await prRes.json();
+    if(prData.error)throw new Error('Windsor: '+prData.error);
+    var perfil=Array.isArray(prData)&&prData.length?prData[0]:prData;
+
+    // 2. Daily series (30 days) — new followers/day + reach/saves/shares
+    ss('Buscando métricas diárias...');
+    var serieRes=await fetch(baseUrl+'?api_key='+encodeURIComponent(wk)+'&fields=date,follower_count,reach,saves,shares,views,likes,comments,total_interactions&date_from='+d30+'&date_to='+today);
+    var serieData=await serieRes.json();
+    if(!Array.isArray(serieData))throw new Error('Resposta inesperada do Windsor (métricas diárias)');
+    var serie=serieData.map(function(r){return{date:r.date,value:r.follower_count||0,reach:r.reach||0,saves:r.saves||0,shares:r.shares||0,views:r.views||0,likes:r.likes||0,comments:r.comments||0,total_interactions:r.total_interactions||0};});
+
+    // 3. Media posts (90 days)
     ss('Buscando posts...');
-    var ninetyAgo=Date.now()-90*86400000,allMedia=[],cursor='';
-    for(var pg=0;pg<10;pg++){
-      var mu='https://graph.facebook.com/v21.0/'+uid+'/media?fields=id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count&limit=50&access_token='+tk+(cursor?'&after='+cursor:'');
-      var md=await (await fetch(mu)).json();if(md.error)throw new Error(md.error.message);
-      var stop=false;
-      (md.data||[]).forEach(function(it){if(new Date(it.timestamp).getTime()<ninetyAgo)stop=true;else allMedia.push(it);});
-      if(stop||!md.paging||!md.paging.next)break;
-      cursor=(md.paging.cursors||{}).after||'';
-    }
-    ss('Insights de '+allMedia.length+' posts...');
-    var fm='reach,saved,shares,views,total_interactions,follows,profile_visits';
-    var rm='reach,saved,shares,views,total_interactions';
-    for(var i=0;i<allMedia.length;i++){
-      var m=allMedia[i];var isR=m.media_type==='VIDEO'||m.media_product_type==='REELS';
-      try{
-        var id2=await (await fetch('https://graph.facebook.com/v21.0/'+m.id+'/insights?metric='+(isR?rm:fm)+'&access_token='+tk)).json();
-        if(id2.data)id2.data.forEach(function(ins){m[ins.name]=ins.values?ins.values[0].value:ins.value;});
-        else if(!isR&&id2.error){
-          var id3=await (await fetch('https://graph.facebook.com/v21.0/'+m.id+'/insights?metric=reach,saved,shares&access_token='+tk)).json();
-          if(id3.data)id3.data.forEach(function(ins){m[ins.name]=ins.values?ins.values[0].value:ins.value;});
-        }
-      }catch(e2){console.warn('insights',m.id,e2);}
-      if(i>0&&i%10===0){ss('Insights '+i+'/'+allMedia.length+'...');await new Promise(function(r){setTimeout(r,200);});}
-    }
-    ss('Série diária...');
-    var serie=[];
-    try{
-      var sr=await (await fetch('https://graph.facebook.com/v21.0/'+uid+'/insights?metric=follower_count&period=day&since='+(Math.floor(Date.now()/1000)-30*86400)+'&access_token='+tk)).json();
-      if(sr.data&&sr.data[0]&&sr.data[0].values)serie=sr.data[0].values.map(function(v){return{date:new Date(v.end_time).toISOString().split('T')[0],value:v.value};});
-    }catch(e2){console.warn('serie',e2);}
+    var mediaRes=await fetch(baseUrl+'?api_key='+encodeURIComponent(wk)+'&fields=media_id,media_caption,media_type,media_product_type,timestamp,media_permalink,media_like_count,media_comments_count,media_reach,media_saved,media_shares,media_views,media_engagement,media_follows,media_profile_visits&date_from='+d90+'&date_to='+today);
+    var mediaData=await mediaRes.json();
+    if(!Array.isArray(mediaData))throw new Error('Resposta inesperada do Windsor (posts)');
+    var seen={},posts=[];
+    mediaData.forEach(function(m){
+      if(!m.media_id||seen[m.media_id])return;
+      seen[m.media_id]=true;
+      posts.push({id:m.media_id,caption:m.media_caption||'',media_type:m.media_type||'IMAGE',media_product_type:m.media_product_type||'FEED',timestamp:m.timestamp,permalink:m.media_permalink||'',like_count:m.media_like_count||0,comments_count:m.media_comments_count||0,reach:m.media_reach||0,saved:m.media_saved||0,shares:m.media_shares||0,views:m.media_views||0,total_interactions:m.media_engagement||0,follows:m.media_follows||0,profile_visits:m.media_profile_visits||0});
+    });
+    posts.sort(function(a,b){return new Date(b.timestamp)-new Date(a.timestamp);});
+
     ss('Salvando...');
-    var cache={ts:Date.now(),perfil:pr,posts:allMedia,serie:serie};
+    var cache={ts:Date.now(),perfil:perfil,posts:posts,serie:serie,dailyMetrics:serieData,source:'windsor'};
     await fbDb.ref('instagram/cache').set(cache);_igCache=cache;
-    ss('Concluído!');setTimeout(function(){igRenderOverview();},200);
+    ss('Concluído! '+posts.length+' posts · '+serie.length+' dias');
+    setTimeout(function(){igRenderOverview();},200);
   }catch(e){
-    if(p)p.innerHTML='<div style="color:var(--red);padding:20px;"><b>Erro:</b> '+e.message+'<br><br><button class="btn btn-outline" onclick="igSyncData()"><i class="ti ti-refresh"></i> Tentar novamente</button></div>';
-    showSheetToast('Erro Instagram: '+e.message,true);
+    if(p)p.innerHTML='<div style="color:var(--red);padding:20px;"><b>Erro Windsor:</b> '+e.message+'<br><br><button class="btn btn-outline" onclick="igSyncData()"><i class="ti ti-refresh"></i> Tentar novamente</button></div>';
+    showSheetToast('Erro Windsor: '+e.message,true);
   }
 }
 
