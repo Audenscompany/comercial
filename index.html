@@ -24733,7 +24733,7 @@ function carToast(msg){var t=document.getElementById('car-toast');if(!t)return;t
 
 function carSwitchTab(tab){
   document.querySelectorAll('.car-tab').forEach(function(el){var a=el.dataset.cartab===tab;el.style.color=a?'#fff':'var(--muted)';el.style.borderBottom=a?'2px solid var(--accent)':'2px solid transparent';});
-  ['conteudo','ia','design'].forEach(function(p){var el=document.getElementById('car-pane-'+p);if(el)el.style.display=p===tab?'block':'none';});
+  ['conteudo','ia','design'].forEach(function(p){var el=document.getElementById('car-pane-'+p);if(el)el.style.display=p===tab?'block':'none';});var imgEl=document.getElementById('car-pane-ia-imgs');if(imgEl)imgEl.style.display=tab==='ia'?'block':'none';
 }
 
 function _carSliderRow(inputId,label,stateKey,min,max){
@@ -24822,9 +24822,11 @@ function carRebuildGrid(){
     var acts=document.createElement('div');acts.style.cssText='display:flex;gap:6px;';
     var bImg=document.createElement('button');bImg.textContent='Foto';bImg.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--white);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;text-transform:uppercase;';
     bImg.onclick=(function(idx){return function(){_carTargetSlide=idx;document.getElementById('car-file-slide').click();};})(i);
+    var bIA=document.createElement('button');bIA.textContent='IA';bIA.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--white);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;text-transform:uppercase;';
+    bIA.onclick=(function(idx,b){return function(){carGerarImagemSlide(idx,b);};})(i,bIA);
     var bPng=document.createElement('button');bPng.textContent='PNG';bPng.style.cssText='background:var(--bg);border:1px solid var(--border);color:var(--white);border-radius:7px;font-size:10px;font-weight:600;padding:5px 10px;cursor:pointer;text-transform:uppercase;';
     bPng.onclick=(function(idx){return function(){carDownloadSlide(idx);};})(i);
-    acts.append(bImg,bPng);bar.appendChild(acts);card.appendChild(bar);
+    acts.append(bImg,bIA,bPng);bar.appendChild(acts);card.appendChild(bar);
     card.addEventListener('dragover',function(e){e.preventDefault();card.style.borderColor='var(--accent)';});
     card.addEventListener('dragleave',function(){card.style.borderColor='var(--border)';});
     card.addEventListener('drop',(function(idx){return function(e){e.preventDefault();card.style.borderColor='var(--border)';var f=[...e.dataTransfer.files].find(function(f){return f.type.startsWith('image/');});if(f){_carLoadImgFile(f).then(function(img){_carState.slides[idx].img=img;carDrawSlide(idx);carToast('Foto do '+(idx===0?'capa':'slide '+(idx+1))+' atualizada');});}};})(i));
@@ -24891,6 +24893,78 @@ function carInitPage(){
   if(!_carState.slides.length){var bt=document.getElementById('car-batch');if(bt)bt.value=_carExemplo;carApplyBatch();}
   else{carRebuildGrid();}
   document.fonts.ready.then(carDrawAll);
+  setTimeout(carUpdateEstimate,100);
+}
+
+// ---- CARROSSEL: IMAGE IA ----
+var _carImgPrices={'gpt-image-1.5':{low:0.014,medium:0.051,high:0.20},'gpt-image-1-mini':{low:0.008,medium:0.017,high:0.054}};
+var _carGerandoLote=false;
+
+function carUpdateEstimate(){
+  var el=document.getElementById('car-img-est');if(!el)return;
+  var n=_carState.slides.length||10;
+  var mdl=document.getElementById('car-img-model');var ql=document.getElementById('car-img-quality');
+  var p=(mdl&&ql&&_carImgPrices[mdl.value]&&_carImgPrices[mdl.value][ql.value])||0;
+  el.innerHTML='Custo estimado: <b>~US$ '+(p*n).toFixed(2)+'</b> para '+n+' slides (~US$ '+p.toFixed(3)+'/imagem).';
+}
+
+function _carBuildImgPrompt(slide){
+  var conceito=(slide.title||'')+(slide.body?'. '+slide.body:'');
+  var styleEl=document.getElementById('car-img-style');
+  var style=styleEl?styleEl.value:'Fotografia cinematográfica e sombria: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista.';
+  return style+'
+
+Crie UMA cena que represente visualmente (com objetos e ambiente — de forma metafórica, nunca com texto escrito) o seguinte conceito: "'+conceito+'". Composição vertical, assunto principal na metade superior da imagem.';
+}
+
+async function _carFetchImagem(slide){
+  var keyEl=document.getElementById('car-img-key');
+  var key=keyEl?keyEl.value.trim():'';
+  if(!key)throw new Error('Cole sua chave OpenAI no campo de imagens.');
+  var mdl=document.getElementById('car-img-model');
+  var ql=document.getElementById('car-img-quality');
+  var r=await fetch('https://api.openai.com/v1/images/generations',{
+    method:'POST',
+    headers:{'content-type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify({model:mdl?mdl.value:'gpt-image-1.5',prompt:_carBuildImgPrompt(slide),size:'1024x1536',quality:ql?ql.value:'medium',n:1})
+  });
+  var d=await r.json();
+  if(!r.ok)throw new Error(d.error&&d.error.message||('HTTP '+r.status));
+  var b64=d.data[0].b64_json;
+  var img=new Image();
+  await new Promise(function(res,rej){img.onload=res;img.onerror=rej;img.src='data:image/png;base64,'+b64;});
+  return img;
+}
+
+async function carGerarImagemSlide(i,btn){
+  var st=document.getElementById('car-img-status');
+  try{
+    if(btn){btn.disabled=true;btn.textContent='...';}
+    if(st){st.style.color='var(--muted)';st.textContent='Gerando imagem do '+(i===0?'capa':'slide '+(i+1))+'...';}
+    _carState.slides[i].img=await _carFetchImagem(_carState.slides[i]);
+    carDrawSlide(i);
+    if(st){st.style.color='#39d98a';st.textContent='Imagem do '+(i===0?'capa':'slide '+(i+1))+' pronta!';}
+    carToast('Imagem gerada');
+  }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}}
+  if(btn){btn.disabled=false;btn.textContent='IA';}
+}
+
+async function carGerarTodasImagens(){
+  if(_carGerandoLote)return;
+  if(!_carState.slides.length){carToast('Aplique o texto primeiro.');return;}
+  var st=document.getElementById('car-img-status');
+  var keyEl=document.getElementById('car-img-key');
+  if(!keyEl||!keyEl.value.trim()){if(st){st.style.color='#ff5c7a';st.textContent='Cole sua chave OpenAI acima.';}return;}
+  _carGerandoLote=true;
+  var btn=document.getElementById('car-img-all-btn');if(btn)btn.disabled=true;
+  var ok=0,falhas=[];
+  for(var i=0;i<_carState.slides.length;i++){
+    if(st){st.style.color='var(--muted)';st.textContent='Gerando imagem '+(i+1)+' de '+_carState.slides.length+'... ('+ok+' prontas)';}
+    try{_carState.slides[i].img=await _carFetchImagem(_carState.slides[i]);carDrawSlide(i);ok++;}
+    catch(e){falhas.push((i+1)+': '+e.message);if(/api key|401|authent/i.test(e.message))break;}
+  }
+  if(st){st.style.color=falhas.length?'#ff5c7a':'#39d98a';st.textContent=ok+' de '+_carState.slides.length+' imagens geradas.'+(falhas.length?' Falhas: slide '+falhas.join(' | '):'');}
+  _carGerandoLote=false;if(btn)btn.disabled=false;
 }
 
 function renderCarrossel(){
@@ -24936,6 +25010,22 @@ function renderCarrossel(){
             '</div>'+
             '<button onclick="carGerarRoteiro()" id="car-ai-btn" style="display:block;width:100%;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Gerar roteiro</button>'+
             '<div id="car-ai-status" style="font-size:11.5px;margin-top:10px;line-height:1.5;min-height:16px;"></div>'+
+          '</div>'+
+          // ── Imagens IA (OpenAI) ──
+          '<div id="car-pane-ia-imgs" style="display:none;">'+
+            '<div style="margin-top:0;padding-top:18px;border-top:1px solid var(--border);">'+
+              '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Imagens com IA (OpenAI)</div>'+
+              '<div style="display:flex;gap:8px;margin-bottom:10px;">'+
+                '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Modelo</label><select id="car-img-model" onchange="carUpdateEstimate()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:9px 10px;outline:none;"><option value="gpt-image-1.5" selected>gpt-image-1.5 (melhor)</option><option value="gpt-image-1-mini">gpt-image-1-mini (barato)</option></select></div>'+
+                '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Qualidade</label><select id="car-img-quality" onchange="carUpdateEstimate()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:9px 10px;outline:none;"><option value="low">Baixa</option><option value="medium" selected>Média</option><option value="high">Alta</option></select></div>'+
+              '</div>'+
+              '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Chave de API OpenAI</label><input type="password" id="car-img-key" placeholder="sk-..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+              '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Estilo visual (aplicado a todos)</label><textarea id="car-img-style" style="width:100%;min-height:90px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;">Fotografia cinematográfica e sombria para hamburgueria gourmet: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista. A imagem NÃO pode conter nenhum texto, letra, número ou logotipo.</textarea></div>'+
+              '<button id="car-img-all-btn" onclick="carGerarTodasImagens()" style="display:block;width:100%;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Gerar imagens p/ todos os slides</button>'+
+              '<div id="car-img-status" style="font-size:11.5px;margin-top:10px;line-height:1.5;min-height:16px;"></div>'+
+              '<div id="car-img-est" style="font-size:10.5px;color:var(--muted);margin-top:6px;line-height:1.5;"></div>'+
+              '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;">Cada imagem é criada a partir do título e corpo do slide. Para gerar só uma, use o botão <b>IA</b> em cada slide.</div>'+
+            '</div>'+
           '</div>'+
           // ── Design ──
           '<div id="car-pane-design" style="display:none;">'+
