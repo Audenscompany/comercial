@@ -12127,6 +12127,47 @@ async function refreshAnaliseAds(){
   }
 }
 
+
+function _showAdVendasModal(adKey){
+  var vendas=window._adVendasMap&&window._adVendasMap[adKey]?window._adVendasMap[adKey]:[];
+  var existing=document.getElementById('_adVendasModal');if(existing)existing.remove();
+  var rows=vendas.length?vendas.map(function(v){
+    var motivoColor=v.motivo==='STATUS=VENDA'?'#4ade80':v.motivo==='Followup Firebase'?'#a78bfa':'#fbbf24';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<td style="padding:10px 12px;font-size:13px;color:var(--white);font-weight:600;">'+(v.nome||'—')+'</td>'+
+      '<td style="padding:10px 12px;font-size:12px;color:var(--muted);">'+(v.empresa||'—')+'</td>'+
+      '<td style="padding:10px 12px;font-size:12px;color:var(--muted);">'+(v.data||'—')+'</td>'+
+      '<td style="padding:10px 12px;"><span style="font-size:10px;font-weight:700;color:'+motivoColor+';background:'+motivoColor+'18;padding:2px 7px;border-radius:20px;white-space:nowrap;">'+v.motivo+'</span></td>'+
+    '</tr>';
+  }).join(''):'<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Nenhuma venda registrada para este ad.</td></tr>';
+  var html='<div id="_adVendasModal" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;">'+
+    '<div style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:min(680px,94vw);max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">'+
+      '<div style="padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:space-between;">'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--purple3);margin-bottom:4px;">Vendas atribuídas</div>'+
+          '<div style="font-size:16px;font-weight:700;color:var(--white);">'+adKey+'</div>'+
+        '</div>'+
+        '<button onclick="document.getElementById('_adVendasModal').remove()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--muted);font-size:18px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&times;</button>'+
+      '</div>'+
+      '<div style="overflow-y:auto;flex:1;">'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+          '<thead><tr style="background:rgba(255,255,255,0.03);">'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Lead</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Empresa</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Data Reunião</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Origem</th>'+
+          '</thead>'+
+          '<tbody>'+rows+'</tbody>'+
+        '</table>'+
+      '</div>'+
+      '<div style="padding:12px 24px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:var(--muted);">'+
+        vendas.length+' venda(s) · Clique fora para fechar'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
 function buildAnaliseAdsHTML(data){
   var period=_adsPeriod||getCurrentPeriod();
   function inAdsRange(d){
@@ -12336,17 +12377,23 @@ function buildAnaliseAdsHTML(data){
     var nomeRaw=col(r,['CLIENTE','Cliente','cliente'])||'';
     // Tenta empresa primeiro (mais preciso), depois nome da pessoa
     var cliMatch=empresaRaw?cliLookup(empresaRaw):(nomeRaw?cliLookup(nomeRaw):null);
-    // cliMatch: verifica se assinou após a reunião (aceita até 7 dias antes para cadastros retroativos)
+    // cliMatchInPeriod: só conta se reunião foi REALIZADA E cliente assinou após a reunião
+    // (exige status realizada para evitar falso-positivo em meetings ainda agendadas)
     var cliMatchInPeriod=false;
-    if(cliMatch){
+    var reuniaoRealizada=(status==='REALIZADA'||status==='VENDA'||status==='NOSHOW'||status==='NO-SHOW');
+    if(cliMatch&&reuniaoRealizada){
       var cliD=parseBRDate(col(cliMatch,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio']));
       var diffMs=cliD&&d?cliD.getTime()-d.getTime():-Infinity;
-      cliMatchInPeriod=!!cliD&&diffMs>=-(7*24*60*60*1000);
+      // Cliente assinou após reunião ou até 3 dias antes (não 7, para ser mais preciso)
+      cliMatchInPeriod=!!cliD&&diffMs>=-(3*24*60*60*1000);
     }
     var isVenda=status==='VENDA'
       ||(fuMatch&&fuMatch.resultado==='venda')
       ||cliMatchInPeriod;
     if(isVenda){
+      var motivo=status==='VENDA'?'STATUS=VENDA':(fuMatch&&fuMatch.resultado==='venda'?'Followup Firebase':(cliMatchInPeriod?'Match cliente: '+(empresaRaw||nomeRaw):'?'));
+      if(!entry.vendasList) entry.vendasList=[];
+      entry.vendasList.push({nome:nomeRaw||'—',empresa:empresaRaw||'',data:d?d.toLocaleDateString('pt-BR'):'—',motivo:motivo});
       entry.fechamentos++;
       var mrrVal=0;
       if(fuMatch){var _rawMrr=fuMatch.mensalidade||fuMatch.mrr||0;mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));}
@@ -12386,6 +12433,8 @@ function buildAnaliseAdsHTML(data){
     // Verifica fechamento via followup
     var fu=followups[m.id];
     if(fu&&fu.resultado==='venda'){
+      if(!entry.vendasList) entry.vendasList=[];
+      entry.vendasList.push({nome:m.nome||'—',empresa:(m.kanbanKey&&kanbanData[m.kanbanKey]&&kanbanData[m.kanbanKey].empresa)||'',data:bd?bd.toLocaleDateString('pt-BR'):'—',motivo:'Followup Firebase'});
       entry.fechamentos++;
       var _rawMrr=fu.mensalidade||fu.mrr||0;
       var mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
@@ -12399,6 +12448,8 @@ function buildAnaliseAdsHTML(data){
   });
 
   var ads=Object.values(adData).sort(function(a,b){return b.leads-a.leads;});
+  // Salva mapa global para popup de detalhes
+  window._adVendasMap={};ads.forEach(function(a){window._adVendasMap[a.ad]=a.vendasList||[];});
   if(ads.length===0) return '<div class="empty-st"><i class="ti ti-ad-2"></i><p>Nenhum lead de anúncio encontrado no período</p></div>';
 
 
@@ -12627,7 +12678,7 @@ function buildAnaliseAdsHTML(data){
       '</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:var(--white);">'+a.leads+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;color:var(--cyan);">'+a.qualif+'</td>'+
-      '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:'+(a.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(a.fechamentos>0?a.fechamentos:'—')+'</td>'+
+      '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:'+(a.fechamentos>0?'var(--green)':'var(--muted)');cursor:'+(a.fechamentos>0?'pointer':'default')+';">'+(a.fechamentos>0?'<span onclick="_showAdVendasModal(''+a.ad.replace(/'/g,"\\'")+'')" style="text-decoration:underline dotted;cursor:pointer;" title="Ver vendas deste ad">'+a.fechamentos+'</span>':'—')+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+qCol+';">'+q+'%</td>'+
       (function(){
         var _sm=window._metaAdSpendMap||{};
@@ -25496,6 +25547,23 @@ async function carGerarLegenda(){
   }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}}
   if(btn)btn.disabled=false;
 }
+var _carSaveTimer=null;
+function carScheduleSave(){clearTimeout(_carSaveTimer);_carSaveTimer=setTimeout(carSaveSession,800);}
+function carSaveSession(){
+  try{
+    var avatarData=null;
+    if(_carState.profile.avatar&&_carState.profile.avatar.src&&_carState.profile.avatar.src.startsWith('data:')){
+      avatarData=_carState.profile.avatar.src;
+    }
+    var slides=_carState.slides.map(function(s){
+      var imgData=null;
+      if(s.img&&s.img.src&&s.img.src.startsWith('data:')) imgData=s.img.src;
+      return{title:s.title||'',body:s.body||'',imgData:imgData,imgOffX:s.imgOffX||0,imgOffY:s.imgOffY||0,imgZoom:s.imgZoom||1,imgDesc:s.imgDesc||''};
+    });
+    var sess={v:2,savedAt:Date.now(),slides:slides,profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified},footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,avatarData:avatarData};
+    localStorage.setItem('audens_car_session',JSON.stringify(sess));
+  }catch(e){console.warn('carSaveSession error:',e);}
+}
 async function carRestoreSession(){
   try{
     var raw=localStorage.getItem('audens_car_session');if(!raw)return false;
@@ -25658,14 +25726,14 @@ function renderCarrossel(){
             '<button onclick="carApplyBatch()" style="display:block;width:100%;margin-top:10px;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Aplicar texto</button>'+
             '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;margin-bottom:18px;">1ª linha = título · restante = corpo · 1º bloco = capa</div>'+
             '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Perfil</div>'+
-            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nome</label><input type="text" id="car-pname" value="" oninput="_carState.profile.name=this.value;carDrawAll();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
-            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">@Arroba</label><input type="text" id="car-phandle" value="" oninput="_carState.profile.handle=this.value;carDrawAll();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nome</label><input type="text" id="car-pname" value="" oninput="_carState.profile.name=this.value;carDrawAll();carScheduleSave();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">@Arroba</label><input type="text" id="car-phandle" value="" oninput="_carState.profile.handle=this.value;carDrawAll();carScheduleSave();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
             '<div id="car-avatar-drop" onclick="document.getElementById(\'car-file-avatar\').click()" style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px dashed var(--border2,#333);border-radius:12px;padding:10px 12px;cursor:pointer;margin-bottom:8px;">'+
               '<div id="car-avatar-prev" style="width:46px;height:46px;border-radius:50%;background:#26262b center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>'+
               '<div style="font-size:12px;color:var(--muted);">Clique p/ foto de perfil<br><span style="font-size:10.5px;">aparece na capa com anel gradiente</span></div>'+
             '</div>'+
             '<input type="file" id="car-file-avatar" accept="image/*" style="display:none;" onchange="carUploadAvatar(this)">'+
-            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--white);margin-bottom:18px;"><input type="checkbox" id="car-verified" checked onchange="_carState.profile.verified=this.checked;carDrawAll();" style="accent-color:var(--accent);width:15px;height:15px;"> Selo verificado azul</label>'+
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--white);margin-bottom:18px;"><input type="checkbox" id="car-verified" checked onchange="_carState.profile.verified=this.checked;carDrawAll();carScheduleSave();" style="accent-color:var(--accent);width:15px;height:15px;"> Selo verificado azul</label>'+
             '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Imagens de fundo</div>'+
             '<button onclick="document.getElementById(\'car-file-bulk\').click()" style="display:block;width:100%;padding:12px 0;background:linear-gradient(90deg,#ffa000,#ff1b5e,#8a2be2);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Subir fotos em lote</button>'+
             '<input type="file" id="car-file-bulk" accept="image/*" multiple style="display:none;" onchange="carBulkImages(this)">'+
