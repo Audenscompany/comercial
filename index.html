@@ -24337,7 +24337,7 @@ function _renderVendasTabela(){
     var busca=(_vendasFiltros.busca||'').toLowerCase();
     if(busca){var _ke2=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;var cliente=((fu.empresa)||(m&&m.empresa)||(_ke2&&_ke2.empresa)||fu.nome||(m&&m.nome)||'').toLowerCase(),closer=((m&&m.responsavel)||'').toLowerCase(),orig=(v.origemRaw||'').toLowerCase();if(!cliente.includes(busca)&&!closer.includes(busca)&&!orig.includes(busca))return false;}
     if(_vendasFiltros.plano&&fu.plano!==_vendasFiltros.plano)return false;
-    if(_vendasFiltros.closer){var c=(m&&m.responsavel)||'';if(c!==_vendasFiltros.closer)return false;}
+    if(_vendasFiltros.closer){var c=normCloserName((m&&m.responsavel)||fu.closer||fu.responsavel||'');if(c!==_vendasFiltros.closer)return false;}
     if(_vendasFiltros.sdr){var s=(m&&(m.sdrName||m.sdr))||'';if(s!==_vendasFiltros.sdr)return false;}
     if(_vendasFiltros.status&&getStatus(fu)!==_vendasFiltros.status)return false;
     if(_vendasFiltros.origem&&v.origemCat!==_vendasFiltros.origem)return false;
@@ -24646,7 +24646,6 @@ async function salvarEdicaoVenda(){
     if(cliente)followups[fid].nome=cliente;
     if(closer){followups[fid].closer=closer;followups[fid].responsavel=closer;}
     if(m&&closer&&m.responsavel!==closer)m.responsavel=closer;
-    saveAll();
     showSheetToast('Venda atualizada com sucesso.',false);
     fecharEditarVenda();
     showPage('vendas');
