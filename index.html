@@ -25664,7 +25664,9 @@ function carSaveSession(){
       if(s.img&&s.img.src&&s.img.src.startsWith('data:')) imgData=s.img.src;
       return{title:s.title||'',body:s.body||'',imgData:imgData,imgOffX:s.imgOffX||0,imgOffY:s.imgOffY||0,imgZoom:s.imgZoom||1,imgDesc:s.imgDesc||''};
     });
-    var sess={v:2,savedAt:Date.now(),slides:slides,profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified},footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,avatarData:avatarData};
+    var _legEl=document.getElementById('car-legenda');
+    var _temaEl=document.getElementById('car-tema');
+    var sess={v:2,savedAt:Date.now(),slides:slides,profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified},footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,avatarData:avatarData,legenda:_legEl?_legEl.value:'',tema:_temaEl?_temaEl.value:''};
     localStorage.setItem('audens_car_session',JSON.stringify(sess));
   }catch(e){console.warn('carSaveSession error:',e);}
 }
@@ -25714,6 +25716,8 @@ async function carInitPage(){
     carRebuildGrid();
     var sl=document.getElementById('car-img-height');if(sl){sl.value=_carState.imgHeight;var sv=document.getElementById('car-img-height-v');if(sv)sv.textContent=_carState.imgHeight;}
     carToast('Sessão restaurada ('+_carState.slides.length+' slides)');
+    if(sess.legenda){var _lel=document.getElementById('car-legenda');if(_lel)_lel.value=sess.legenda;}
+    if(sess.tema){var _tel=document.getElementById('car-tema');if(_tel)_tel.value=sess.tema;}
   }else if(!_carState.slides.length){var bt=document.getElementById('car-batch');if(bt)bt.value=_carExemplo;carApplyBatch();}
   else{carRebuildGrid();}
   carUpdateEstimate();
@@ -25848,7 +25852,7 @@ function renderCarrossel(){
           '<div id="car-pane-ia" style="display:none;">'+
             '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Gerar roteiro com IA</div>'+
             '<div style="margin-bottom:12px;font-size:11.5px;color:var(--muted);background:rgba(123,47,255,0.1);border:1px solid rgba(123,47,255,0.3);border-radius:8px;padding:10px 12px;">Usa a chave Claude de <b style="color:#fff;">⚙ Configurações do Jarvis</b>.</div>'+
-            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Tema do carrossel</label><textarea id="car-tema" style="width:100%;min-height:80px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;resize:vertical;" placeholder="Ex: por que aumentar o ticket médio vale mais do que atrair cliente novo"></textarea></div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Tema do carrossel</label><textarea id="car-tema" oninput="carScheduleSave()" style="width:100%;min-height:80px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;resize:vertical;" placeholder="Ex: por que aumentar o ticket médio vale mais do que atrair cliente novo"></textarea></div>'+
             '<div style="display:flex;gap:8px;margin-bottom:10px;">'+
               '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nº de slides</label><select id="car-nslides" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;"><option>8</option><option selected>10</option><option>12</option></select></div>'+
               '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nicho</label><input type="text" id="car-nicho" value="hamburgueria / delivery" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
@@ -25892,7 +25896,7 @@ function renderCarrossel(){
               '<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Legenda</div>'+
               '<button id="car-leg-btn" onclick="carGerarLegenda()" style="display:flex;align-items:center;gap:5px;padding:4px 10px;background:linear-gradient(90deg,rgba(255,27,94,0.15),rgba(138,43,226,0.15));border:1px solid rgba(255,27,94,0.35);border-radius:8px;color:#ff1b5e;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;text-transform:uppercase;"><i class="ti ti-sparkles" style="font-size:11px;"></i> Gerar IA</button>'+
             '</div>'+
-            '<textarea id="car-legenda" rows="4" placeholder="Escreva ou gere com IA a legenda do post..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;box-sizing:border-box;line-height:1.5;"></textarea>'+
+            '<textarea id="car-legenda" rows="4" oninput="carScheduleSave()" placeholder="Escreva ou gere com IA a legenda do post..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;box-sizing:border-box;line-height:1.5;"></textarea>'+
             '<div id="car-leg-status" style="font-size:10.5px;color:var(--muted);margin-top:4px;min-height:14px;"></div>'+
           '</div>'+
           '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:linear-gradient(135deg,rgba(131,58,180,0.2),rgba(225,48,108,0.2));border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Salvar no Calendário com Data</button>'+
