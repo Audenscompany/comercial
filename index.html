@@ -24937,6 +24937,14 @@ async function igSyncData(){
     if(p)p.innerHTML='<div style="color:var(--amber);padding:20px;text-align:center;"><i class="ti ti-key" style="font-size:32px;margin-bottom:12px;display:block;"></i><b>Windsor API Key não configurada</b><br><div style="margin-top:10px;font-size:13px;color:var(--muted);">Acesse <b>Configurações → Instagram / Meta</b> e insira sua chave Windsor.</div><br><a href="https://onboard.windsor.ai/token_login?access_token=xJqXKHG7LelMSEdjLNePLLmekuWp3rGMSQIZJ7AIde&next=/app/api-key" target="_blank" class="btn btn-outline" style="font-size:12px;"><i class="ti ti-external-link"></i> Pegar chave Windsor</a></div>';
     return;
   }
+  // Helper: Windsor pode retornar array direto, {data:[...]}, {result:[...]} ou {results:[...]}
+  function _wRows(d){
+    if(Array.isArray(d))return d;
+    if(d&&Array.isArray(d.data))return d.data;
+    if(d&&Array.isArray(d.result))return d.result;
+    if(d&&Array.isArray(d.results))return d.results;
+    return null;
+  }
   var baseUrl='https://connectors.windsor.ai/instagram';
   var today=new Date().toISOString().split('T')[0];
   var d90=new Date(Date.now()-90*86400000).toISOString().split('T')[0];
@@ -24945,22 +24953,30 @@ async function igSyncData(){
     // 1. Profile info
     ss('Buscando perfil...');
     var prRes=await fetch(baseUrl+'?api_key='+encodeURIComponent(wk)+'&fields=username,followers_count,media_count&date_from='+today+'&date_to='+today);
-    var prData=await prRes.json();
-    if(prData.error)throw new Error('Windsor: '+prData.error);
-    var perfil=Array.isArray(prData)&&prData.length?prData[0]:prData;
+    var prRaw=await prRes.json();
+    if(prRaw&&prRaw.error)throw new Error('Windsor perfil: '+(prRaw.error.message||prRaw.error));
+    var prRows=_wRows(prRaw);
+    var perfil=prRows&&prRows.length?prRows[0]:(prRaw||{});
 
-    // 2. Daily series (30 days) — new followers/day + reach/saves/shares
+    // 2. Daily series (30 days)
     ss('Buscando métricas diárias...');
     var serieRes=await fetch(baseUrl+'?api_key='+encodeURIComponent(wk)+'&fields=date,follower_count,reach,saves,shares,views,likes,comments,total_interactions&date_from='+d30+'&date_to='+today);
-    var serieData=await serieRes.json();
-    if(!Array.isArray(serieData))throw new Error('Resposta inesperada do Windsor (métricas diárias)');
+    var serieRaw=await serieRes.json();
+    if(serieRaw&&serieRaw.error)throw new Error('Windsor diário: '+(serieRaw.error.message||serieRaw.error));
+    var serieData=_wRows(serieRaw);
+    if(!serieData){
+      // Log raw para debug e usa array vazio para não bloquear
+      console.warn('Windsor daily raw:',JSON.stringify(serieRaw).substring(0,300));
+      serieData=[];
+    }
     var serie=serieData.map(function(r){return{date:r.date,value:r.follower_count||0,reach:r.reach||0,saves:r.saves||0,shares:r.shares||0,views:r.views||0,likes:r.likes||0,comments:r.comments||0,total_interactions:r.total_interactions||0};});
 
     // 3. Media posts (90 days)
     ss('Buscando posts...');
     var mediaRes=await fetch(baseUrl+'?api_key='+encodeURIComponent(wk)+'&fields=media_id,media_caption,media_type,media_product_type,timestamp,media_permalink,media_like_count,media_comments_count,media_reach,media_saved,media_shares,media_views,media_engagement,media_follows,media_profile_visits&date_from='+d90+'&date_to='+today);
-    var mediaData=await mediaRes.json();
-    if(!Array.isArray(mediaData))throw new Error('Resposta inesperada do Windsor (posts)');
+    var mediaRaw=await mediaRes.json();
+    if(mediaRaw&&mediaRaw.error)throw new Error('Windsor posts: '+(mediaRaw.error.message||mediaRaw.error));
+    var mediaData=_wRows(mediaRaw)||[];
     var seen={},posts=[];
     mediaData.forEach(function(m){
       if(!m.media_id||seen[m.media_id])return;
@@ -24975,7 +24991,9 @@ async function igSyncData(){
     ss('Concluído! '+posts.length+' posts · '+serie.length+' dias');
     setTimeout(function(){igRenderOverview();},200);
   }catch(e){
-    if(p)p.innerHTML='<div style="color:var(--red);padding:20px;"><b>Erro Windsor:</b> '+e.message+'<br><br><button class="btn btn-outline" onclick="igSyncData()"><i class="ti ti-refresh"></i> Tentar novamente</button></div>';
+    // Mostra o erro com stack para debug
+    console.error('igSyncData Windsor error:',e);
+    if(p)p.innerHTML='<div style="color:var(--red);padding:20px;"><b>Erro Windsor:</b> '+e.message+'<br><small style="color:var(--muted);">Abra o Console (F12) para detalhes</small><br><br><button class="btn btn-outline" onclick="igSyncData()"><i class="ti ti-refresh"></i> Tentar novamente</button></div>';
     showSheetToast('Erro Windsor: '+e.message,true);
   }
 }
