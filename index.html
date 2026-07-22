@@ -25460,7 +25460,7 @@ function carSaveSession(){
       slides:_carState.slides.map(function(s){
         var imgData=null;
         if(s.img){var tc=document.createElement('canvas');var sw=Math.min(s.img.width,540),sh=Math.round(sw*s.img.height/s.img.width);tc.width=sw;tc.height=sh;tc.getContext('2d').drawImage(s.img,0,0,sw,sh);imgData=tc.toDataURL('image/jpeg',0.72);}
-        return{title:s.title||'',body:s.body||'',imgOffX:s.imgOffX||0,imgOffY:s.imgOffY||0,imgZoom:s.imgZoom||1,imgData:imgData};
+        return{title:s.title||'',body:s.body||'',imgOffX:s.imgOffX||0,imgOffY:s.imgOffY||0,imgZoom:s.imgZoom||1,imgDesc:s.imgDesc||'',imgData:imgData};
       })};
     if(_carState.profile.avatar){var ta=document.createElement('canvas');var av=_carState.profile.avatar;ta.width=Math.min(av.width,120);ta.height=Math.round(ta.width*av.height/av.width);ta.getContext('2d').drawImage(av,0,0,ta.width,ta.height);sess.avatarData=ta.toDataURL('image/jpeg',0.85);}
     localStorage.setItem('audens_car_session',JSON.stringify(sess));
@@ -25480,7 +25480,7 @@ async function carRestoreSession(){
     if(sess.avatarData)_carState.profile.avatar=await _carLoadImgData(sess.avatarData);
     _carState.slides=await Promise.all(sess.slides.map(async function(sd){
       var img=null;if(sd.imgData)img=await _carLoadImgData(sd.imgData);
-      return{title:sd.title||'',body:sd.body||'',img:img,imgOffX:sd.imgOffX||0,imgOffY:sd.imgOffY||0,imgZoom:sd.imgZoom||1};
+      return{title:sd.title||'',body:sd.body||'',img:img,imgOffX:sd.imgOffX||0,imgOffY:sd.imgOffY||0,imgZoom:sd.imgZoom||1,imgDesc:sd.imgDesc||''};
     }));
     return true;
   }catch(e){console.warn('carRestoreSession:',e);return false;}
@@ -25532,29 +25532,35 @@ function carUpdateEstimate(){
   el.innerHTML='Custo estimado: <b>~US$ '+(p*n).toFixed(2)+'</b> para '+n+' slides (~US$ '+p.toFixed(3)+'/imagem).';
 }
 
-async function _carBuildImgPrompt(slide){
+async function _carBuildImgPrompt(slide,idx){
   var conceito=(slide.title||'')+(slide.body?'. '+slide.body:'');
-  var styleEl=document.getElementById('car-img-style');
-  var baseStyle=styleEl?styleEl.value:'Fotografia cinematográfica e sombria: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista.';
+  var suffix='Dark cinematic editorial food photography with realistic warm lighting, natural food textures, subtle steam and an authentic burger restaurant atmosphere. Vertical 2:3 composition designed for an Instagram carousel, with the storytelling subject placed dynamically according to the scene and a clean, darker area in the lower portion for graphic text overlay. Ultra-realistic, visually credible, natural imperfections, no text, no logos, no watermark.';
   var ck=localStorage.getItem('audens_claude_key');
-  if(!ck){
-    return baseStyle+'\n\nCrie UMA cena que represente visualmente (com objetos e ambiente — de forma metafórica, nunca com texto escrito) o seguinte conceito: "'+conceito+'". Composição vertical, assunto principal na metade superior da imagem.';
-  }
+  if(!ck)return 'Cinematic food photography for a burger delivery Instagram carousel. Scene concept: "'+conceito+'". Dark editorial, warm dramatic lighting, food service environment. '+suffix;
+  var total=_carState.slides.length,slideNum=(idx||0)+1;
+  var batchEl=document.getElementById('car-batch');
+  var temaGeral=batchEl&&batchEl.value?(batchEl.value.split(/\n\s*\n/)[0]||'').split('\n')[0]:(_carState.slides[0]?_carState.slides[0].title:'');
+  var cenasUsadas='';
+  for(var j=0;j<(idx||0);j++){var sj=_carState.slides[j];if(sj&&sj.imgDesc)cenasUsadas+='Slide '+(j+1)+': '+sj.imgDesc+'\n';}
+  var sysPt='Você é um diretor de arte e especialista em narrativa visual para carrosséis de Instagram voltados a donos de hamburguerias e operações de delivery.\n\nSua função não é simplesmente criar uma fotografia bonita de hambúrguer. Sua função é transformar a ideia específica de cada slide em uma cena visual clara, concreta e imediatamente compreensível.\n\nO conteúdo pertence ao perfil @lucasramong_ e deve transmitir autoridade, estratégia, gestão, vendas, marketing e crescimento para donos de hamburguerias.\n\nAntes de escrever o prompt, faça silenciosamente este processo:\n1. Identifique qual é a função do slide: gancho, problema, erro, comparação, explicação, processo, prova, consequência, solução ou conclusão.\n2. Resuma a principal mensagem do slide em uma única ideia visual.\n3. Transforme essa ideia em uma AÇÃO, SITUAÇÃO ou CONSEQUÊNCIA que possa ser fotografada dentro do universo de uma hamburgueria.\n4. Escolha uma cena diferente das imagens anteriores.\n5. Escolha conscientemente: personagem ou objeto principal; ação acontecendo; ambiente; enquadramento; ângulo da câmera; posição do elemento principal; elementos secundários; sensação emocional.\n\nREGRA MAIS IMPORTANTE: Não crie apenas um hambúrguer bonito parado sobre uma mesa. A cena precisa mostrar visualmente o conceito do slide por meio de uma situação real, comparação, processo, contraste ou consequência.\n\nUNIVERSO VISUAL PERMITIDO: hambúrgueres, ingredientes, chapa, grelha, cozinha profissional, balcão de retirada, embalagens, sacolas de delivery, comandas, pedidos impressos, telas de pedidos, mãos de cozinheiros, montagem de produtos, estoque de ingredientes, fila de produção, entregador, cliente recebendo o pedido, cardápio físico ou digital desfocado, caixas prontas para entrega, bancada de preparação. Não é obrigatório que o hambúrguer seja sempre o maior elemento da imagem.\n\nTRADUÇÃO DE CONCEITOS ABSTRATOS:\nEstratégia → decisões e organização dentro da operação.\nErro → situação visualmente equivocada ou desorganizada.\nOportunidade perdida → pedidos ignorados, embalagens abandonadas, clientes indo embora.\nUrgência → última unidade, pequena fornada, pedidos se esgotando.\nProduto campeão → produto claramente preferido cercado de comandas.\nRecorrência → mesmo produto ou padrão acontecendo novamente.\nCrescimento → aumento real de produção ou volume de pedidos.\nComparação → composição dividida ou contraste entre duas situações.\nMétodo → sequência visual de ingredientes, etapas ou embalagens.\n\nDIVERSIDADE VISUAL OBRIGATÓRIA: cada nova imagem deve mudar pelo menos quatro elementos em relação aos slides anteriores. Alterne entre: close-up macro, vista superior, câmera lateral, perspectiva baixa, perspectiva por cima do ombro, plano aberto da cozinha, cena documental, composição dividida, linha de produção, mãos em ação, produto dentro da embalagem, balcão de retirada, cozinha durante o pico, produto isolado, vários pedidos sendo preparados. NUNCA repita o mesmo enquadramento frontal de hambúrguer centralizado em slides consecutivos. Nunca repita exatamente o mesmo tipo de hambúrguer, cenário, bancada, fundo, quantidade de carnes ou posição dos ingredientes.\n\nMETÁFORAS: não utilize ampulhetas, troféus, chaves, balanças, peças de xadrez, cofres, lâmpadas, foguetes ou objetos desconectados do food service. Em vez de troféu → hambúrguer sendo escolhido repetidamente entre várias opções. Em vez de ampulheta → última unidade sendo retirada da bancada. Em vez de peças de xadrez → ingredientes sendo estrategicamente organizados antes da montagem.\n\nCOMPOSIÇÃO PARA CARROSSEL: a imagem será usada na parte superior de um slide vertical. Mantenha a área inferior mais escura e visualmente limpa para o texto. O elemento principal pode estar no centro, à esquerda, à direita, em diagonal ou parcialmente fora do quadro. Não centralize automaticamente todos os assuntos.\n\nESTÉTICA: fotografia editorial gastronômica natural e ultra-realista, aparência de fotografia profissional feita dentro de uma hamburgueria real. Iluminação quente, cinematográfica e crível, sombras profundas, reflexos naturais, textura verdadeira dos alimentos, gordura, queijo, pão e ingredientes. Evite aparência artificial, hambúrgueres gigantes irreais, brilho exagerado, simetria perfeita ou estética genérica de banco de imagens.\n\nFORMATO DA RESPOSTA: escreva apenas o prompt em inglês com 4 a 6 frases completas descrevendo: (1) a cena e o acontecimento principal, (2) os elementos que comunicam o conceito, (3) o enquadramento e o ângulo, (4) a composição e a área reservada para texto, (5) a iluminação e estilo. Não explique suas escolhas. Não escreva títulos. Não utilize listas. Não coloque o prompt entre aspas. Ao final, em uma linha separada iniciando com "CENA:", escreva em português um resumo de 1 frase curta descrevendo objetivamente o que a imagem mostra (para controle de diversidade).';
+  var userMsg='TEMA GERAL DO CARROSSEL:\n"'+temaGeral+'"\n\nSLIDE:\n"'+slideNum+' de '+total+'"\n\nTÍTULO:\n"'+(slide.title||'')+'"\n\nTEXTO:\n"'+(slide.body||'')+'"\n\nCENAS JÁ UTILIZADAS:\n'+(cenasUsadas||'Nenhuma ainda.');
   try{
     var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'x-api-key':ck,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:280,
-        messages:[{role:'user',content:'Você cria prompts de imagem para carrosséis de Instagram de uma assessoria de marketing para hamburguerias (delivery). O cliente é @lucasramong_ — conteúdo de autoridade para donos de hamburguer delivery.\n\nREGRA PRINCIPAL: TODA imagem deve ter hambúrguer, food ou ambiente de cozinha/balcão como elemento visual central. O contexto é SEMPRE o universo da hamburguer/delivery. NÃO use ampulheta, troféu, chave, balança ou objetos completamente fora do universo food — se precisar de metáfora de tempo/urgência, use um hambúrguer em cena com relógio ao fundo ou vapor escapando; se for estratégia, use composição de ingredientes sendo montados; se for produto campeão, use um hambúrguer imponente iluminado como troféu.\n\nGere um prompt em INGLÊS para DALL-E que represente visualmente o conceito abaixo, SEMPRE dentro do universo food/hamburguer/delivery, variando a composição e o ângulo para refletir o conceito do slide. NUNCA inclua texto na imagem. Estilo: fotografia editorial escura e cinematográfica, luz quente dramática vinda de cima, fundo escuro, vapor sutil, madeira e metal rústicos, ultra-realista.\n\nConceito do slide: "'+conceito+'"\n\nResponda APENAS com o prompt em inglês, sem explicação, em 2-3 frases.'}]})});
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,system:sysPt,messages:[{role:'user',content:userMsg}]})});
     var d=await r.json();
     if(d.error||!d.content||!d.content[0])throw new Error('Claude fallback');
-    var vp=d.content[0].text.trim();
-    return vp+' Dark cinematic editorial photography, warm dramatic top lighting, dark background with subtle steam effects, rustic wood and black metal surfaces, ultra-realistic, vertical 2:3 composition, main subject centered in upper half of frame.';
+    var text=d.content[0].text.trim();
+    var cenaMatch=text.match(/\nCENA:\s*(.+)/);
+    if(cenaMatch){slide.imgDesc=cenaMatch[1].trim();text=text.replace(/\nCENA:[\s\S]*$/,'').trim();}
+    else{slide.imgDesc=(text.split('.')[0]||'').trim()+'.';}
+    return text+'\n\n'+suffix;
   }catch(e2){
-    return baseStyle+'\n\nCrie UMA cena que represente visualmente (com objetos e ambiente — de forma metafórica, nunca com texto escrito) o seguinte conceito: "'+conceito+'". Composição vertical, assunto principal na metade superior da imagem.';
+    return 'Cinematic burger restaurant food photography. Scene: "'+conceito+'". Dark editorial style, warm dramatic lighting, authentic food service environment. '+suffix;
   }
 }
 
-async function _carFetchImagem(slide){
+async function _carFetchImagem(slide,idx){
   var keyEl=document.getElementById('car-img-key');
   var key=keyEl?keyEl.value.trim():'';
   if(!key)throw new Error('Cole sua chave OpenAI no campo de imagens.');
@@ -25563,7 +25569,7 @@ async function _carFetchImagem(slide){
   var r=await fetch('https://api.openai.com/v1/images/generations',{
     method:'POST',
     headers:{'content-type':'application/json','Authorization':'Bearer '+key},
-    body:JSON.stringify({model:mdl?mdl.value:'gpt-image-1.5',prompt:await _carBuildImgPrompt(slide),size:'1024x1536',quality:ql?ql.value:'medium',n:1})
+    body:JSON.stringify({model:mdl?mdl.value:'gpt-image-1.5',prompt:await _carBuildImgPrompt(slide,idx),size:'1024x1536',quality:ql?ql.value:'medium',n:1})
   });
   var d=await r.json();
   if(!r.ok)throw new Error(d.error&&d.error.message||('HTTP '+r.status));
@@ -25578,7 +25584,7 @@ async function carGerarImagemSlide(i,btn){
   try{
     if(btn){btn.disabled=true;btn.textContent='...';}
     if(st){st.style.color='var(--muted)';st.textContent='Gerando imagem do '+(i===0?'capa':'slide '+(i+1))+'...';}
-    _carState.slides[i].img=await _carFetchImagem(_carState.slides[i]);
+    _carState.slides[i].img=await _carFetchImagem(_carState.slides[i],i);
     carDrawSlide(i);carScheduleSave();
     if(st){st.style.color='#39d98a';st.textContent='Imagem do '+(i===0?'capa':'slide '+(i+1))+' pronta!';}
     carToast('Imagem gerada');
@@ -25597,7 +25603,7 @@ async function carGerarTodasImagens(){
   var ok=0,falhas=[];
   for(var i=0;i<_carState.slides.length;i++){
     if(st){st.style.color='var(--muted)';st.textContent='Gerando imagem '+(i+1)+' de '+_carState.slides.length+'... ('+ok+' prontas)';}
-    try{_carState.slides[i].img=await _carFetchImagem(_carState.slides[i]);carDrawSlide(i);ok++;}
+    try{_carState.slides[i].img=await _carFetchImagem(_carState.slides[i],i);carDrawSlide(i);ok++;}
     catch(e){falhas.push((i+1)+': '+e.message);if(/api key|401|authent/i.test(e.message))break;}
   }
   if(st){st.style.color=falhas.length?'#ff5c7a':'#39d98a';st.textContent=ok+' de '+_carState.slides.length+' imagens geradas.'+(falhas.length?' Falhas: slide '+falhas.join(' | '):'');}
