@@ -838,6 +838,7 @@ function startRealtimeSync(){
   fbDb.ref('instagram/cache').on('value',function(s){if(s.val())_igCache=s.val();});
   fbDb.ref('instagram/analises').on('value',function(s){_igAnalises=s.val()||{};});
   fbDb.ref('instagram/calendario').on('value',function(s){_igCalendario=s.val()||{};});
+  fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
 
   // Sync gcal_token in realtime (per usuario)
   fbDb.ref('gcal_token/'+gcalUserKey()).on('value', function(snap){
@@ -24838,6 +24839,7 @@ var _igCache=null;
 var _igAnalises={};
 var _igCalendario={};
 var _igCurTab='overview';
+var _igMeta=null; // {goal, startCount, startDate}
 var _igCalMonth=new Date();
 
 async function igSaveConfig(){
@@ -24922,6 +24924,19 @@ function renderInstagram(){
 
 var _igSortCol='reach',_igSortDir=-1;
 
+async function igDefinirMeta(){
+  var seg=(_igCache&&_igCache.perfil&&_igCache.perfil.followers_count)||0;
+  if(!confirm('Iniciar meta: +5.000 seguidores em 30 dias a partir de hoje?\n\nSeguidores atuais: '+seg.toLocaleString('pt-BR')))return;
+  var meta={goal:5000,startCount:seg,startDate:new Date().toISOString().slice(0,10)};
+  _igMeta=meta;
+  try{
+    var fbUrl='https://audens-crm-default-rtdb.firebaseio.com/audens/meta/seguidores.json';
+    var r=await fetch(fbUrl,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(meta)});
+    if(!r.ok){fbDb.ref('audens/meta/seguidores').set(meta);}
+  }catch(e){fbDb.ref('audens/meta/seguidores').set(meta);}
+  igRenderOverview();
+  showSheetToast('Meta iniciada! +5.000 em 30 dias 🚀',false);
+}
 function igRenderOverview(){
   var p=document.getElementById('ig-pane-overview');if(!p)return;
   var c=_igCache;
@@ -24939,6 +24954,33 @@ function igRenderOverview(){
   var sorted=posts.slice().sort(function(a,b){return _igSortDir*((b[_igSortCol]||0)-(a[_igSortCol]||0));});
   var ks='background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;';
   var g=function(col,v){return '<div style="font-size:26px;font-weight:800;color:'+col+';">'+v+'</div>';};
+  // ---- META DE CRESCIMENTO ----
+  var metaHtml='';
+  if(_igMeta&&_igMeta.goal&&_igMeta.startDate){
+    var gained=Math.max(0,(perf.followers_count||0)-(_igMeta.startCount||0));
+    var pct=Math.min(100,Math.round(gained/_igMeta.goal*100));
+    var dElapsed=Math.max(1,Math.round((Date.now()-new Date(_igMeta.startDate).getTime())/86400000));
+    var dLeft=Math.max(0,30-dElapsed);
+    var needed=dLeft>0?Math.ceil((_igMeta.goal-gained)/dLeft):0;
+    var onTrack=needed<=((_igMeta.goal)/30)*1.2;
+    metaHtml='<div style="background:linear-gradient(135deg,rgba(225,48,108,0.12),rgba(123,47,255,0.08));border:1px solid rgba(225,48,108,0.3);border-radius:14px;padding:16px 20px;margin-bottom:20px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'+
+        '<div><div style="font-size:11px;font-weight:700;color:#e1306c;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;"><i class="ti ti-target"></i> Meta 30 dias</div>'+
+        '<div style="font-size:20px;font-weight:800;color:var(--white);">+5.000 seguidores</div></div>'+
+        '<div style="text-align:right;"><div style="font-size:22px;font-weight:800;color:'+(onTrack?'var(--green)':'var(--amber)')+';">+'+gained.toLocaleString('pt-BR')+'</div>'+
+        '<div style="font-size:10px;color:var(--muted);">ganhos até agora</div></div>'+
+      '</div>'+
+      '<div style="background:rgba(0,0,0,0.3);border-radius:10px;height:8px;margin-bottom:10px;overflow:hidden;">'+
+        '<div style="height:100%;border-radius:10px;background:linear-gradient(90deg,#e1306c,#7b2fff);width:'+pct+'%;transition:width .5s;"></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">'+
+        '<span>'+pct+'% da meta · dia '+dElapsed+'/30</span>'+
+        (dLeft>0?'<span style="color:'+(onTrack?'var(--green)':'var(--amber))+';">'+needed+'/dia nos próximos '+dLeft+'d</span>':'<span style="color:var(--green);">Meta concluída! 🎉</span>')+
+      '</div>'+
+    '</div>';
+  }else{
+    metaHtml='<div style="margin-bottom:16px;"><button onclick="igDefinirMeta()" style="background:linear-gradient(135deg,rgba(225,48,108,0.15),rgba(123,47,255,0.1));border:1px dashed rgba(225,48,108,0.4);border-radius:10px;padding:10px 16px;color:#e1306c;font-size:12px;font-weight:700;cursor:pointer;width:100%;text-align:left;"><i class="ti ti-target" style="margin-right:6px;"></i>Definir meta: +5.000 seguidores em 30 dias</button></div>';
+  }
   var kpi='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;">'+
     '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seguidores</div>'+g('var(--white)',(perf.followers_count||0).toLocaleString('pt-BR'))+'</div>'+
     '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seg/dia 7d</div>'+g(a7>=0?'var(--green)':'var(--red)',(a7>=0?'+':'')+a7)+'</div>'+
@@ -24965,7 +25007,7 @@ function igRenderOverview(){
   '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
   '<thead><tr>'+cols.map(function(col){return '<th style="padding:9px 12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;">'+col.l+sb(col.k)+'</th>';}).join('')+'</tr></thead>'+
   '<tbody>'+sorted.map(function(row,i){return '<tr style="border-bottom:1px solid var(--border);'+(i%2?'background:rgba(123,47,255,0.03)':'')+'">'+cols.map(function(col){return '<td style="padding:8px 12px;font-size:12px;color:var(--white);">'+col.r(row[col.k],row)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div></div>';
-  p.innerHTML='<div>'+kpi+chart+tbl+'</div>';
+  p.innerHTML='<div>'+metaHtml+kpi+chart+tbl+'</div>';
   setTimeout(function(){
     var cv=document.getElementById('ig-chart');if(!cv)return;
     var ctx=cv.getContext('2d');var W=cv.offsetWidth||800,H=160;
@@ -25771,22 +25813,39 @@ function _carRenderDailyBanner(container){
   var stories=(d.stories||[]).slice(0,3);
   var reels=d.reels||'';
   var updAt=d.updatedAt?new Date(d.updatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
+  var car=d.carrosselPronto||null;
+  var conceitos=d.conceitos||[];
+  var sec=function(icon,color,title,content){return '<div style="margin-bottom:14px;"><div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;"><i class="ti '+icon+'" style="font-size:11px;color:'+color+';margin-right:4px;"></i>'+title+'</div>'+content+'</div>';};
+  var carHtml='';
+  if(car&&car.titulo){
+    var slidesHtml=(car.slides||[]).map(function(s,i){return '<div style="background:rgba(0,0,0,0.25);border-radius:7px;padding:7px 10px;margin-bottom:4px;font-size:11px;color:var(--white);"><span style="color:#e1306c;font-weight:700;margin-right:5px;">S'+(i+1)+'</span>'+s+'</div>';}).join('');
+    carHtml=sec('ti-layout-grid','#e1306c','Carrossel pronto para hoje',
+      '<div style="background:rgba(225,48,108,0.08);border:1px solid rgba(225,48,108,0.2);border-radius:9px;padding:10px 12px;">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:8px;">📌 '+car.titulo+'</div>'+
+        slidesHtml+
+        (car.legenda?'<div style="margin-top:8px;padding:7px 10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:var(--muted);">'+
+          '<span style="color:var(--purple3);font-weight:700;font-size:9px;letter-spacing:.5px;display:block;margin-bottom:3px;">LEGENDA:</span>'+car.legenda+'</div>':'')+
+      '</div>');
+  }
+  var conceitosHtml='';
+  if(conceitos.length){
+    conceitosHtml=sec('ti-bulb','var(--purple3)','Outros 2 conceitos do dia',
+      conceitos.map(function(c,i){return '<div style="background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.15);border-radius:8px;padding:8px 11px;margin-bottom:6px;">'+
+        '<div style="font-size:12px;font-weight:700;color:var(--white);margin-bottom:3px;">'+(i+1)+'. '+(c.titulo||c)+'</div>'+
+        (c.angulo?'<div style="font-size:11px;color:var(--muted);"><b>Ângulo:</b> '+c.angulo+'</div>':'')+
+        (c.estrutura?'<div style="font-size:11px;color:var(--muted);"><b>Estrutura:</b> '+c.estrutura+'</div>':'')+
+      '</div>';}).join(''));
+  }
+  var storiesHtml=stories.length?sec('ti-circle-filled','#e1306c','Stories de hoje',
+    stories.map(function(s,i){return '<div style="font-size:12px;color:var(--white);padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="color:#e1306c;font-weight:700;margin-right:6px;">'+(i+1)+'.</span>'+s+'</div>';}).join('')):'';
+  var reelsHtml=reels?sec('ti-video','var(--cyan)','Ideia Reels','<div style="font-size:12px;color:var(--white);line-height:1.5;">'+reels+'</div>'):'';
   container.innerHTML=
-    '<div style="background:linear-gradient(135deg,rgba(225,48,108,0.12),rgba(123,47,255,0.12));border:1px solid rgba(225,48,108,0.25);border-radius:12px;padding:16px 18px;margin-bottom:20px;">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
-      '<div style="font-size:13px;font-weight:700;color:var(--white);"><i class="ti ti-sparkles" style="color:#e1306c;margin-right:6px;"></i>Briefing do Dia</div>'+
-      (updAt?'<div style="font-size:10px;color:var(--muted);">Atualizado às '+updAt+'</div>':'')+
+    '<div style="background:linear-gradient(135deg,rgba(225,48,108,0.1),rgba(123,47,255,0.1));border:1px solid rgba(225,48,108,0.2);border-radius:14px;padding:16px 18px;margin-bottom:20px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'+
+      '<div style="font-size:14px;font-weight:800;color:var(--white);"><i class="ti ti-sparkles" style="color:#e1306c;margin-right:6px;"></i>Briefing do Dia</div>'+
+      (updAt?'<div style="font-size:10px;color:var(--muted);">IA · '+updAt+'</div>':'')+
     '</div>'+
-    (stories.length?
-      '<div style="margin-bottom:10px;">'+
-        '<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;"><i class="ti ti-circle-filled" style="font-size:8px;color:#e1306c;"></i> Stories de hoje</div>'+
-        stories.map(function(s,i){return '<div style="font-size:12px;color:var(--white);padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
-          '<span style="color:#e1306c;font-weight:700;margin-right:6px;">'+(i+1)+'.</span>'+s+'</div>';}).join('')+
-      '</div>':'')+(reels?
-      '<div>'+
-        '<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;"><i class="ti ti-video" style="font-size:11px;color:var(--purple3);"></i> Ideia Reels</div>'+
-        '<div style="font-size:12px;color:var(--white);">'+reels+'</div>'+
-      '</div>':'')+
+    carHtml+conceitosHtml+storiesHtml+reelsHtml+
     '</div>';
 }
 
@@ -25805,7 +25864,7 @@ function carUpdateEstimate(){
 async function _carBuildImgPrompt(slide,idx){
   var conceito=(slide.title||'')+(slide.body?'. '+slide.body:'');
   var _styleEl=document.getElementById('car-img-style');
-  var suffix=(_styleEl&&_styleEl.value.trim())||'Dark cinematic editorial food photography with realistic warm lighting, natural food textures, subtle steam and an authentic burger restaurant atmosphere. Vertical 2:3 composition designed for an Instagram carousel, with the storytelling subject placed dynamically according to the scene and a clean, darker area in the lower portion for graphic text overlay. Ultra-realistic, visually credible, natural imperfections, no text, no logos, no watermark.';
+  var suffix=(_styleEl&&_styleEl.value.trim())||'Shot on Canon EOS R5, 85mm f/1.4, ISO 800, 1/100s. Single tungsten key light from upper-left casting hard directional shadows, subtle warm fill from right, no flash. Dark cinematic food photography inside a real burger restaurant: deep brown and amber shadows, authentic maillard crust on the patty, visible cheese melt flow with natural drip, toasted brioche with real pore texture, grease spots on wax paper, slight asymmetry and imperfection proving authenticity. Vertical 9:16 composition — main subject fills upper 65%, lower 35% intentionally dark and clear for text overlay. Shallow depth of field, subject sharp, background equipment softly blurred. Subtle film grain in shadows, no artificial saturation, no text, no logos, no watermarks, no studio backdrop.';
   var ck=localStorage.getItem('audens_claude_key');
   if(!ck)return 'Cinematic food photography for a burger delivery Instagram carousel. Scene concept: "'+conceito+'". Dark editorial, warm dramatic lighting, food service environment. '+suffix;
   var total=_carState.slides.length,slideNum=(idx||0)+1;
@@ -25813,7 +25872,7 @@ async function _carBuildImgPrompt(slide,idx){
   var temaGeral=batchEl&&batchEl.value?(batchEl.value.split(/\n\s*\n/)[0]||'').split('\n')[0]:(_carState.slides[0]?_carState.slides[0].title:'');
   var cenasUsadas='';
   for(var j=0;j<(idx||0);j++){var sj=_carState.slides[j];if(sj&&sj.imgDesc)cenasUsadas+='Slide '+(j+1)+': '+sj.imgDesc+'\n';}
-  var sysPt='Você é um diretor de arte e especialista em narrativa visual para carrosséis de Instagram voltados a donos de hamburguerias e operações de delivery.\n\nSua função não é simplesmente criar uma fotografia bonita de hambúrguer. Sua função é transformar a ideia específica de cada slide em uma cena visual clara, concreta e imediatamente compreensível.\n\nO conteúdo pertence ao perfil @lucasramong_ e deve transmitir autoridade, estratégia, gestão, vendas, marketing e crescimento para donos de hamburguerias.\n\nAntes de escrever o prompt, faça silenciosamente este processo:\n1. Identifique qual é a função do slide: gancho, problema, erro, comparação, explicação, processo, prova, consequência, solução ou conclusão.\n2. Resuma a principal mensagem do slide em uma única ideia visual.\n3. Transforme essa ideia em uma AÇÃO, SITUAÇÃO ou CONSEQUÊNCIA que possa ser fotografada dentro do universo de uma hamburgueria.\n4. Escolha uma cena diferente das imagens anteriores.\n5. Escolha conscientemente: personagem ou objeto principal; ação acontecendo; ambiente; enquadramento; ângulo da câmera; posição do elemento principal; elementos secundários; sensação emocional.\n\nREGRA MAIS IMPORTANTE: Não crie apenas um hambúrguer bonito parado sobre uma mesa. A cena precisa mostrar visualmente o conceito do slide por meio de uma situação real, comparação, processo, contraste ou consequência.\n\nUNIVERSO VISUAL PERMITIDO: hambúrgueres, ingredientes, chapa, grelha, cozinha profissional, balcão de retirada, embalagens, sacolas de delivery, comandas, pedidos impressos, telas de pedidos, mãos de cozinheiros, montagem de produtos, estoque de ingredientes, fila de produção, entregador, cliente recebendo o pedido, cardápio físico ou digital desfocado, caixas prontas para entrega, bancada de preparação. Não é obrigatório que o hambúrguer seja sempre o maior elemento da imagem.\n\nTRADUÇÃO DE CONCEITOS ABSTRATOS:\nEstratégia → decisões e organização dentro da operação.\nErro → situação visualmente equivocada ou desorganizada.\nOportunidade perdida → pedidos ignorados, embalagens abandonadas, clientes indo embora.\nUrgência → última unidade, pequena fornada, pedidos se esgotando.\nProduto campeão → produto claramente preferido cercado de comandas.\nRecorrência → mesmo produto ou padrão acontecendo novamente.\nCrescimento → aumento real de produção ou volume de pedidos.\nComparação → composição dividida ou contraste entre duas situações.\nMétodo → sequência visual de ingredientes, etapas ou embalagens.\n\nDIVERSIDADE VISUAL OBRIGATÓRIA: cada nova imagem deve mudar pelo menos quatro elementos em relação aos slides anteriores. Alterne entre: close-up macro, vista superior, câmera lateral, perspectiva baixa, perspectiva por cima do ombro, plano aberto da cozinha, cena documental, composição dividida, linha de produção, mãos em ação, produto dentro da embalagem, balcão de retirada, cozinha durante o pico, produto isolado, vários pedidos sendo preparados. NUNCA repita o mesmo enquadramento frontal de hambúrguer centralizado em slides consecutivos. Nunca repita exatamente o mesmo tipo de hambúrguer, cenário, bancada, fundo, quantidade de carnes ou posição dos ingredientes.\n\nMETÁFORAS: não utilize ampulhetas, troféus, chaves, balanças, peças de xadrez, cofres, lâmpadas, foguetes ou objetos desconectados do food service. Em vez de troféu → hambúrguer sendo escolhido repetidamente entre várias opções. Em vez de ampulheta → última unidade sendo retirada da bancada. Em vez de peças de xadrez → ingredientes sendo estrategicamente organizados antes da montagem.\n\nCOMPOSIÇÃO PARA CARROSSEL: a imagem será usada na parte superior de um slide vertical. Mantenha a área inferior mais escura e visualmente limpa para o texto. O elemento principal pode estar no centro, à esquerda, à direita, em diagonal ou parcialmente fora do quadro. Não centralize automaticamente todos os assuntos.\n\nESTÉTICA: fotografia editorial gastronômica natural e ultra-realista, aparência de fotografia profissional feita dentro de uma hamburgueria real. Iluminação quente, cinematográfica e crível, sombras profundas, reflexos naturais, textura verdadeira dos alimentos, gordura, queijo, pão e ingredientes. Evite aparência artificial, hambúrgueres gigantes irreais, brilho exagerado, simetria perfeita ou estética genérica de banco de imagens.\n\nFORMATO DA RESPOSTA: escreva apenas o prompt em inglês com 4 a 6 frases completas descrevendo: (1) a cena e o acontecimento principal, (2) os elementos que comunicam o conceito, (3) o enquadramento e o ângulo, (4) a composição e a área reservada para texto, (5) a iluminação e estilo. Não explique suas escolhas. Não escreva títulos. Não utilize listas. Não coloque o prompt entre aspas. Ao final, em uma linha separada iniciando com "CENA:", escreva em português um resumo de 1 frase curta descrevendo objetivamente o que a imagem mostra (para controle de diversidade).';
+  var sysPt='You are a world-class food photography art director and visual storytelling specialist for Instagram carousels targeting burger restaurant owners and delivery operations. Your output is a single image generation prompt in English — nothing else.\n\nYOUR CORE MISSION: Transform the specific slide concept into a scene that is simultaneously PHOTOREALISTIC and CONCEPTUALLY CLEAR. The image must look like it was shot by a professional food photographer inside a real burger restaurant — not like AI art, not like a stock photo, not like a clean studio shot.\n\nPHOTORREALISM RULES (apply to every prompt):\n- Specify camera: Canon EOS R5 or Sony A7 IV, 85mm f/1.4 or 50mm f/1.2, ISO 400-1600, 1/100s\n- Specify real lighting: single hard tungsten key light from upper-left + subtle warm fill from right + optional cold rim from behind. OR: practical kitchen light overhead casting natural shadows. Never generic "soft light".\n- Specify authentic food textures: visible maillard crust on the patty, actual cheese melt flow (not cartoon drip), toasted brioche pores, real sesame seeds, greasy wax paper, condensation on cups\n- Specify imperfections: slight tilt, crumbs on surface, fingerprints on packaging, grease spots, asymmetric bun, natural sag in ingredients — things that prove it is real\n- Depth of field: always specify what is sharp and what is blurred (e.g., "sharp on the patty edges, background kitchen equipment softly blurred at f/1.4")\n- Color grade: dark warm tones — shadows in deep brown/black, highlights in amber/orange, no artificial saturation\n- Grain: add "subtle film grain, ISO noise visible in shadows"\n- NEVER use these words: "perfect", "beautiful", "stunning", "gorgeous", "vibrant", "colorful", "bright", "glossy", "polished"\n\nCONCEPT TRANSLATION (silent process before writing):\n1. What is this slide communicating? (problem/solution/comparison/process/proof/urgency)\n2. What REAL burger restaurant scene shows this concept? Not an abstract symbol — a concrete situation with people, hands, equipment, food in action.\n3. What camera angle tells the story best?\n4. What is sharp and what is out of focus?\n5. How is the lower third of the frame darker/emptier for text overlay?\n\nSCENE UNIVERSE (only these — no abstract objects):\nBurgers mid-assembly, patty on hot griddle with steam and char marks, cheese melting in real time, hands placing toppings, kitchen during service rush, ticket printer with orders, delivery bags being sealed, packaging in motion, cook\'s hands from above, close-up of sauce pour, side view of burger cross-section, wax paper unwrap, customer receiving bag, bulk ingredient prep, walk-in cooler with stacked ingredients, POS screen with orders, carbon paper order slips\n\nNO METAPHORS UNRELATED TO FOOD SERVICE: no chess pieces, hourglasses, trophies, keys, lightbulbs, rockets, coins, or any abstract symbol. Translate every abstract idea into a food service scene.\n\nCOMPOSITION (Instagram carousel vertical):\n- Frame is 4:5 or 9:16 vertical — compose accordingly\n- Main subject in upper 60% of frame\n- Lower 30-40% must be darker and relatively empty for text overlay (natural shadow, dark surface, or defocused background)\n- Vary composition each slide: overhead flat-lay / low-angle hero shot / 45° three-quarter / extreme macro / wide environmental / over-the-shoulder / split composition\n- NEVER two consecutive slides with centered front-facing burger\n\nVISUAL DIVERSITY: change at least 4 elements from previous slides: subject, angle, distance, surface, lighting direction, number of food elements, presence/absence of human hands\n\nOUTPUT FORMAT:\nWrite the image prompt in English, 5-7 sentences, covering: (1) the specific scene happening, (2) the subject and its authentic physical details, (3) exact camera angle and focal length, (4) lighting setup, (5) depth of field and what is sharp vs blurred, (6) surface and environment details, (7) color grade and grain.\nDo not explain your choices. No titles. No bullet points. No quotes around the prompt.\nOn a separate final line starting with "CENA:" write a short one-sentence description in Portuguese of what the image shows (for diversity tracking).';
   var userMsg='TEMA GERAL DO CARROSSEL:\n"'+temaGeral+'"\n\nSLIDE:\n"'+slideNum+' de '+total+'"\n\nTÍTULO:\n"'+(slide.title||'')+'"\n\nTEXTO:\n"'+(slide.body||'')+'"\n\nCENAS JÁ UTILIZADAS:\n'+(cenasUsadas||'Nenhuma ainda.');
   try{
     var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
