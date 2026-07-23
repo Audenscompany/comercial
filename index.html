@@ -25041,30 +25041,52 @@ function igRenderOverview(){
   '</div>';
   // ---- SECTION 3: 3 CHARTS ----
   var srcData=c.sources||[{l:'Explorar',v:45.2,col:'#e1306c'},{l:'Reels',v:28.7,col:'#7b2fff'},{l:'Perfil',v:17.3,col:'#3b82f6'},{l:'Outros',v:8.8,col:'#f59e0b'}];
+  var _periodBtnStyle=function(active){return 'border:none;border-radius:5px;padding:3px 9px;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;background:'+(active?'rgba(123,47,255,0.35)':'rgba(255,255,255,0.04)')+';color:'+(active?'#c4b0ff':'var(--muted)');};
   var chartsRow='<div style="display:grid;grid-template-columns:1fr 1fr 280px;gap:14px;margin-bottom:20px;">'+
     // line chart - evolution
     '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
-        '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;">Evolução de Seguidores <i class="ti ti-info-circle" style="font-size:11px;opacity:0.5;"></i></div>'+
-        '<div style="font-size:18px;font-weight:900;color:var(--white);">'+(perf.followers_count||0).toLocaleString('pt-BR')+'<span style="font-size:10px;color:var(--muted);margin-left:4px;">Total seg.</span></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div>'+
+          '<div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px;">Evolução de Seguidores</div>'+
+          '<div id="ig-evo-hover-val" style="font-size:18px;font-weight:900;color:var(--white);">'+(perf.followers_count||0).toLocaleString('pt-BR')+'<span style="font-size:10px;color:var(--muted);margin-left:4px;">Total seg.</span></div>'+
+        '</div>'+
+        '<div style="display:flex;gap:4px;">'+
+          '<button id="ig-evo-7" onclick="_igSetEvoPeriod(7)" style="'+_periodBtnStyle(false)+'">7D</button>'+
+          '<button id="ig-evo-30" onclick="_igSetEvoPeriod(30)" style="'+_periodBtnStyle(true)+'">30D</button>'+
+          '<button id="ig-evo-60" onclick="_igSetEvoPeriod(60)" style="'+_periodBtnStyle(false)+'">60D</button>'+
+          '<button id="ig-evo-90" onclick="_igSetEvoPeriod(90)" style="'+_periodBtnStyle(false)+'">90D</button>'+
+        '</div>'+
       '</div>'+
-      '<div style="position:relative;height:155px;"><canvas id="ig-chart-evo"></canvas></div>'+
+      '<div style="position:relative;height:155px;"><canvas id="ig-chart-evo" style="cursor:crosshair;"></canvas></div>'+
     '</div>'+
     // bar chart - daily gain
     '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
-        '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;">Seguidores/Dia (30d)</div>'+
-        '<div style="background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;color:var(--muted);">30 DIAS</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div>'+
+          '<div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px;">Seguidores/Dia</div>'+
+          '<div id="ig-bar-hover-val" style="font-size:14px;font-weight:700;color:var(--muted);">Clique numa barra para ver posts</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:4px;">'+
+          '<button id="ig-bar-7" onclick="_igSetBarPeriod(7)" style="'+_periodBtnStyle(false)+'">7D</button>'+
+          '<button id="ig-bar-30" onclick="_igSetBarPeriod(30)" style="'+_periodBtnStyle(true)+'">30D</button>'+
+        '</div>'+
       '</div>'+
-      '<div style="position:relative;height:155px;"><canvas id="ig-chart-daily"></canvas></div>'+
+      '<div style="position:relative;height:130px;"><canvas id="ig-chart-daily" style="cursor:pointer;"></canvas></div>'+
+      '<div id="ig-bar-posts" style="display:none;background:rgba(225,48,108,0.06);border:1px solid rgba(225,48,108,0.15);border-radius:8px;padding:10px;margin-top:8px;font-size:11px;color:var(--white);"></div>'+
     '</div>'+
     // donut chart - sources
     '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
-      '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px;">Fontes de Seguidores</div>'+
-      '<div style="position:relative;height:140px;margin-bottom:12px;"><canvas id="ig-chart-donut"></canvas></div>'+
-      srcData.map(function(s){return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'+
-        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:'+s.col+';flex-shrink:0;"></div><span style="font-size:12px;color:var(--white);">'+s.l+'</span></div>'+
-        '<span style="font-size:12px;font-weight:700;color:var(--white);">'+s.v+'%</span></div>';}).join('')+
+      '<div style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px;">Fontes de Seguidores</div>'+
+      '<div style="position:relative;height:145px;margin-bottom:10px;">'+
+        '<canvas id="ig-chart-donut" style="cursor:pointer;"></canvas>'+
+        '<div id="ig-donut-center" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">'+
+          '<div style="font-size:10px;color:var(--muted);font-weight:600;">Total</div>'+
+          '<div style="font-size:16px;font-weight:900;color:var(--white);">100%</div>'+
+        '</div>'+
+      '</div>'+
+      srcData.map(function(s,i){return '<div onclick="_igDonutHighlight('+i+')" style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:6px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">'+
+        '<div style="display:flex;align-items:center;gap:7px;"><div style="width:9px;height:9px;border-radius:50%;background:'+s.col+';flex-shrink:0;"></div><span style="font-size:12px;color:var(--white);">'+s.l+'</span></div>'+
+        '<span style="font-size:12px;font-weight:800;color:var(--white);">'+s.v+'%</span></div>';}).join('')+
     '</div>'+
   '</div>';
   // ---- SECTION 4: TOP POSTS + ACTIVITY + PERFORMANCE ----
@@ -25159,71 +25181,247 @@ function igRenderOverview(){
   var bottomRow='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">'+topPostsHtml+activityHtml+perfHtml+'</div>';
   p.innerHTML='<div>'+metaBanner+kpiRow+chartsRow+bottomRow+'</div>';
   // ---- Render charts with Chart.js ----
+  // ---- store refs for interactive callbacks ----
+  window._igSerieAll=serie;
+  window._igPostsAll=posts;
+  window._igSrcData=srcData;
+  window._igPerfAll=perf;
+  window._igEvoPeriod=30;
+  window._igBarPeriod=30;
+
+  // ---- Crosshair plugin ----
+  var _crosshairPlugin={
+    id:'igCrosshair',
+    afterDraw:function(chart){
+      if(!chart.tooltip||!chart.tooltip._active||!chart.tooltip._active.length)return;
+      var ctx=chart.ctx;
+      var x=chart.tooltip._active[0].element.x;
+      var top=chart.scales.y.top;
+      var bottom=chart.scales.y.bottom;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x,top);ctx.lineTo(x,bottom);
+      ctx.lineWidth=1;ctx.strokeStyle='rgba(123,47,255,0.45)';
+      ctx.setLineDash([3,3]);ctx.stroke();ctx.restore();
+    }
+  };
+
+  // ---- Helper: build cumulative from serie slice ----
+  function _igBuildEvoData(days){
+    var slice=window._igSerieAll.slice(-days);
+    if(!slice.length)return{labels:[],vals:[]};
+    var base=window._igPerfAll.followers_count||0;
+    var td=slice.reduce(function(a,b){return a+(b.value||0);},0);
+    base=base-td;
+    var vals=slice.map(function(d){base+=(d.value||0);return base;});
+    var labels=slice.map(function(d){return new Date(d.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});});
+    return{labels:labels,vals:vals,raw:slice};
+  }
+
+  // ---- Helper: build bar data ----
+  function _igBuildBarData(days){
+    var slice=window._igSerieAll.slice(-days);
+    var vals=slice.map(function(d){return d.value||0;});
+    var labels=slice.map(function(d){return new Date(d.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});});
+    return{labels:labels,vals:vals,raw:slice};
+  }
+
   function _igRenderCharts(){
     if(typeof Chart==='undefined')return;
-    // Destroy existing instances
     ['_igChartEvo','_igChartDaily','_igChartDonut'].forEach(function(k){if(window[k]){try{window[k].destroy();}catch(e){}window[k]=null;}});
-    // ---- Build cumulative follower series ----
-    var evoData=serie.slice(-60);
-    var cumulVals=[];
-    if(evoData.length){
-      var base=perf.followers_count||0;
-      var td=evoData.reduce(function(a,b){return a+(b.value||0);},0);
-      base=base-td;
-      evoData.forEach(function(d){base+=(d.value||0);cumulVals.push(base);});
-    }
-    var evoLabels=evoData.map(function(d){return new Date(d.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});});
-    var defaultCfg={responsive:true,maintainAspectRatio:false,animation:{duration:600,easing:'easeInOutQuart'},plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(15,12,30,0.95)',titleColor:'#fff',bodyColor:'rgba(255,255,255,0.7)',borderColor:'rgba(123,47,255,0.3)',borderWidth:1,padding:10,cornerRadius:8,titleFont:{size:11,weight:'700'},bodyFont:{size:12}}}};
+    var defaultCfg={responsive:true,maintainAspectRatio:false,animation:{duration:550,easing:'easeInOutQuart'},plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(13,10,28,0.97)',titleColor:'#fff',bodyColor:'rgba(255,255,255,0.65)',borderColor:'rgba(123,47,255,0.35)',borderWidth:1,padding:12,cornerRadius:10,titleFont:{size:11,weight:'700'},bodyFont:{size:12},displayColors:false}}};
+
     // ---- 1. EVOLUTION LINE CHART ----
     var cvEvo=document.getElementById('ig-chart-evo');
-    if(cvEvo&&evoData.length){
+    var evoD=_igBuildEvoData(window._igEvoPeriod);
+    if(cvEvo&&evoD.vals.length){
       var ctxE=cvEvo.getContext('2d');
-      var gradE=ctxE.createLinearGradient(0,0,0,cvEvo.offsetHeight||160);
-      gradE.addColorStop(0,'rgba(123,47,255,0.5)');gradE.addColorStop(0.6,'rgba(123,47,255,0.1)');gradE.addColorStop(1,'rgba(123,47,255,0)');
+      var gradE=ctxE.createLinearGradient(0,0,0,155);
+      gradE.addColorStop(0,'rgba(123,47,255,0.55)');gradE.addColorStop(0.65,'rgba(123,47,255,0.08)');gradE.addColorStop(1,'rgba(123,47,255,0)');
       window._igChartEvo=new Chart(ctxE,{
         type:'line',
-        data:{labels:evoLabels,datasets:[{data:cumulVals,borderColor:'#7b2fff',backgroundColor:gradE,fill:true,tension:0.45,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:'#7b2fff',pointHoverBorderColor:'#fff',pointHoverBorderWidth:2,borderWidth:2.5}]},
+        plugins:[_crosshairPlugin],
+        data:{labels:evoD.labels,datasets:[{data:evoD.vals,borderColor:'#7b2fff',backgroundColor:gradE,fill:true,tension:0.42,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:'#7b2fff',pointHoverBorderColor:'#fff',pointHoverBorderWidth:2,borderWidth:2.5}]},
         options:Object.assign({},defaultCfg,{
-          scales:{
-            x:{grid:{display:false},ticks:{color:'rgba(255,255,255,0.35)',font:{size:10},maxTicksLimit:6,maxRotation:0},border:{display:false}},
-            y:{grid:{color:'rgba(255,255,255,0.05)',drawBorder:false},ticks:{color:'rgba(255,255,255,0.35)',font:{size:10},maxTicksLimit:5,callback:function(v){return v>=1000?(v/1000).toFixed(0)+'k':v;}},border:{display:false}}
+          onHover:function(e,els){
+            if(els&&els.length){
+              var val=evoD.vals[els[0].index];
+              var hv=document.getElementById('ig-evo-hover-val');
+              if(hv)hv.innerHTML=val.toLocaleString('pt-BR')+'<span style="font-size:10px;color:var(--muted);margin-left:4px;">seg.</span>';
+            }
           },
-          plugins:Object.assign({},defaultCfg.plugins,{tooltip:{callbacks:{label:function(ctx){return ' '+ctx.parsed.y.toLocaleString('pt-BR')+' seguidores';}}}})
+          scales:{
+            x:{grid:{display:false},ticks:{color:'rgba(255,255,255,0.3)',font:{size:9},maxTicksLimit:7,maxRotation:0},border:{display:false}},
+            y:{grid:{color:'rgba(255,255,255,0.04)',drawBorder:false},ticks:{color:'rgba(255,255,255,0.3)',font:{size:9},maxTicksLimit:5,callback:function(v){return v>=1000?(v/1000).toFixed(0)+'k':v;}},border:{display:false}}
+          },
+          plugins:Object.assign({},defaultCfg.plugins,{tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(13,10,28,0.97)',titleColor:'#fff',bodyColor:'rgba(255,255,255,0.65)',borderColor:'rgba(123,47,255,0.35)',borderWidth:1,padding:12,cornerRadius:10,displayColors:false,callbacks:{title:function(items){return evoD.raw[items[0].dataIndex]?new Date(evoD.raw[items[0].dataIndex].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}):items[0].label;},label:function(ctx){return ctx.parsed.y.toLocaleString('pt-BR')+' seguidores';}}}})
         })
       });
     }
+
     // ---- 2. DAILY BAR CHART ----
-    var dailyData=serie.slice(-30);
     var cvBar=document.getElementById('ig-chart-daily');
-    if(cvBar&&dailyData.length){
+    var barD=_igBuildBarData(window._igBarPeriod);
+    if(cvBar&&barD.vals.length){
       var ctxB=cvBar.getContext('2d');
-      var barVals=dailyData.map(function(d){return d.value||0;});
-      var barLabels=dailyData.map(function(d){return new Date(d.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});});
-      var barColors=barVals.map(function(v){return v>=0?'rgba(225,48,108,0.85)':'rgba(239,68,68,0.85)';});
-      var barHover=barVals.map(function(v){return v>=0?'rgba(225,48,108,1)':'rgba(239,68,68,1)';});
+      var barColors=barD.vals.map(function(v){return v>=0?'rgba(225,48,108,0.78)':'rgba(239,68,68,0.78)';});
+      var barHover=barD.vals.map(function(v){return v>=0?'rgba(225,48,108,1)':'rgba(239,68,68,1)';});
       window._igChartDaily=new Chart(ctxB,{
         type:'bar',
-        data:{labels:barLabels,datasets:[{data:barVals,backgroundColor:barColors,hoverBackgroundColor:barHover,borderRadius:4,borderSkipped:false}]},
+        data:{labels:barD.labels,datasets:[{data:barD.vals,backgroundColor:barColors,hoverBackgroundColor:barHover,borderRadius:4,borderSkipped:false}]},
         options:Object.assign({},defaultCfg,{
-          scales:{
-            x:{grid:{display:false},ticks:{color:'rgba(255,255,255,0.35)',font:{size:10},maxTicksLimit:6,maxRotation:0},border:{display:false}},
-            y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'rgba(255,255,255,0.35)',font:{size:10},maxTicksLimit:5},border:{display:false}}
+          onClick:function(e,els){
+            if(!els||!els.length)return;
+            var idx=els[0].index;
+            var dayEntry=barD.raw[idx];
+            if(!dayEntry)return;
+            var targetDate=dayEntry.date;
+            var hv=document.getElementById('ig-bar-hover-val');
+            var panel=document.getElementById('ig-bar-posts');
+            if(!panel)return;
+            var v=barD.vals[idx];
+            if(hv)hv.innerHTML='<span style="color:'+(v>=0?'#e1306c':'#ef4444')+';">'+(v>=0?'+':'')+v+'</span> seg. em '+new Date(targetDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+            // Find posts published on this day
+            var allP=window._igPostsAll||[];
+            var dayPosts=allP.filter(function(p){
+              if(!p.timestamp)return false;
+              var pd=new Date(p.timestamp);
+              var td2=new Date(targetDate);
+              return pd.getFullYear()===td2.getFullYear()&&pd.getMonth()===td2.getMonth()&&pd.getDate()===td2.getDate();
+            });
+            if(!dayPosts.length){
+              panel.style.display='block';
+              panel.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:8px 0;">Nenhum post publicado neste dia</div>';
+            }else{
+              panel.style.display='block';
+              panel.innerHTML='<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;margin-bottom:8px;">Posts publicados</div>'+
+                dayPosts.slice(0,4).map(function(p){
+                  var tp=p.media_type==='VIDEO'?'Reel':(p.media_product_type==='REELS'?'Reel':(p.media_type==='CAROUSEL_ALBUM'?'Carrossel':'Foto'));
+                  var cap=p.media_caption?p.media_caption.slice(0,70)+(p.media_caption.length>70?'…':''):'(sem legenda)';
+                  var lk=p.media_like_count||p.likes||0;
+                  var reach=p.media_reach||0;
+                  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.06);">'+
+                    '<div style="width:6px;height:6px;border-radius:50%;background:#e1306c;flex-shrink:0;margin-top:2px;"></div>'+
+                    '<div style="flex:1;min-width:0;">'+
+                      '<div style="font-size:11px;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+cap+'</div>'+
+                      '<div style="display:flex;gap:12px;margin-top:3px;">'+
+                        '<span style="font-size:10px;color:rgba(225,48,108,0.8);font-weight:700;">'+tp+'</span>'+
+                        (lk?'<span style="font-size:10px;color:var(--muted);">♥ '+lk.toLocaleString('pt-BR')+'</span>':'')+
+                        (reach?'<span style="font-size:10px;color:var(--muted);">👁 '+reach.toLocaleString('pt-BR')+'</span>':'')+
+                      '</div>'+
+                    '</div>'+
+                  '</div>';
+                }).join('')+
+                (dayPosts.length>4?'<div style="font-size:10px;color:var(--muted);text-align:center;">+'+( dayPosts.length-4)+' mais posts</div>':'');
+            }
           },
-          plugins:Object.assign({},defaultCfg.plugins,{tooltip:{callbacks:{label:function(ctx){var v=ctx.parsed.y;return ' '+(v>=0?'+':'')+v+' seguidores';}}}})
+          onHover:function(e,els){
+            cvBar.style.cursor=els&&els.length?'pointer':'default';
+          },
+          scales:{
+            x:{grid:{display:false},ticks:{color:'rgba(255,255,255,0.3)',font:{size:9},maxTicksLimit:7,maxRotation:0},border:{display:false}},
+            y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.3)',font:{size:9},maxTicksLimit:5},border:{display:false}}
+          },
+          plugins:Object.assign({},defaultCfg.plugins,{tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(13,10,28,0.97)',titleColor:'#fff',bodyColor:'rgba(255,255,255,0.65)',borderColor:'rgba(225,48,108,0.3)',borderWidth:1,padding:12,cornerRadius:10,displayColors:false,callbacks:{title:function(items){return barD.raw[items[0].dataIndex]?new Date(barD.raw[items[0].dataIndex].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}):items[0].label;},label:function(ctx){var v=ctx.parsed.y;return (v>=0?'+':'')+v+' seguidores';},footer:function(items){var ps=window._igPostsAll||[];var td3=barD.raw[items[0].dataIndex];if(!td3)return '';var cnt=ps.filter(function(p){if(!p.timestamp)return false;var pd=new Date(p.timestamp),dd=new Date(td3.date);return pd.getFullYear()===dd.getFullYear()&&pd.getMonth()===dd.getMonth()&&pd.getDate()===dd.getDate();}).length;return cnt?cnt+' post'+(cnt>1?'s':'')+' publicado'+(cnt>1?'s':'')+' — clique para ver':'';}}},legend:{display:false}}),
         })
       });
     }
-    // ---- 3. DOUGHNUT CHART ----
+
+    // ---- 3. DOUGHNUT CHART + center label ----
     var cvDon=document.getElementById('ig-chart-donut');
+    var _igDonutCenter=document.getElementById('ig-donut-center');
+    var _centerPlugin={
+      id:'donutCenter',
+      afterDraw:function(chart){
+        // center label handled by overlay div; nothing needed here
+      }
+    };
     if(cvDon&&srcData.length){
       var ctxD=cvDon.getContext('2d');
       window._igChartDonut=new Chart(ctxD,{
         type:'doughnut',
-        data:{labels:srcData.map(function(s){return s.l;}),datasets:[{data:srcData.map(function(s){return s.v;}),backgroundColor:srcData.map(function(s){return s.col;}),hoverBackgroundColor:srcData.map(function(s){return s.col+'ee';}),borderWidth:2,borderColor:'rgba(20,16,40,0.8)',hoverOffset:6}]},
-        options:{responsive:true,maintainAspectRatio:false,cutout:'65%',animation:{duration:700,easing:'easeInOutQuart'},plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(15,12,30,0.95)',titleColor:'#fff',bodyColor:'rgba(255,255,255,0.7)',borderColor:'rgba(123,47,255,0.3)',borderWidth:1,padding:10,cornerRadius:8,callbacks:{label:function(ctx){return ' '+ctx.label+': '+ctx.parsed+'%';}}}}}
+        plugins:[_centerPlugin],
+        data:{labels:srcData.map(function(s){return s.l;}),datasets:[{data:srcData.map(function(s){return s.v;}),backgroundColor:srcData.map(function(s){return s.col;}),hoverBackgroundColor:srcData.map(function(s){return s.col+'ee';}),borderWidth:3,borderColor:'rgba(17,13,36,0.9)',hoverOffset:8}]},
+        options:{
+          responsive:true,maintainAspectRatio:false,cutout:'68%',
+          animation:{duration:700,easing:'easeInOutQuart'},
+          onHover:function(e,els){
+            cvDon.style.cursor=els&&els.length?'pointer':'default';
+            var center=document.getElementById('ig-donut-center');
+            if(!center)return;
+            if(els&&els.length){
+              var s=window._igSrcData[els[0].index];
+              if(s)center.innerHTML='<div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;">'+s.l+'</div><div style="font-size:18px;font-weight:900;color:'+s.col+';">'+s.v+'%</div>';
+            }else{
+              center.innerHTML='<div style="font-size:10px;color:var(--muted);font-weight:600;">Total</div><div style="font-size:16px;font-weight:900;color:var(--white);">100%</div>';
+            }
+          },
+          onClick:function(e,els){
+            if(!els||!els.length)return;
+            _igDonutHighlight(els[0].index);
+          },
+          plugins:{
+            legend:{display:false},
+            tooltip:{backgroundColor:'rgba(13,10,28,0.97)',titleColor:'#fff',bodyColor:'rgba(255,255,255,0.65)',borderColor:'rgba(123,47,255,0.35)',borderWidth:1,padding:12,cornerRadius:10,callbacks:{label:function(ctx){return ' '+ctx.label+': '+ctx.parsed+'%';}}}
+          }
+        }
       });
     }
   }
+
+  // ---- Global interactive callbacks ----
+  window._igSetEvoPeriod=function(days){
+    window._igEvoPeriod=days;
+    [7,30,60,90].forEach(function(d){
+      var b=document.getElementById('ig-evo-'+d);
+      if(b){b.style.background=d===days?'rgba(123,47,255,0.35)':'rgba(255,255,255,0.04)';b.style.color=d===days?'#c4b0ff':'var(--muted)';}
+    });
+    if(!window._igChartEvo)return;
+    var evoD=_igBuildEvoData(days);
+    window._igChartEvo.data.labels=evoD.labels;
+    window._igChartEvo.data.datasets[0].data=evoD.vals;
+    window._igChartEvo.update();
+    var hv=document.getElementById('ig-evo-hover-val');
+    if(hv&&evoD.vals.length){
+      var last=evoD.vals[evoD.vals.length-1];
+      hv.innerHTML=last.toLocaleString('pt-BR')+'<span style="font-size:10px;color:var(--muted);margin-left:4px;">seg.</span>';
+    }
+  };
+
+  window._igSetBarPeriod=function(days){
+    window._igBarPeriod=days;
+    [7,30].forEach(function(d){
+      var b=document.getElementById('ig-bar-'+d);
+      if(b){b.style.background=d===days?'rgba(123,47,255,0.35)':'rgba(255,255,255,0.04)';b.style.color=d===days?'#c4b0ff':'var(--muted)';}
+    });
+    if(!window._igChartDaily)return;
+    var barD=_igBuildBarData(days);
+    window._igChartDaily.data.labels=barD.labels;
+    window._igChartDaily.data.datasets[0].data=barD.vals;
+    window._igChartDaily.data.datasets[0].backgroundColor=barD.vals.map(function(v){return v>=0?'rgba(225,48,108,0.78)':'rgba(239,68,68,0.78)';});
+    window._igChartDaily.data.datasets[0].hoverBackgroundColor=barD.vals.map(function(v){return v>=0?'rgba(225,48,108,1)':'rgba(239,68,68,1)';});
+    window._igChartDaily.update();
+    var panel=document.getElementById('ig-bar-posts');
+    if(panel)panel.style.display='none';
+    var hv2=document.getElementById('ig-bar-hover-val');
+    if(hv2)hv2.innerHTML='Clique numa barra para ver posts';
+  };
+
+  window._igDonutHighlight=function(idx){
+    if(!window._igChartDonut)return;
+    var chart=window._igChartDonut;
+    var meta=chart.getDatasetMeta(0);
+    meta.data.forEach(function(arc,i){
+      arc.options.offset=i===idx?14:0;
+    });
+    chart.update();
+    var s=window._igSrcData[idx];
+    var center=document.getElementById('ig-donut-center');
+    if(center&&s){
+      center.innerHTML='<div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;">'+s.l+'</div><div style="font-size:18px;font-weight:900;color:'+s.col+';">'+s.v+'%</div>';
+    }
+  };
+
   setTimeout(function(){
     if(typeof Chart!=='undefined'){_igRenderCharts();}
     else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';s.onload=function(){setTimeout(_igRenderCharts,100);};document.head.appendChild(s);}
