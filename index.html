@@ -26751,4 +26751,415 @@ function stCheckRecorrencia(){
 }
 // ===== STORIES LAB — fim da estrutura base =====
 
+// ============================================================
+// ===== STORIES LAB — Aba 1: Painel =====
+// ============================================================
+function stCapArr(dias){
+  var lim=Date.now()-dias*86400000;
+  return Object.keys(_stCap).map(function(k){
+    var o=Object.assign({_k:k},_stCap[k]);
+    o._ts=new Date(o.story_timestamp).getTime()||o.capturadoEm||0;
+    return o;
+  }).filter(function(o){return o._ts>=lim;});
+}
+function stStatsPorEstilo(arr){
+  var m={};
+  arr.forEach(function(s){
+    var e=s.estilo||'sem-estilo';
+    if(!m[e])m[e]={estilo:e,n:0,views:0,eng:0,resp:0,saida:0};
+    m[e].n++;m[e].views+=Number(s.story_views)||0;m[e].eng+=Number(s.engajamento)||0;
+    m[e].resp+=Number(s.taxaResposta)||0;m[e].saida+=Number(s.taxaSaida)||0;
+  });
+  var out=[];
+  _stEstilos.concat(['sem-estilo']).forEach(function(e){
+    var r=m[e];
+    if(!r&&e==='sem-estilo')return;
+    if(!r)r={estilo:e,n:0,views:0,eng:0,resp:0,saida:0};
+    out.push({estilo:r.estilo,n:r.n,
+      viewsMedio:r.n?Math.round(r.views/r.n):0,
+      engMedio:r.n?+(r.eng/r.n).toFixed(2):0,
+      respMedia:r.n?+(r.resp/r.n).toFixed(2):0,
+      saidaMedia:r.n?+(r.saida/r.n).toFixed(2):0});
+  });
+  return out;
+}
+function stSetPeriodo(d){_stPeriodo=d;stRenderPainel();}
+function stSortBy(col){
+  if(_stSort.col===col)_stSort.dir*=-1;else{_stSort.col=col;_stSort.dir=-1;}
+  stRenderPainel();
+}
+function stRenderPainel(){
+  var p=document.getElementById('st-pane-painel');if(!p)return;
+  var arr=stCapArr(_stPeriodo);
+  var perBtns=[7,30,90].map(function(d){
+    var a=_stPeriodo===d;
+    return '<button onclick="stSetPeriodo('+d+')" style="padding:5px 14px;border-radius:8px;border:1px solid '+(a?'var(--purple)':'var(--border)')+';background:'+(a?'rgba(123,47,255,0.15)':'transparent')+';color:'+(a?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;">'+d+' dias</button>';
+  }).join(' ');
+  if(!arr.length){
+    p.innerHTML='<div style="display:flex;gap:8px;margin-bottom:16px;">'+perBtns+'</div>'+
+      '<div style="text-align:center;padding:60px 20px;color:var(--muted);">'+
+      '<i class="ti ti-chart-bar" style="font-size:44px;display:block;margin-bottom:14px;color:var(--purple);"></i>'+
+      '<div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:6px;">Nenhum story capturado neste período</div>'+
+      '<div style="font-size:13px;margin-bottom:18px;">O coletor roda automaticamente a cada 15 min quando o CRM está aberto.<br>Stories expiram em 24h — mantenha o CRM aberto ao menos 1x por dia.</div>'+
+      '<button class="btn btn-primary" onclick="stSyncNow()"><i class="ti ti-refresh"></i> Sincronizar agora</button></div>';
+    return;
+  }
+  var stats=stStatsPorEstilo(arr);
+  var sc=_stSort.col,sd=_stSort.dir;
+  var colMap={estilo:'estilo',n:'n',views:'viewsMedio',engajamento:'engMedio',resposta:'respMedia',saida:'saidaMedia'};
+  var key=colMap[sc]||'engMedio';
+  stats.sort(function(a,b){
+    if(key==='estilo')return sd*String(a.estilo).localeCompare(String(b.estilo));
+    return sd*((a[key]||0)-(b[key]||0));
+  });
+  var maxEng=Math.max.apply(null,stats.map(function(s){return s.engMedio;}).concat([0.01]));
+  var arrow=function(c){return sc===c?(sd===-1?' ↓':' ↑'):'';};
+  var th=function(c,lbl,align){return '<th onclick="stSortBy(\''+c+'\')" style="cursor:pointer;padding:9px 12px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:'+(align||'right')+';white-space:nowrap;user-select:none;">'+lbl+arrow(c)+'</th>';};
+  var tbl='<div class="cb" style="margin-bottom:18px;"><div class="cb-hd"><span class="cb-title"><i class="ti ti-category" style="margin-right:6px;color:var(--purple);"></i>Desempenho por Estilo</span><span style="font-size:11px;color:var(--muted);">'+arr.length+' stories no período</span></div>'+
+    '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
+    '<thead><tr style="border-bottom:1px solid var(--border);">'+th('estilo','Estilo','left')+th('n','Nº Stories')+th('views','Views Médio')+th('engajamento','Engajamento Médio')+th('resposta','Taxa Resposta')+th('saida','Taxa Saída')+'</tr></thead><tbody>'+
+    stats.map(function(s){
+      var barW=Math.round(s.engMedio/maxEng*100);
+      var c=_stEstiloCores[s.estilo]||'#666';
+      return '<tr style="border-bottom:1px solid var(--border);'+(s.n===0?'opacity:0.35;':'')+'">'+
+        '<td style="padding:9px 12px;">'+stEstiloBadge(s.estilo==='sem-estilo'?'':s.estilo)+'</td>'+
+        '<td style="padding:9px 12px;text-align:right;color:var(--white);font-weight:600;">'+s.n+'</td>'+
+        '<td style="padding:9px 12px;text-align:right;color:var(--white);">'+stNum(s.viewsMedio)+'</td>'+
+        '<td style="padding:9px 12px;text-align:right;min-width:160px;">'+
+          '<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">'+
+          '<div style="flex:1;max-width:110px;height:7px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;"><div style="width:'+barW+'%;height:100%;background:'+c+';border-radius:4px;"></div></div>'+
+          '<span style="color:var(--white);font-weight:600;min-width:52px;">'+stPct(s.engMedio)+'</span></div></td>'+
+        '<td style="padding:9px 12px;text-align:right;color:var(--green);">'+stPct(s.respMedia)+'</td>'+
+        '<td style="padding:9px 12px;text-align:right;color:'+(s.saidaMedia>15?'var(--red)':'var(--muted)')+';">'+stPct(s.saidaMedia)+'</td>'+
+      '</tr>';
+    }).join('')+
+    '</tbody></table></div></div>';
+  // Melhor horário por faixa
+  var faixas={manha:{lbl:'Manhã (5h–12h)',n:0,views:0,eng:0},tarde:{lbl:'Tarde (12h–18h)',n:0,views:0,eng:0},noite:{lbl:'Noite (18h–5h)',n:0,views:0,eng:0}};
+  arr.forEach(function(s){
+    var h=new Date(s._ts).getHours();
+    var f=(h>=5&&h<12)?'manha':(h>=12&&h<18)?'tarde':'noite';
+    faixas[f].n++;faixas[f].views+=Number(s.story_views)||0;faixas[f].eng+=Number(s.engajamento)||0;
+  });
+  var fArr=Object.keys(faixas).map(function(k){var f=faixas[k];return {k:k,lbl:f.lbl,n:f.n,vm:f.n?Math.round(f.views/f.n):0,em:f.n?+(f.eng/f.n).toFixed(2):0};});
+  var bestF=fArr.slice().sort(function(a,b){return b.em-a.em;})[0];
+  var horarios='<div class="cb" style="margin-bottom:18px;"><div class="cb-hd"><span class="cb-title"><i class="ti ti-clock" style="margin-right:6px;color:var(--cyan);"></i>Melhor Horário</span></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px 16px;">'+
+    fArr.map(function(f){
+      var best=bestF&&f.k===bestF.k&&f.n>0;
+      return '<div style="background:var(--bg);border:1px solid '+(best?'var(--purple)':'var(--border)')+';border-radius:10px;padding:14px;position:relative;">'+
+        (best?'<span style="position:absolute;top:8px;right:10px;font-size:10px;color:var(--purple);font-weight:800;"><i class="ti ti-trophy"></i> MELHOR</span>':'')+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">'+f.lbl+'</div>'+
+        '<div style="font-size:20px;font-weight:800;color:var(--white);">'+stPct(f.em)+'<span style="font-size:11px;color:var(--muted);font-weight:400;"> engaj.</span></div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+f.n+' stories · '+stNum(f.vm)+' views médio</div>'+
+      '</div>';
+    }).join('')+'</div></div>';
+  // Curva de retenção
+  var retencao='<div class="cb"><div class="cb-hd"><span class="cb-title"><i class="ti ti-chart-line" style="margin-right:6px;color:var(--green);"></i>Curva Média de Retenção por Posição na Sequência</span></div>'+
+    '<div style="padding:16px;"><canvas id="st-ret-canvas" width="760" height="230" style="width:100%;max-width:760px;"></canvas></div></div>';
+  p.innerHTML='<div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;">'+perBtns+'</div>'+tbl+horarios+retencao;
+  setTimeout(stDrawRetencao,30);
+}
+function stDrawRetencao(){
+  var cv=document.getElementById('st-ret-canvas');if(!cv)return;
+  var ctx=cv.getContext('2d');
+  var arr=stCapArr(_stPeriodo);
+  // agrupa por dia, ordena por horário → posição na sequência
+  var byDay={};
+  arr.forEach(function(s){
+    var d=new Date(s._ts);
+    var key=d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    (byDay[key]=byDay[key]||[]).push(s);
+  });
+  var maxPos=8,sums=[],cnts=[];
+  for(var i=0;i<maxPos;i++){sums.push(0);cnts.push(0);}
+  Object.keys(byDay).forEach(function(k){
+    var seq=byDay[k].sort(function(a,b){return a._ts-b._ts;});
+    var first=Number(seq[0].story_views)||0;
+    if(!first)return;
+    seq.slice(0,maxPos).forEach(function(s,i){
+      sums[i]+=Math.min(150,(Number(s.story_views)||0)/first*100);cnts[i]++;
+    });
+  });
+  var pts=[];
+  for(var j=0;j<maxPos;j++){if(cnts[j])pts.push({pos:j+1,ret:sums[j]/cnts[j]});}
+  var W=cv.width,H=cv.height,padL=44,padB=28,padT=16,padR=14;
+  ctx.clearRect(0,0,W,H);
+  if(pts.length<2){
+    ctx.fillStyle='rgba(255,255,255,0.4)';ctx.font='13px Inter,sans-serif';
+    ctx.fillText('Dados insuficientes — precisa de sequências com 2+ stories no mesmo dia.',padL,H/2);
+    return;
+  }
+  var maxY=Math.max(100,Math.ceil(Math.max.apply(null,pts.map(function(p){return p.ret;}))/10)*10);
+  var x=function(pos){return padL+(pos-1)/(maxPos-1)*(W-padL-padR);};
+  var y=function(v){return padT+(1-v/maxY)*(H-padT-padB);};
+  ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='10px Inter,sans-serif';ctx.lineWidth=1;
+  [0,25,50,75,100].forEach(function(v){
+    if(v>maxY)return;
+    ctx.beginPath();ctx.moveTo(padL,y(v));ctx.lineTo(W-padR,y(v));ctx.stroke();
+    ctx.fillText(v+'%',8,y(v)+3);
+  });
+  for(var pz=1;pz<=maxPos;pz++){ctx.fillText('#'+pz,x(pz)-6,H-8);}
+  ctx.beginPath();ctx.strokeStyle='#7b2fff';ctx.lineWidth=2.5;
+  pts.forEach(function(pt,i){var px=x(pt.pos),py=y(pt.ret);if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
+  ctx.stroke();
+  var grad=ctx.createLinearGradient(0,padT,0,H-padB);
+  grad.addColorStop(0,'rgba(123,47,255,0.25)');grad.addColorStop(1,'rgba(123,47,255,0)');
+  ctx.lineTo(x(pts[pts.length-1].pos),y(0));ctx.lineTo(x(pts[0].pos),y(0));ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  pts.forEach(function(pt){
+    ctx.beginPath();ctx.arc(x(pt.pos),y(pt.ret),4,0,Math.PI*2);ctx.fillStyle='#7b2fff';ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 10px Inter,sans-serif';
+    ctx.fillText(Math.round(pt.ret)+'%',x(pt.pos)-10,y(pt.ret)-9);
+  });
+}
+
+// ============================================================
+// ===== STORIES LAB — Aba 2: Ideias & Ganchos =====
+// ============================================================
+function stRenderIdeias(){
+  var p=document.getElementById('st-pane-ideias');if(!p)return;
+  var gks=Object.keys(_stGanchos).sort(function(a,b){return (_stGanchos[b].criadoEm||0)-(_stGanchos[a].criadoEm||0);});
+  var ganchosHtml='<div class="cb" style="height:fit-content;"><div class="cb-hd"><span class="cb-title"><i class="ti ti-fishing" style="margin-right:6px;color:var(--amber);"></i>Banco de Ganchos</span><span class="badge b-purple">'+gks.length+'</span></div>'+
+    '<div style="padding:12px 16px;">'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
+      '<input class="f-input" id="st-novo-gancho" placeholder="Novo gancho..." style="flex:1;margin-bottom:0;font-size:12.5px;" onkeydown="if(event.key===\'Enter\')stAddGancho()">'+
+      '<button class="btn btn-primary" onclick="stAddGancho()" style="padding:8px 14px;"><i class="ti ti-plus"></i></button>'+
+    '</div>'+
+    '<div style="max-height:520px;overflow-y:auto;">'+
+    (gks.length?gks.map(function(k){
+      return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;">'+
+        '<i class="ti ti-quote" style="color:var(--amber);font-size:13px;margin-top:2px;flex-shrink:0;"></i>'+
+        '<span style="flex:1;font-size:12.5px;color:var(--white);line-height:1.45;">'+stEsc(_stGanchos[k].texto)+'</span>'+
+        '<button onclick="stDelGancho(\''+k+'\')" title="Excluir" style="background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px;flex-shrink:0;"><i class="ti ti-x"></i></button>'+
+      '</div>';
+    }).join(''):'<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">Nenhum gancho ainda.</div>')+
+    '</div></div></div>';
+  var estOpts='<option value="auto">Deixar a IA escolher</option>'+_stEstilos.map(function(e){return '<option value="'+e+'">'+e+'</option>';}).join('');
+  var genHtml='<div>'+
+    '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><span class="cb-title"><i class="ti ti-sparkles" style="margin-right:6px;color:var(--purple);"></i>Gerador de Sequência de Stories</span></div>'+
+    '<div style="padding:16px;">'+
+      '<label class="f-label">Tema da sequência</label>'+
+      '<input class="f-input" id="st-seq-tema" placeholder="Ex: por que promoção agressiva quebra o delivery" style="margin-bottom:12px;">'+
+      '<label class="f-label">Estilo</label>'+
+      '<div style="display:flex;gap:10px;align-items:center;">'+
+        '<select class="f-input" id="st-seq-estilo" style="margin-bottom:0;flex:1;">'+estOpts+'</select>'+
+        '<button class="btn btn-primary" id="st-seq-btn" onclick="stGerarSeq()" style="white-space:nowrap;"><i class="ti ti-sparkles"></i> Gerar sequência</button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:8px;">A IA recebe o desempenho médio por estilo do Painel para escolher formato e interação.</div>'+
+    '</div></div>'+
+    '<div id="st-seq-result"></div>'+
+  '</div>';
+  p.innerHTML='<div style="display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start;">'+ganchosHtml+genHtml+'</div>';
+  if(_stLastSeq)stRenderSeqResult();
+}
+function stAddGancho(){
+  var inp=document.getElementById('st-novo-gancho');
+  if(!inp||!inp.value.trim()){showSheetToast('Digite o texto do gancho',true);return;}
+  fbPush('stories/ganchos',{texto:inp.value.trim(),criadoEm:Date.now()});
+  inp.value='';
+  showSheetToast('Gancho adicionado!',false);
+}
+function stDelGancho(k){
+  if(!confirm('Excluir este gancho?'))return;
+  if(fbDb||initFirebase())fbDb.ref('stories/ganchos/'+k).remove();
+}
+async function stGerarSeq(){
+  var tema=(document.getElementById('st-seq-tema')||{value:''}).value.trim();
+  var estilo=(document.getElementById('st-seq-estilo')||{value:'auto'}).value;
+  if(!tema){showSheetToast('Digite o tema da sequência',true);return;}
+  var btn=document.getElementById('st-seq-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Gerando...';}
+  try{
+    var stats=stStatsPorEstilo(stCapArr(90));
+    var user=JSON.stringify({tema:tema,estilo_desejado:estilo==='auto'?'deixar a IA escolher com base nos dados':estilo,desempenho_medio_por_estilo:stats});
+    var txt=await stClaude(_stSysSeq,user,3000);
+    var j=stParseJSON(txt);
+    if(!j||!j.stories||!j.stories.length)throw new Error('resposta da IA fora do formato esperado');
+    _stLastSeq=j;
+    stRenderSeqResult();
+  }catch(e){showSheetToast('Erro ao gerar sequência: '+e.message,true);}
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> Gerar sequência';}
+}
+function stRenderSeqResult(){
+  var div=document.getElementById('st-seq-result');if(!div||!_stLastSeq)return;
+  var j=_stLastSeq;
+  var cards=j.stories.map(function(s,i){
+    return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'+
+        '<span style="width:24px;height:24px;border-radius:50%;background:var(--purple);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+(i+1)+'</span>'+
+        '<span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--cyan);">'+stEsc(s.formato||'')+'</span>'+
+      '</div>'+
+      '<div style="font-size:13px;color:var(--white);line-height:1.55;margin-bottom:'+(s.interacao?'8px':'0')+';">'+stEsc(s.conteudo||'')+'</div>'+
+      (s.interacao?'<div style="font-size:12px;color:var(--amber);"><i class="ti ti-hand-click"></i> '+stEsc(s.interacao)+'</div>':'')+
+    '</div>';
+  }).join('');
+  div.innerHTML='<div class="cb"><div class="cb-hd"><span class="cb-title">'+stEsc(j.titulo||'Sequência')+'</span>'+stEstiloBadge(j.estilo)+'</div>'+
+    '<div style="padding:16px;">'+cards+
+    '<div style="display:flex;gap:10px;align-items:flex-end;margin-top:14px;flex-wrap:wrap;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;">'+
+      '<div><label class="f-label">Data</label><input type="date" class="f-input" id="st-seq-data" value="'+stTodayISO()+'" style="margin-bottom:0;"></div>'+
+      '<div><label class="f-label">Slot</label><select class="f-input" id="st-seq-slot" style="margin-bottom:0;"><option value="manha">Manhã</option><option value="tarde">Tarde</option><option value="noite">Noite</option></select></div>'+
+      '<button class="btn btn-primary" onclick="stSeqEnviarCal()"><i class="ti ti-calendar-plus"></i> Enviar para Calendário</button>'+
+    '</div></div></div>';
+}
+function stSeqEnviarCal(){
+  if(!_stLastSeq){showSheetToast('Gere uma sequência primeiro',true);return;}
+  var data=(document.getElementById('st-seq-data')||{value:''}).value;
+  var slot=(document.getElementById('st-seq-slot')||{value:'manha'}).value;
+  if(!data){showSheetToast('Escolha a data',true);return;}
+  fbPush('stories/calendario',{
+    data:data,slot:slot,
+    estilo:_stLastSeq.estilo||'',titulo:_stLastSeq.titulo||'Sequência de stories',
+    roteiro:JSON.stringify(_stLastSeq.stories),
+    status:'planejado',postadoEm:null,storiesVinculados:null,experimentoId:'',criadoEm:Date.now()
+  });
+  showSheetToast('Sequência enviada para o Calendário ('+data+' · '+_stSlotLbl[slot]+')',false);
+}
+
+// ============================================================
+// ===== STORIES LAB — Aba 3: Calendário =====
+// ============================================================
+function stCalNav(delta){_stCalOff+=delta;stRenderCal();}
+function stRenderCal(){
+  var p=document.getElementById('st-pane-calendario');if(!p)return;
+  var start=new Date();start.setHours(0,0,0,0);
+  var dow=(start.getDay()+6)%7;
+  start.setDate(start.getDate()-dow+_stCalOff*7);
+  var days=[],dNames=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  for(var i=0;i<7;i++){
+    var d=new Date(start.getTime()+i*86400000);
+    days.push({iso:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),lbl:dNames[i]+' '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),hoje:d.toDateString()===new Date().toDateString()});
+  }
+  var itensPor=function(iso,slot){
+    return Object.keys(_stCal).filter(function(k){return _stCal[k]&&_stCal[k].data===iso&&_stCal[k].slot===slot;});
+  };
+  var statusBadge=function(st){
+    var m={planejado:['var(--muted)','rgba(255,255,255,0.06)','planejado'],postado:['var(--amber)','rgba(245,158,11,0.12)','postado'],analisado:['var(--green)','rgba(34,197,94,0.12)','analisado']};
+    var s=m[st]||m.planejado;
+    return '<span style="font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:8px;background:'+s[1]+';color:'+s[0]+';">'+s[2]+'</span>';
+  };
+  var cardHtml=function(k){
+    var it=_stCal[k];
+    var extra='';
+    if(it.status==='planejado'){
+      extra='<button onclick="event.stopPropagation();stCalPostado(\''+k+'\')" style="margin-top:6px;width:100%;padding:4px;font-size:10px;font-weight:700;border-radius:6px;border:1px solid rgba(245,158,11,0.4);background:rgba(245,158,11,0.1);color:var(--amber);cursor:pointer;">Marquei como postado</button>';
+    }else if(it.status==='analisado'&&it.storiesVinculados){
+      var vs=(it.storiesVinculados||[]).map(function(ck){return _stCap[ck];}).filter(Boolean);
+      if(vs.length){
+        var vm=Math.round(vs.reduce(function(a,s){return a+(Number(s.story_views)||0);},0)/vs.length);
+        var rm=+(vs.reduce(function(a,s){return a+(Number(s.taxaResposta)||0);},0)/vs.length).toFixed(2);
+        var sm=+(vs.reduce(function(a,s){return a+(Number(s.taxaSaida)||0);},0)/vs.length).toFixed(2);
+        extra='<div style="margin-top:6px;font-size:10px;color:var(--muted);line-height:1.5;">'+vs.length+' stories · '+stNum(vm)+' views<br>resp '+stPct(rm)+' · saída '+stPct(sm)+'</div>';
+      }
+    }
+    return '<div onclick="stCalDetalhe(\''+k+'\')" style="background:var(--bg);border:1px solid var(--border);border-left:3px solid '+(_stEstiloCores[it.estilo]||'var(--purple)')+';border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;">'+
+      '<div style="font-size:11.5px;font-weight:600;color:var(--white);line-height:1.35;margin-bottom:5px;">'+stEsc(it.titulo||'(sem título)')+'</div>'+
+      '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">'+stEstiloBadge(it.estilo)+statusBadge(it.status)+'</div>'+extra+
+    '</div>';
+  };
+  var grid='<div style="display:grid;grid-template-columns:70px repeat(7,1fr);gap:6px;min-width:900px;">'+
+    '<div></div>'+days.map(function(d){return '<div style="text-align:center;font-size:11.5px;font-weight:700;color:'+(d.hoje?'var(--purple)':'var(--muted)')+';padding:6px 0;letter-spacing:0.5px;">'+d.lbl+(d.hoje?' · HOJE':'')+'</div>';}).join('')+
+    _stSlots.map(function(slot){
+      return '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:flex-start;padding-top:10px;">'+_stSlotLbl[slot]+'</div>'+
+      days.map(function(d){
+        var ks=itensPor(d.iso,slot);
+        return '<div onclick="stCalNovo(\''+d.iso+'\',\''+slot+'\')" style="min-height:78px;background:'+(d.hoje?'rgba(123,47,255,0.05)':'rgba(255,255,255,0.015)')+';border:1px dashed var(--border);border-radius:8px;padding:6px;cursor:pointer;">'+
+          ks.map(cardHtml).join('')+
+          (ks.length?'':'<div style="color:rgba(255,255,255,0.15);font-size:16px;text-align:center;padding-top:22px;"><i class="ti ti-plus"></i></div>')+
+        '</div>';
+      }).join('');
+    }).join('')+
+  '</div>';
+  p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'+
+    '<div style="display:flex;gap:8px;align-items:center;">'+
+      '<button class="btn btn-outline" onclick="stCalNav(-1)" style="padding:5px 10px;font-size:12px;"><i class="ti ti-chevron-left"></i></button>'+
+      '<span style="font-size:13px;font-weight:700;color:var(--white);">'+(_stCalOff===0?'Esta semana':(_stCalOff>0?'+'+_stCalOff+' semana(s)':_stCalOff+' semana(s)'))+'</span>'+
+      '<button class="btn btn-outline" onclick="stCalNav(1)" style="padding:5px 10px;font-size:12px;"><i class="ti ti-chevron-right"></i></button>'+
+      (_stCalOff!==0?'<button class="btn btn-outline" onclick="_stCalOff=0;stRenderCal()" style="padding:5px 10px;font-size:11px;">Hoje</button>':'')+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--muted);">Clique numa célula vazia para planejar · itens postados são vinculados aos stories capturados na próxima sync (janela de 3h)</div>'+
+  '</div>'+
+  '<div style="overflow-x:auto;">'+grid+'</div>';
+}
+function stCalNovo(iso,slot){
+  var estOpts=_stEstilos.map(function(e){return '<option value="'+e+'">'+e+'</option>';}).join('');
+  stModal('<div style="font-size:16px;font-weight:800;color:var(--white);margin-bottom:4px;">Planejar Stories</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;">'+iso.split('-').reverse().join('/')+' · '+_stSlotLbl[slot]+'</div>'+
+    '<input type="hidden" id="st-cal-data" value="'+iso+'"><input type="hidden" id="st-cal-slot" value="'+slot+'">'+
+    '<label class="f-label">Título</label><input class="f-input" id="st-cal-titulo" placeholder="Ex: Bastidor do diagnóstico de cliente" style="margin-bottom:12px;">'+
+    '<label class="f-label">Estilo</label><select class="f-input" id="st-cal-estilo" style="margin-bottom:12px;">'+estOpts+'</select>'+
+    '<label class="f-label">Roteiro (opcional)</label><textarea class="f-input" id="st-cal-roteiro" rows="4" placeholder="O que vai postar..." style="margin-bottom:16px;resize:vertical;"></textarea>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+      '<button class="btn btn-outline" onclick="stCloseModal()">Cancelar</button>'+
+      '<button class="btn btn-primary" onclick="stCalSalvar()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>');
+}
+function stCalSalvar(){
+  var data=(document.getElementById('st-cal-data')||{value:''}).value;
+  var slot=(document.getElementById('st-cal-slot')||{value:''}).value;
+  var titulo=(document.getElementById('st-cal-titulo')||{value:''}).value.trim();
+  var estilo=(document.getElementById('st-cal-estilo')||{value:''}).value;
+  var roteiro=(document.getElementById('st-cal-roteiro')||{value:''}).value.trim();
+  if(!titulo){showSheetToast('Digite um título',true);return;}
+  fbPush('stories/calendario',{data:data,slot:slot,estilo:estilo,titulo:titulo,roteiro:roteiro,status:'planejado',postadoEm:null,storiesVinculados:null,experimentoId:'',criadoEm:Date.now()});
+  stCloseModal();
+  showSheetToast('Item criado no calendário!',false);
+  stRenderCal();
+}
+function stCalPostado(k){
+  if(!_stCal[k])return;
+  if(fbDb||initFirebase())fbDb.ref('stories/calendario/'+k).update({status:'postado',postadoEm:Date.now()});
+  _stCal[k].status='postado';_stCal[k].postadoEm=Date.now();
+  showSheetToast('Marcado como postado — os stories capturados nas próximas 3h serão vinculados automaticamente.',false);
+  stRenderCal();
+}
+function stCalDetalhe(k){
+  var it=_stCal[k];if(!it)return;
+  var roteiroHtml='';
+  if(it.roteiro){
+    var seq=null;try{seq=JSON.parse(it.roteiro);}catch(e){}
+    if(seq&&Array.isArray(seq)){
+      roteiroHtml=seq.map(function(s,i){
+        return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;">'+
+          '<div style="font-size:10.5px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">#'+(i+1)+' · '+stEsc(s.formato||'')+'</div>'+
+          '<div style="font-size:12.5px;color:var(--white);line-height:1.5;">'+stEsc(s.conteudo||'')+'</div>'+
+          (s.interacao?'<div style="font-size:11.5px;color:var(--amber);margin-top:5px;"><i class="ti ti-hand-click"></i> '+stEsc(s.interacao)+'</div>':'')+
+        '</div>';
+      }).join('');
+    }else{
+      roteiroHtml='<div style="font-size:12.5px;color:var(--white);line-height:1.6;white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">'+stEsc(it.roteiro)+'</div>';
+    }
+  }
+  var metricas='';
+  if(it.status==='analisado'&&it.storiesVinculados){
+    var vs=(it.storiesVinculados||[]).map(function(ck){return _stCap[ck];}).filter(Boolean);
+    if(vs.length){
+      var vm=Math.round(vs.reduce(function(a,s){return a+(Number(s.story_views)||0);},0)/vs.length);
+      var rm=+(vs.reduce(function(a,s){return a+(Number(s.taxaResposta)||0);},0)/vs.length).toFixed(2);
+      var sm=+(vs.reduce(function(a,s){return a+(Number(s.taxaSaida)||0);},0)/vs.length).toFixed(2);
+      var em=+(vs.reduce(function(a,s){return a+(Number(s.engajamento)||0);},0)/vs.length).toFixed(2);
+      metricas='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0;">'+
+        [['Stories',vs.length],['Views médio',stNum(vm)],['Engajamento',stPct(em)],['Taxa resposta',stPct(rm)]].map(function(kv){
+          return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:16px;font-weight:800;color:var(--white);">'+kv[1]+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px;">'+kv[0]+'</div></div>';
+        }).join('')+
+      '</div><div style="font-size:11px;color:'+(sm>15?'var(--red)':'var(--muted)')+';">Taxa de saída média: '+stPct(sm)+'</div>';
+    }
+  }
+  stModal('<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'+
+    '<div style="font-size:16px;font-weight:800;color:var(--white);">'+stEsc(it.titulo||'')+'</div>'+
+    '<button onclick="stCloseModal()" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;"><i class="ti ti-x"></i></button></div>'+
+    '<div style="display:flex;gap:6px;align-items:center;margin-bottom:14px;">'+stEstiloBadge(it.estilo)+'<span style="font-size:11.5px;color:var(--muted);">'+(it.data||'').split('-').reverse().join('/')+' · '+(_stSlotLbl[it.slot]||it.slot)+' · '+stEsc(it.status||'')+'</span></div>'+
+    metricas+roteiroHtml+
+    '<div style="display:flex;gap:10px;justify-content:space-between;margin-top:16px;">'+
+      '<button class="btn btn-outline" style="color:var(--red);border-color:rgba(239,68,68,0.4);" onclick="stCalExcluir(\''+k+'\')"><i class="ti ti-trash"></i> Excluir</button>'+
+      (it.status==='planejado'?'<button class="btn btn-primary" onclick="stCalPostado(\''+k+'\');stCloseModal();"><i class="ti ti-check"></i> Marquei como postado</button>':'')+
+    '</div>');
+}
+function stCalExcluir(k){
+  if(!confirm('Excluir este item do calendário?'))return;
+  if(fbDb||initFirebase())fbDb.ref('stories/calendario/'+k).remove();
+  stCloseModal();
+  showSheetToast('Item excluído.',false);
+}
+// ===== STORIES LAB — fim das abas 1-3 =====
+
 </script>
