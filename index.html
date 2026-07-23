@@ -25162,7 +25162,11 @@ function igRenderCalendario(){
       '</div>';
     }).join(''):'<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Nenhum post agendado para este mês</div>')+
   '</div></div>';
-  p.innerHTML=cal+lista;
+  var briefHtml='<div id="_car-daily-banner"></div>';
+  p.innerHTML=briefHtml+cal+lista;
+  // Render daily brief if loaded
+  var bp=document.getElementById('_car-daily-banner');
+  if(_carDailyBrief&&bp)_carRenderDailyBanner(bp);
 }
 
 function igModalPost(id){
@@ -25732,6 +25736,58 @@ async function carInitPage(){
   // Load saved OpenAI key
   var savedKey=localStorage.getItem('audens_openai_key');
   if(savedKey){var ki=document.getElementById('car-img-key');if(ki){ki.value=savedKey;var ks=document.getElementById('car-key-status');if(ks)ks.style.display='block';}}
+  // Load daily brief from Firebase (image style + story/reels ideas)
+  _carLoadDailyBrief();
+}
+
+// ---- CARROSSEL: DAILY BRIEF (Firebase integration) ----
+var _carDailyBrief=null;
+async function _carLoadDailyBrief(){
+  try{
+    var today=new Date().toISOString().slice(0,10);
+    var fbUrl='https://audens-crm-default-rtdb.firebaseio.com/audens/daily/'+today+'.json';
+    var r=await fetch(fbUrl);
+    if(!r.ok)return;
+    var data=await r.json();
+    if(!data)return;
+    _carDailyBrief=data;
+    // Apply improved image style to textarea (if not user-edited)
+    if(data.imageStyle){
+      var el=document.getElementById('car-img-style');
+      if(el&&el.dataset.userEdited!=='1'){
+        el.value=data.imageStyle;
+        var badge=document.getElementById('car-img-style-badge');
+        if(badge)badge.style.display='inline';
+      }
+    }
+    // Show banner in calendario tab if already rendered
+    var bp=document.getElementById('_car-daily-banner');
+    if(bp)_carRenderDailyBanner(bp);
+  }catch(e){console.warn('[daily brief]',e);}
+}
+function _carRenderDailyBanner(container){
+  var d=_carDailyBrief;
+  if(!d||!container)return;
+  var stories=(d.stories||[]).slice(0,3);
+  var reels=d.reels||'';
+  var updAt=d.updatedAt?new Date(d.updatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
+  container.innerHTML=
+    '<div style="background:linear-gradient(135deg,rgba(225,48,108,0.12),rgba(123,47,255,0.12));border:1px solid rgba(225,48,108,0.25);border-radius:12px;padding:16px 18px;margin-bottom:20px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--white);"><i class="ti ti-sparkles" style="color:#e1306c;margin-right:6px;"></i>Briefing do Dia</div>'+
+      (updAt?'<div style="font-size:10px;color:var(--muted);">Atualizado às '+updAt+'</div>':'')+
+    '</div>'+
+    (stories.length?
+      '<div style="margin-bottom:10px;">'+
+        '<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;"><i class="ti ti-circle-filled" style="font-size:8px;color:#e1306c;"></i> Stories de hoje</div>'+
+        stories.map(function(s,i){return '<div style="font-size:12px;color:var(--white);padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+          '<span style="color:#e1306c;font-weight:700;margin-right:6px;">'+(i+1)+'.</span>'+s+'</div>';}).join('')+
+      '</div>':'')+(reels?
+      '<div>'+
+        '<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;"><i class="ti ti-video" style="font-size:11px;color:var(--purple3);"></i> Ideia Reels</div>'+
+        '<div style="font-size:12px;color:var(--white);">'+reels+'</div>'+
+      '</div>':'')+
+    '</div>';
 }
 
 // ---- CARROSSEL: IMAGE IA ----
@@ -25748,7 +25804,8 @@ function carUpdateEstimate(){
 
 async function _carBuildImgPrompt(slide,idx){
   var conceito=(slide.title||'')+(slide.body?'. '+slide.body:'');
-  var suffix='Dark cinematic editorial food photography with realistic warm lighting, natural food textures, subtle steam and an authentic burger restaurant atmosphere. Vertical 2:3 composition designed for an Instagram carousel, with the storytelling subject placed dynamically according to the scene and a clean, darker area in the lower portion for graphic text overlay. Ultra-realistic, visually credible, natural imperfections, no text, no logos, no watermark.';
+  var _styleEl=document.getElementById('car-img-style');
+  var suffix=(_styleEl&&_styleEl.value.trim())||'Dark cinematic editorial food photography with realistic warm lighting, natural food textures, subtle steam and an authentic burger restaurant atmosphere. Vertical 2:3 composition designed for an Instagram carousel, with the storytelling subject placed dynamically according to the scene and a clean, darker area in the lower portion for graphic text overlay. Ultra-realistic, visually credible, natural imperfections, no text, no logos, no watermark.';
   var ck=localStorage.getItem('audens_claude_key');
   if(!ck)return 'Cinematic food photography for a burger delivery Instagram carousel. Scene concept: "'+conceito+'". Dark editorial, warm dramatic lighting, food service environment. '+suffix;
   var total=_carState.slides.length,slideNum=(idx||0)+1;
@@ -25877,7 +25934,7 @@ function renderCarrossel(){
                 '<div style="flex:1;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Qualidade</label><select id="car-img-quality" onchange="carUpdateEstimate()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:9px 10px;outline:none;"><option value="low">Baixa</option><option value="medium" selected>Média</option><option value="high">Alta</option></select></div>'+
               '</div>'+
               '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Chave de API OpenAI</label><div style="display:flex;gap:8px;"><input type="password" id="car-img-key" placeholder="sk-..." oninput="localStorage.setItem(\'audens_openai_key\',this.value);var ks2=document.getElementById(\'car-key-status\');if(ks2)ks2.style.display=this.value?\'block\':\'none\';" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"><button onclick="var k=document.getElementById(\'car-img-key\');localStorage.removeItem(\'audens_openai_key\');k.value=\'\';carToast(\'Chave removida\');" title="Limpar chave salva" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:var(--red);padding:0 12px;cursor:pointer;font-size:14px;flex-shrink:0;"><i class=\"ti ti-trash\"></i></button></div><div id="car-key-status" style="font-size:10px;color:var(--green);margin-top:4px;display:none;"><i class="ti ti-device-floppy"></i> Chave salva no navegador</div></div>'+
-              '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Estilo visual (aplicado a todos)</label><textarea id="car-img-style" style="width:100%;min-height:90px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;">Fotografia cinematográfica e sombria para hamburgueria gourmet: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista. A imagem NÃO pode conter nenhum texto, letra, número ou logotipo.</textarea></div>'+
+              '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Estilo visual <span id="car-img-style-badge" style="font-size:9px;background:rgba(225,48,108,0.15);color:#e1306c;padding:1px 6px;border-radius:4px;display:none;">IA atualizado hoje</span></label><textarea id="car-img-style" oninput="this.dataset.userEdited=\'1\';document.getElementById(\'car-img-style-badge\').style.display=\'none\';" style="width:100%;min-height:90px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;">Fotografia cinematográfica e sombria para hamburgueria gourmet: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista. A imagem NÃO pode conter nenhum texto, letra, número ou logotipo.</textarea></div>'+
               '<button id="car-img-all-btn" onclick="carGerarTodasImagens()" style="display:block;width:100%;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Gerar imagens p/ todos os slides</button>'+
               '<div id="car-img-status" style="font-size:11.5px;margin-top:10px;line-height:1.5;min-height:16px;"></div>'+
               '<div id="car-img-est" style="font-size:10.5px;color:var(--muted);margin-top:6px;line-height:1.5;"></div>'+
