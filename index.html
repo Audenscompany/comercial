@@ -26617,6 +26617,48 @@ async function _storiesAutoSync(force){
 }
 function stSyncNow(){_storiesAutoSync(true);}
 
+// Configuração do coletor Windsor (chave própria do Stories Lab; se vazia, usa a do módulo Instagram)
+function stCfgAbrir(){
+  var herdada=(typeof _igConfig!=='undefined'&&_igConfig.windsorKey)||localStorage.getItem('audens_windsor_key')||'';
+  stModal('<div style="font-size:16px;font-weight:800;color:var(--white);margin-bottom:4px;"><i class="ti ti-settings" style="color:var(--purple);"></i> Coletor Windsor — Stories</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;">O coletor roda automaticamente a cada 15 min com o CRM aberto. Se deixar o campo vazio, usa a chave já configurada no módulo Instagram'+(herdada?' <span style="color:var(--green);">(detectada ✓)</span>':' <span style="color:var(--red);">(nenhuma detectada)</span>')+'.</div>'+
+    '<label class="f-label">Windsor API Key</label>'+
+    '<input class="f-input" id="st-cfg-wkey" type="password" value="'+stEsc(_stCfg.windsorKey||'')+'" placeholder="'+(herdada?'Usando a chave do módulo Instagram':'Chave da API Windsor.ai...')+'" style="margin-bottom:14px;font-family:monospace;font-size:11px;">'+
+    '<div id="st-cfg-result" style="font-size:12px;margin-bottom:14px;min-height:16px;"></div>'+
+    '<div style="display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;">'+
+      '<button class="btn btn-outline" id="st-cfg-test-btn" onclick="stCfgTestar()"><i class="ti ti-plug"></i> Testar conexão</button>'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button class="btn btn-outline" onclick="stCloseModal()">Cancelar</button>'+
+        '<button class="btn btn-primary" onclick="stCfgSalvar()"><i class="ti ti-check"></i> Salvar</button>'+
+      '</div></div>');
+}
+function stCfgSalvar(){
+  var key=(document.getElementById('st-cfg-wkey')||{value:''}).value.trim();
+  _stCfg.windsorKey=key;
+  if(fbDb||initFirebase())fbDb.ref('stories/config').update({windsorKey:key});
+  stCloseModal();
+  showSheetToast(key?'Chave Windsor do Stories Lab salva.':'Campo limpo — o Stories Lab usará a chave do módulo Instagram.',false);
+}
+async function stCfgTestar(){
+  var key=(document.getElementById('st-cfg-wkey')||{value:''}).value.trim()||(typeof _igConfig!=='undefined'&&_igConfig.windsorKey)||localStorage.getItem('audens_windsor_key')||'';
+  var res=document.getElementById('st-cfg-result');
+  var btn=document.getElementById('st-cfg-test-btn');
+  if(!key){if(res)res.innerHTML='<span style="color:var(--red);">Nenhuma chave para testar.</span>';return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Testando...';}
+  if(res)res.innerHTML='<span style="color:var(--muted);">Consultando Windsor...</span>';
+  try{
+    var url='https://connectors.windsor.ai/instagram?api_key='+encodeURIComponent(key)+'&date_preset=last_7d&fields=story_id,story_timestamp,story_views';
+    var r=await fetch(url);
+    var raw=await r.json();
+    if(raw&&raw.error)throw new Error(raw.error.message||JSON.stringify(raw.error));
+    var rows=Array.isArray(raw)?raw:(raw.data||raw.result||raw.results||[]);
+    if(res)res.innerHTML='<span style="color:var(--green);"><i class="ti ti-circle-check"></i> Conexão OK — '+rows.length+' stories nos últimos 7 dias.</span>';
+  }catch(e){
+    if(res)res.innerHTML='<span style="color:var(--red);"><i class="ti ti-alert-triangle"></i> Falhou: '+stEsc(e.message)+'</span>';
+  }
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-plug"></i> Testar conexão';}
+}
+
 // Classificação de estilo com Claude (assíncrona, não bloqueante)
 var _stClassBusy=false;
 async function stClassificarEstilos(){
@@ -26680,6 +26722,7 @@ function renderStories(){
     '<div style="display:flex;align-items:center;gap:10px;">'+
       '<span id="st-sync-status" style="font-size:11px;color:var(--muted);"></span>'+
       '<button class="btn btn-outline" onclick="stSyncNow()" style="font-size:12px;"><i class="ti ti-refresh"></i> Sincronizar agora</button>'+
+      '<button class="btn btn-outline" onclick="stCfgAbrir()" title="Configuração do coletor Windsor" style="font-size:12px;padding-left:10px;padding-right:10px;"><i class="ti ti-settings"></i></button>'+
     '</div>'+
   '</div>'+
   '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:22px;overflow-x:auto;">'+
