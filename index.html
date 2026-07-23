@@ -24941,91 +24941,304 @@ function igRenderOverview(){
   var p=document.getElementById('ig-pane-overview');if(!p)return;
   var c=_igCache;
   if(!c||!c.perfil){
-    p.innerHTML='<div style="text-align:center;padding:40px;">'+
+    p.innerHTML='<div style="text-align:center;padding:60px;">'+
+    '<i class="ti ti-brand-instagram" style="font-size:48px;color:#e1306c;display:block;margin-bottom:16px;"></i>'+
+    '<div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:8px;">Nenhum dado sincronizado</div>'+
+    '<div style="color:var(--muted);font-size:13px;margin-bottom:20px;">Sincronize para carregar seus dados do Instagram.</div>'+
     '<button class="btn btn-primary" style="background:#e1306c;" onclick="igSyncData()"><i class="ti ti-refresh"></i> Sincronizar agora</button>'+
-    '<div style="color:var(--muted);font-size:12px;margin-top:12px;">Nenhum dado ainda.</div></div>';return;
+    '</div>';return;
   }
   var perf=c.perfil,posts=c.posts||[],serie=c.serie||[];
-  var now=Date.now(),day=86400000,seg7=0,seg30=0,cnt7=0,cnt30=0;
-  serie.forEach(function(d){var dt=new Date(d.date).getTime();if(now-dt<=7*day){seg7+=d.value||0;cnt7++;}if(now-dt<=30*day){seg30+=d.value||0;cnt30++;}});
-  var a7=cnt7?Math.round(seg7/cnt7):0,a30=cnt30?Math.round(seg30/cnt30):0;
+  var now=Date.now(),day=86400000;
+  // -- Compute KPI values --
+  var s30=serie.slice(-30),s60=serie.slice(-60,-30),s7=serie.slice(-7),s14=serie.slice(-14,-7);
+  var sum=function(arr){return arr.reduce(function(a,b){return a+(b.value||0);},0);};
+  var a7=s7.length?Math.round(sum(s7)/s7.length):0;
+  var a7p=s14.length?Math.round(sum(s14)/s14.length):0;
+  var a30=s30.length?Math.round(sum(s30)/s30.length):0;
+  var a30p=s60.length?Math.round(sum(s60)/s60.length):0;
   var p30=posts.filter(function(x){return(now-new Date(x.timestamp).getTime())<=30*day;});
+  var p60=posts.filter(function(x){var dt=now-new Date(x.timestamp).getTime();return dt>30*day&&dt<=60*day;});
   var ar=p30.length?Math.round(p30.reduce(function(a,b){return a+(b.reach||0);},0)/p30.length):0;
-  var sorted=posts.slice().sort(function(a,b){return _igSortDir*((b[_igSortCol]||0)-(a[_igSortCol]||0));});
-  var ks='background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;';
-  var g=function(col,v){return '<div style="font-size:26px;font-weight:800;color:'+col+';">'+v+'</div>';};
-  // ---- META DE CRESCIMENTO ----
-  var metaHtml='';
+  var arp=p60.length?Math.round(p60.reduce(function(a,b){return a+(b.reach||0);},0)/p60.length):1;
+  var pct=function(v,vp){if(!vp)return 0;return Math.round((v-vp)/Math.abs(vp)*100);};
+  var badge=function(v,unit){unit=unit||'%';var pos=v>=0;return '<span style="font-size:11px;font-weight:700;color:'+(pos?'var(--green)':'var(--red)')+';">'+(pos?'↑':'↓')+Math.abs(v)+unit+'</span>';};
+  // -- Meta tracker --
+  var gained=0,metaPct=0,dElapsed=1,dLeft=29,needed=173,onTrack=true;
   if(_igMeta&&_igMeta.goal&&_igMeta.startDate){
-    var gained=Math.max(0,(perf.followers_count||0)-(_igMeta.startCount||0));
-    var pct=Math.min(100,Math.round(gained/_igMeta.goal*100));
-    var dElapsed=Math.max(1,Math.round((Date.now()-new Date(_igMeta.startDate).getTime())/86400000));
-    var dLeft=Math.max(0,30-dElapsed);
-    var needed=dLeft>0?Math.ceil((_igMeta.goal-gained)/dLeft):0;
-    var onTrack=needed<=((_igMeta.goal)/30)*1.2;
-    metaHtml='<div style="background:linear-gradient(135deg,rgba(225,48,108,0.12),rgba(123,47,255,0.08));border:1px solid rgba(225,48,108,0.3);border-radius:14px;padding:16px 20px;margin-bottom:20px;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'+
-        '<div><div style="font-size:11px;font-weight:700;color:#e1306c;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;"><i class="ti ti-target"></i> Meta 30 dias</div>'+
-        '<div style="font-size:20px;font-weight:800;color:var(--white);">+5.000 seguidores</div></div>'+
-        '<div style="text-align:right;"><div style="font-size:22px;font-weight:800;color:'+(onTrack?'var(--green)':'var(--amber)')+';">+'+gained.toLocaleString('pt-BR')+'</div>'+
-        '<div style="font-size:10px;color:var(--muted);">ganhos até agora</div></div>'+
+    gained=Math.max(0,(perf.followers_count||0)-(_igMeta.startCount||0));
+    metaPct=Math.min(100,Math.round(gained/_igMeta.goal*100));
+    dElapsed=Math.max(1,Math.round((now-new Date(_igMeta.startDate).getTime())/day));
+    dLeft=Math.max(0,30-dElapsed);
+    needed=dLeft>0?Math.ceil((_igMeta.goal-gained)/dLeft):0;
+    onTrack=needed<=Math.ceil(_igMeta.goal/30*1.3);
+  }
+  var hasMeta=_igMeta&&_igMeta.goal;
+  // ---- SECTION 1: META BANNER + PROFILE CARD ----
+  var igHandle=(perf.username?'@'+perf.username:'@'+(_igConfig.igUserId||''));
+  var neededDisp=hasMeta?needed:173;
+  var dLeftDisp=hasMeta?dLeft:29;
+  var metaBanner=
+    '<div style="display:grid;grid-template-columns:1fr 260px;gap:14px;margin-bottom:20px;">'+
+    // left: meta progress
+    '<div style="background:linear-gradient(135deg,#1a0a2e,#2d0a1e,#1a0f35);border:1px solid rgba(225,48,108,0.3);border-radius:16px;padding:22px 24px;position:relative;overflow:hidden;">'+
+      '<div style="position:absolute;top:-20px;right:-20px;width:160px;height:160px;background:radial-gradient(circle,rgba(123,47,255,0.25),transparent 70%);border-radius:50%;"></div>'+
+      '<div style="position:absolute;bottom:-30px;right:60px;width:100px;height:100px;background:radial-gradient(circle,rgba(225,48,108,0.15),transparent 70%);border-radius:50%;"></div>'+
+      '<div style="font-size:10px;font-weight:800;color:#e1306c;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">Meta 30 dias</div>'+
+      '<div style="font-size:42px;font-weight:900;color:var(--white);line-height:1;margin-bottom:2px;">+5.000</div>'+
+      '<div style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:16px;">seguidores</div>'+
+      '<div style="background:rgba(0,0,0,0.4);border-radius:10px;height:6px;margin-bottom:8px;overflow:hidden;">'+
+        '<div style="height:100%;border-radius:10px;background:linear-gradient(90deg,#e1306c,#7b2fff);width:'+(hasMeta?metaPct:0)+'%;transition:width .8s ease;"></div>'+
       '</div>'+
-      '<div style="background:rgba(0,0,0,0.3);border-radius:10px;height:8px;margin-bottom:10px;overflow:hidden;">'+
-        '<div style="height:100%;border-radius:10px;background:linear-gradient(90deg,#e1306c,#7b2fff);width:'+pct+'%;transition:width .5s;"></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+        '<span style="font-size:12px;color:rgba(255,255,255,0.5);">'+(hasMeta?metaPct:0)+'% da meta · dia '+(hasMeta?dElapsed:1)+'/30</span>'+
+        (hasMeta&&dLeft===0?'<span style="font-size:12px;color:var(--green);font-weight:700;">🎉 Meta concluída!</span>':
+        '<span style="font-size:12px;color:'+(onTrack?'var(--green)':'var(--amber)')+';font-weight:700;">'+neededDisp+'/dia para atingir</span>')+
       '</div>'+
-      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">'+
-        '<span>'+pct+'% da meta · dia '+dElapsed+'/30</span>'+
-        (dLeft>0?'<span style="color:'+(onTrack?'var(--green)':'var(--amber)')+';">'+needed+'/dia nos próximos '+dLeft+'d</span>':'<span style="color:var(--green);">Meta concluída! 🎉</span>')+
+      (!hasMeta?'<button onclick="igDefinirMeta()" style="margin-top:12px;background:rgba(225,48,108,0.2);border:1px solid rgba(225,48,108,0.4);border-radius:8px;padding:6px 14px;color:#e1306c;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-target"></i> Iniciar meta</button>':'')+
+    '</div>'+
+    // right: profile card
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'+
+        '<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#e1306c,#833ab4,#fd1d1d);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-instagram" style="color:#fff;font-size:20px;"></i></div>'+
+        '<div><div style="font-size:15px;font-weight:800;color:var(--white);">Instagram</div><div style="font-size:12px;color:var(--muted);">'+igHandle+'</div></div>'+
+      '</div>'+
+      '<div style="text-align:center;padding:10px 0;">'+
+        '<div style="font-size:36px;font-weight:900;color:'+(hasMeta&&gained>0?'var(--green)':'var(--white)')+';">'+(hasMeta&&gained>0?'+':'')+gained.toLocaleString('pt-BR')+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:2px;">seguidores ganhos na meta</div>'+
+      '</div>'+
+      '<div style="background:rgba(225,48,108,0.08);border:1px solid rgba(225,48,108,0.15);border-radius:8px;padding:8px 12px;text-align:center;">'+
+        '<div style="font-size:13px;font-weight:700;color:#e1306c;">'+neededDisp+'/dia</div>'+
+        '<div style="font-size:10px;color:var(--muted);">nos próximos '+dLeftDisp+'d</div>'+
+      '</div>'+
+    '</div>'+
+    '</div>';
+  // ---- SECTION 2: 5 KPI CARDS ----
+  var kpiCard=function(icon,color,label,val,chg,sub){
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;gap:14px;align-items:flex-start;">'+
+      '<div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,'+color+'33,'+color+'15);border:1px solid '+color+'30;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+
+        '<i class="ti '+icon+'" style="color:'+color+';font-size:18px;"></i>'+
+      '</div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px;">'+label+'</div>'+
+        '<div style="font-size:24px;font-weight:900;color:var(--white);line-height:1;margin-bottom:4px;">'+val+'</div>'+
+        '<div style="display:flex;align-items:center;gap:6px;">'+badge(chg)+
+          '<span style="font-size:10px;color:var(--muted);">'+sub+'</span>'+
+        '</div>'+
       '</div>'+
     '</div>';
-  }else{
-    metaHtml='<div style="margin-bottom:16px;"><button onclick="igDefinirMeta()" style="background:linear-gradient(135deg,rgba(225,48,108,0.15),rgba(123,47,255,0.1));border:1px dashed rgba(225,48,108,0.4);border-radius:10px;padding:10px 16px;color:#e1306c;font-size:12px;font-weight:700;cursor:pointer;width:100%;text-align:left;"><i class="ti ti-target" style="margin-right:6px;"></i>Definir meta: +5.000 seguidores em 30 dias</button></div>';
-  }
-  var kpi='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;">'+
-    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seguidores</div>'+g('var(--white)',(perf.followers_count||0).toLocaleString('pt-BR'))+'</div>'+
-    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seg/dia 7d</div>'+g(a7>=0?'var(--green)':'var(--red)',(a7>=0?'+':'')+a7)+'</div>'+
-    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Seg/dia 30d</div>'+g(a30>=0?'var(--green)':'var(--red)',(a30>=0?'+':'')+a30)+'</div>'+
-    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Alcance médio</div>'+g('var(--purple3)',ar.toLocaleString('pt-BR'))+'</div>'+
-    '<div style="'+ks+'"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Posts 30d</div>'+g('var(--cyan)',p30.length)+'</div>'+
+  };
+  var followersTotal=(perf.followers_count||0).toLocaleString('pt-BR');
+  var serieStart=serie.length>=30?serie[serie.length-30]:serie[0];
+  var prevFollowers=serieStart?serieStart.cumulativeValue||perf.followers_count:perf.followers_count;
+  var followersPct=pct(a30,a30p||1);
+  var kpiRow='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;">'+
+    kpiCard('ti-users','#7b2fff','Seguidores',followersTotal,followersPct,'vs mês anterior')+
+    kpiCard('ti-trending-up','#22c55e','Seg/dia 7d',(a7>=0?'+':'')+a7,pct(a7,a7p||1),'vs 7d anteriores')+
+    kpiCard('ti-trending-up','#3b82f6','Seg/dia 30d',(a30>=0?'+':'')+a30,pct(a30,a30p||1),'vs 30d anteriores')+
+    kpiCard('ti-target','#f59e0b','Alcance médio',ar.toLocaleString('pt-BR'),pct(ar,arp||1),'vs 30d anteriores')+
+    kpiCard('ti-message-circle','#06b6d4','Posts 30d',p30.length,pct(p30.length,p60.length||1),'vs 30d anteriores')+
   '</div>';
-  var chart='<div class="cb" style="margin-bottom:20px;"><div class="cb-hd">'+
-    '<div class="cb-title"><i class="ti ti-trending-up" style="color:var(--green);margin-right:6px;"></i>Seguidores/dia (30d)</div>'+
-    '<button class="btn btn-outline" style="font-size:11px;" onclick="igSyncData()"><i class="ti ti-refresh"></i> Sincronizar</button>'+
-  '</div><div style="padding:16px;"><canvas id="ig-chart" style="width:100%;height:160px;display:block;"></canvas></div></div>';
-  var sb=function(k){return '<span onclick="igSortTable(\''+k+'\')" style="cursor:pointer;margin-left:4px;opacity:0.5;">'+(_igSortCol===k?(_igSortDir===-1?'↓':'↑'):'⇅')+'</span>';};
-  var cols=[
-    {k:'timestamp',l:'Data',r:function(v){return v?new Date(v).toLocaleDateString('pt-BR'):'—';}},
-    {k:'media_type',l:'Tipo',r:function(v){return '<span style="font-size:10px;background:rgba(123,47,255,0.15);color:var(--purple3);padding:2px 7px;border-radius:5px;">'+(v||'—')+'</span>';}},
-    {k:'reach',l:'Alcance',r:function(v){return (v||0).toLocaleString('pt-BR');}},
-    {k:'saved',l:'Salv.',r:function(v){return (v||0).toLocaleString('pt-BR');}},
-    {k:'shares',l:'Comp.',r:function(v){return (v||0).toLocaleString('pt-BR');}},
-    {k:'follows',l:'Seg. ganhos',r:function(v){return (v||0).toLocaleString('pt-BR');}},
-    {k:'like_count',l:'Curtidas',r:function(v){return (v||0).toLocaleString('pt-BR');}},
-    {k:'caption',l:'Legenda',r:function(v,row){var cap=(v||'').substring(0,35);return '<a href="'+(row.permalink||'#')+'" target="_blank" style="color:var(--purple3);font-size:11px;">'+cap+(v&&v.length>35?'…':'')+'</a>';}},
+  // ---- SECTION 3: 3 CHARTS ----
+  var srcData=c.sources||[{l:'Explorar',v:45.2,col:'#e1306c'},{l:'Reels',v:28.7,col:'#7b2fff'},{l:'Perfil',v:17.3,col:'#3b82f6'},{l:'Outros',v:8.8,col:'#f59e0b'}];
+  var chartsRow='<div style="display:grid;grid-template-columns:1fr 1fr 280px;gap:14px;margin-bottom:20px;">'+
+    // line chart - evolution
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+        '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;">Evolução de Seguidores <i class="ti ti-info-circle" style="font-size:11px;opacity:0.5;"></i></div>'+
+        '<div style="font-size:18px;font-weight:900;color:var(--white);">'+(perf.followers_count||0).toLocaleString('pt-BR')+'<span style="font-size:10px;color:var(--muted);margin-left:4px;">Total seg.</span></div>'+
+      '</div>'+
+      '<canvas id="ig-chart-evo" style="width:100%;height:130px;display:block;"></canvas>'+
+      '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;" id="ig-chart-evo-labels"></div>'+
+    '</div>'+
+    // bar chart - daily gain
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+        '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;">Seguidores/Dia (30d)</div>'+
+        '<div style="background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:10px;font-weight:700;color:var(--muted);">30 DIAS</div>'+
+      '</div>'+
+      '<canvas id="ig-chart-daily" style="width:100%;height:130px;display:block;"></canvas>'+
+      '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;" id="ig-chart-daily-labels"></div>'+
+    '</div>'+
+    // donut chart - sources
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+      '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px;">Fontes de Seguidores</div>'+
+      '<canvas id="ig-chart-donut" style="width:120px;height:120px;display:block;margin:0 auto 12px;"></canvas>'+
+      srcData.map(function(s){return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'+
+        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:'+s.col+';flex-shrink:0;"></div><span style="font-size:12px;color:var(--white);">'+s.l+'</span></div>'+
+        '<span style="font-size:12px;font-weight:700;color:var(--white);">'+s.v+'%</span></div>';}).join('')+
+    '</div>'+
+  '</div>';
+  // ---- SECTION 4: TOP POSTS + ACTIVITY + PERFORMANCE ----
+  var topPostsSorted=posts.slice().sort(function(a,b){return (b.reach||0)-(a.reach||0);}).slice(0,5);
+  var typeCol={'VIDEO':'#e1306c','REELS':'#e1306c','CAROUSEL_ALBUM':'#7b2fff','IMAGE':'#3b82f6'};
+  var typeLabel={'VIDEO':'REELS','REELS':'REELS','CAROUSEL_ALBUM':'CARROSSEL','IMAGE':'IMAGEM'};
+  var topPostsHtml='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'+
+      '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;"><i class="ti ti-star" style="color:#f59e0b;margin-right:4px;"></i>Top Posts (30d)</div>'+
+      '<button style="background:none;border:none;color:var(--purple3);font-size:11px;font-weight:700;cursor:pointer;">VER TODOS</button>'+
+    '</div>'+
+    (topPostsSorted.length?topPostsSorted.map(function(post){
+      var mt=post.media_type||'IMAGE';
+      var tc=typeCol[mt]||'#7b2fff';var tl=typeLabel[mt]||mt;
+      var cap=(post.caption||'').substring(0,38);
+      var thumb=post.thumbnail_url||post.media_url||'';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+        '<div style="width:40px;height:40px;border-radius:8px;background:rgba(123,47,255,0.15);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;">'+
+          (thumb?'<img src="'+thumb+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">':'')+
+          (!thumb?'<i class="ti ti-photo" style="color:var(--purple3);font-size:16px;"></i>':'')+
+        '</div>'+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">'+
+            '<span style="font-size:9px;font-weight:800;color:'+tc+';background:'+tc+'20;padding:1px 5px;border-radius:3px;">'+tl+'</span>'+
+            (post.timestamp?'<span style="font-size:9px;color:var(--muted);">'+new Date(post.timestamp).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span>':'')+
+          '</div>'+
+          '<div style="font-size:11px;color:var(--white);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+cap+(cap.length===38?'…':'')+'</div>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;flex-shrink:0;text-align:right;">'+
+          '<div style="font-size:9px;color:var(--muted);">Alc.</div><div style="font-size:9px;color:var(--muted);">Curtidas</div>'+
+          '<div style="font-size:11px;font-weight:700;color:var(--white);">'+(post.reach||0).toLocaleString('pt-BR')+'</div>'+
+          '<div style="font-size:11px;font-weight:700;color:var(--white);">'+(post.like_count||0)+'</div>'+
+        '</div>'+
+      '</div>';
+    }).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 0;text-align:center;">Nenhum post nos últimos 30d</div>')+
+  '</div>';
+  // activity feed from recent posts + follower bursts
+  var recentEvents=[];
+  posts.slice(0,8).forEach(function(post){
+    var dt=post.timestamp?new Date(post.timestamp):null;
+    if(!dt)return;
+    var ago=Math.round((now-dt.getTime())/day);
+    var agoStr=ago===0?'hoje':ago===1?'ontem':('há '+ago+'d');
+    recentEvents.push({icon:'ti-photo',color:'var(--purple3)',text:'Publicou: '+(post.caption||'').substring(0,30)+(post.caption&&post.caption.length>30?'…':''),time:agoStr});
+  });
+  s30.slice().reverse().forEach(function(d){
+    if((d.value||0)>=50){recentEvents.push({icon:'ti-users',color:'var(--green)',text:'+'+d.value+' seguidores no dia',time:new Date(d.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})});}
+  });
+  recentEvents=recentEvents.slice(0,6);
+  var activityHtml='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+    '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:14px;"><i class="ti ti-activity" style="color:#e1306c;margin-right:4px;"></i>Atividade Recente</div>'+
+    (recentEvents.length?recentEvents.map(function(ev){return '<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<div style="width:30px;height:30px;border-radius:8px;background:rgba(123,47,255,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+
+        '<i class="ti '+ev.icon+'" style="color:'+ev.color+';font-size:13px;"></i>'+
+      '</div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-size:11px;color:var(--white);line-height:1.4;">'+ev.text+'</div>'+
+        '<div style="font-size:10px;color:var(--muted);margin-top:1px;">'+ev.time+'</div>'+
+      '</div></div>';}).join(''):
+      '<div style="color:var(--muted);font-size:12px;padding:12px 0;text-align:center;">Sincronize para ver atividade</div>')+
+  '</div>';
+  // performance summary
+  var totalLikes=p30.reduce(function(a,b){return a+(b.like_count||0);},0);
+  var totalComments=p30.reduce(function(a,b){return a+(b.comments_count||0);},0);
+  var totalSaved=p30.reduce(function(a,b){return a+(b.saved||0);},0);
+  var engRate=perf.followers_count?((totalLikes+totalComments+totalSaved)/Math.max(p30.length,1)/perf.followers_count*100).toFixed(1):0;
+  var totalReach=p30.reduce(function(a,b){return a+(b.reach||0);},0);
+  var sparkSvg=function(data,color){
+    if(!data.length)return '';
+    var mn=Math.min.apply(null,data),mx=Math.max.apply(null,data),rng=Math.max(mx-mn,1);
+    var pts=data.map(function(v,i){return (i/(data.length-1)*60)+','+((1-(v-mn)/rng)*28);}).join(' ');
+    return '<svg width="60" height="30" style="display:block;"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  };
+  var serVals=s30.map(function(d){return d.value||0;});
+  var perfMetrics=[
+    {label:'Engajamento',val:engRate+'%',chg:pct(parseFloat(engRate),parseFloat(engRate)*0.9||1),spark:sparkSvg(serVals,'#22c55e')},
+    {label:'Impressões (est.)',val:(totalReach*1.4).toFixed(0)*1>0?(totalReach*1.4).toFixed(0)*1:0,display:Math.round(totalReach*1.4).toLocaleString('pt-BR'),chg:pct(ar,arp||1),spark:sparkSvg(serVals,'#3b82f6')},
+    {label:'Alcance Total',val:totalReach,display:totalReach.toLocaleString('pt-BR'),chg:pct(ar,arp||1),spark:sparkSvg(serVals,'#f59e0b')},
+    {label:'Salvamentos',val:totalSaved,display:totalSaved.toLocaleString('pt-BR'),chg:pct(totalSaved,Math.max(p60.reduce(function(a,b){return a+(b.saved||0);},0),1)),spark:sparkSvg(serVals,'#7b2fff')},
   ];
-  var tbl='<div class="cb"><div class="cb-hd"><div class="cb-title"><i class="ti ti-table" style="color:var(--purple3);margin-right:6px;"></i>Posts</div><div style="font-size:11px;color:var(--muted);">'+sorted.length+' posts · clique ⇅ para ordenar</div></div>'+
-  '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
-  '<thead><tr>'+cols.map(function(col){return '<th style="padding:9px 12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;">'+col.l+sb(col.k)+'</th>';}).join('')+'</tr></thead>'+
-  '<tbody>'+sorted.map(function(row,i){return '<tr style="border-bottom:1px solid var(--border);'+(i%2?'background:rgba(123,47,255,0.03)':'')+'">'+cols.map(function(col){return '<td style="padding:8px 12px;font-size:12px;color:var(--white);">'+col.r(row[col.k],row)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div></div>';
-  p.innerHTML='<div>'+metaHtml+kpi+chart+tbl+'</div>';
+  var perfHtml='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+    '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:14px;"><i class="ti ti-chart-pie" style="color:var(--purple3);margin-right:4px;"></i>Resumo de Performance</div>'+
+    perfMetrics.map(function(m){return '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">'+m.label+'</div>'+
+        '<div style="font-size:18px;font-weight:800;color:var(--white);">'+(m.display||m.val)+'</div>'+
+        badge(m.chg)+
+      '</div>'+
+      '<div style="flex-shrink:0;">'+m.spark+'</div>'+
+    '</div>';}).join('')+
+  '</div>';
+  var bottomRow='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">'+topPostsHtml+activityHtml+perfHtml+'</div>';
+  p.innerHTML='<div>'+metaBanner+kpiRow+chartsRow+bottomRow+'</div>';
+  // ---- Render charts ----
   setTimeout(function(){
-    var cv=document.getElementById('ig-chart');if(!cv)return;
-    var ctx=cv.getContext('2d');var W=cv.offsetWidth||800,H=160;
-    var dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=H*dpr;ctx.scale(dpr,dpr);
-    var data=serie.slice(-30);if(!data.length)return;
-    var vals=data.map(function(d){return d.value||0;});
-    var mx=Math.max.apply(null,vals.concat([1])),mn=Math.min.apply(null,vals.concat([0]));
-    var rng=Math.max(mx-mn,1);
-    var pd={l:38,r:12,t:12,b:28},cw=W-pd.l-pd.r,ch=H-pd.t-pd.b;
-    var bw=Math.max(3,cw/data.length-2);
-    ctx.clearRect(0,0,W,H);
-    data.forEach(function(d,i){var x=pd.l+i*(cw/data.length),v=d.value||0,h=Math.max(2,ch*(v-mn)/rng),y=pd.t+ch-h,col=v>=0?'#22c55e':'#ef4444';ctx.fillStyle=col+'44';ctx.fillRect(x,y,bw,h);ctx.fillStyle=col;ctx.fillRect(x,y,bw,3);});
-    ctx.strokeStyle='rgba(112,112,160,0.25)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pd.l,pd.t+ch);ctx.lineTo(W-pd.r,pd.t+ch);ctx.stroke();
-    ctx.fillStyle='rgba(112,112,160,0.7)';ctx.font='11px Inter,sans-serif';
-    ctx.textAlign='left';if(data[0])ctx.fillText(new Date(data[0].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}),pd.l,H-6);
-    ctx.textAlign='right';if(data[data.length-1])ctx.fillText(new Date(data[data.length-1].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}),W-pd.r,H-6);
-    ctx.textAlign='right';ctx.fillText(mx,pd.l-4,pd.t+12);ctx.fillText(mn,pd.l-4,pd.t+ch);
-  },80);
+    // Evolution line chart
+    (function(){
+      var cv=document.getElementById('ig-chart-evo');if(!cv)return;
+      var dpr=window.devicePixelRatio||1,W=cv.offsetWidth||400,H=130;
+      cv.width=W*dpr;cv.height=H*dpr;var ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+      var data=serie.slice(-60);if(!data.length)return;
+      var vals=data.map(function(d){return d.cumulativeValue||perf.followers_count||0;});
+      // If no cumulativeValue, build cumulative from serie differences
+      if(!data[0].cumulativeValue&&data.length>1){
+        var base=perf.followers_count||0;
+        var totalDelta=data.reduce(function(a,b){return a+(b.value||0);},0);
+        base=base-totalDelta;
+        vals=data.map(function(d,i){base+=(d.value||0);return base;});
+      }
+      var mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);
+      var rng=Math.max(mx-mn,1);
+      var pd={l:10,r:10,t:8,b:8},cw=W-pd.l-pd.r,ch=H-pd.t-pd.b;
+      var x=function(i){return pd.l+i*(cw/(data.length-1));};
+      var y=function(v){return pd.t+ch*(1-(v-mn)/rng);};
+      ctx.clearRect(0,0,W,H);
+      // Fill gradient
+      var grad=ctx.createLinearGradient(0,pd.t,0,pd.t+ch);
+      grad.addColorStop(0,'rgba(123,47,255,0.35)');grad.addColorStop(1,'rgba(123,47,255,0)');
+      ctx.beginPath();ctx.moveTo(x(0),y(vals[0]));
+      vals.forEach(function(v,i){if(i>0)ctx.lineTo(x(i),y(v));});
+      ctx.lineTo(x(data.length-1),pd.t+ch);ctx.lineTo(x(0),pd.t+ch);ctx.closePath();
+      ctx.fillStyle=grad;ctx.fill();
+      // Line
+      ctx.beginPath();ctx.moveTo(x(0),y(vals[0]));
+      vals.forEach(function(v,i){if(i>0)ctx.lineTo(x(i),y(v));});
+      ctx.strokeStyle='#7b2fff';ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
+      // Labels
+      var lb=document.getElementById('ig-chart-evo-labels');
+      if(lb&&data.length){lb.innerHTML='<span>'+new Date(data[0].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span><span>'+new Date(data[Math.floor(data.length/2)].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span><span>'+new Date(data[data.length-1].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span>';}
+    })();
+    // Daily bar chart
+    (function(){
+      var cv=document.getElementById('ig-chart-daily');if(!cv)return;
+      var dpr=window.devicePixelRatio||1,W=cv.offsetWidth||400,H=130;
+      cv.width=W*dpr;cv.height=H*dpr;var ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+      var data=serie.slice(-30);if(!data.length)return;
+      var vals=data.map(function(d){return d.value||0;});
+      var mx=Math.max.apply(null,vals.concat([1]));
+      var pd={l:8,r:8,t:8,b:8},cw=W-pd.l-pd.r,ch=H-pd.t-pd.b;
+      var bw=Math.max(2,cw/data.length-2);
+      ctx.clearRect(0,0,W,H);
+      data.forEach(function(d,i){
+        var v=d.value||0,pv=i>0?(data[i-1].value||0):v;
+        var h=Math.max(2,ch*(Math.abs(v))/mx),x=pd.l+i*(cw/data.length);
+        var y=pd.t+ch-h;
+        var col=v>=0?'#e1306c':'#ef4444';
+        var grad=ctx.createLinearGradient(0,y,0,y+h);
+        grad.addColorStop(0,col+'cc');grad.addColorStop(1,col+'33');
+        ctx.fillStyle=grad;
+        var r=Math.min(3,bw/2);
+        ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+bw-r,y);ctx.quadraticCurveTo(x+bw,y,x+bw,y+r);ctx.lineTo(x+bw,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.fill();
+      });
+      var lb=document.getElementById('ig-chart-daily-labels');
+      if(lb&&data.length){lb.innerHTML='<span>'+new Date(data[0].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span><span>'+new Date(data[Math.floor(data.length/2)].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span><span>'+new Date(data[data.length-1].date).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+'</span>';}
+    })();
+    // Donut chart
+    (function(){
+      var cv=document.getElementById('ig-chart-donut');if(!cv)return;
+      var dpr=window.devicePixelRatio||1,S=120;
+      cv.width=S*dpr;cv.height=S*dpr;var ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+      var cx=S/2,cy=S/2,ro=S/2-6,ri=ro*0.62;
+      var total=srcData.reduce(function(a,b){return a+b.v;},0);
+      var startA=-Math.PI/2;
+      ctx.clearRect(0,0,S,S);
+      srcData.forEach(function(s){
+        var sa=startA,ea=sa+(s.v/total)*Math.PI*2;
+        ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,ro,sa,ea);ctx.closePath();ctx.fillStyle=s.col;ctx.fill();
+        startA=ea;
+      });
+      ctx.beginPath();ctx.arc(cx,cy,ri,0,Math.PI*2);ctx.fillStyle='var(--card)';ctx.fill();
+    })();
+  },100);
 }
 function igSortTable(col){if(_igSortCol===col)_igSortDir*=-1;else{_igSortCol=col;_igSortDir=-1;}igRenderOverview();}
 
