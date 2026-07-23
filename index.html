@@ -840,6 +840,11 @@ function startRealtimeSync(){
   fbDb.ref('instagram/calendario').on('value',function(s){_igCalendario=s.val()||{};});
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
 
+  // ===== STORIES LAB: listeners + coletor automático (boot) =====
+  try{ storiesStartListeners(); }catch(e){ console.error('storiesStartListeners',e); }
+  setTimeout(function(){ try{ _storiesAutoSync(false); }catch(e){ console.error('_storiesAutoSync',e); } },4000);
+  setTimeout(function(){ try{ stCheckRecorrencia(); }catch(e){ console.error('stCheckRecorrencia',e); } },9000);
+
   // Sync gcal_token in realtime (per usuario)
   fbDb.ref('gcal_token/'+gcalUserKey()).on('value', function(snap){
     var fbGcal = snap.val();
@@ -4178,6 +4183,7 @@ function buildNav(){
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
     {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
     {id:'instagram',icon:'ti-brand-instagram',label:'Instagram'},
+    {id:'stories-lab',icon:'ti-brand-instagram',label:'Stories Lab'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
@@ -4382,7 +4388,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'instagram':renderInstagram,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'instagram':renderInstagram,'stories-lab':renderStories,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -4408,6 +4414,7 @@ function showPage(id){
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
     if(id==='instagram') setTimeout(igInitPage,50);
+    if(id==='stories-lab') setTimeout(storiesInitPage,50);
     if(id==='vendas'){setTimeout(loadVendasSheets,50);setTimeout(autoSyncAssinaturas,200);}
     if(id==='financeiro'||id.startsWith('fin-')) setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
@@ -26439,5 +26446,309 @@ function renderCarrossel(){
   '</div>';
   return H;
 }
+
+// ============================================================================
+// ===== STORIES LAB — módulo completo (Painel, Ideias, Calendário, Lab,  =====
+// ===== Aprendizados, Tarefas IA) — dados em /stories/* no Firebase      =====
+// ============================================================================
+var _stCfg={windsorKey:'',lastSync:0};
+var _stCap={},_stGanchos={},_stCal={},_stExp={},_stApr={},_stTIA={};
+var _stTab='painel',_stPeriodo=30,_stSort={col:'engajamento',dir:-1},_stCalOff=0,_stAprQ='',_stLastSeq=null;
+var _stEstilos=['bastidor','prova-social','opiniao','educativo','interativo','oferta','pessoal'];
+var _stEstiloCores={bastidor:'#f59e0b','prova-social':'#22c55e',opiniao:'#e1306c',educativo:'#38bdf8',interativo:'#7b2fff',oferta:'#ef4444',pessoal:'#a3e635'};
+var _stSlots=['manha','tarde','noite'];
+var _stSlotLbl={manha:'Manhã',tarde:'Tarde',noite:'Noite'};
+
+// ----- System prompts (exatos) -----
+var _stSysClass='Você classifica um story de Instagram em EXATAMENTE um estilo desta lista: bastidor, prova-social, opiniao, educativo, interativo, oferta, pessoal. O perfil é de um especialista em marketing para hamburguerias. Responda APENAS com JSON: {"estilo":"...","confianca":0.0}';
+var _stSysSeq='Você cria sequências de stories para @lucasramong_, especialista em marketing para hamburguerias (público: donos de delivery, 25-44 anos). Estilo de comunicação: direto, contraintuitivo, frases curtas, autoridade com prova. Você receberá o tema, o estilo desejado e um JSON com o desempenho médio por estilo neste perfil — use os dados para escolher formato e interação.\n\nGere uma sequência de 4 a 6 stories. Para cada story: (1) FORMATO: texto na tela / vídeo falando / foto+texto / print / enquete / caixa de pergunta; (2) O QUE ESCREVER/FALAR: o texto exato ou roteiro de fala em 2-3 frases; (3) INTERAÇÃO: se houver, a enquete/caixa exata. Regras: o story 1 é gancho puro e precisa parar o dedo em 1 segundo; o penúltimo tem a interação principal; o último tem UM CTA claro (palavra-chave nos comentários do feed, resposta no story ou link). Responda APENAS com JSON: {"titulo":"...","estilo":"...","stories":[{"formato":"...","conteudo":"...","interacao":"..."}]}';
+var _stSysExp='Você é analista de dados de Instagram. Receberá a hipótese de um experimento de stories, a meta, e um JSON com métricas do período do teste vs baseline. Responda em markdown curto: VEREDITO (hipótese confirmada / refutada / inconclusiva — com os números), POR QUÊ (2-3 frases citando números), e APRENDIZADO (1 frase acionável para guardar na base de conhecimento). Sem elogios, sem genérico.';
+var _stSysCur='Você é pesquisador de growth em Instagram Stories a serviço de @lucasramong_ — especialista em marketing para hamburguerias/delivery; público: donos de delivery, 58% homens, 25-44 anos, Brasil. Perfil de AUTORIDADE B2B-local: ignore táticas de influencer/lifestyle que não se aplicam (dancinhas, trends de consumo, growth hack de perfil pessoal genérico).\n\nVocê receberá um tema para pesquisar na web OU URLs de artigos para ler. Extraia apenas o que é acionável PARA ESTE PERFIL.\n\nResponda APENAS com JSON válido:\n{\n  "resumo": ["5 bullets do que foi aprendido, já traduzido para o contexto dele"],\n  "taticas": [{ "tatica": "...", "comoAplicar": "instrução concreta de como executar isso num story do @lucasramong_ esta semana" }],\n  "hipoteses": [{ "hipotese": "...", "estiloTestado": "um dos estilos: bastidor|prova-social|opiniao|educativo|interativo|oferta|pessoal", "meta": "métrica e alvo, ex: taxaResposta media > 1.5%" }],\n  "ganchos": ["até 5 ganchos novos de story no tom direto e contraintuitivo dele"],\n  "fontes": [{ "titulo": "...", "url": "..." }]\n}\n\nRegras: 2 a 4 táticas, 1 a 2 hipóteses, nada genérico ("poste com consistência" é proibido), toda tática precisa ser executável em até 1 semana sem equipe.';
+
+// ----- Helpers -----
+function stEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function stNum(n){return (Number(n)||0).toLocaleString('pt-BR');}
+function stPct(n){return (Math.round((Number(n)||0)*100)/100).toLocaleString('pt-BR')+'%';}
+function stTodayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function stIsoWeek(d){
+  var dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  var day=dt.getUTCDay()||7;dt.setUTCDate(dt.getUTCDate()+4-day);
+  var y=dt.getUTCFullYear();
+  var w=Math.ceil((((dt-Date.UTC(y,0,1))/86400000)+1)/7);
+  return y+'-W'+(w<10?'0':'')+w;
+}
+function stEstiloBadge(e){
+  if(!e)return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.06);color:var(--muted);">sem estilo</span>';
+  var c=_stEstiloCores[e]||'#7b2fff';
+  return '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+c+'22;color:'+c+';border:1px solid '+c+'44;">'+stEsc(e)+'</span>';
+}
+async function stClaude(system,user,maxTokens,tools){
+  var ck=localStorage.getItem('audens_claude_key');
+  if(!ck)throw new Error('Chave Claude não configurada (Configurações → Claude API)');
+  var body={model:'claude-sonnet-4-6',max_tokens:maxTokens||2000,system:system,messages:[{role:'user',content:user}]};
+  if(tools)body.tools=tools;
+  var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'x-api-key':ck,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify(body)});
+  var d=await r.json();
+  if(d.error)throw new Error(d.error.message||JSON.stringify(d.error));
+  return (d.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('\n');
+}
+function stParseJSON(txt){
+  if(!txt)return null;
+  var cand=txt;
+  var fence=txt.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if(fence)cand=fence[1];
+  try{return JSON.parse(cand);}catch(e){}
+  var m=cand.match(/\{[\s\S]*\}/);
+  if(m){try{return JSON.parse(m[0]);}catch(e2){}}
+  var m2=txt.match(/\{[\s\S]*\}/);
+  if(m2){try{return JSON.parse(m2[0]);}catch(e3){}}
+  return null;
+}
+
+// ----- Firebase listeners + seeds -----
+var _stListenersOn=false;
+function storiesStartListeners(){
+  if(_stListenersOn)return;
+  if(!fbDb&&!initFirebase())return;
+  _stListenersOn=true;
+  fbDb.ref('stories/config').on('value',function(s){if(s.val())_stCfg=Object.assign(_stCfg,s.val());stUpdateHealth();});
+  fbDb.ref('stories/capturados').on('value',function(s){_stCap=s.val()||{};stRefreshIfOpen('painel');});
+  fbDb.ref('stories/ganchos').on('value',function(s){_stGanchos=s.val()||{};stRefreshIfOpen('ideias');});
+  fbDb.ref('stories/calendario').on('value',function(s){_stCal=s.val()||{};stRefreshIfOpen('calendario');});
+  fbDb.ref('stories/experimentos').on('value',function(s){_stExp=s.val()||{};stRefreshIfOpen('lab');});
+  fbDb.ref('stories/aprendizados').on('value',function(s){_stApr=s.val()||{};stRefreshIfOpen('aprendizados');});
+  fbDb.ref('stories/tarefasIA').on('value',function(s){_stTIA=s.val()||{};stRefreshIfOpen('tarefas');});
+  fbDb.ref('stories/ganchos').once('value').then(function(s){if(!s.exists())stSeedGanchos();}).catch(function(e){console.warn('seed ganchos',e);});
+  fbDb.ref('stories/tarefasIA').once('value').then(function(s){if(!s.exists())stSeedTIA();}).catch(function(e){console.warn('seed tarefasIA',e);});
+}
+function stRefreshIfOpen(tab){
+  var area=document.getElementById('content');
+  if(!area||area.getAttribute('data-page')!=='stories-lab')return;
+  var modal=document.getElementById('st-modal');
+  if(modal&&modal.style.display==='flex')return; // não re-renderiza com modal aberto
+  if(_stTab===tab)stRenderTab();
+  if(tab==='painel')stUpdateHealth();
+}
+function stSeedGanchos(){
+  var seeds=["Hoje eu recusei um cliente. Te explico por quê.","O erro que eu vejo em 9 de cada 10 iFood que eu abro.","Print de resultado + 'isso aqui não foi sorte'.","Pergunta polêmica: promoção é droga ou remédio?","POV: você abre o cardápio do cliente pela primeira vez.","3 sinais de que seu delivery está travado (o 2º quase ninguém percebe).","Enquete: você sabe seu CMV de cabeça? sim/não.","Bastidor: reunião de diagnóstico agora — olha o que apareceu.","Antes/depois de cardápio — arrasta pra ver a diferença.","O dono me disse X… os números diziam Y.","Caixa de pergunta: me pergunta qualquer coisa de delivery.","Quanto o dono deveria tirar de pró-labore? Faixas reais.","Story em texto puro: uma frase contraintuitiva. Nada mais.","Teste cego: qual dessas 2 fotos de burger vende mais? Enquete.","Eu erro também: o que eu faria diferente no meu próprio delivery.","Rotina 5h da manhã / treino → disciplina = negócio.","Cliente comentou ANÁLISE ontem. Olha o que eu encontrei.","Mito do dia: 'tráfego resolve tudo'. Destruindo em 3 stories.","Números da semana da minha própria hamburgueria, abertos.","Se você fatura 30-80k e sente que travou, esse story é pra você."];
+  var now=Date.now();
+  seeds.forEach(function(txt,i){fbPush('stories/ganchos',{texto:txt,criadoEm:now+i});});
+}
+function stSeedTIA(){
+  var now=Date.now();
+  var seeds=[
+    {tipo:'pesquisa',tema:'o que faz stories de negócios B2B local reterem audiência: dados e táticas recentes',urls:'',recorrencia:'unica',status:'pendente',criadaEm:now},
+    {tipo:'pesquisa',tema:'como especialistas/consultores usam caixa de pergunta e enquete para gerar leads no Instagram',urls:'',recorrencia:'unica',status:'pendente',criadaEm:now+1},
+    {tipo:'pesquisa',tema:'frequência e horários ideais de stories para perfis de autoridade no Brasil',urls:'',recorrencia:'unica',status:'pendente',criadaEm:now+2}
+  ];
+  seeds.forEach(function(t){fbPush('stories/tarefasIA',t);});
+}
+
+// ----- Coletor automático (Windsor) -----
+var _stSyncing=false;
+async function _storiesAutoSync(force){
+  if(_stSyncing)return;
+  if(!fbDb&&!initFirebase())return;
+  try{
+    var cfg=await fbGet('stories/config')||{};
+    _stCfg=Object.assign(_stCfg,cfg);
+  }catch(e){}
+  if(!force&&_stCfg.lastSync&&(Date.now()-_stCfg.lastSync)<15*60*1000)return; // throttle 15 min
+  var wk=_stCfg.windsorKey||(typeof _igConfig!=='undefined'&&_igConfig.windsorKey)||localStorage.getItem('audens_windsor_key')||'';
+  if(!wk){
+    if(force)showSheetToast('Stories Lab: Windsor API Key não configurada. Configure em Configurações → Instagram/Meta (a mesma chave é usada).',true);
+    return;
+  }
+  _stSyncing=true;
+  var stEl=document.getElementById('st-sync-status');if(stEl)stEl.textContent='Sincronizando...';
+  try{
+    var url='https://connectors.windsor.ai/instagram?api_key='+encodeURIComponent(wk)+'&date_preset=last_30d&fields=story_id,story_timestamp,story_permalink,story_thumbnail_url,story_views,story_reach,story_replies,story_shares,story_exits,story_taps_back,story_taps_forward,story_swipe_forward,story_interactions';
+    var r=await fetch(url);
+    var raw=await r.json();
+    if(raw&&raw.error)throw new Error(raw.error.message||JSON.stringify(raw.error));
+    var rows=Array.isArray(raw)?raw:(raw.data||raw.result||raw.results||[]);
+    var agora=Date.now(),upd={},nNew=0;
+    rows.forEach(function(row){
+      if(!row.story_id)return;
+      var id=String(row.story_id).replace(/[.#$\[\]\/]/g,'_');
+      var prev=_stCap[id]||{};
+      var views=Number(row.story_views)||0,reach=Number(row.story_reach)||0;
+      var base=views||reach;
+      var replies=Number(row.story_replies)||0,shares=Number(row.story_shares)||0,exits=Number(row.story_exits)||0;
+      var tb=Number(row.story_taps_back)||0,tf=Number(row.story_taps_forward)||0,sw=Number(row.story_swipe_forward)||0;
+      var inter=Number(row.story_interactions)||0;
+      if(!prev.capturadoEm)nNew++;
+      var obj={
+        story_id:row.story_id,
+        story_timestamp:row.story_timestamp||prev.story_timestamp||'',
+        story_permalink:row.story_permalink||prev.story_permalink||'',
+        story_thumbnail_url:row.story_thumbnail_url||prev.story_thumbnail_url||'',
+        story_views:views,story_reach:reach,story_replies:replies,story_shares:shares,
+        story_exits:exits,story_taps_back:tb,story_taps_forward:tf,story_swipe_forward:sw,story_interactions:inter,
+        capturadoEm:prev.capturadoEm||agora,
+        taxaResposta:base?+(replies/base*100).toFixed(2):0,
+        taxaSaida:base?+(exits/base*100).toFixed(2):0,
+        taxaAvanco:base?+(tf/base*100).toFixed(2):0,
+        taxaVoltar:base?+(tb/base*100).toFixed(2):0,
+        engajamento:base?+(((replies+shares+inter)/base)*100).toFixed(2):0,
+        estilo:prev.estilo||'',
+        estiloFonte:prev.estiloFonte||''
+      };
+      upd[id]=obj;_stCap[id]=obj;
+    });
+    if(Object.keys(upd).length)await fbDb.ref('stories/capturados').update(upd);
+    await fbDb.ref('stories/config').update({lastSync:agora});
+    _stCfg.lastSync=agora;
+    stVincularCalendario();
+    setTimeout(stClassificarEstilos,800);
+    stUpdateHealth();
+    if(stEl)stEl.textContent='';
+    if(force)showSheetToast('Stories Lab: '+rows.length+' stories sincronizados ('+nNew+' novos)',false);
+    stRefreshIfOpen(_stTab);
+  }catch(e){
+    console.error('_storiesAutoSync',e);
+    if(stEl)stEl.textContent='';
+    showSheetToast('Stories Lab — erro na sincronização Windsor: '+e.message,true);
+  }
+  _stSyncing=false;
+}
+function stSyncNow(){_storiesAutoSync(true);}
+
+// Classificação de estilo com Claude (assíncrona, não bloqueante)
+var _stClassBusy=false;
+async function stClassificarEstilos(){
+  if(_stClassBusy)return;
+  if(!localStorage.getItem('audens_claude_key'))return;
+  var pend=Object.keys(_stCap).filter(function(k){return !_stCap[k].estilo;}).slice(0,8);
+  if(!pend.length)return;
+  _stClassBusy=true;
+  for(var i=0;i<pend.length;i++){
+    var k=pend[i],s=_stCap[k];
+    try{
+      var hora='';
+      try{hora=new Date(s.story_timestamp).getHours()+'h';}catch(e){}
+      var payload={story_timestamp:s.story_timestamp,hora_do_dia:hora,permalink:s.story_permalink||'',
+        metricas:{views:s.story_views,reach:s.story_reach,respostas:s.story_replies,compartilhamentos:s.story_shares,saidas:s.story_exits,taps_voltar:s.story_taps_back,taps_avancar:s.story_taps_forward,interacoes:s.story_interactions,taxaResposta:s.taxaResposta,taxaSaida:s.taxaSaida,taxaVoltar:s.taxaVoltar,engajamento:s.engajamento}};
+      var txt=await stClaude(_stSysClass,JSON.stringify(payload),200);
+      var j=stParseJSON(txt);
+      if(j&&j.estilo&&_stEstilos.indexOf(j.estilo)>-1){
+        _stCap[k].estilo=j.estilo;_stCap[k].estiloFonte='ia';
+        await fbDb.ref('stories/capturados/'+k).update({estilo:j.estilo,estiloFonte:'ia'});
+      }
+    }catch(e){console.warn('stClassificarEstilos',e);break;}
+  }
+  _stClassBusy=false;
+  stRefreshIfOpen('painel');
+}
+
+// Vinculador: stories capturados → itens do calendário marcados como postados
+function stVincularCalendario(){
+  if(!fbDb)return;
+  Object.keys(_stCal).forEach(function(k){
+    var it=_stCal[k];
+    if(!it||it.status!=='postado'||!it.postadoEm)return;
+    var fim=it.postadoEm+3*3600*1000;
+    var vinc=Object.keys(_stCap).filter(function(ck){
+      var ts=new Date(_stCap[ck].story_timestamp).getTime();
+      return ts&&ts>=it.postadoEm&&ts<=fim;
+    });
+    if(vinc.length){
+      fbDb.ref('stories/calendario/'+k).update({storiesVinculados:vinc,status:'analisado'});
+      it.storiesVinculados=vinc;it.status='analisado';
+      vinc.forEach(function(ck){
+        if(!_stCap[ck].estilo&&it.estilo){
+          _stCap[ck].estilo=it.estilo;_stCap[ck].estiloFonte='calendario';
+          fbDb.ref('stories/capturados/'+ck).update({estilo:it.estilo,estiloFonte:'calendario'});
+        }
+      });
+    }
+  });
+}
+
+// ----- Página principal -----
+function renderStories(){
+  var tabs=['painel','ideias','calendario','lab','aprendizados','tarefas'];
+  var tl={painel:'Painel',ideias:'Ideias & Ganchos',calendario:'Calendário',lab:'Laboratório',aprendizados:'Aprendizados',tarefas:'Tarefas IA'};
+  var ti={painel:'ti-chart-bar',ideias:'ti-bulb',calendario:'ti-calendar',lab:'ti-flask',aprendizados:'ti-book-2',tarefas:'ti-robot'};
+  return '<div class="page active">'+
+  '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">'+
+    '<div><div class="page-title">Stories Lab</div>'+
+    '<div class="page-sub" id="st-health"><i class="ti ti-brand-instagram" style="color:#e1306c;"></i> @lucasramong_</div></div>'+
+    '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<span id="st-sync-status" style="font-size:11px;color:var(--muted);"></span>'+
+      '<button class="btn btn-outline" onclick="stSyncNow()" style="font-size:12px;"><i class="ti ti-refresh"></i> Sincronizar agora</button>'+
+    '</div>'+
+  '</div>'+
+  '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:22px;overflow-x:auto;">'+
+    tabs.map(function(t){return '<div class="st-tab" data-sttab="'+t+'" onclick="stSwitchTab(\''+t+'\')" style="padding:12px 18px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;border-bottom:2px solid '+(t===_stTab?'var(--purple)':'transparent')+';color:'+(t===_stTab?'#fff':'var(--muted)')+';"><i class="ti '+ti[t]+'" style="margin-right:6px;"></i>'+tl[t]+'</div>';}).join('')+
+  '</div>'+
+  tabs.map(function(t){return '<div class="st-pane" id="st-pane-'+t+'" style="display:'+(t===_stTab?'block':'none')+';"><div style="color:var(--muted);padding:24px;text-align:center;font-size:13px;">Carregando...</div></div>';}).join('')+
+  '</div>';
+}
+function storiesInitPage(){
+  var area=document.getElementById('content');
+  if(!area||area.getAttribute('data-page')!=='stories-lab')return;
+  storiesStartListeners();
+  stUpdateHealth();
+  stRenderTab();
+  _storiesAutoSync(false);
+}
+function stSwitchTab(t){
+  _stTab=t;
+  document.querySelectorAll('.st-tab').forEach(function(el){var a=el.dataset.sttab===t;el.style.color=a?'#fff':'var(--muted)';el.style.borderBottom=a?'2px solid var(--purple)':'2px solid transparent';});
+  document.querySelectorAll('.st-pane').forEach(function(el){el.style.display='none';});
+  var p=document.getElementById('st-pane-'+t);if(p)p.style.display='block';
+  stRenderTab();
+}
+function stRenderTab(){
+  if(_stTab==='painel'&&typeof stRenderPainel==='function')stRenderPainel();
+  else if(_stTab==='ideias'&&typeof stRenderIdeias==='function')stRenderIdeias();
+  else if(_stTab==='calendario'&&typeof stRenderCal==='function')stRenderCal();
+  else if(_stTab==='lab'&&typeof stRenderLab==='function')stRenderLab();
+  else if(_stTab==='aprendizados'&&typeof stRenderApr==='function')stRenderApr();
+  else if(_stTab==='tarefas'&&typeof stRenderTIA==='function')stRenderTIA();
+}
+function stUpdateHealth(){
+  var el=document.getElementById('st-health');if(!el)return;
+  var last=_stCfg.lastSync||0;
+  if(!last){el.innerHTML='<i class="ti ti-brand-instagram" style="color:#e1306c;"></i> @lucasramong_ · <span style="color:var(--muted);">nenhuma captura ainda</span>';return;}
+  var h=Math.floor((Date.now()-last)/3600000);
+  var lbl=h<1?'há menos de 1h':'há '+h+'h';
+  var alerta=h>20;
+  el.innerHTML='<i class="ti ti-brand-instagram" style="color:#e1306c;"></i> @lucasramong_ · '+
+    '<span style="color:'+(alerta?'var(--red)':'var(--green)')+';font-weight:600;">'+(alerta?'<i class="ti ti-alert-triangle"></i> ':'')+'Última captura '+lbl+'</span>'+
+    (alerta?' <span style="color:var(--red);font-size:11px;">— stories expiram em 24h, sincronize!</span>':'');
+}
+// Modal genérico do Stories Lab
+function stModal(html){
+  var m=document.getElementById('st-modal');
+  if(!m){
+    m=document.createElement('div');m.id='st-modal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9998;display:none;align-items:center;justify-content:center;padding:20px;';
+    m.addEventListener('click',function(ev){if(ev.target===m)stCloseModal();});
+    document.body.appendChild(m);
+  }
+  m.innerHTML='<div style="background:var(--card,#16161c);border:1px solid var(--border);border-radius:14px;max-width:580px;width:100%;max-height:86vh;overflow-y:auto;padding:24px;">'+html+'</div>';
+  m.style.display='flex';
+}
+function stCloseModal(){var m=document.getElementById('st-modal');if(m){m.style.display='none';m.innerHTML='';}}
+// Verificação de tarefas de IA semanais pendentes (recorrência)
+function stCheckRecorrencia(){
+  if(localStorage.getItem('stories_rec_noask')==='1')return;
+  fbGet('stories/tarefasIA').then(function(v){
+    v=v||{};
+    var wk=stIsoWeek(new Date());
+    var pend=Object.keys(v).filter(function(k){return v[k]&&v[k].recorrencia==='semanal'&&v[k].ultimaExecucaoSemana!==wk;});
+    if(!pend.length)return;
+    if(confirm('Stories Lab: '+pend.length+' tarefa(s) de IA com recorrência semanal ainda não rodaram esta semana.\n\nExecutar agora? (usa a API Claude — custo estimado ~US$0,10 por tarefa)')){
+      pend.forEach(function(k,i){setTimeout(function(){if(typeof stExecutarTIA==='function')stExecutarTIA(k,true);},i*5000);});
+    }else{
+      if(confirm('Não perguntar de novo neste dispositivo?'))localStorage.setItem('stories_rec_noask','1');
+    }
+  }).catch(function(e){console.warn('stCheckRecorrencia',e);});
+}
+// ===== STORIES LAB — fim da estrutura base =====
 
 </script>
