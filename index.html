@@ -26783,6 +26783,7 @@ function stCheckRecorrencia(){
   if(localStorage.getItem('stories_rec_noask')==='1')return;
   fbGet('stories/tarefasIA').then(function(v){
     v=v||{};
+    Object.keys(v).forEach(function(k){if(!_stTIA[k])_stTIA[k]=v[k];}); // garante estado local antes de executar fora da página
     var wk=stIsoWeek(new Date());
     var pend=Object.keys(v).filter(function(k){return v[k]&&v[k].recorrencia==='semanal'&&v[k].ultimaExecucaoSemana!==wk;});
     if(!pend.length)return;
