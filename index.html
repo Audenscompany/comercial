@@ -27162,4 +27162,195 @@ function stCalExcluir(k){
 }
 // ===== STORIES LAB — fim das abas 1-3 =====
 
+// ============================================================
+// ===== STORIES LAB — Aba 4: Laboratório (experimentos) =====
+// ============================================================
+function stExpStatusBadge(st){
+  var m={planejado:['var(--muted)','rgba(255,255,255,0.06)','<i class="ti ti-clock"></i> planejado'],
+    rodando:['var(--amber)','rgba(245,158,11,0.12)','<i class="ti ti-player-play"></i> rodando'],
+    concluido:['var(--green)','rgba(34,197,94,0.12)','<i class="ti ti-check"></i> concluído']};
+  var s=m[st]||m.planejado;
+  return '<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:'+s[1]+';color:'+s[0]+';">'+s[2]+'</span>';
+}
+function stRenderLab(){
+  var p=document.getElementById('st-pane-lab');if(!p)return;
+  var ks=Object.keys(_stExp).sort(function(a,b){return (_stExp[b].criadoEm||0)-(_stExp[a].criadoEm||0);});
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'+
+    '<div style="font-size:12px;color:var(--muted);">Um experimento por vez dá leitura mais limpa. Hipótese → período de teste → análise com IA → aprendizado.</div>'+
+    '<button class="btn btn-primary" onclick="stExpNovo()"><i class="ti ti-flask"></i> Novo experimento</button></div>';
+  if(!ks.length){
+    p.innerHTML=head+'<div class="cb"><div style="text-align:center;padding:50px 20px;color:var(--muted);">'+
+      '<i class="ti ti-flask" style="font-size:42px;display:block;margin-bottom:12px;color:var(--purple);"></i>'+
+      '<div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:6px;">Nenhum experimento ainda</div>'+
+      '<div style="font-size:13px;">Crie o primeiro: ex. "Stories com enquete no 2º story aumentam a taxa de resposta".</div></div></div>';
+    return;
+  }
+  var cards=ks.map(function(k){
+    var e=_stExp[k];
+    var per=(e.dataInicio||'').split('-').reverse().join('/')+' → '+(e.dataFim||'').split('-').reverse().join('/');
+    var btns='';
+    if(e.status==='planejado')btns='<button class="btn btn-outline" onclick="stExpIniciar(\''+k+'\')" style="font-size:12px;"><i class="ti ti-player-play"></i> Iniciar</button>'+
+      '<button class="btn btn-outline" onclick="stExpNovo(\''+k+'\')" style="font-size:12px;"><i class="ti ti-pencil"></i> Editar</button>';
+    else if(e.status==='rodando')btns='<button class="btn btn-primary" id="st-exp-an-'+k+'" onclick="stExpAnalisar(\''+k+'\')" style="font-size:12px;"><i class="ti ti-sparkles"></i> Analisar com IA</button>';
+    else btns='<button class="btn btn-outline" onclick="stExpVer(\''+k+'\')" style="font-size:12px;"><i class="ti ti-file-analytics"></i> Ver resultado</button>'+
+      '<button class="btn btn-outline" id="st-exp-an-'+k+'" onclick="stExpAnalisar(\''+k+'\')" style="font-size:12px;" title="Reanalisar com dados atuais"><i class="ti ti-refresh"></i></button>';
+    return '<div class="cb" style="margin-bottom:14px;"><div style="padding:16px 18px;">'+
+      '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'+
+        '<div style="flex:1;">'+
+          '<div style="font-size:14px;font-weight:700;color:var(--white);line-height:1.45;margin-bottom:7px;">'+stEsc(e.hipotese)+'</div>'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'+stEstiloBadge(e.estiloTestado)+stExpStatusBadge(e.status)+
+            (e.tarefaId?'<span style="font-size:10px;color:var(--cyan);"><i class="ti ti-checklist"></i> tarefa criada</span>':'')+'</div>'+
+          '<div style="font-size:12px;color:var(--muted);"><i class="ti ti-target"></i> Meta: <span style="color:var(--white);">'+stEsc(e.meta||'—')+'</span> · <i class="ti ti-calendar"></i> '+per+'</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'+btns+
+          '<button onclick="stExpExcluir(\''+k+'\')" title="Excluir" style="background:transparent;border:1px solid rgba(239,68,68,0.35);border-radius:8px;color:var(--red);cursor:pointer;padding:6px 10px;font-size:12px;"><i class="ti ti-trash"></i></button>'+
+        '</div>'+
+      '</div>'+
+      (e.status==='concluido'&&e.resultado?'<div style="margin-top:10px;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:10px;line-height:1.5;">'+stEsc(String(e.resultado).replace(/[#*_`]/g,'').slice(0,180))+'...</div>':'')+
+    '</div></div>';
+  }).join('');
+  p.innerHTML=head+cards;
+}
+function stExpNovo(k){
+  var e=k&&_stExp[k]?_stExp[k]:{};
+  var hoje=stTodayISO();
+  var fim=new Date(Date.now()+7*86400000);
+  var fimISO=fim.getFullYear()+'-'+String(fim.getMonth()+1).padStart(2,'0')+'-'+String(fim.getDate()).padStart(2,'0');
+  var estOpts=_stEstilos.map(function(s){return '<option value="'+s+'"'+(e.estiloTestado===s?' selected':'')+'>'+s+'</option>';}).join('');
+  stModal('<div style="font-size:16px;font-weight:800;color:var(--white);margin-bottom:16px;"><i class="ti ti-flask" style="color:var(--purple);"></i> '+(k?'Editar experimento':'Novo experimento')+'</div>'+
+    '<input type="hidden" id="st-exp-key" value="'+(k||'')+'">'+
+    '<label class="f-label">Hipótese</label>'+
+    '<textarea class="f-input" id="st-exp-hip" rows="2" placeholder="Ex: Stories de bastidor com enquete no 2º story aumentam a taxa de resposta" style="margin-bottom:12px;resize:vertical;">'+stEsc(e.hipotese||'')+'</textarea>'+
+    '<label class="f-label">Estilo testado</label><select class="f-input" id="st-exp-estilo" style="margin-bottom:12px;">'+estOpts+'</select>'+
+    '<label class="f-label">Meta (métrica + alvo)</label>'+
+    '<input class="f-input" id="st-exp-meta" placeholder="Ex: taxa de resposta média > 1,5%" value="'+stEsc(e.meta||'')+'" style="margin-bottom:12px;">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
+      '<div><label class="f-label">Início</label><input type="date" class="f-input" id="st-exp-ini" value="'+(e.dataInicio||hoje)+'" style="margin-bottom:0;"></div>'+
+      '<div><label class="f-label">Fim</label><input type="date" class="f-input" id="st-exp-fim" value="'+(e.dataFim||fimISO)+'" style="margin-bottom:0;"></div>'+
+    '</div>'+
+    (k?'':'<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--white);cursor:pointer;margin-bottom:16px;"><input type="checkbox" id="st-exp-tarefa" checked style="accent-color:var(--purple);"> Criar tarefa no módulo Tarefas do Dia (lembrete de executar o teste)</label>')+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+      '<button class="btn btn-outline" onclick="stCloseModal()">Cancelar</button>'+
+      '<button class="btn btn-primary" onclick="stExpSalvar()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>');
+}
+function stExpSalvar(){
+  var k=(document.getElementById('st-exp-key')||{value:''}).value;
+  var hip=(document.getElementById('st-exp-hip')||{value:''}).value.trim();
+  var estilo=(document.getElementById('st-exp-estilo')||{value:''}).value;
+  var meta=(document.getElementById('st-exp-meta')||{value:''}).value.trim();
+  var ini=(document.getElementById('st-exp-ini')||{value:''}).value;
+  var fim=(document.getElementById('st-exp-fim')||{value:''}).value;
+  if(!hip){showSheetToast('Descreva a hipótese',true);return;}
+  if(!ini||!fim||fim<ini){showSheetToast('Período inválido',true);return;}
+  if(!fbDb&&!initFirebase()){showSheetToast('Firebase indisponível',true);return;}
+  if(k){
+    fbDb.ref('stories/experimentos/'+k).update({hipotese:hip,estiloTestado:estilo,meta:meta,dataInicio:ini,dataFim:fim});
+    stCloseModal();showSheetToast('Experimento atualizado.',false);return;
+  }
+  var chk=document.getElementById('st-exp-tarefa');
+  var exp={hipotese:hip,estiloTestado:estilo,meta:meta,dataInicio:ini,dataFim:fim,status:'planejado',resultado:'',tarefaId:'',criadoEm:Date.now()};
+  var ref=fbDb.ref('stories/experimentos').push();
+  if(chk&&chk.checked){
+    try{exp.tarefaId=stExpCriarTarefa(exp);}catch(e){console.warn('stExpCriarTarefa',e);}
+  }
+  ref.set(exp);
+  stCloseModal();
+  showSheetToast('Experimento criado!'+(exp.tarefaId?' Tarefa adicionada no módulo Tarefas do Dia.':''),false);
+}
+// Cria tarefa no módulo Tarefas do Dia (mesma estrutura de addTarefa)
+function stExpCriarTarefa(exp){
+  var nova={
+    id:'t_st_'+Date.now(),
+    texto:'[Stories Lab] Executar experimento: '+exp.hipotese+' (estilo '+exp.estiloTestado+', meta: '+(exp.meta||'—')+') — '+exp.dataInicio.split('-').reverse().join('/')+' a '+exp.dataFim.split('-').reverse().join('/'),
+    urgencia:'normal',
+    criador:(typeof CU!=='undefined'&&CU)?CU.name:'Stories Lab',
+    atribuido:(typeof CU!=='undefined'&&CU)?CU.name:'',
+    done:false,doneDate:null,recorrente:false,diasSemana:[],
+    date:exp.dataInicio.split('-').reverse().join('/'),
+    proximaData:null
+  };
+  try{
+    var tarefas=getTarefasLocal();tarefas.push(nova);
+    localStorage.setItem('tarefas_dia',JSON.stringify(tarefas));
+  }catch(e){}
+  saveTarefaFB(nova);
+  return nova.id;
+}
+function stExpIniciar(k){
+  if(!_stExp[k])return;
+  if(fbDb||initFirebase())fbDb.ref('stories/experimentos/'+k).update({status:'rodando'});
+  showSheetToast('Experimento rodando — poste conforme o plano e analise ao fim do período.',false);
+}
+function stExpExcluir(k){
+  if(!confirm('Excluir este experimento?'))return;
+  if(fbDb||initFirebase())fbDb.ref('stories/experimentos/'+k).remove();
+}
+function stAggMetrics(arr){
+  var n=arr.length;
+  if(!n)return {n:0,viewsMedio:0,engajamentoMedio:0,taxaRespostaMedia:0,taxaSaidaMedia:0};
+  var sum=function(f){return arr.reduce(function(a,s){return a+(Number(s[f])||0);},0);};
+  return {n:n,viewsMedio:Math.round(sum('story_views')/n),
+    engajamentoMedio:+(sum('engajamento')/n).toFixed(2),
+    taxaRespostaMedia:+(sum('taxaResposta')/n).toFixed(2),
+    taxaSaidaMedia:+(sum('taxaSaida')/n).toFixed(2)};
+}
+async function stExpAnalisar(k){
+  var e=_stExp[k];if(!e)return;
+  var btn=document.getElementById('st-exp-an-'+k);
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Analisando...';}
+  try{
+    var ini=new Date(e.dataInicio+'T00:00:00').getTime();
+    var fim=new Date(e.dataFim+'T23:59:59').getTime();
+    var all=Object.keys(_stCap).map(function(ck){
+      var o=Object.assign({},_stCap[ck]);o._ts=new Date(o.story_timestamp).getTime()||o.capturadoEm||0;return o;
+    });
+    var teste=all.filter(function(s){return s._ts>=ini&&s._ts<=fim&&s.estilo===e.estiloTestado;});
+    var testeGeral=all.filter(function(s){return s._ts>=ini&&s._ts<=fim;});
+    var baseMesmo=all.filter(function(s){return s._ts<ini&&s.estilo===e.estiloTestado;});
+    var baseGeral=all.filter(function(s){return s._ts<ini;});
+    if(!testeGeral.length){showSheetToast('Nenhum story capturado no período do teste ('+e.dataInicio+' a '+e.dataFim+'). Sincronize antes de analisar.',true);throw new Error('sem dados');}
+    var payload={hipotese:e.hipotese,estiloTestado:e.estiloTestado,meta:e.meta,
+      periodoTeste:{de:e.dataInicio,ate:e.dataFim},
+      metricas_teste_estilo:stAggMetrics(teste),
+      metricas_teste_todos_stories:stAggMetrics(testeGeral),
+      baseline_mesmo_estilo_antes:stAggMetrics(baseMesmo),
+      baseline_geral_antes:stAggMetrics(baseGeral)};
+    var txt=await stClaude(_stSysExp,JSON.stringify(payload),1500);
+    if(!txt||!txt.trim())throw new Error('resposta vazia da IA');
+    await fbDb.ref('stories/experimentos/'+k).update({status:'concluido',resultado:txt,analisadoEm:Date.now()});
+    _stExp[k].status='concluido';_stExp[k].resultado=txt;
+    stExpVer(k);
+  }catch(err){
+    if(err.message!=='sem dados')showSheetToast('Erro na análise: '+err.message,true);
+  }
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> Analisar com IA';}
+  stRefreshIfOpen('lab');
+}
+function stExpVer(k){
+  var e=_stExp[k];if(!e||!e.resultado)return;
+  var md=(typeof igMarkdown==='function')?igMarkdown(e.resultado):'<pre style="white-space:pre-wrap;">'+stEsc(e.resultado)+'</pre>';
+  stModal('<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'+
+    '<div style="font-size:16px;font-weight:800;color:var(--white);">Resultado do experimento</div>'+
+    '<button onclick="stCloseModal()" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;"><i class="ti ti-x"></i></button></div>'+
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px;">'+stEsc(e.hipotese)+'</div>'+
+    '<div style="display:flex;gap:6px;margin-bottom:14px;">'+stEstiloBadge(e.estiloTestado)+stExpStatusBadge(e.status)+'</div>'+
+    '<div style="font-size:13px;color:var(--white);line-height:1.65;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;" class="ig-md">'+md+'</div>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;">'+
+      '<button class="btn btn-outline" onclick="stExpSalvarApr(\''+k+'\',false)"><i class="ti ti-x"></i> Salvar como não validado</button>'+
+      '<button class="btn btn-primary" onclick="stExpSalvarApr(\''+k+'\',true)"><i class="ti ti-book-2"></i> Salvar como aprendizado validado</button>'+
+    '</div>');
+}
+function stExpSalvarApr(k,validado){
+  var e=_stExp[k];if(!e)return;
+  var linha=String(e.resultado||'').split('\n').map(function(l){return l.replace(/[#*_`]/g,'').trim();}).filter(Boolean);
+  var aprLine='';
+  for(var i=0;i<linha.length;i++){if(/APRENDIZADO/i.test(linha[i])){aprLine=linha[i].replace(/^.*APRENDIZADO[:\s—-]*/i,'')||linha[i+1]||'';break;}}
+  var texto=aprLine||('['+e.estiloTestado+'] '+e.hipotese+' — '+(validado?'confirmado':'não confirmado')+' (meta: '+(e.meta||'—')+')');
+  fbPush('stories/aprendizados',{texto:texto,origem:'experimento',experimentoId:k,estilo:e.estiloTestado,validado:!!validado,criadoEm:Date.now()});
+  stCloseModal();
+  showSheetToast('Aprendizado salvo na aba Aprendizados ('+(validado?'validado':'não validado')+').',false);
+}
+// ===== STORIES LAB — fim da aba 4 =====
+
 </script>
