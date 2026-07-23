@@ -26520,6 +26520,7 @@ function storiesStartListeners(){
   fbDb.ref('stories/experimentos').on('value',function(s){_stExp=s.val()||{};stRefreshIfOpen('lab');});
   fbDb.ref('stories/aprendizados').on('value',function(s){_stApr=s.val()||{};stRefreshIfOpen('aprendizados');});
   fbDb.ref('stories/tarefasIA').on('value',function(s){_stTIA=s.val()||{};stRefreshIfOpen('tarefas');});
+  fbDb.ref('stories/resumoExec').once('value').then(function(s){if(s.val()&&typeof _stResumoExec!=='undefined'&&!_stResumoExec)_stResumoExec=s.val();}).catch(function(e){});
   fbDb.ref('stories/ganchos').once('value').then(function(s){if(!s.exists())stSeedGanchos();}).catch(function(e){console.warn('seed ganchos',e);});
   fbDb.ref('stories/tarefasIA').once('value').then(function(s){if(!s.exists())stSeedTIA();}).catch(function(e){console.warn('seed tarefasIA',e);});
 }
@@ -27352,5 +27353,125 @@ function stExpSalvarApr(k,validado){
   showSheetToast('Aprendizado salvo na aba Aprendizados ('+(validado?'validado':'não validado')+').',false);
 }
 // ===== STORIES LAB — fim da aba 4 =====
+
+// ============================================================
+// ===== STORIES LAB — Aba 5: Aprendizados =====
+// ============================================================
+var _stResumoExec=null;
+function stAprBadge(v){
+  return v?'<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(34,197,94,0.12);color:var(--green);border:1px solid rgba(34,197,94,0.3);"><i class="ti ti-circle-check"></i> validado</span>'
+    :'<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,0.06);color:var(--muted);border:1px solid var(--border);"><i class="ti ti-help-circle"></i> não validado</span>';
+}
+function stAprOrigemLbl(o){
+  var m={experimento:['ti-flask','var(--purple)','experimento'],ia:['ti-robot','var(--cyan)','pesquisa IA'],manual:['ti-pencil','var(--amber)','manual']};
+  var s=m[o]||m.manual;
+  return '<span style="font-size:10.5px;color:'+s[1]+';"><i class="ti '+s[0]+'"></i> '+s[2]+'</span>';
+}
+function stRenderApr(){
+  var p=document.getElementById('st-pane-aprendizados');if(!p)return;
+  var ks=Object.keys(_stApr).sort(function(a,b){return (_stApr[b].criadoEm||0)-(_stApr[a].criadoEm||0);});
+  var q=(_stAprQ||'').toLowerCase();
+  var fks=q?ks.filter(function(k){var a=_stApr[k];return (String(a.texto||'')+' '+String(a.estilo||'')+' '+String(a.origem||'')).toLowerCase().indexOf(q)>-1;}):ks;
+  var nVal=ks.filter(function(k){return _stApr[k].validado;}).length;
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">'+
+    '<div style="display:flex;gap:10px;align-items:center;flex:1;min-width:260px;">'+
+      '<input class="f-input" id="st-apr-busca" placeholder="Buscar aprendizado, estilo, origem..." value="'+stEsc(_stAprQ||'')+'" oninput="_stAprQ=this.value;stAprFiltrar()" style="margin-bottom:0;max-width:340px;font-size:12.5px;">'+
+      '<span style="font-size:11.5px;color:var(--muted);white-space:nowrap;">'+ks.length+' aprendizados · <span style="color:var(--green);">'+nVal+' validados</span></span>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;">'+
+      '<button class="btn btn-outline" onclick="stAprNovo()" style="font-size:12px;"><i class="ti ti-plus"></i> Adicionar</button>'+
+      '<button class="btn btn-primary" id="st-apr-resumo-btn" onclick="stAprResumoExec()" style="font-size:12px;"><i class="ti ti-report"></i> Resumo Executivo</button>'+
+    '</div></div>';
+  var resumoBox='<div id="st-apr-resumo"></div>';
+  var lista;
+  if(!ks.length){
+    lista='<div class="cb"><div style="text-align:center;padding:50px 20px;color:var(--muted);">'+
+      '<i class="ti ti-book-2" style="font-size:42px;display:block;margin-bottom:12px;color:var(--purple);"></i>'+
+      '<div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:6px;">Base de conhecimento vazia</div>'+
+      '<div style="font-size:13px;">Aprendizados chegam aqui pelos experimentos do Laboratório, pelas Tarefas de IA ou manualmente.</div></div></div>';
+  }else{
+    lista='<div class="cb"><div id="st-apr-lista">'+
+      (fks.length?fks.map(stAprItemHtml).join(''):'<div style="color:var(--muted);font-size:12.5px;text-align:center;padding:26px;">Nada encontrado para "'+stEsc(_stAprQ)+'".</div>')+
+    '</div></div>';
+  }
+  p.innerHTML=head+resumoBox+lista;
+  if(_stResumoExec)stAprRenderResumo();
+}
+function stAprItemHtml(k){
+  var a=_stApr[k];
+  return '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);">'+
+    '<i class="ti ti-bulb" style="color:var(--amber);font-size:16px;margin-top:2px;flex-shrink:0;"></i>'+
+    '<div style="flex:1;">'+
+      '<div style="font-size:13px;color:var(--white);line-height:1.55;margin-bottom:6px;">'+stEsc(a.texto)+'</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'+stAprBadge(a.validado)+(a.estilo?stEstiloBadge(a.estilo):'')+stAprOrigemLbl(a.origem)+
+        '<span style="font-size:10.5px;color:var(--muted);">'+new Date(a.criadoEm||0).toLocaleDateString('pt-BR')+'</span></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;flex-shrink:0;">'+
+      '<button onclick="stAprToggleVal(\''+k+'\')" title="'+(a.validado?'Marcar como não validado':'Marcar como validado')+'" style="background:transparent;border:1px solid var(--border);border-radius:8px;color:'+(a.validado?'var(--green)':'var(--muted)')+';cursor:pointer;padding:5px 9px;font-size:12px;"><i class="ti ti-circle-check"></i></button>'+
+      '<button onclick="stAprExcluir(\''+k+'\')" title="Excluir" style="background:transparent;border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:var(--red);cursor:pointer;padding:5px 9px;font-size:12px;"><i class="ti ti-trash"></i></button>'+
+    '</div></div>';
+}
+function stAprFiltrar(){
+  var box=document.getElementById('st-apr-lista');if(!box)return;
+  var ks=Object.keys(_stApr).sort(function(a,b){return (_stApr[b].criadoEm||0)-(_stApr[a].criadoEm||0);});
+  var q=(_stAprQ||'').toLowerCase();
+  var fks=q?ks.filter(function(k){var a=_stApr[k];return (String(a.texto||'')+' '+String(a.estilo||'')+' '+String(a.origem||'')).toLowerCase().indexOf(q)>-1;}):ks;
+  box.innerHTML=fks.length?fks.map(stAprItemHtml).join(''):'<div style="color:var(--muted);font-size:12.5px;text-align:center;padding:26px;">Nada encontrado para "'+stEsc(_stAprQ)+'".</div>';
+}
+function stAprNovo(){
+  var estOpts='<option value="">— sem estilo —</option>'+_stEstilos.map(function(e){return '<option value="'+e+'">'+e+'</option>';}).join('');
+  stModal('<div style="font-size:16px;font-weight:800;color:var(--white);margin-bottom:16px;"><i class="ti ti-book-2" style="color:var(--purple);"></i> Novo aprendizado</div>'+
+    '<label class="f-label">Aprendizado (1-2 frases acionáveis)</label>'+
+    '<textarea class="f-input" id="st-apr-txt" rows="3" placeholder="Ex: Enquete no 2º story segura +18% de retenção até o fim da sequência" style="margin-bottom:12px;resize:vertical;"></textarea>'+
+    '<label class="f-label">Estilo relacionado (opcional)</label><select class="f-input" id="st-apr-estilo" style="margin-bottom:12px;">'+estOpts+'</select>'+
+    '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--white);cursor:pointer;margin-bottom:16px;"><input type="checkbox" id="st-apr-val" style="accent-color:var(--purple);"> Já validado com dados</label>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+      '<button class="btn btn-outline" onclick="stCloseModal()">Cancelar</button>'+
+      '<button class="btn btn-primary" onclick="stAprSalvar()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>');
+}
+function stAprSalvar(){
+  var txt=(document.getElementById('st-apr-txt')||{value:''}).value.trim();
+  if(!txt){showSheetToast('Escreva o aprendizado',true);return;}
+  var estilo=(document.getElementById('st-apr-estilo')||{value:''}).value;
+  var val=!!(document.getElementById('st-apr-val')||{}).checked;
+  fbPush('stories/aprendizados',{texto:txt,origem:'manual',estilo:estilo,validado:val,criadoEm:Date.now()});
+  stCloseModal();
+  showSheetToast('Aprendizado salvo!',false);
+}
+function stAprToggleVal(k){
+  if(!_stApr[k])return;
+  if(fbDb||initFirebase())fbDb.ref('stories/aprendizados/'+k).update({validado:!_stApr[k].validado});
+}
+function stAprExcluir(k){
+  if(!confirm('Excluir este aprendizado?'))return;
+  if(fbDb||initFirebase())fbDb.ref('stories/aprendizados/'+k).remove();
+}
+async function stAprResumoExec(){
+  var ks=Object.keys(_stApr);
+  if(!ks.length){showSheetToast('Nenhum aprendizado para resumir ainda.',true);return;}
+  var btn=document.getElementById('st-apr-resumo-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Gerando...';}
+  try{
+    var itens=ks.map(function(k){var a=_stApr[k];return {texto:a.texto,estilo:a.estilo||null,origem:a.origem,validado:!!a.validado};});
+    var stats=stStatsPorEstilo(stCapArr(90));
+    var sys='Você é estrategista de conteúdo do @lucasramong_ (especialista em marketing para hamburguerias; público: donos de delivery). Receberá a base de aprendizados de stories (validados e não validados) e o desempenho por estilo dos últimos 90 dias. Escreva um RESUMO EXECUTIVO em markdown: (1) O QUE JÁ SABEMOS — 3-5 bullets só com aprendizados validados; (2) APOSTAS ATUAIS — o que os não validados sugerem; (3) PLAYBOOK DA SEMANA — 3 instruções diretas de execução baseadas em tudo. Curto, direto, sem genérico, cite números quando existirem.';
+    var txt=await stClaude(sys,JSON.stringify({aprendizados:itens,desempenho90d:stats}),2000);
+    _stResumoExec={texto:txt,geradoEm:Date.now()};
+    if(fbDb||initFirebase())fbDb.ref('stories/resumoExec').set(_stResumoExec);
+    stAprRenderResumo();
+  }catch(e){showSheetToast('Erro ao gerar resumo: '+e.message,true);}
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-report"></i> Resumo Executivo';}
+}
+function stAprRenderResumo(){
+  var box=document.getElementById('st-apr-resumo');if(!box||!_stResumoExec)return;
+  var md=(typeof igMarkdown==='function')?igMarkdown(_stResumoExec.texto):'<pre style="white-space:pre-wrap;">'+stEsc(_stResumoExec.texto)+'</pre>';
+  box.innerHTML='<div class="cb" style="margin-bottom:16px;border:1px solid rgba(123,47,255,0.35);">'+
+    '<div class="cb-hd"><span class="cb-title"><i class="ti ti-report" style="margin-right:6px;color:var(--purple);"></i>Resumo Executivo</span>'+
+    '<span style="font-size:11px;color:var(--muted);">gerado em '+new Date(_stResumoExec.geradoEm).toLocaleString('pt-BR')+
+    ' · <a href="javascript:void(0)" onclick="_stResumoExec=null;stRenderApr()" style="color:var(--muted);">fechar</a></span></div>'+
+    '<div style="padding:16px 18px;font-size:13px;color:var(--white);line-height:1.65;" class="ig-md">'+md+'</div></div>';
+}
+// ===== STORIES LAB — fim da aba 5 =====
 
 </script>
