@@ -26482,7 +26482,7 @@ function stEstiloBadge(e){
   var c=_stEstiloCores[e]||'#7b2fff';
   return '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+c+'22;color:'+c+';border:1px solid '+c+'44;">'+stEsc(e)+'</span>';
 }
-async function stClaude(system,user,maxTokens,tools){
+async function stClaude(system,user,maxTokens,tools,joiner){
   var ck=localStorage.getItem('audens_claude_key');
   if(!ck)throw new Error('Chave Claude não configurada (Configurações → Claude API)');
   var body={model:'claude-sonnet-4-6',max_tokens:maxTokens||2000,system:system,messages:[{role:'user',content:user}]};
@@ -26492,7 +26492,7 @@ async function stClaude(system,user,maxTokens,tools){
     body:JSON.stringify(body)});
   var d=await r.json();
   if(d.error)throw new Error(d.error.message||JSON.stringify(d.error));
-  return (d.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('\n');
+  return (d.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join(joiner==null?'\n':joiner);
 }
 function stParseJSON(txt){
   if(!txt)return null;
@@ -27473,5 +27473,195 @@ function stAprRenderResumo(){
     '<div style="padding:16px 18px;font-size:13px;color:var(--white);line-height:1.65;" class="ig-md">'+md+'</div></div>';
 }
 // ===== STORIES LAB — fim da aba 5 =====
+
+// ============================================================
+// ===== STORIES LAB — Aba 6: Tarefas de IA (curadoria web) =====
+// ============================================================
+var _stTIABusy={};
+function stTIATipoBadge(t){
+  return t==='leitura'
+    ?'<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(56,189,248,0.12);color:var(--cyan);border:1px solid rgba(56,189,248,0.3);"><i class="ti ti-book"></i> leitura de artigos</span>'
+    :'<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(123,47,255,0.12);color:var(--purple3,#a78bfa);border:1px solid rgba(123,47,255,0.35);"><i class="ti ti-world-search"></i> pesquisa web</span>';
+}
+function stRenderTIA(){
+  var p=document.getElementById('st-pane-tarefas');if(!p)return;
+  var ks=Object.keys(_stTIA).sort(function(a,b){return (_stTIA[b].criadaEm||0)-(_stTIA[a].criadaEm||0);});
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">'+
+    '<div style="font-size:12px;color:var(--muted);max-width:640px;">A IA pesquisa na web ou lê artigos que você indicar e devolve táticas, hipóteses e ganchos já adaptados ao perfil @lucasramong_. Tarefas semanais rodam automaticamente 1x por semana (com sua confirmação no login).</div>'+
+    '<button class="btn btn-primary" onclick="stTIANova()"><i class="ti ti-robot"></i> Nova tarefa de IA</button></div>';
+  if(!ks.length){
+    p.innerHTML=head+'<div class="cb"><div style="text-align:center;padding:50px 20px;color:var(--muted);">'+
+      '<i class="ti ti-robot" style="font-size:42px;display:block;margin-bottom:12px;color:var(--purple);"></i>'+
+      '<div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:6px;">Nenhuma tarefa de IA</div>'+
+      '<div style="font-size:13px;">Crie uma pesquisa (ex: "táticas de retenção em stories B2B") ou cole URLs de artigos para a IA ler.</div></div></div>';
+    return;
+  }
+  var wk=stIsoWeek(new Date());
+  var cards=ks.map(function(k){
+    var t=_stTIA[k];
+    var busy=!!_stTIABusy[k];
+    var recBadge=t.recorrencia==='semanal'
+      ?'<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(245,158,11,0.12);color:var(--amber);"><i class="ti ti-repeat"></i> semanal'+(t.ultimaExecucaoSemana===wk?' · feita esta semana':' · pendente esta semana')+'</span>'
+      :'<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,0.06);color:var(--muted);">única</span>';
+    var desc=t.tipo==='leitura'
+      ?String(t.urls||'').split(/\s+/).filter(Boolean).slice(0,3).map(function(u){return '<div style="font-size:11.5px;color:var(--cyan);word-break:break-all;"><i class="ti ti-link"></i> '+stEsc(u)+'</div>';}).join('')
+      :'<div style="font-size:13px;color:var(--white);line-height:1.5;">'+stEsc(t.tema||'')+'</div>';
+    return '<div class="cb" style="margin-bottom:14px;"><div style="padding:16px 18px;">'+
+      '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'+
+        '<div style="flex:1;">'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'+stTIATipoBadge(t.tipo)+recBadge+
+            (t.executadaEm?'<span style="font-size:10.5px;color:var(--muted);">última execução: '+new Date(t.executadaEm).toLocaleString('pt-BR')+'</span>':'')+'</div>'+
+          desc+
+        '</div>'+
+        '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'+
+          '<button class="btn btn-primary" id="st-tia-run-'+k+'" onclick="stExecutarTIA(\''+k+'\')" '+(busy?'disabled':'')+' style="font-size:12px;">'+(busy?'<i class="ti ti-loader-2"></i> Executando...':'<i class="ti ti-player-play"></i> Executar')+'</button>'+
+          (t.resultado?'<button class="btn btn-outline" onclick="stTIAVer(\''+k+'\')" style="font-size:12px;"><i class="ti ti-file-analytics"></i> Resultado</button>':'')+
+          '<button onclick="stTIAExcluir(\''+k+'\')" title="Excluir" style="background:transparent;border:1px solid rgba(239,68,68,0.35);border-radius:8px;color:var(--red);cursor:pointer;padding:6px 10px;font-size:12px;"><i class="ti ti-trash"></i></button>'+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+  }).join('');
+  p.innerHTML=head+cards;
+}
+function stTIANova(){
+  stModal('<div style="font-size:16px;font-weight:800;color:var(--white);margin-bottom:16px;"><i class="ti ti-robot" style="color:var(--purple);"></i> Nova tarefa de IA</div>'+
+    '<label class="f-label">Tipo</label>'+
+    '<select class="f-input" id="st-tia-tipo" onchange="stTIAToggleTipo()" style="margin-bottom:12px;">'+
+      '<option value="pesquisa">Pesquisa na web (a IA busca sozinha)</option>'+
+      '<option value="leitura">Leitura de artigos (você cola as URLs)</option>'+
+    '</select>'+
+    '<div id="st-tia-box-tema"><label class="f-label">Tema da pesquisa</label>'+
+    '<textarea class="f-input" id="st-tia-tema" rows="2" placeholder="Ex: táticas recentes de retenção em stories para perfis de autoridade B2B" style="margin-bottom:12px;resize:vertical;"></textarea></div>'+
+    '<div id="st-tia-box-urls" style="display:none;"><label class="f-label">URLs dos artigos (uma por linha, até 5)</label>'+
+    '<textarea class="f-input" id="st-tia-urls" rows="3" placeholder="https://..." style="margin-bottom:12px;resize:vertical;font-family:monospace;font-size:11.5px;"></textarea></div>'+
+    '<label class="f-label">Recorrência</label>'+
+    '<select class="f-input" id="st-tia-rec" style="margin-bottom:16px;">'+
+      '<option value="unica">Única</option>'+
+      '<option value="semanal">Semanal (roda toda semana com sua confirmação)</option>'+
+    '</select>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+      '<button class="btn btn-outline" onclick="stCloseModal()">Cancelar</button>'+
+      '<button class="btn btn-primary" onclick="stTIASalvar()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>');
+}
+function stTIAToggleTipo(){
+  var tipo=(document.getElementById('st-tia-tipo')||{value:'pesquisa'}).value;
+  var bt=document.getElementById('st-tia-box-tema'),bu=document.getElementById('st-tia-box-urls');
+  if(bt)bt.style.display=tipo==='pesquisa'?'block':'none';
+  if(bu)bu.style.display=tipo==='leitura'?'block':'none';
+}
+function stTIASalvar(){
+  var tipo=(document.getElementById('st-tia-tipo')||{value:'pesquisa'}).value;
+  var tema=(document.getElementById('st-tia-tema')||{value:''}).value.trim();
+  var urls=(document.getElementById('st-tia-urls')||{value:''}).value.trim();
+  var rec=(document.getElementById('st-tia-rec')||{value:'unica'}).value;
+  if(tipo==='pesquisa'&&!tema){showSheetToast('Digite o tema da pesquisa',true);return;}
+  if(tipo==='leitura'&&!urls){showSheetToast('Cole ao menos uma URL',true);return;}
+  fbPush('stories/tarefasIA',{tipo:tipo,tema:tema,urls:urls,recorrencia:rec,status:'pendente',criadaEm:Date.now()});
+  stCloseModal();
+  showSheetToast('Tarefa de IA criada!',false);
+}
+function stTIAExcluir(k){
+  if(!confirm('Excluir esta tarefa de IA?'))return;
+  if(fbDb||initFirebase())fbDb.ref('stories/tarefasIA/'+k).remove();
+}
+async function stExecutarTIA(k,silent){
+  var t=_stTIA[k];if(!t||_stTIABusy[k])return;
+  _stTIABusy[k]=true;
+  var btn=document.getElementById('st-tia-run-'+k);
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Executando...';}
+  try{
+    var tools,user;
+    if(t.tipo==='leitura'){
+      var urls=String(t.urls||'').split(/\s+/).filter(Boolean).slice(0,5);
+      if(!urls.length)throw new Error('tarefa sem URLs');
+      tools=[{type:'web_fetch_20260318',name:'web_fetch',max_uses:5,citations:{enabled:true},max_content_tokens:60000}];
+      user='Leia estes artigos e extraia o que é acionável para o perfil:\n'+urls.join('\n');
+    }else{
+      tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
+      user='Pesquise na web sobre: '+(t.tema||'')+'\nFoque em conteúdo recente (últimos 12 meses) e acionável para o perfil.';
+    }
+    var txt=await stClaude(_stSysCur,user,4000,tools,'');
+    var j=stParseJSON(txt);
+    if(!j||!j.resumo)throw new Error('resposta da IA fora do formato esperado');
+    var upd={resultado:JSON.stringify(j),executadaEm:Date.now(),status:'concluida',ultimaExecucaoSemana:stIsoWeek(new Date())};
+    if(fbDb||initFirebase())await fbDb.ref('stories/tarefasIA/'+k).update(upd);
+    Object.assign(_stTIA[k],upd);
+    if(!silent)stTIAVer(k);
+    else showSheetToast('Tarefa de IA semanal executada — veja o resultado na aba Tarefas IA do Stories Lab.',false);
+  }catch(e){
+    console.error('stExecutarTIA',e);
+    showSheetToast('Erro na tarefa de IA: '+e.message,true);
+  }
+  _stTIABusy[k]=false;
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-player-play"></i> Executar';}
+  stRefreshIfOpen('tarefas');
+}
+function stTIAVer(k){
+  var t=_stTIA[k];if(!t||!t.resultado)return;
+  var j=null;try{j=JSON.parse(t.resultado);}catch(e){}
+  if(!j){showSheetToast('Resultado corrompido — execute novamente.',true);return;}
+  var sec=function(icon,color,titulo,inner){
+    return '<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:'+color+';margin-bottom:7px;"><i class="ti '+icon+'"></i> '+titulo+'</div>'+inner+'</div>';
+  };
+  var resumo=(j.resumo||[]).map(function(b){return '<div style="font-size:12.5px;color:var(--white);line-height:1.55;margin-bottom:5px;">• '+stEsc(b)+'</div>';}).join('');
+  var taticas=(j.taticas||[]).map(function(x){
+    return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:7px;">'+
+      '<div style="font-size:12.5px;font-weight:700;color:var(--white);margin-bottom:4px;">'+stEsc(x.tatica||'')+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.5;">'+stEsc(x.comoAplicar||'')+'</div></div>';
+  }).join('');
+  var hipoteses=(j.hipoteses||[]).map(function(x,i){
+    return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:7px;display:flex;gap:10px;align-items:flex-start;">'+
+      '<div style="flex:1;"><div style="font-size:12.5px;color:var(--white);line-height:1.5;margin-bottom:4px;">'+stEsc(x.hipotese||'')+'</div>'+
+      '<div style="display:flex;gap:6px;align-items:center;">'+stEstiloBadge(x.estiloTestado)+'<span style="font-size:11px;color:var(--muted);"><i class="ti ti-target"></i> '+stEsc(x.meta||'')+'</span></div></div>'+
+      '<button class="btn btn-outline" onclick="stTIACriarExp(\''+k+'\','+i+')" style="font-size:11px;white-space:nowrap;flex-shrink:0;"><i class="ti ti-flask"></i> Criar experimento</button></div>';
+  }).join('');
+  var ganchos=(j.ganchos||[]).map(function(g){return '<div style="font-size:12.5px;color:var(--white);line-height:1.5;margin-bottom:5px;"><i class="ti ti-quote" style="color:var(--amber);"></i> '+stEsc(g)+'</div>';}).join('');
+  var fontes=(j.fontes||[]).map(function(f){
+    return '<div style="font-size:11.5px;margin-bottom:4px;"><a href="'+stEsc(f.url||'#')+'" target="_blank" rel="noopener" style="color:var(--cyan);">'+stEsc(f.titulo||f.url||'fonte')+' <i class="ti ti-external-link"></i></a></div>';
+  }).join('');
+  stModal('<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'+
+    '<div style="font-size:16px;font-weight:800;color:var(--white);">Resultado da curadoria</div>'+
+    '<button onclick="stCloseModal()" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;"><i class="ti ti-x"></i></button></div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">'+(t.tipo==='leitura'?'Leitura de artigos':'Pesquisa: '+stEsc(t.tema||''))+' · '+new Date(t.executadaEm||0).toLocaleString('pt-BR')+'</div>'+
+    sec('ti-list','var(--purple3,#a78bfa)','Resumo',resumo)+
+    (taticas?sec('ti-bolt','var(--green)','Táticas',taticas):'')+
+    (hipoteses?sec('ti-flask','var(--purple3,#a78bfa)','Hipóteses para testar',hipoteses):'')+
+    (ganchos?sec('ti-fishing','var(--amber)','Ganchos novos',ganchos):'')+
+    (fontes?sec('ti-link','var(--cyan)','Fontes',fontes):'')+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap;">'+
+      ((j.ganchos||[]).length?'<button class="btn btn-outline" onclick="stTIAAddGanchos(\''+k+'\')"><i class="ti ti-fishing"></i> Adicionar ganchos ao banco</button>':'')+
+      '<button class="btn btn-primary" onclick="stTIASalvarApr(\''+k+'\')"><i class="ti ti-book-2"></i> Salvar resumo nos Aprendizados</button>'+
+    '</div>');
+}
+function stTIAAddGanchos(k){
+  var t=_stTIA[k];if(!t||!t.resultado)return;
+  var j=null;try{j=JSON.parse(t.resultado);}catch(e){}
+  if(!j||!(j.ganchos||[]).length)return;
+  var now=Date.now();
+  j.ganchos.forEach(function(g,i){fbPush('stories/ganchos',{texto:g,origem:'ia',criadoEm:now+i});});
+  showSheetToast(j.ganchos.length+' ganchos adicionados ao banco (aba Ideias & Ganchos).',false);
+}
+function stTIACriarExp(k,i){
+  var t=_stTIA[k];if(!t||!t.resultado)return;
+  var j=null;try{j=JSON.parse(t.resultado);}catch(e){}
+  var h=j&&j.hipoteses&&j.hipoteses[i];if(!h)return;
+  var hoje=stTodayISO();
+  var fim=new Date(Date.now()+7*86400000);
+  var fimISO=fim.getFullYear()+'-'+String(fim.getMonth()+1).padStart(2,'0')+'-'+String(fim.getDate()).padStart(2,'0');
+  var estilo=_stEstilos.indexOf(h.estiloTestado)>-1?h.estiloTestado:'interativo';
+  fbPush('stories/experimentos',{hipotese:h.hipotese||'',estiloTestado:estilo,meta:h.meta||'',dataInicio:hoje,dataFim:fimISO,status:'planejado',resultado:'',tarefaId:'',origem:'ia',criadoEm:Date.now()});
+  showSheetToast('Experimento criado no Laboratório (planejado, 7 dias a partir de hoje).',false);
+}
+function stTIASalvarApr(k){
+  var t=_stTIA[k];if(!t||!t.resultado)return;
+  var j=null;try{j=JSON.parse(t.resultado);}catch(e){}
+  if(!j||!(j.resumo||[]).length)return;
+  var now=Date.now();
+  j.resumo.forEach(function(b,i){fbPush('stories/aprendizados',{texto:b,origem:'ia',estilo:'',validado:false,criadoEm:now+i});});
+  stCloseModal();
+  showSheetToast(j.resumo.length+' aprendizados salvos (não validados) na aba Aprendizados.',false);
+}
+// ===== STORIES LAB — fim da aba 6 =====
 
 </script>
