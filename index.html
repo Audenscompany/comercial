@@ -2413,18 +2413,12 @@ function parseLeadDate(str){
 }
 // Retorna true se o lead é elegível para cold call:
 // - faturamento >= 20k (Marketplaces ou Assessoria)
-// - cadastrado há pelo menos 60 dias
 var COLDCALL_MIN_FAT=20000;
-var COLDCALL_MIN_DIAS=60;
+var COLDCALL_MIN_DIAS=0;
 function isLeadElegivel(l){
   var fat=parseFaturamentoValue(l.faturamento);
   if(fat<COLDCALL_MIN_FAT) return false;
-  // Tenta extrair data de chegada: _data (campo da planilha), _createdAt (LP webhook, timestamp ms)
-  var ts=parseLeadDate(l._data);
-  if(!ts && l._createdAt) ts=Number(l._createdAt); // LP webhook grava _createdAt em ms
-  if(!ts) return true; // sem data alguma → lead antigo importado, considera elegível
-  var diasDesde=(Date.now()-ts)/(1000*60*60*24);
-  return diasDesde>=COLDCALL_MIN_DIAS;
+  return true;
 }
 var _dragKanbanKey=null;
 var gcalToken=null,gcalClientId='';
