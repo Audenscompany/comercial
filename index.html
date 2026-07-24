@@ -9799,7 +9799,31 @@ function renderReunioes(){
   // ═══ TAB: LISTA DO MÊS ══════════════════════════════════════════════════════
   else if(tab==='mes'){
     // Sort month meetings by date desc
-    var sortedRows=rows.slice().sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
+    // 1. Excluir reagendadas (supersedidas por nova reunião do mesmo lead)
+    var _activeRows=rows.filter(function(m){return m.status!=='reagendado';});
+    // 2. Ordenar por data desc
+    _activeRows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
+    // 3. Dedup por telefone: quando o mesmo lead tem >1 reunião no mês,
+    //    manter apenas a mais relevante (com resultado > sem resultado; mais recente em empate).
+    //    Prioridade: venda > realizada/noshow com followup > pendente
+    function _fuPriority(m){var fu=getFu(m);if(!fu)return 0;if(fu.resultado==='venda')return 3;if(fu.comparecimento==='sim')return 2;if(fu.comparecimento==='nao')return 2;return 1;}
+    var _seenTel={};var sortedRows=[];
+    _activeRows.forEach(function(m){
+      var tel=((m.tel||m.telefone||'').replace(/\D/g,'')).trim();
+      if(!tel){sortedRows.push(m);return;} // sem telefone → sempre exibe
+      if(!_seenTel[tel]){
+        _seenTel[tel]={m:m,pri:_fuPriority(m),idx:sortedRows.length};
+        sortedRows.push(m);
+      } else {
+        var newPri=_fuPriority(m);
+        if(newPri>_seenTel[tel].pri){
+          // Substituir pelo de maior prioridade
+          sortedRows.splice(_seenTel[tel].idx,1,m);
+          _seenTel[tel]={m:m,pri:newPri,idx:_seenTel[tel].idx};
+        }
+        // mesma prioridade: manter o mais recente (já está no início por sort desc)
+      }
+    });
 
     H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;">';
     H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
@@ -16232,9 +16256,15 @@ function renderReunioesPersonal(){
     var orig=_normOrigem(m.origem).toLowerCase();
     return orig!=='recuperação'&&orig!=='recuperacao'&&orig!=='retorno';
   }
-  var rowsMes=rows.filter(function(m){return inMonth(m,filtM,filtY)&&_isContabilizavel(m);});
-  var rowsPrev=rows.filter(function(m){return inMonth(m,prevM,prevY)&&_isContabilizavel(m);});
-  var agendadas=rowsMes.length; // total agendadas no período (todas as reuniões)
+  // Excluir reagendadas (supersedidas): a reunião antiga marcada como reagendado não é uma aquisição nova
+  var rowsMes=rows.filter(function(m){return inMonth(m,filtM,filtY)&&_isContabilizavel(m)&&m.status!=='reagendado';});
+  var rowsPrev=rows.filter(function(m){return inMonth(m,prevM,prevY)&&_isContabilizavel(m)&&m.status!=='reagendado';});
+  // Dedup por telefone: mesmo lead com >1 reunião → contar apenas a mais relevante (com resultado > pendente)
+  function _rpDedupPri(m){var fu=followups[m.id];if(!fu)return 0;if(fu.resultado==='venda')return 3;if(fu.comparecimento==='sim')return 2;if(fu.comparecimento==='nao')return 2;return 1;}
+  function _rpDedup(arr){var seen={};var out=[];arr.slice().sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');}).forEach(function(m){var tel=((m.tel||m.telefone||'').replace(/\D/g,'')).trim();if(!tel){out.push(m);return;}if(!seen[tel]){seen[tel]={m:m,pri:_rpDedupPri(m)};out.push(m);}else{var p=_rpDedupPri(m);if(p>seen[tel].pri){var i=out.indexOf(seen[tel].m);if(i>=0)out.splice(i,1,m);seen[tel]={m:m,pri:p};}}});return out;}
+  rowsMes=_rpDedup(rowsMes);
+  rowsPrev=_rpDedup(rowsPrev);
+  var agendadas=rowsMes.length; // total agendadas no período (deduplicado por lead)
   var realizadas=cntSt(rowsMes,'done'), noshow=cntSt(rowsMes,'noshow');
   var total=rowsMes.length, taxaConv=total>0?Math.round(realizadas/total*100):0;
   var agPrev=rowsPrev.length;
