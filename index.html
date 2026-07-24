@@ -2413,12 +2413,28 @@ function parseLeadDate(str){
 }
 // Retorna true se o lead é elegível para cold call:
 // - faturamento >= 20k (Marketplaces ou Assessoria)
+// - cadastrado há pelo menos 60 dias
 var COLDCALL_MIN_FAT=20000;
-var COLDCALL_MIN_DIAS=0;
+var COLDCALL_MIN_DIAS=60;
 function isLeadElegivel(l){
   var fat=parseFaturamentoValue(l.faturamento);
   if(fat<COLDCALL_MIN_FAT) return false;
-  return true;
+  var ts=parseLeadDate(l._data);
+  if(!ts && l._createdAt) ts=Number(l._createdAt);
+  if(!ts) return true;
+  var diasDesde=(Date.now()-ts)/(1000*60*60*24);
+  return diasDesde>=COLDCALL_MIN_DIAS;
+}
+// Retorna Set de telefones que resultaram em VENDA — únicos a serem excluídos permanentemente
+function _buildVendaTels(){
+  var s=new Set();
+  Object.values(followups||{}).forEach(function(fu){
+    if(fu.resultado!=='venda') return;
+    var m=meetings[fu.meetingId]||meetings[fu.id];
+    if(m&&m.tel) s.add((m.tel||'').replace(/\D/g,''));
+    if(fu.tel) s.add((fu.tel||'').replace(/\D/g,''));
+  });
+  return s;
 }
 var _dragKanbanKey=null;
 var gcalToken=null,gcalClientId='';
@@ -4706,16 +4722,18 @@ function getDailyLeads(){
     }).filter(Boolean);
     // Completar até 50 se ainda não chegou
     if(leadsHoje.length<50){
-      var usedSet=new Set(telsHoje.concat(Object.keys(calls)));
-      var extra=allLeads.filter(function(l){return !usedSet.has(l.telefone)&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);}).slice(0,50-leadsHoje.length);
+      var _vendaSet=_buildVendaTels();
+      var usedSet=new Set(telsHoje);
+      var extra=allLeads.filter(function(l){var t=(l.telefone||'').replace(/\D/g,'');return !usedSet.has(t)&&!_vendaSet.has(t)&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);}).slice(0,50-leadsHoje.length);
       leadsHoje=leadsHoje.concat(extra);
     }
     _dailyMap[key]=leadsHoje;saveAll();return leadsHoje;
   }
   if(!checkDay(new Date()).ok)return null;
-  var used=new Set(Object.keys(calls));
-  var returns=allLeads.filter(function(l){return l._requeue&&!used.has(l.telefone)&&isLeadElegivel(l);});
-  var fresh=allLeads.filter(function(l){return !l._requeue&&!used.has(l.telefone)&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
+  // Exclui apenas leads que resultaram em VENDA — "Concluído" sem venda volta para o pool
+  var used=_buildVendaTels();
+  var fresh=allLeads.filter(function(l){return !used.has((l.telefone||'').replace(/\D/g,''))&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
+  var returns=[];// _requeue mantido por compatibilidade mas não é mais necessário
   var batch=fresh.slice(0,50-returns.length).concat(returns).slice(0,50);
   if(!batch.length)return[];
   _dailyMap[key]=batch;saveAll();return batch;
