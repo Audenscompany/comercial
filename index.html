@@ -24519,11 +24519,15 @@ function _renderVendasTabela(){
       var dur=fu.duracao?fu.duracao+'m':'—';
       var vigencia=fu.dataInicio?(fu.dataInicio.split('-').reverse().join('/')+' ('+dur+')'):('— ('+dur+')');
       var st=getStatus(fu);var sc=statusConfig[st]||statusConfig.ativa;
-      // Origem
+      // Origem — usar origem REAL do meeting (não a categoria de 3 buckets)
       var origCat=v.origemCat||'Indicacoes / Outros';
-      var origIcon=origCat==='Trafego Pago'?'🎯':origCat==='Trafego Organico'?'🌱':'🤝';
-      var origLabel=origCat==='Trafego Pago'?'Tráfego Pago':origCat==='Trafego Organico'?'Orgânico':'Indicação';
-      var origColor=origCat==='Trafego Pago'?'#f472b6':origCat==='Trafego Organico'?'#34d399':'#60a5fa';
+      var _rawOrig=((v.m&&v.m.origem)||v.origemRaw||'').trim();
+      // Normalizar para display
+      function _nOrig(s){if(!s)return'Indicação';var l=s.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'Tráfego Pago';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('cold'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('recupera'))return'Recuperação';if(l.includes('bdr'))return'BDR';return s.slice(0,20);}
+      var origLabel=_nOrig(_rawOrig);
+      // Ícone e cor baseados na origem real (não só na categoria)
+      var origIcon=origLabel==='Tráfego Pago'?'🎯':origLabel==='Orgânico'?'🌱':origLabel==='Social Selling'?'📲':origLabel==='Cold Call'?'📞':origLabel==='Recuperação'?'🔄':'🤝';
+      var origColor=origLabel==='Tráfego Pago'?'#f472b6':origLabel==='Orgânico'?'#34d399':origLabel==='Social Selling'?'#22d3ee':origLabel==='Cold Call'?'#fbbf24':origLabel==='Recuperação'?'#f97316':'#60a5fa';
       return'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
         '<td style="padding:10px 12px;font-weight:600;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+cliente+'</td>'+
         '<td style="padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.5);white-space:nowrap;">'+dtLabel+'</td>'+
