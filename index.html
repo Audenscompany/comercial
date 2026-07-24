@@ -9800,30 +9800,14 @@ function renderReunioes(){
   else if(tab==='mes'){
     // Sort month meetings by date desc
     // 1. Excluir reagendadas (supersedidas por nova reunião do mesmo lead)
+    // 1. Excluir reagendadas (o mesmo lead agendou nova reunião em cima desta)
     var _activeRows=rows.filter(function(m){return m.status!=='reagendado';});
     // 2. Ordenar por data desc
     _activeRows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
-    // 3. Dedup por telefone: quando o mesmo lead tem >1 reunião no mês,
-    //    manter apenas a mais relevante (com resultado > sem resultado; mais recente em empate).
-    //    Prioridade: venda > realizada/noshow com followup > pendente
-    function _fuPriority(m){var fu=getFu(m);if(fu){if(fu.resultado==='venda')return 4;if(fu.comparecimento==='sim')return 3;if(fu.comparecimento==='nao')return 2;return 1;}var st=(m.status||'').toLowerCase();if(st==='done'||isRealizada(st))return 2;if(st.includes('noshow')||st.includes('no-show'))return 2;return 0;}
-    var _seenTel={};var sortedRows=[];
-    _activeRows.forEach(function(m){
-      var tel=((m.tel||m.telefone||'').replace(/\D/g,'')).trim();
-      if(!tel){sortedRows.push(m);return;} // sem telefone → sempre exibe
-      if(!_seenTel[tel]){
-        _seenTel[tel]={m:m,pri:_fuPriority(m),idx:sortedRows.length};
-        sortedRows.push(m);
-      } else {
-        var newPri=_fuPriority(m);
-        if(newPri>_seenTel[tel].pri){
-          // Substituir pelo de maior prioridade
-          sortedRows.splice(_seenTel[tel].idx,1,m);
-          _seenTel[tel]={m:m,pri:newPri,idx:_seenTel[tel].idx};
-        }
-        // mesma prioridade: manter o mais recente (já está no início por sort desc)
-      }
-    });
+    // 3. Não deduplica por telefone na tabela — toda reunião que ocorreu deve aparecer.
+    //    Dedup era agressivo demais: escondia reuniões legítimas de clientes que tinham
+    //    múltiplos agendamentos no mês (ex: fechou em julho e voltou para nova reunião).
+    var sortedRows=_activeRows;
 
     H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;">';
     H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
