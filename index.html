@@ -9538,7 +9538,29 @@ function renderReunioes(){
     return d.getDate()===now.getDate()&&d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
   }).sort(function(a,b){return(a.dtISO||'').localeCompare(b.dtISO||'');});
 
-  function getFu(m){return followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;});}
+  function getFu(m){
+    if(followups[m.id])return followups[m.id];
+    var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
+    if(byMid)return byMid;
+    // Fallback por telefone: followup salvo num ID de meeting diferente (bug dedup antigo)
+    var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
+    if(mTel.length>=8&&m.dtISO){
+      var mDate=new Date(m.dtISO).getTime();
+      var best=null,bestDiff=Infinity;
+      Object.values(followups).forEach(function(f){
+        var fTel=(f.tel||'').replace(/\D/g,'');
+        if(fTel.slice(-9)!==mTel.slice(-9))return;
+        if(f.dt){
+          var fDate=parseBRDate(f.dt);
+          if(!fDate)return;
+          var diff=Math.abs(mDate-fDate.getTime());
+          if(diff<=7*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}
+        }
+      });
+      if(best)return best;
+    }
+    return null;
+  }
   function isConf(m){var fu=getFu(m);return !!(m.confirmado||m.confirmacao||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
   function isReal(m){var fu=getFu(m);return fu?(fu.comparecimento==='sim'||fu.resultado==='venda'):isRealizada(m.status);}
   function isNs(m){var fu=getFu(m);var st=(m.status||'').toLowerCase();return fu?fu.comparecimento==='nao':(st.includes('noshow')||st.includes('no-show')||st==='no_show');}
@@ -15852,7 +15874,29 @@ function renderReunioesNoshow(){
   var rows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),filtM,filtY);});
   var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
 
-  function getFu(m){return followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;});}
+  function getFu(m){
+    if(followups[m.id])return followups[m.id];
+    var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
+    if(byMid)return byMid;
+    // Fallback por telefone: followup salvo num ID de meeting diferente (bug dedup antigo)
+    var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
+    if(mTel.length>=8&&m.dtISO){
+      var mDate=new Date(m.dtISO).getTime();
+      var best=null,bestDiff=Infinity;
+      Object.values(followups).forEach(function(f){
+        var fTel=(f.tel||'').replace(/\D/g,'');
+        if(fTel.slice(-9)!==mTel.slice(-9))return;
+        if(f.dt){
+          var fDate=parseBRDate(f.dt);
+          if(!fDate)return;
+          var diff=Math.abs(mDate-fDate.getTime());
+          if(diff<=7*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}
+        }
+      });
+      if(best)return best;
+    }
+    return null;
+  }
   function isConf(m){var fu=getFu(m);return !!(m.confirmado||m.confirmacao||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
   function isReal(m){var fu=getFu(m);return fu?(fu.comparecimento==='sim'||fu.resultado==='venda'):isRealizada(m.status);}
   function isNs(m){var fu=getFu(m);var st=(m.status||'').toLowerCase();return fu?fu.comparecimento==='nao':(st.includes('noshow')||st.includes('no-show')||st==='no_show');}
