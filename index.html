@@ -3521,46 +3521,55 @@ async function testSheetsConnection(){
 }
 async function fetchSheetVals(sheetId,gid){
   if(!isGcalConnected()) throw new Error('Token do Google expirado. Reconecte em Configurações.');
-  // TTL cache: retorna dados em memória se foram buscados há menos de 2 minutos
   var _cacheKey = sheetId+'_'+gid;
+  // TTL cache: retorna dados em memória se foram buscados há menos de 5 minutos
   var _cached = _sheetValsTTLCache[_cacheKey];
   if(_cached && (Date.now()-_cached.ts) < _SHEETS_TTL_MS){
     return _cached.data;
   }
-  try{
-    // Step 1: get sheet title from GID
-    if(!_sheetsMeta[sheetId+'_fetched']){
-      var mr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'?fields=sheets.properties',
-        {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
-      var mm=await mr.json();
-      if(mm.sheets){
-        mm.sheets.forEach(function(s){_sheetsMeta[sheetId+'_'+s.properties.sheetId]=s.properties.title;});
-        _sheetsMeta[sheetId+'_fetched']=true;
+  // Deduplicação in-flight: se já há um request para essa chave, aguarda o mesmo
+  if(_sheetInFlight[_cacheKey]){
+    return _sheetInFlight[_cacheKey];
+  }
+  var _promise=(async function(){
+    try{
+      // Step 1: get sheet title from GID
+      if(!_sheetsMeta[sheetId+'_fetched']){
+        var mr=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'?fields=sheets.properties',
+          {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+        var mm=await mr.json();
+        if(mm.sheets){
+          mm.sheets.forEach(function(s){_sheetsMeta[sheetId+'_'+s.properties.sheetId]=s.properties.title;});
+          _sheetsMeta[sheetId+'_fetched']=true;
+        }
       }
-    }
-    var tabName=_sheetsMeta[sheetId+'_'+gid];
-    // Fallback: first sheet
-    if(!tabName){
-      var keys=Object.keys(_sheetsMeta).filter(function(k){return k.startsWith(sheetId+'_')&&k!==sheetId+'_fetched';});
-      if(keys.length>0) tabName=_sheetsMeta[keys[0]];
-    }
-    if(!tabName) tabName='Sheet1';
-    // Step 2: fetch values by tab name
-    var r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(tabName),
-      {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
-    var d=await r.json();
-    // Step 3: if tab name failed (400), try fetching first sheet by omitting range
-    if(d.error){
-      console.warn('fetchSheetVals fallback for',sheetId,'gid',gid,'tabName',tabName,'err',d.error.message);
-      var r2=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1:ZZ10000',
+      var tabName=_sheetsMeta[sheetId+'_'+gid];
+      // Fallback: first sheet
+      if(!tabName){
+        var keys=Object.keys(_sheetsMeta).filter(function(k){return k.startsWith(sheetId+'_')&&k!==sheetId+'_fetched';});
+        if(keys.length>0) tabName=_sheetsMeta[keys[0]];
+      }
+      if(!tabName) tabName='Sheet1';
+      // Step 2: fetch values by tab name
+      var r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+encodeURIComponent(tabName),
         {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
-      d=await r2.json();
-    }
-    if(d.error){throw new Error('Planilha (gid='+gid+'): '+JSON.stringify(d.error.message||d.error));}
-    var result = d.values||[];
-    _sheetValsTTLCache[_cacheKey] = {data:result, ts:Date.now()};
-    return result;
-  }catch(e){console.error('fetchSheetVals error',sheetId,gid,e);throw e;}
+      var d=await r.json();
+      // Step 3: if tab name failed (400), try fetching first sheet by omitting range
+      if(d.error){
+        console.warn('fetchSheetVals fallback for',sheetId,'gid',gid,'tabName',tabName,'err',d.error.message);
+        var r2=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1:ZZ10000',
+          {headers:{'Authorization':'Bearer '+gcalToken.access_token}});
+        d=await r2.json();
+      }
+      if(d.error){throw new Error('Planilha (gid='+gid+'): '+JSON.stringify(d.error.message||d.error));}
+      var result=d.values||[];
+      _sheetValsTTLCache[_cacheKey]={data:result,ts:Date.now()};
+      return result;
+    }catch(e){console.error('fetchSheetVals error',sheetId,gid,e);throw e;}
+    finally{delete _sheetInFlight[_cacheKey];}
+  })();
+  _sheetInFlight[_cacheKey]=_promise;
+  return _promise;
 }
 function rawToObjs(raw){
   if(!raw||raw.length<2)return{headers:[],rows:[]};
@@ -17545,7 +17554,8 @@ var _careerLevels = {gustavo: 0, joao: 0}; // index into CLOSER_LEVELS / SDR_LEV
 var _careerLevelSince = {gustavo: null, joao: null}; // YYYY-MM: mês em que entrou no nível atual
 var _sheetDataCache = {}; // cache fetched sheet data
 var _sheetValsTTLCache = {}; // TTL cache para fetchSheetVals (evita quota exceeded)
-var _SHEETS_TTL_MS = 120000; // 2 minutos
+var _SHEETS_TTL_MS = 300000; // 5 minutos
+var _sheetInFlight = {}; // deduplicação: Promise em voo por chave
 
 // Load career levels from Firebase
 async function loadCareerLevels(){
