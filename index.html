@@ -23754,9 +23754,12 @@ function renderVisaoGeral(){
   // ── ranking closers ──────────────────────────────────────────
   var closerMap={};
   vendasMes.forEach(function(v){
-    var c=(v.m&&v.m.responsavel)||'Outro';
+    var fu=v.fu,m=v.m;
+    var raw=(m&&m.responsavel)||(fu.closerNome)||(fu.closer)||(fu.responsavel)||'';
+    if(!raw&&fu.tel){var ft=(fu.tel||'').replace(/\D/g,'');var kb=Object.values(kanbanData).find(function(k){return(k.telefone||'').replace(/\D/g,'')===ft;});if(kb)raw=kb.responsavel||'';}
+    var c=normCloserName(raw)||'Outro';
     if(!closerMap[c])closerMap[c]={receita:0,vendas:0};
-    closerMap[c].receita+=mrrFu(v.fu);closerMap[c].vendas++;
+    closerMap[c].receita+=mrrFu(fu);closerMap[c].vendas++;
   });
   var rankList=Object.keys(closerMap).map(function(k){return{name:k,receita:closerMap[k].receita,vendas:closerMap[k].vendas};});
   rankList.sort(function(a,b){return b.receita-a.receita;});
