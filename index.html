@@ -9822,8 +9822,13 @@ function renderReunioes(){
   else if(tab==='mes'){
     // Sort month meetings by date desc
     // 1. Excluir reagendadas (supersedidas por nova reunião do mesmo lead)
-    // 1. Excluir reagendadas (o mesmo lead agendou nova reunião em cima desta)
-    var _activeRows=rows.filter(function(m){return m.status!=='reagendado';});
+    // 1. Excluir apenas reuniões genuinamente substituídas (reagendamentos>=1).
+    //    Reuniões com status='reagendado' mas sem reagendamentos foram apenas dispensadas
+    //    das Tarefas via "X" — devem continuar aparecendo na tabela.
+    var _activeRows=rows.filter(function(m){
+      if(m.status!=='reagendado') return true;
+      return !(m.reagendamentos && m.reagendamentos>0);
+    });
     // 2. Ordenar por data desc
     _activeRows.sort(function(a,b){return(b.dtISO||'').localeCompare(a.dtISO||'');});
     // 3. Não deduplica por telefone na tabela — toda reunião que ocorreu deve aparecer.
