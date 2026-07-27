@@ -1512,7 +1512,7 @@ function abrirDetalheKanban(key){
       '<div style="font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--muted);margin-bottom:8px;">RESULTADO DA REUNIÃO</div>'+
       '<div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:6px;">'+_res+'</div>'+
       (fuData.plano?'<div style="font-size:12px;color:var(--muted);">Plano: <span style="color:var(--white);">'+fuData.plano+'</span></div>':'')+
-      (fuData.duracao?'<div style="font-size:12px;color:var(--muted);">Duração: <span style="color:var(--white);">'+fuData.duracao+' meses</span></div>':'')+
+      (fuData.duracao?'<div style="font-size:12px;color:var(--muted);">Duração: <span style="color:var(--white);">'+fuData.duracao+((fuData.plano||'').toLowerCase().includes('starter')?' dias':' meses')+'</span></div>':'')+
       (fuData.contrato?'<div style="font-size:12px;color:var(--muted);">Contrato: <span style="color:#fde047;font-weight:700;">R$ '+fuData.contrato.toLocaleString('pt-BR')+'</span></div>':'')+
       (fuData.mensalidade?'<div style="font-size:12px;color:var(--muted);">Mensalidade: <span style="color:#fde047;">R$ '+fuData.mensalidade.toLocaleString('pt-BR')+'</span></div>':'')+
       (fuData.motivo?'<div style="font-size:12px;color:var(--muted);">Motivo: <span style="color:var(--white);">'+fuData.motivo+'</span></div>':'')+
@@ -9234,8 +9234,9 @@ function saveFollowup(){
     (function(){
       var _planoDur=duracao||1;
       var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
-      var _planoSufixo=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
-      var _mrr=tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato);
+      var _planoSufixo=_planoDur===45?' - 45 dias':_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
+      // Starter = 45 dias: normaliza TCV para equivalente de 30 dias (MRR mensal)
+      var _mrr=plano==='starter'?Math.round(contrato/45*30):(tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato));
       var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
       saveContrato(null,{
         cliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
@@ -9431,8 +9432,9 @@ function saveFollowupEdit(){
       (function(){
         var _planoDur=duracao||1;
         var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
-        var _planoSufixo=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
-        var _mrr=tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato);
+        var _planoSufixo=_planoDur===45?' - 45 dias':_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
+        // Starter = 45 dias: normaliza TCV para MRR equivalente de 30 dias
+        var _mrr=plano==='starter'?Math.round(contrato/45*30):(tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato));
         var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
         saveContrato(null,{
           cliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
@@ -18920,7 +18922,9 @@ async function calcCloserFromFirebase(nivelIdx, month){
           result.contratos++;
           // 25% sobre valor do contrato (comissão SDR cold call)
           // NÃO aplica comissão padrão de closer (acima da meta)
-          mrrColdCall+=c.valorMes||0;
+          var _ccStarter=(c.planoDuracao===45||(c.plano||'').toLowerCase().includes('starter'));
+          var _ccMrr=_ccStarter?(c.valorVendido?Math.round(c.valorVendido/45*30):Math.round((c.valorMes||0)*30)):(c.valorMes||0);
+          mrrColdCall+=_ccMrr;
         }
       } else if(closerC==='Gustavo'){
         result.contratos++;
@@ -19039,7 +19043,11 @@ async function calcSDRFromFirebase(nivelIdx, month){
       var sdr=(c.sdr||'').trim().toUpperCase();
       if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
       var ori=(c.origem||'').toUpperCase();
-      var mrr=c.valorMes||0;
+      // Starter = 45 dias: normaliza para MRR equivalente de 30 dias
+      var _isStarter=(c.planoDuracao===45||(c.plano||'').toLowerCase().includes('starter'));
+      var mrr=_isStarter
+        ?(c.valorVendido?Math.round(c.valorVendido/45*30):Math.round((c.valorMes||0)*30))
+        :(c.valorMes||0);
       var cliente=c.cliente||c.nome||'—';
       if(ori.includes('SOCIAL')){
         if(excluido){
@@ -25102,7 +25110,7 @@ function abrirEditarVenda(fid){
           '<div><label class="f-label">SDR</label><select class="f-input" id="ev-sdr">'+sdrOpts+'</select></div>'+
         '</div>'+
         '<div><label class="f-label">Origem</label><select class="f-input" id="ev-origem"><option value="">Selecione...</option>'+origOpts+'</select></div>'+
-        '<div><label class="f-label">Plano</label><select class="f-input" id="ev-plano">'+
+        '<div><label class="f-label">Plano</label><select class="f-input" id="ev-plano" onchange="evOnPlanoChange()">'+
           '<option value="starter"'+(fu.plano==='starter'?' selected':'')+'>Starter</option>'+
           '<option value="premium"'+(fu.plano==='premium'?' selected':'')+'>Premium</option>'+
           '<option value="elite"'+(fu.plano==='elite'?' selected':'')+'>Elite</option>'+
@@ -25114,7 +25122,7 @@ function abrirEditarVenda(fid){
         '</select></div>'+
         '<div id="ev-mens-wrap" style="'+(isTcv?'display:none;':'')+'"><label class="f-label">Mensalidade (R$)</label><input class="f-input" type="number" id="ev-mensalidade" value="'+(fu.mensalidade||'')+'" placeholder="0"></div>'+
         '<div><label class="f-label">Contrato total (R$)</label><input class="f-input" type="number" id="ev-contrato" value="'+(fu.contrato||'')+'" placeholder="0"></div>'+
-        '<div><label class="f-label">Duração (meses)</label><input class="f-input" type="number" id="ev-duracao" value="'+(fu.duracao||1)+'" min="1"></div>'+
+        '<div id="ev-duracao-wrap">'+_buildEvDuracao(fu.plano, fu.duracao||1)+'</div>'+
         '<div><label class="f-label">Data de início</label><input class="f-input" type="date" id="ev-data-inicio" value="'+(fu.dataInicio||'')+'"></div>'+
       '</div>'+
       '<div class="modal-footer">'+
@@ -25123,6 +25131,24 @@ function abrirEditarVenda(fid){
       '</div>'+
     '</div></div>';
   document.body.insertAdjacentHTML('beforeend',html);
+}
+function _buildEvDuracao(plano, val){
+  if(plano==='starter'){
+    return '<label class="f-label">Duração (dias) <span style="font-size:10px;color:var(--muted);">fixo para Starter</span></label>'+
+      '<input class="f-input" type="number" id="ev-duracao" value="45" min="1" readonly style="opacity:0.6;cursor:default;">';
+  }
+  return '<label class="f-label">Duração (meses)</label>'+
+    '<input class="f-input" type="number" id="ev-duracao" value="'+val+'" min="1">';
+}
+function evOnPlanoChange(){
+  var plano=(document.getElementById('ev-plano')||{}).value||'';
+  var wrap=document.getElementById('ev-duracao-wrap');
+  var cur=parseInt((document.getElementById('ev-duracao')||{}).value)||1;
+  if(wrap) wrap.innerHTML=_buildEvDuracao(plano, plano==='starter'?45:cur);
+  // Starter → força TCV
+  var tipoEl=document.getElementById('ev-tipo');
+  var mensWrap=document.getElementById('ev-mens-wrap');
+  if(plano==='starter'){if(tipoEl)tipoEl.value='tcv';if(mensWrap)mensWrap.style.display='none';}
 }
 function toggleEvTipo(){
   var t=document.getElementById('ev-tipo');
@@ -25143,6 +25169,7 @@ async function salvarEdicaoVenda(){
   var mensalidade=parseFloat(document.getElementById('ev-mensalidade').value)||0;
   var contrato=parseFloat(document.getElementById('ev-contrato').value)||0;
   var duracao=parseInt(document.getElementById('ev-duracao').value)||1;
+  if(plano==='starter') duracao=45; // Starter = sempre 45 dias
   var dataInicio=document.getElementById('ev-data-inicio').value;
   var origem=document.getElementById('ev-origem').value;
   var sdr=(document.getElementById('ev-sdr').value||'').trim();
