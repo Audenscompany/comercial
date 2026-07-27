@@ -18601,39 +18601,43 @@ async function calcSDRFromSheets(nivelIdx, month){
     // ── VENDAS SDR: usa followups+meetings (mesma fonte da aba Vendas) ──
     var _sMParts=month.split('-');
     var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1; // 0-based
-    var _sdrTelsSeen={}, _sdrNomesSeen={}; // dedup por telefone e por nome
+    // 1ª passagem: coleta candidatos
+    var _sdrCandidatos=[];
     Object.keys(followups||{}).forEach(function(fid){
       var fu=followups[fid];
       if(!fu||fu.resultado!=='venda') return;
       if(isVendaCancelada(fu)) return;
       var m2=meetings[fu.meetingId]||meetings[fid];
       var dt2=_vendaDate(fu,m2);
-      if(!dt2&&fu.dataInicio) dt2=new Date(fu.dataInicio+'T12:00:00');
-      if(!dt2&&m2&&m2.dtISO) dt2=new Date(m2.dtISO);
       if(!dt2||dt2.getMonth()!==_sMM||dt2.getFullYear()!==_sMY) return;
-      // SDR: meeting é fonte primária; fu.sdr como fallback (followups sem meeting)
       var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||fu.sdr||'';
       if(normCloserName(sdrRaw)!=='João') return;
-      // Dedup por telefone E por nome (evita duplicatas de assinatura-sync)
-      var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'');
-      var nomeKey=(fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
-      if(tel&&_sdrTelsSeen[tel]) return;
-      if(nomeKey&&_sdrNomesSeen[nomeKey]) return;
-      if(tel) _sdrTelsSeen[tel]=1;
-      if(nomeKey) _sdrNomesSeen[nomeKey]=1;
-      // MRR: case-insensitive para tipoValor (TCV/tcv)
       var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
       var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      // Tel: últimos 10 dígitos (normaliza código de país)
+      var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'').slice(-10);
+      // Empresa: mesma lógica da coluna "Cliente" da aba Vendas
+      var empresa=(fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
       var origemFU=((fu.origem)||(m2&&m2.origem)||'').toLowerCase();
-      var clienteNome=fu.nome||(m2&&m2.nome)||'—';
+      var clienteNome=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
+      _sdrCandidatos.push({tel:tel,empresa:empresa,mrr:mrr,clienteNome:clienteNome,origemFU:origemFU});
+    });
+    // 2ª passagem: ordena por MRR desc e dedup (maior MRR vence quando há duplicata)
+    _sdrCandidatos.sort(function(a,b){return b.mrr-a.mrr;});
+    var _dedupTel={}, _dedupEmp={};
+    _sdrCandidatos.forEach(function(sv){
+      if(sv.tel&&_dedupTel[sv.tel]) return;
+      if(sv.empresa&&_dedupEmp[sv.empresa]) return;
+      if(sv.tel) _dedupTel[sv.tel]=1;
+      if(sv.empresa) _dedupEmp[sv.empresa]=1;
       result.vendas++;
-      if(origemFU.includes('social')){
+      if(sv.origemFU.includes('social')){
         result.ssVendas++;
-        var ssComm2=Math.round(mrr*0.25);
+        var ssComm2=Math.round(sv.mrr*0.25);
         result.ssComm+=ssComm2;
-        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
+        result.vendaDetalhes.push({cliente:sv.clienteNome,mrr:sv.mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
       } else {
-        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
+        result.vendaDetalhes.push({cliente:sv.clienteNome,mrr:sv.mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
       }
     });
 
