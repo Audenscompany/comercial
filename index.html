@@ -18399,6 +18399,8 @@ async function calcCloserFromSheets(nivelIdx, month){
       // Mês atual: Firebase é a fonte de verdade (contratos/ collection)
       var fbContratos=await loadContratos();
       fbContratos.forEach(function(c){
+        // Só contratos ATIVOS (igual ao filtro "Ativos" da aba Contratos)
+        if(c.ativo===false||c.dataCancelamento) return;
         var dtFB=c.dataInicio?parseBRDate(c.dataInicio):null;
         var rowMonthFB=dateToMonthStr(dtFB);
         if(!rowMonthFB) return;
