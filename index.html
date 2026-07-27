@@ -18410,15 +18410,32 @@ async function calcCloserFromSheets(nivelIdx, month){
       });
       window._todasVendasCache=_todasVC;
     }
+    // Coleta candidatos do mês para dedup por tel/empresa
+    var _ccCand=[];
     _todasVC.filter(function(v){
       var dt=_vendaDate(v.fu,v.m);
       return dt&&dt.getMonth()===_mM&&dt.getFullYear()===_mY;
     }).forEach(function(v){
       var fu=v.fu, m2=v.m;
-      totalEquipeContratos++;
+      var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
+      var vFU=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'').slice(-10);
+      var empresa=(fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
       var closerRaw=(m2&&m2.responsavel)||fu.closerNome||fu.closer||fu.responsavel||'';
-      if(normCloserName(closerRaw)!=='Gustavo') return;
-      var origemFU=(v.origemRaw||'').toLowerCase();
+      _ccCand.push({fu:fu,m2:m2,tel:tel,empresa:empresa,mrr:vFU,closerRaw:closerRaw,origemRaw:v.origemRaw||''});
+    });
+    // Dedup por tel/empresa — maior MRR vence
+    _ccCand.sort(function(a,b){return b.mrr-a.mrr;});
+    var _dedupTc={},_dedupEc={};
+    _ccCand.forEach(function(cv){
+      if(cv.tel&&_dedupTc[cv.tel]) return;
+      if(cv.empresa&&_dedupEc[cv.empresa]) return;
+      if(cv.tel) _dedupTc[cv.tel]=1;
+      if(cv.empresa) _dedupEc[cv.empresa]=1;
+      var fu=cv.fu, m2=cv.m2;
+      totalEquipeContratos++;
+      if(normCloserName(cv.closerRaw)!=='Gustavo') return;
+      var origemFU=cv.origemRaw.toLowerCase();
       var isColdCallFU=origemFU.includes('cold')||origemFU.includes('call');
       result.contratos++;
       if(isColdCallFU) return; // cold call: conta para meta, comissão via CC 25%
@@ -18426,11 +18443,9 @@ async function calcCloserFromSheets(nivelIdx, month){
       if(planoFU.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
       else if(planoFU.includes('SEMESTRAL')) result.tipoContrato='Semestral';
       else result.tipoContrato='Mensal';
-      var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
-      var vFU=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
-      result.valorVendido+=vFU;
+      result.valorVendido+=cv.mrr;
       var clienteC=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
-      _contratoItems.push({cliente:clienteC,mrr:vFU,plano:planoFU||'Mensal'});
+      _contratoItems.push({cliente:clienteC,mrr:cv.mrr,plano:planoFU||'Mensal'});
     });
     if(false){ // bloco morto — mantido para referência histórica (Sheets)
       cliRows.slice(1).forEach(function(row){
@@ -18617,7 +18632,8 @@ async function calcSDRFromSheets(nivelIdx, month){
       });
       window._todasVendasCache=_todasV;
     }
-    // Filtra pelo mês e pelo SDR = João
+    // Filtra pelo mês e pelo SDR = João, coleta candidatos
+    var _sdrCand=[];
     _todasV.filter(function(v){
       var dt=_vendaDate(v.fu,v.m);
       return dt&&dt.getMonth()===_sMM&&dt.getFullYear()===_sMY;
@@ -18627,16 +18643,28 @@ async function calcSDRFromSheets(nivelIdx, month){
       if(normCloserName(sdrRaw)!=='João') return;
       var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
       var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'').slice(-10);
+      var empresa=(fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
       var origemFU=(v.origemRaw||'').toLowerCase();
       var clienteNome=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
+      _sdrCand.push({tel:tel,empresa:empresa,mrr:mrr,origemFU:origemFU,clienteNome:clienteNome});
+    });
+    // Dedup por tel (últimos 10 dígitos) e empresa — maior MRR vence
+    _sdrCand.sort(function(a,b){return b.mrr-a.mrr;});
+    var _dedupT={},_dedupE={};
+    _sdrCand.forEach(function(sv){
+      if(sv.tel&&_dedupT[sv.tel]) return;
+      if(sv.empresa&&_dedupE[sv.empresa]) return;
+      if(sv.tel) _dedupT[sv.tel]=1;
+      if(sv.empresa) _dedupE[sv.empresa]=1;
       result.vendas++;
-      if(origemFU.includes('social')){
+      if(sv.origemFU.includes('social')){
         result.ssVendas++;
-        var ssComm2=Math.round(mrr*0.25);
+        var ssComm2=Math.round(sv.mrr*0.25);
         result.ssComm+=ssComm2;
-        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
+        result.vendaDetalhes.push({cliente:sv.clienteNome,mrr:sv.mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
       } else {
-        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
+        result.vendaDetalhes.push({cliente:sv.clienteNome,mrr:sv.mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
       }
     });
 
