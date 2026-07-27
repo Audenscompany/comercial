@@ -18652,6 +18652,7 @@ async function calcSDRFromSheets(nivelIdx, month){
     ssReun: 0, ssIncentiv: 0, ssVendas: 0, ssComm: 0, ssTotal: 0,
     total: 0, totalSDR: 0, grandTotal: 0,
     vendaDetalhes: [], // [{cliente,mrr,tipo,comm,acima}] — sem _fbId nessa fonte
+    reunioesDetalhes: [], // [{nome,data,origem,tipo}] — lista para modal
     error: null};
   try{
     var reunRows = await fetchSheetCached(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, 'reunioes');
@@ -18695,6 +18696,9 @@ async function calcSDRFromSheets(nivelIdx, month){
       result.agendamentos++;
       if(!isSS){ result.reunioesComp++; result.trafegoReun++; }
       if(isSS) result.ssReun++;
+      // Registra detalhes para modal clicável
+      var dtLabel=dtM?String(dtM.getDate()).padStart(2,'0')+'/'+(String(dtM.getMonth()+1).padStart(2,'0'))+'/'+dtM.getFullYear():'—';
+      result.reunioesDetalhes.push({nome:m.nome||m.name||'—',data:dtLabel,origem:m.origem||'—',tipo:isSS?'SS':'Tráfego',closer:normCloserName(m.responsavel||m.closer||'—')});
     });
 
     // ── VENDAS SDR: mesma fonte da aba Vendas (_todasVendasCache) ──
@@ -19673,6 +19677,42 @@ async function triggerCloserCalc(mode){
   }
 }
 
+function showReunioesSDRModal(){
+  var r=window._lastSDRResult;
+  if(!r||!r.reunioesDetalhes)return;
+  var rows=r.reunioesDetalhes.slice().sort(function(a,b){
+    // Ordena por data (dd/mm/yyyy → yyyy-mm-dd)
+    function toISO(d){var p=d.split('/');return p.length===3?p[2]+'-'+p[1]+'-'+p[0]:'';}
+    return toISO(a.data).localeCompare(toISO(b.data));
+  });
+  var html='<div id="modal-reun-sdr" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);" onclick="if(event.target===this)this.remove();">'+
+    '<div style="background:var(--bg1);border:1px solid var(--border);border-radius:16px;padding:24px;width:min(560px,94vw);max-height:80vh;overflow-y:auto;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'+
+      '<div style="font-size:15px;font-weight:700;color:var(--white);">Reuniões Contabilizadas <span style="background:rgba(34,197,94,0.15);color:#4ade80;border-radius:6px;padding:2px 8px;font-size:12px;margin-left:6px;">'+rows.length+'</span></div>'+
+      '<button onclick="document.getElementById(\'modal-reun-sdr\').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;">×</button>'+
+    '</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;">'+
+      '<thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase;border-bottom:1px solid var(--border);">'+
+        '<th style="text-align:left;padding:6px 4px;">#</th>'+
+        '<th style="text-align:left;padding:6px 4px;">Lead</th>'+
+        '<th style="text-align:left;padding:6px 4px;">Data</th>'+
+        '<th style="text-align:left;padding:6px 4px;">Closer</th>'+
+        '<th style="text-align:left;padding:6px 4px;">Tipo</th>'+
+      '</tr></thead><tbody>'+
+    rows.map(function(rd,i){
+      var isSS=rd.tipo==='SS';
+      return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
+        '<td style="padding:7px 4px;color:var(--muted);">'+(i+1)+'</td>'+
+        '<td style="padding:7px 4px;color:var(--white);font-weight:600;">'+rd.nome+'</td>'+
+        '<td style="padding:7px 4px;color:var(--muted);">'+rd.data+'</td>'+
+        '<td style="padding:7px 4px;color:var(--purple3);">'+rd.closer+'</td>'+
+        '<td style="padding:7px 4px;"><span style="font-size:10px;padding:2px 6px;border-radius:4px;background:'+(isSS?'rgba(123,47,255,0.2)':'rgba(56,189,248,0.15)')+';color:'+(isSS?'var(--purple3)':'var(--cyan)')+'">'+rd.tipo+'</span></td>'+
+      '</tr>';
+    }).join('')+
+    '</tbody></table></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
 async function triggerSDRCalc(mode){
   var sel = document.getElementById('sdr-auto-'+mode+'-month');
   var resEl = document.getElementById('sdr-auto-result-'+mode);
@@ -19696,13 +19736,14 @@ async function triggerSDRCalc(mode){
   }
   if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = SDR_LEVELS[nivelIdx];
+  window._lastSDRResult = r; // guarda para modal de agendamentos
   var atingiu = r.agendamentos >= lv.meta;
   var acima = Math.max(0, r.agendamentos - lv.meta);
   var cor = r.totalSDR >= r.minG ? 'var(--green)' : 'var(--amber)';
   resEl.innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">'+
       '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;"><div class="m-lbl">Base</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--white);">R$'+r.base.toLocaleString('pt-BR')+'</div></div>'+
-      '<div style="background:var(--bg2);border:1px solid '+(atingiu?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Agendamentos</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(atingiu?'#4ade80':'var(--amber)')+';">'+r.agendamentos+'</div><div style="font-size:11px;color:var(--muted);">meta: '+lv.meta+(atingiu?' ✓':' (falta '+(lv.meta-r.agendamentos)+')')+'</div></div>'+
+      '<div onclick="showReunioesSDRModal()" style="background:var(--bg2);border:1px solid '+(atingiu?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;cursor:pointer;" title="Ver reuniões contadas"><div class="m-lbl">Agendamentos <span style="font-size:9px;opacity:0.5;">▶</span></div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(atingiu?'#4ade80':'var(--amber)')+';">'+r.agendamentos+'</div><div style="font-size:11px;color:var(--muted);">meta: '+lv.meta+(atingiu?' ✓':' (falta '+(lv.meta-r.agendamentos)+')')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.bonusMeta?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Bônus Meta</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.bonusMeta?'#4ade80':'var(--muted)')+';">R$'+r.bonusMeta.toLocaleString('pt-BR')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.incentivReun?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.incentivReun?'var(--cyan)':'var(--muted)')+';">R$'+r.incentivReun.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+' acima×R$'+lv.incentivReun+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.comissaoVendas?'rgba(123,47,255,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão vendas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoVendas?'var(--purple3)':'var(--muted)')+';">R$'+r.comissaoVendas.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">ativa na '+lv.threshold+'ª venda</div></div>'+
