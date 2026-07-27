@@ -2636,9 +2636,10 @@ function categorizeOrigem(o){
 }
 function normCloserName(n){
   if(!n)return null;
-  var l=n.toLowerCase();
+  var l=n.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   if(l.includes('lucas'))return'Lucas';
   if(l.includes('gustavo'))return'Gustavo';
+  if(l.includes('joao'))return'João';
   return n.trim();
 }
 
@@ -18600,7 +18601,7 @@ async function calcSDRFromSheets(nivelIdx, month){
     // ── VENDAS SDR: usa followups+meetings (mesma fonte da aba Vendas) ──
     var _sMParts=month.split('-');
     var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1; // 0-based
-    var _sdrTelsSeen={}; // dedup por telefone — igual ao renderVendas
+    var _sdrTelsSeen={}, _sdrNomesSeen={}; // dedup por telefone e por nome
     Object.keys(followups||{}).forEach(function(fid){
       var fu=followups[fid];
       if(!fu||fu.resultado!=='venda') return;
@@ -18610,15 +18611,19 @@ async function calcSDRFromSheets(nivelIdx, month){
       if(!dt2&&fu.dataInicio) dt2=new Date(fu.dataInicio+'T12:00:00');
       if(!dt2&&m2&&m2.dtISO) dt2=new Date(m2.dtISO);
       if(!dt2||dt2.getMonth()!==_sMM||dt2.getFullYear()!==_sMY) return;
-      // SDR: usa APENAS m.sdrName||m.sdr (meeting é fonte de verdade, não fu.sdr)
-      var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||'';
+      // SDR: meeting é fonte primária; fu.sdr como fallback (followups sem meeting)
+      var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||fu.sdr||'';
       if(normCloserName(sdrRaw)!=='João') return;
-      // Dedup por telefone (evita duplicatas de assinatura-sync)
+      // Dedup por telefone + nome (evita duplicatas de assinatura-sync)
       var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'');
+      var nomeKey=(fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
       if(tel&&_sdrTelsSeen[tel]) return;
+      if(!tel&&nomeKey&&_sdrNomesSeen[nomeKey]) return;
       if(tel) _sdrTelsSeen[tel]=1;
-      // MRR: mesma lógica de _mrrV no renderVendas
-      var mrr=fu.tipoValor==='tcv'?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      if(nomeKey) _sdrNomesSeen[nomeKey]=1;
+      // MRR: case-insensitive para tipoValor (TCV/tcv)
+      var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
+      var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
       var origemFU=((fu.origem)||(m2&&m2.origem)||'').toLowerCase();
       var clienteNome=fu.nome||(m2&&m2.nome)||'—';
       result.vendas++;
