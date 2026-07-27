@@ -18681,16 +18681,22 @@ async function calcSDRFromSheets(nivelIdx, month){
       }
       return null;
     }
-    function _isRealizSDR(m){var fu=_getFuSDR(m);if(fu)return fu.comparecimento==='sim'||fu.resultado==='venda';var st=(m.status||'').toLowerCase();return st==='done'||st==='realizada'||st==='venda';}
+    function _isRealizSDR(m){var fu=_getFuSDR(m);if(fu)return fu.comparecimento==='sim'||fu.resultado==='venda';return isRealizada(m.status);}
+    // Coleta realizadas e deduplica por telefone (igual ao dedupLeads do ranking)
+    var _seenTelSDR={};
     Object.values(meetings||{}).forEach(function(m){
       if(!m||m._retorno||m._sintetico) return;
       var sdrM=normCloserName(m.sdrName||m.sdr||'');
       if(sdrM!=='João') return;
-      // Status: realizada = mesma lógica do isReal() do ranking (fu.comparecimento ou m.status)
-      if(!_isRealizSDR(m)) return;
       // Data: usa dtISO da reunião (data agendada/realizada)
       var dtM=m.dtISO?new Date(m.dtISO):(m.scheduledAt?new Date(m.scheduledAt):null);
       if(!dtM||dtM.getMonth()!==_rMM||dtM.getFullYear()!==_rMY) return;
+      // Status: realizada = mesma lógica do isReal() do ranking
+      if(!_isRealizSDR(m)) return;
+      // Dedup por telefone — igual ao dedupLeads() do ranking
+      var telK=((m.tel||m.telefone||'').replace(/\D/g,'')||m.id||'');
+      if(telK&&_seenTelSDR[telK]) return;
+      if(telK) _seenTelSDR[telK]=true;
       var origemM=(m.origem||'').toLowerCase();
       var isSS=origemM.includes('social');
       result.agendamentos++;
