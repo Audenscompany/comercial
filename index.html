@@ -18401,16 +18401,15 @@ async function calcCloserFromSheets(nivelIdx, month){
     var _todasVC=window._todasVendasCache;
     if(!_todasVC){
       _todasVC=[];
-      // Step 1: followups regulares (exclui assin_ stale do Firebase)
+      // Step 1: todos os followups (igual ao loop do renderVendas, inclui assin_*)
       Object.keys(followups||{}).forEach(function(fid){
         var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;
-        if(fid.startsWith('assin_'))return; // dados de assinatura tratados abaixo com dados frescos
         if(isVendaCancelada(fu))return;
         var m=meetings[fu.meetingId]||meetings[fid];
         var origemRaw=fu.origem||(m&&m.origem)||'';
         _todasVC.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw});
       });
-      // Step 2: assinaturas com dados frescos (mesma lógica do renderVendas)
+      // Step 2: sync de assinaturas — adiciona entradas que ainda não têm followup (igual ao renderVendas)
       if(!window._assinaturasVendasCache){
         try{window._assinaturasVendasCache=await fbGet('assinaturas');}catch(e){window._assinaturasVendasCache={};}
       }
@@ -18428,7 +18427,7 @@ async function calcCloserFromSheets(nivelIdx, month){
         var efDi=signedDate.toISOString().split('T')[0];
         var dtBR=String(signedDate.getDate()).padStart(2,'0')+'/'+String(signedDate.getMonth()+1).padStart(2,'0')+'/'+signedDate.getFullYear();
         var synId='assin_'+aid;
-        var synM={id:synId,tel:telRaw,nome:r.cliente||'',
+        var synM=meetings[synId]||{id:synId,tel:telRaw,nome:r.cliente||'',
           responsavel:(r.comercial&&r.comercial.closer)||'',
           sdrName:(r.comercial&&r.comercial.sdrNome)||'',
           sdr:(r.comercial&&r.comercial.sdrNome)||'',
@@ -18669,20 +18668,19 @@ async function calcSDRFromSheets(nivelIdx, month){
     // ── VENDAS SDR: mesma fonte da aba Vendas (_todasVendasCache) ──
     var _sMParts=month.split('-');
     var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1;
-    // Garante que o cache existe com dados frescos (aba Vendas pode não ter sido visitada)
+    // Garante que o cache existe (aba Vendas pode não ter sido visitada)
     var _todasV=window._todasVendasCache;
     if(!_todasV){
       _todasV=[];
-      // Step 1: followups regulares (exclui assin_ stale do Firebase)
+      // Step 1: todos os followups (igual ao loop do renderVendas, inclui assin_*)
       Object.keys(followups||{}).forEach(function(fid){
         var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;
-        if(fid.startsWith('assin_'))return; // dados de assinatura tratados abaixo com dados frescos
         if(isVendaCancelada(fu))return;
         var m=meetings[fu.meetingId]||meetings[fid];
         var origemRaw=fu.origem||(m&&m.origem)||'';
         _todasV.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw});
       });
-      // Step 2: assinaturas com dados frescos (mesma lógica do renderVendas)
+      // Step 2: sync de assinaturas — adiciona entradas que ainda não têm followup (igual ao renderVendas)
       if(!window._assinaturasVendasCache){
         try{window._assinaturasVendasCache=await fbGet('assinaturas');}catch(e){window._assinaturasVendasCache={};}
       }
@@ -18700,7 +18698,7 @@ async function calcSDRFromSheets(nivelIdx, month){
         var efDi=signedDate.toISOString().split('T')[0];
         var dtBR=String(signedDate.getDate()).padStart(2,'0')+'/'+String(signedDate.getMonth()+1).padStart(2,'0')+'/'+signedDate.getFullYear();
         var synId='assin_'+aid;
-        var synM={id:synId,tel:telRaw,nome:r.cliente||'',
+        var synM=meetings[synId]||{id:synId,tel:telRaw,nome:r.cliente||'',
           responsavel:(r.comercial&&r.comercial.closer)||'',
           sdrName:(r.comercial&&r.comercial.sdrNome)||'',
           sdr:(r.comercial&&r.comercial.sdrNome)||'',
@@ -24318,8 +24316,6 @@ function renderVendas(){
   var now=new Date();
   // Reset stale filters on page entry
   _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
-  // Invalida cache anterior para garantir reconstrução com dados frescos
-  window._todasVendasCache=null;
   var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
   var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
   var selectedKey=filtY+'-'+String(filtM+1).padStart(2,'0');
@@ -24330,11 +24326,10 @@ function renderVendas(){
   function fmtV(n){if(!n&&n!==0)return 'R$ 0';if(n>=1000000)return 'R$ '+(n/1000000).toFixed(1).replace('.',',')+'M';if(n>=1000)return 'R$ '+(n/1000).toFixed(1).replace('.0','').replace('.',',')+' mil';return 'R$ '+Math.round(n).toLocaleString('pt-BR');}
   function fmtPct(n){return(n>0?'+':'')+n+'%';}
 
-  // Coleta todas as vendas (exclui contratos cancelados e entradas stale assin_*)
+  // Coleta todas as vendas (exclui contratos cancelados)
   var todasVendas=[];
   Object.keys(followups).forEach(function(fid){
     var fu=followups[fid];if(fu.resultado!=='venda')return;
-    if(fid.startsWith('assin_'))return; // assinaturas tratadas pelo bloco de sync abaixo com dados frescos
     if(isVendaCancelada(fu))return;
     var m=meetings[fu.meetingId]||meetings[fid];
     // Origem: meeting > kanban lead > fallback
@@ -24343,7 +24338,7 @@ function renderVendas(){
     todasVendas.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
   });
 
-  // Inclui assinaturas assinadas com dados SEMPRE frescos do Firebase /assinaturas/
+  // Inclui assinaturas assinadas sem followup de venda (auto-sync sem Firebase write)
   if(window._assinaturasVendasCache){
     var _telsComVenda={};
     todasVendas.forEach(function(v){
@@ -24354,23 +24349,23 @@ function renderVendas(){
       var r=window._assinaturasVendasCache[aid];
       if(r.status!=='assinado')return;
       var telRaw=(r.telefone||'').replace(/\D/g,'');
-      // Verifica se já há venda com esse telefone (via km_ ou outro followup regular)
+      // Verifica se já há venda com esse telefone
       var jaContado=Object.keys(_telsComVenda).some(function(t){return t===telRaw||t.endsWith(telRaw)||telRaw.endsWith(t);});
+      if(jaContado)return;
       var signedDate=r.signedAt?new Date(r.signedAt):now;
       var efDi=signedDate.toISOString().split('T')[0];
       var dtBR=String(signedDate.getDate()).padStart(2,'0')+'/'+String(signedDate.getMonth()+1).padStart(2,'0')+'/'+signedDate.getFullYear();
       var vd=r.vendaData||{};
       var mensBase=parseFloat(vd.mensalidade||vd.valorParcela)||0;
       var synId='assin_'+aid;
-      // Sempre cria synMeeting e synFu frescos da assinatura (sobrescreve dados stale do Firebase)
-      var synMeeting={id:synId,tel:telRaw,nome:r.cliente||'',
+      var synMeeting=meetings[synId]||{id:synId,tel:telRaw,nome:r.cliente||'',
         responsavel:(r.comercial&&r.comercial.closer)||'',
         sdrName:(r.comercial&&r.comercial.sdrNome)||'',
         sdr:(r.comercial&&r.comercial.sdrNome)||'',
         origem:(r.comercial&&r.comercial.origem)||'',
         dtISO:signedDate.toISOString(),status:'done',_sintetico:true};
       meetings[synId]=synMeeting;
-      // Cria followup sintético em memória com dados frescos
+      // Cria followup sintético em memória
       var synFu={meetingId:synId,tel:telRaw,nome:r.cliente||'',
         comparecimento:'sim',venda:'sim',resultado:'venda',
         plano:vd.plano||'',duracao:parseInt(vd.duracaoMeses||vd.duracao)||0,
@@ -24378,15 +24373,12 @@ function renderVendas(){
         contrato:parseFloat(vd.contrato||vd.valorTotal)||0,
         mensalidade:mensBase,dt:dtBR,_fromContrato:aid,_assinaturaSync:true};
       followups[synId]=synFu;
-      // Só adiciona ao todasVendas se não há outra entrada com mesmo telefone
-      if(!jaContado){
-        var origemRaw=(r.comercial&&r.comercial.origem)||'';
-        todasVendas.push({fu:synFu,m:synMeeting,fid:synId,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
-        // Persiste no Firebase em background
-        saveFollowupFB(synId,synFu);
-        if(fbDb)fbDb.ref('assinaturas/'+aid).update({_vendaRegistrada:true});
-      }
-    }); // fecha Object.keys().forEach()
+      var origemRaw=(r.comercial&&r.comercial.origem)||'';
+      todasVendas.push({fu:synFu,m:synMeeting,fid:synId,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
+      // Persiste no Firebase em background
+      saveFollowupFB(synId,synFu);
+      if(fbDb)fbDb.ref('assinaturas/'+aid).update({_vendaRegistrada:true});
+    });
   }else{
     // Carrega assinaturas em background e re-renderiza
     fbGet('assinaturas').then(function(data){
