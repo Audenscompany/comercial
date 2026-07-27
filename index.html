@@ -18660,10 +18660,26 @@ async function calcSDRFromSheets(nivelIdx, month){
     // ── REUNIÕES SDR: usa meetings Firebase (mesma fonte do painel BDR) ──
     var _rMParts=month.split('-');
     var _rMY=parseInt(_rMParts[0]),_rMM=parseInt(_rMParts[1])-1;
-    // Pré-indexa followups por meetingId — igual ao getFu() do ranking
+    // Pré-indexa followups por meetingId e telefone (igual ao getFu() do ranking)
     var _fuByMid={};
     Object.keys(followups||{}).forEach(function(fid){var f=followups[fid];if(f&&f.meetingId)_fuByMid[f.meetingId]=f;});
-    function _getFuSDR(m){return followups[m.id]||_fuByMid[m.id]||null;}
+    function _getFuSDR(m){
+      if(followups[m.id])return followups[m.id];
+      var byMid=_fuByMid[m.id];if(byMid)return byMid;
+      // Fallback por telefone: mesma lógica do getFu() em renderReunioes
+      var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
+      if(mTel.length>=8&&m.dtISO){
+        var mDate=new Date(m.dtISO).getTime();
+        var best=null,bestDiff=Infinity;
+        Object.values(followups).forEach(function(f){
+          var fTel=(f.tel||'').replace(/\D/g,'');
+          if(fTel.slice(-9)!==mTel.slice(-9))return;
+          if(f.dt){var fDate=parseBRDate(f.dt);if(!fDate)return;var diff=Math.abs(mDate-fDate.getTime());if(diff<=7*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}}
+        });
+        if(best)return best;
+      }
+      return null;
+    }
     function _isRealizSDR(m){var fu=_getFuSDR(m);if(fu)return fu.comparecimento==='sim'||fu.resultado==='venda';var st=(m.status||'').toLowerCase();return st==='done'||st==='realizada'||st==='venda';}
     Object.values(meetings||{}).forEach(function(m){
       if(!m||m._retorno||m._sintetico) return;
