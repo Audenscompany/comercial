@@ -18380,21 +18380,49 @@ async function calcCloserFromSheets(nivelIdx, month){
     }
     result.incentivReun = 0; // Closer não tem incentivo R$30/reunião
 
+    var _contratoItems=[]; // {cliente,mrr,plano} — non-cold-call contracts
+    var totalEquipeContratos=0; // todos os contratos da equipe no mês (para bônus de equipe)
+    // Sempre parseia headers do clientes sheet (usados também na seção cold call abaixo)
+    var ch=[],iData2=-1,iCloser2=-1,iPlano=-1,iValorV=-1,iCliente2=-1,ciSDR2=-1,ciOri2=-1;
     if(cliRows && cliRows.length > 1){
-      var ch = cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      // Clientes cols: DATA_INICIO=0, CLIENTE=1, VALOR_MES=2, GESTOR=3, DATA_CANCEL=4, MOTIVO=5,
-      //   PLANO=6, ORIGEM=7, CLOSER=8, SDR=9, VALOR_VENDIDO=10, COMISSAO_CLOSER=11
-      var iData2 = ch.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
-      var iCloser2 = ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
-      var iPlano = ch.findIndex(function(h){return h.includes('PLANO');});
-      var iValorV = ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
-      var iCliente2 = ch.findIndex(function(h){return h.includes('CLIENTE');});
-      // Find SDR and ORIGEM cols here so we can exclude cold-call-SDR contracts from closer count
-      var ciSDR2=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
-      var ciOri2=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
-
-      var _contratoItems=[]; // {cliente,mrr,plano} — non-cold-call contracts
-      var totalEquipeContratos=0; // todos os contratos da equipe no mês (para bônus de equipe)
+      ch = cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
+      iData2 = ch.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
+      iCloser2 = ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
+      iPlano = ch.findIndex(function(h){return h.includes('PLANO');});
+      iValorV = ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
+      iCliente2 = ch.findIndex(function(h){return h.includes('CLIENTE');});
+      ciSDR2=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
+      ciOri2=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
+    }
+    var currentMonthStr=dateToMonthStr(new Date());
+    if(month===currentMonthStr){
+      // Mês atual: Firebase é a fonte de verdade (contratos/ collection)
+      var fbContratos=await loadContratos();
+      fbContratos.forEach(function(c){
+        var dtFB=c.dataInicio?parseBRDate(c.dataInicio):null;
+        var rowMonthFB=dateToMonthStr(dtFB);
+        if(!rowMonthFB) return;
+        if(rowMonthFB===month) totalEquipeContratos++;
+        var closerNormFB=normCloserName(c.closer||'');
+        if(closerNormFB==='Gustavo'&&rowMonthFB===month){
+          var oriCFB=(c.origem||'').toLowerCase();
+          var isColdCallFB=oriCFB.includes('cold')||oriCFB.includes('call');
+          if(isColdCallFB){
+            result.contratos++; // cold call: conta para meta, comissão vai pelo CC 25%
+            return;
+          }
+          result.contratos++;
+          var planoFB=(c.plano||'').toUpperCase();
+          if(planoFB.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
+          else if(planoFB.includes('SEMESTRAL')) result.tipoContrato='Semestral';
+          else result.tipoContrato='Mensal';
+          var vFB=c.valorMes||0;
+          result.valorVendido+=vFB;
+          _contratoItems.push({cliente:c.cliente||'—',mrr:vFB,plano:planoFB||'Mensal'});
+        }
+      });
+    } else if(cliRows && cliRows.length > 1){
+      // Meses anteriores: usa Google Sheets (histórico)
       cliRows.slice(1).forEach(function(row){
         var closer2 = (row[iCloser2]||'').trim().toUpperCase();
         var dateStr2 = row[iData2]||'';
@@ -18404,13 +18432,11 @@ async function calcCloserFromSheets(nivelIdx, month){
         if(rowMonth2===month) totalEquipeContratos++; // conta todos da equipe
         var closerNorm2 = normCloserName(closer2);
         if(closerNorm2==='Gustavo' && rowMonth2===month){
-          // Regra: qualquer contrato de cold call (origem) não conta como closer,
-          // Gustavo recebe 25% de MRR independente de quem fez a venda.
-          var sdrC2=(ciSDR2>=0?row[ciSDR2]||'':'').trim();
+          // Regra: contrato de cold call (origem) não conta como closer — comissão via CC 25%
           var oriC2=(ciOri2>=0?row[ciOri2]||'':'').toLowerCase();
           var isColdCall2 = oriC2.includes('cold')||oriC2.includes('call');
           if(isColdCall2){
-            result.contratos++; // conta para meta/progressão; comissão vai pelo CC 25%
+            result.contratos++;
             return;
           }
           result.contratos++;
@@ -18418,7 +18444,6 @@ async function calcCloserFromSheets(nivelIdx, month){
           if(plano.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
           else if(plano.includes('SEMESTRAL')) result.tipoContrato='Semestral';
           else result.tipoContrato='Mensal';
-          // Valor vendido
           var vStr = (row[iValorV]||'').replace(/R\$\s*/,'').replace(/\./g,'').replace(',','.').trim();
           var v = parseFloat(vStr)||0;
           result.valorVendido += v;
