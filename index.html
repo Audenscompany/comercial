@@ -24804,13 +24804,36 @@ function abrirEditarVenda(fid){
     return'<option value="'+c+'" '+sel+'>'+c+'</option>';
   }).join('');
   var isTcv=(fu.tipoValor==='tcv');
+  // Origem atual
+  var _curOrig=fu.origem||(m&&m.origem)||'';
+  var _origens=[
+    {v:'trafego pago',l:'🎯 Tráfego Pago'},
+    {v:'social selling',l:'📲 Social Selling'},
+    {v:'cold call',l:'📞 Cold Call'},
+    {v:'indicacao',l:'🤝 Indicação'},
+    {v:'organico',l:'🌱 Orgânico'},
+    {v:'bdr',l:'📋 BDR'}
+  ];
+  function _normOrigVal(s){if(!s)return'';var l=s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'trafego pago';if(l.includes('social')||l.includes('selling'))return'social selling';if(l.includes('cold'))return'cold call';if(l.includes('indica'))return'indicacao';if(l.includes('organ'))return'organico';if(l.includes('bdr'))return'bdr';return'';}
+  var _selOrig=_normOrigVal(_curOrig);
+  var origOpts=_origens.map(function(o){return'<option value="'+o.v+'"'+(_selOrig===o.v?' selected':'')+'>'+o.l+'</option>';}).join('');
+  // SDR atual
+  var _curSdr=(m&&(m.sdrName||m.sdr))||fu.sdr||'';
+  var _sdrNames=[];
+  Object.keys(USERS||{}).forEach(function(e){var u=USERS[e];if(u.sdr&&_sdrNames.indexOf(u.sdr)<0)_sdrNames.push(u.sdr);});
+  if(!_sdrNames.length)_sdrNames=['João','Gustavo'];
+  var sdrOpts='<option value="">— Sem SDR —</option>'+_sdrNames.map(function(s){var sel=_curSdr&&_curSdr.toLowerCase()===s.toLowerCase()?'selected':'';return'<option value="'+s+'" '+sel+'>'+s+'</option>';}).join('');
   var html='<div class="modal-ov active" id="modal-editar-venda" onclick="if(event.target===this)fecharEditarVenda()">'+
     '<div class="modal-box" style="max-width:480px;">'+
       '<div class="modal-hd"><div class="modal-title" style="color:var(--green);"><i class="ti ti-edit"></i> Editar Venda</div>'+
         '<button class="modal-close" onclick="fecharEditarVenda()">×</button></div>'+
       '<div class="modal-body" style="display:grid;gap:12px;">'+
         '<div><label class="f-label">Cliente</label><input class="f-input" id="ev-cliente" value="'+(fu.nome||(m&&m.nome)||'')+'" placeholder="Nome do cliente"></div>'+
-        '<div><label class="f-label">Closer</label><select class="f-input" id="ev-closer">'+closerOpts+'</select></div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+          '<div><label class="f-label">Closer</label><select class="f-input" id="ev-closer">'+closerOpts+'</select></div>'+
+          '<div><label class="f-label">SDR</label><select class="f-input" id="ev-sdr">'+sdrOpts+'</select></div>'+
+        '</div>'+
+        '<div><label class="f-label">Origem</label><select class="f-input" id="ev-origem"><option value="">Selecione...</option>'+origOpts+'</select></div>'+
         '<div><label class="f-label">Plano</label><select class="f-input" id="ev-plano">'+
           '<option value="starter"'+(fu.plano==='starter'?' selected':'')+'>Starter</option>'+
           '<option value="premium"'+(fu.plano==='premium'?' selected':'')+'>Premium</option>'+
@@ -24853,27 +24876,46 @@ async function salvarEdicaoVenda(){
   var contrato=parseFloat(document.getElementById('ev-contrato').value)||0;
   var duracao=parseInt(document.getElementById('ev-duracao').value)||1;
   var dataInicio=document.getElementById('ev-data-inicio').value;
+  var origem=document.getElementById('ev-origem').value;
+  var sdr=(document.getElementById('ev-sdr').value||'').trim();
   fu.plano=plano;fu.tipoValor=tipo;fu.mensalidade=mensalidade;fu.contrato=contrato;
   fu.duracao=duracao;fu.dataInicio=dataInicio;
+  if(origem)fu.origem=origem;
+  if(sdr)fu.sdr=sdr; else delete fu.sdr;
   if(cliente)fu.nome=cliente;
   if(closer){fu.closer=closer;fu.responsavel=closer;}
   var m=meetings[fu.meetingId]||meetings[fid];
   if(m&&closer)m.responsavel=closer;
+  if(m&&origem)m.origem=origem;
+  if(m&&sdr){m.sdrName=sdr;} else if(m&&!sdr){m.sdrName='';m.sdr='';}
   try{
     if(fbDb||initFirebase()){
       var fuUpdate=Object.assign({},fu);
       await fbDb.ref('followups/'+fid).update(fuUpdate);
-      if(m&&closer)await fbDb.ref('meetings/'+m.id).update({responsavel:closer});
-      else if(closer)await fbDb.ref('followups/'+fid+'/closer').set(closer);
+      var mRef=m&&m.id;
+      if(mRef){
+        var mUpdates={};
+        if(closer)mUpdates.responsavel=closer;
+        if(origem)mUpdates.origem=origem;
+        mUpdates.sdrName=sdr||'';
+        mUpdates.sdr=sdr||'';
+        await fbDb.ref('meetings/'+mRef).update(mUpdates);
+      } else if(closer){
+        await fbDb.ref('followups/'+fid+'/closer').set(closer);
+      }
     }
     // Re-apply edited fields — Firebase listener may have replaced followups[fid] during await
     if(!followups[fid]) followups[fid]={};
     followups[fid].plano=plano;followups[fid].tipoValor=tipo;
     followups[fid].mensalidade=mensalidade;followups[fid].contrato=contrato;
     followups[fid].duracao=duracao;followups[fid].dataInicio=dataInicio;
+    if(origem)followups[fid].origem=origem;
+    if(sdr)followups[fid].sdr=sdr; else delete followups[fid].sdr;
     if(cliente)followups[fid].nome=cliente;
     if(closer){followups[fid].closer=closer;followups[fid].responsavel=closer;}
     if(m&&closer&&m.responsavel!==closer)m.responsavel=closer;
+    if(m&&origem)m.origem=origem;
+    if(m){m.sdrName=sdr||'';m.sdr=sdr||'';}
     showSheetToast('Venda atualizada com sucesso.',false);
     fecharEditarVenda();
     showPage('vendas');
