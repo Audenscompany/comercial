@@ -24932,7 +24932,7 @@ async function salvarEdicaoVenda(){
     if(fbDb||initFirebase()){
       var fuUpdate=Object.assign({},fu);
       await fbDb.ref('followups/'+fid).update(fuUpdate);
-      var mRef=m&&m.id;
+      var mRef=fu.meetingId||(m&&m.id);
       if(mRef){
         var mUpdates={};
         if(closer)mUpdates.responsavel=closer;
@@ -24956,6 +24956,7 @@ async function salvarEdicaoVenda(){
     if(m&&closer&&m.responsavel!==closer)m.responsavel=closer;
     if(m&&origem)m.origem=origem;
     if(m){m.sdrName=sdr||'';m.sdr=sdr||'';}
+    window._todasVendasCache=null; // invalida cache para reconstrução com dados frescos
     showSheetToast('Venda atualizada com sucesso.',false);
     fecharEditarVenda();
     showPage('vendas');
