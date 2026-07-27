@@ -18576,79 +18576,56 @@ async function calcSDRFromSheets(nivelIdx, month){
     var reunRows = await fetchSheetCached(SHEETS_IDS.reunioes, SHEETS_GIDS.reunioes, 'reunioes');
     var cliRows = await fetchSheetCached(SHEETS_IDS.clientes, SHEETS_GIDS.clientes, 'clientes');
 
-    if(reunRows && reunRows.length > 1){
-      var rh = reunRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      var iStatus = rh.findIndex(function(h){return h.includes('STATUS');});
-      var iSDR = rh.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
-      var iData = rh.findIndex(function(h){return h.includes('DATA')&&h.includes('AGEND');});
-      var iDataReal = rh.findIndex(function(h){return h.includes('DATA')&&(h.includes('REAL')||h.includes('SERA'));});
-      var iOrigem = rh.findIndex(function(h){return h.includes('ORIGEM');});
+    // ── REUNIÕES SDR: usa meetings Firebase (mesma fonte do painel BDR) ──
+    var _rMParts=month.split('-');
+    var _rMY=parseInt(_rMParts[0]),_rMM=parseInt(_rMParts[1])-1;
+    Object.values(meetings||{}).forEach(function(m){
+      if(!m||m._retorno||m._sintetico) return;
+      var sdrM=normCloserName(m.sdrName||m.sdr||'');
+      if(sdrM!=='João') return;
+      // Status: realizada = compareceu à reunião
+      var status=(m.status||'').toLowerCase();
+      var isRealiz=(status==='done'||status==='realizada'||status==='venda');
+      if(!isRealiz) return;
+      // Data: usa dtISO da reunião (data agendada/realizada)
+      var dtM=m.dtISO?new Date(m.dtISO):(m.scheduledAt?new Date(m.scheduledAt):null);
+      if(!dtM||dtM.getMonth()!==_rMM||dtM.getFullYear()!==_rMY) return;
+      var origemM=(m.origem||'').toLowerCase();
+      var isSS=origemM.includes('social');
+      result.agendamentos++;
+      if(!isSS){ result.reunioesComp++; result.trafegoReun++; }
+      if(isSS) result.ssReun++;
+    });
 
-      reunRows.slice(1).forEach(function(row){
-        var sdr = (row[iSDR]||'').trim().toUpperCase();
-        var status = (row[iStatus]||'').trim().toUpperCase();
-        var origem = (row[iOrigem]||'').trim().toUpperCase();
-        var dateStr = row[iData]||'';
-        var dt = parseBRDate(dateStr);
-        var rowMonth = dateToMonthStr(dt);
-        var dateRealStr = row[iDataReal]||'';
-        var dtReal = parseBRDate(dateRealStr);
-        var rowMonthReal = dateToMonthStr(dtReal)||rowMonth;
-        if(!rowMonth) return;
-        if(!sdr.includes('JOÃO')&&!sdr.includes('JOAO')) return;
-
-        var isSS = origem.includes('SOCIAL');
-
-        // Usa DATA AGENDAMENTO (rowMonth) — mesma lógica do painel SDR/BDR
-        // para garantir consistência entre as duas telas
-        var isRealiz = status==='REALIZADA' || status==='VENDA';
-        if(rowMonth === month && isRealiz){
-          result.agendamentos++;           // SS + tráfego → verifica se bateu a meta
-          if(!isSS){
-            result.reunioesComp++;         // tráfego → incentivo R$12/reunião
-            result.trafegoReun++;          // tráfego → base do acelerador (acima da meta)
-          }
-          if(isSS) result.ssReun++;        // SS → incentivo R$30/reunião
-        }
-      });
-    }
-
-    if(cliRows && cliRows.length > 1){
-      var ch = cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      var iData2 = ch.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
-      var iSDR2 = ch.findIndex(function(h){return h.includes('SDR')||h.includes('BDR');});
-      var iOrigem2 = ch.findIndex(function(h){return h.includes('ORIGEM');});
-      // Para comissão SS usa MRR (VALOR CONTRATO/MÊS), não VALOR VENDIDO (que pode ser total do TCV)
-      var iValMes2 = ch.findIndex(function(h){return h.includes('VALOR')&&(h.includes('MÊS')||h.includes('MES'));});
-      if(iValMes2<0) iValMes2 = ch.findIndex(function(h){return h.includes('VALOR')&&!h.includes('VENDIDO');});
-      var iValorV = ch.findIndex(function(h){return h.includes('VALOR')&&h.includes('VENDIDO');});
-
-      cliRows.slice(1).forEach(function(row){
-        var sdr2 = (row[iSDR2]||'').trim().toUpperCase();
-        var dateStr2 = row[iData2]||'';
-        var dt2 = parseBRDate(dateStr2);
-        var rowMonth2 = dateToMonthStr(dt2);
-        var origem2 = (row[iOrigem2]||'').trim().toUpperCase();
-        if(!rowMonth2||rowMonth2!==month) return;
-        // João é sempre o SDR — verifica apenas a coluna SDR
-        if(!sdr2.includes('JOÃO')&&!sdr2.includes('JOAO')) return;
-
-        // MRR do contrato: tenta VALOR MÊS primeiro, fallback VALOR VENDIDO
-        var mrr = parseMoney(iValMes2>=0?row[iValMes2]||'':'');
-        if(!mrr) mrr = parseMoney(iValorV>=0?row[iValorV]||'':'');
-
-        result.vendas++; // total de vendas (SS + Tráfego) — threshold usa só Tráfego
-        if(origem2.includes('SOCIAL')){
-          // Social Selling: comissão de 25% do MRR, sem threshold próprio
-          result.ssVendas++;
-          var ssComm2=Math.round(mrr*0.25);
-          result.ssComm += ssComm2;
-          result.vendaDetalhes.push({cliente:(row[ch.findIndex(function(h){return h.includes('CLIENTE');})]||'—').trim(),mrr:mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
-        } else {
-          result.vendaDetalhes.push({cliente:(row[ch.findIndex(function(h){return h.includes('CLIENTE');})]||'—').trim(),mrr:mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
-        }
-      });
-    }
+    // ── VENDAS SDR: usa followups+meetings (mesma fonte da aba Vendas) ──
+    var _sMParts=month.split('-');
+    var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1; // 0-based
+    Object.keys(followups||{}).forEach(function(fid){
+      var fu=followups[fid];
+      if(!fu||fu.resultado!=='venda') return;
+      if(isVendaCancelada(fu)) return;
+      var m2=meetings[fu.meetingId]||meetings[fid];
+      var dt2=_vendaDate(fu,m2);
+      if(!dt2&&fu.dataInicio) dt2=new Date(fu.dataInicio+'T12:00:00');
+      if(!dt2&&m2&&m2.dtISO) dt2=new Date(m2.dtISO);
+      if(!dt2||dt2.getMonth()!==_sMM||dt2.getFullYear()!==_sMY) return;
+      // SDR: m.sdrName || m.sdr (igual à aba Vendas)
+      var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||fu.sdr||'';
+      if(normCloserName(sdrRaw)!=='João') return;
+      // MRR: mesma lógica de _mrrV no renderVendas
+      var mrr=fu.tipoValor==='tcv'?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      var origemFU=((fu.origem)||(m2&&m2.origem)||'').toLowerCase();
+      var clienteNome=fu.nome||(m2&&m2.nome)||'—';
+      result.vendas++;
+      if(origemFU.includes('social')){
+        result.ssVendas++;
+        var ssComm2=Math.round(mrr*0.25);
+        result.ssComm+=ssComm2;
+        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
+      } else {
+        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
+      }
+    });
 
     // Calculate SDR
     var meta = lv.meta;
