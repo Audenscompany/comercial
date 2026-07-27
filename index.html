@@ -18395,39 +18395,42 @@ async function calcCloserFromSheets(nivelIdx, month){
       ciSDR2=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h==='SDR/BDR'||h.includes('SDR');});
       ciOri2=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
     }
-    // ── CONTAGEM DE CONTRATOS: usa followups+meetings (mesma fonte da aba Vendas) ──
+    // ── CONTAGEM DE CONTRATOS: mesma fonte da aba Vendas (_todasVendasCache) ──
     var _mParts=month.split('-');
-    var _mY=parseInt(_mParts[0]),_mM=parseInt(_mParts[1])-1; // 0-based
-    Object.keys(followups||{}).forEach(function(fid){
-      var fu=followups[fid];
-      if(!fu||fu.resultado!=='venda') return;
-      if(isVendaCancelada(fu)) return;
-      var m2=meetings[fu.meetingId]||meetings[fid];
-      var dt2=_vendaDate(fu,m2);
-      if(!dt2&&fu.dataInicio) dt2=new Date(fu.dataInicio+'T12:00:00');
-      if(!dt2&&m2&&m2.dtISO) dt2=new Date(m2.dtISO);
-      if(!dt2||dt2.getMonth()!==_mM||dt2.getFullYear()!==_mY) return;
+    var _mY=parseInt(_mParts[0]),_mM=parseInt(_mParts[1])-1;
+    var _todasVC=window._todasVendasCache;
+    if(!_todasVC){
+      _todasVC=[];
+      Object.keys(followups||{}).forEach(function(fid){
+        var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;
+        if(isVendaCancelada(fu))return;
+        var m=meetings[fu.meetingId]||meetings[fid];
+        var origemRaw=fu.origem||(m&&m.origem)||'';
+        _todasVC.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw});
+      });
+      window._todasVendasCache=_todasVC;
+    }
+    _todasVC.filter(function(v){
+      var dt=_vendaDate(v.fu,v.m);
+      return dt&&dt.getMonth()===_mM&&dt.getFullYear()===_mY;
+    }).forEach(function(v){
+      var fu=v.fu, m2=v.m;
       totalEquipeContratos++;
-      // Closer: m.responsavel (igual à aba Vendas)
       var closerRaw=(m2&&m2.responsavel)||fu.closerNome||fu.closer||fu.responsavel||'';
-      var closerNormFU=normCloserName(closerRaw);
-      if(closerNormFU==='Gustavo'){
-        var origemFU=((fu.origem)||(m2&&m2.origem)||'').toLowerCase();
-        var isColdCallFU=origemFU.includes('cold')||origemFU.includes('call');
-        if(isColdCallFU){
-          result.contratos++; // cold call: conta para meta, comissão via CC 25%
-          return;
-        }
-        result.contratos++;
-        var planoFU=(fu.plano||'').toUpperCase();
-        if(planoFU.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
-        else if(planoFU.includes('SEMESTRAL')) result.tipoContrato='Semestral';
-        else result.tipoContrato='Mensal';
-        // MRR: mesma lógica de _mrrV no renderVendas
-        var vFU=fu.tipoValor==='tcv'?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
-        result.valorVendido+=vFU;
-        _contratoItems.push({cliente:fu.nome||(m2&&m2.nome)||'—',mrr:vFU,plano:planoFU||'Mensal'});
-      }
+      if(normCloserName(closerRaw)!=='Gustavo') return;
+      var origemFU=(v.origemRaw||'').toLowerCase();
+      var isColdCallFU=origemFU.includes('cold')||origemFU.includes('call');
+      result.contratos++;
+      if(isColdCallFU) return; // cold call: conta para meta, comissão via CC 25%
+      var planoFU=(fu.plano||'').toUpperCase();
+      if(planoFU.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
+      else if(planoFU.includes('SEMESTRAL')) result.tipoContrato='Semestral';
+      else result.tipoContrato='Mensal';
+      var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
+      var vFU=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      result.valorVendido+=vFU;
+      var clienteC=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
+      _contratoItems.push({cliente:clienteC,mrr:vFU,plano:planoFU||'Mensal'});
     });
     if(false){ // bloco morto — mantido para referência histórica (Sheets)
       cliRows.slice(1).forEach(function(row){
@@ -18598,46 +18601,42 @@ async function calcSDRFromSheets(nivelIdx, month){
       if(isSS) result.ssReun++;
     });
 
-    // ── VENDAS SDR: usa followups+meetings (mesma fonte da aba Vendas) ──
+    // ── VENDAS SDR: mesma fonte da aba Vendas (_todasVendasCache) ──
     var _sMParts=month.split('-');
-    var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1; // 0-based
-    // 1ª passagem: coleta candidatos
-    var _sdrCandidatos=[];
-    Object.keys(followups||{}).forEach(function(fid){
-      var fu=followups[fid];
-      if(!fu||fu.resultado!=='venda') return;
-      if(isVendaCancelada(fu)) return;
-      var m2=meetings[fu.meetingId]||meetings[fid];
-      var dt2=_vendaDate(fu,m2);
-      if(!dt2||dt2.getMonth()!==_sMM||dt2.getFullYear()!==_sMY) return;
+    var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1;
+    // Garante que o cache existe (aba Vendas pode não ter sido visitada)
+    var _todasV=window._todasVendasCache;
+    if(!_todasV){
+      _todasV=[];
+      Object.keys(followups||{}).forEach(function(fid){
+        var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;
+        if(isVendaCancelada(fu))return;
+        var m=meetings[fu.meetingId]||meetings[fid];
+        var origemRaw=fu.origem||(m&&m.origem)||'';
+        _todasV.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw});
+      });
+      window._todasVendasCache=_todasV;
+    }
+    // Filtra pelo mês e pelo SDR = João
+    _todasV.filter(function(v){
+      var dt=_vendaDate(v.fu,v.m);
+      return dt&&dt.getMonth()===_sMM&&dt.getFullYear()===_sMY;
+    }).forEach(function(v){
+      var fu=v.fu, m2=v.m;
       var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||fu.sdr||'';
       if(normCloserName(sdrRaw)!=='João') return;
       var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
       var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
-      // Tel: últimos 10 dígitos (normaliza código de país)
-      var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'').slice(-10);
-      // Empresa: mesma lógica da coluna "Cliente" da aba Vendas
-      var empresa=(fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
-      var origemFU=((fu.origem)||(m2&&m2.origem)||'').toLowerCase();
+      var origemFU=(v.origemRaw||'').toLowerCase();
       var clienteNome=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
-      _sdrCandidatos.push({tel:tel,empresa:empresa,mrr:mrr,clienteNome:clienteNome,origemFU:origemFU});
-    });
-    // 2ª passagem: ordena por MRR desc e dedup (maior MRR vence quando há duplicata)
-    _sdrCandidatos.sort(function(a,b){return b.mrr-a.mrr;});
-    var _dedupTel={}, _dedupEmp={};
-    _sdrCandidatos.forEach(function(sv){
-      if(sv.tel&&_dedupTel[sv.tel]) return;
-      if(sv.empresa&&_dedupEmp[sv.empresa]) return;
-      if(sv.tel) _dedupTel[sv.tel]=1;
-      if(sv.empresa) _dedupEmp[sv.empresa]=1;
       result.vendas++;
-      if(sv.origemFU.includes('social')){
+      if(origemFU.includes('social')){
         result.ssVendas++;
-        var ssComm2=Math.round(sv.mrr*0.25);
+        var ssComm2=Math.round(mrr*0.25);
         result.ssComm+=ssComm2;
-        result.vendaDetalhes.push({cliente:sv.clienteNome,mrr:sv.mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
+        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Social Selling',comm:ssComm2,acima:true});
       } else {
-        result.vendaDetalhes.push({cliente:sv.clienteNome,mrr:sv.mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
+        result.vendaDetalhes.push({cliente:clienteNome,mrr:mrr,tipo:'Tráfego',comm:0,acima:false,_pending:true});
       }
     });
 
@@ -24257,6 +24256,9 @@ function renderVendas(){
       if(hasPendentes) renderVendas();
     }).catch(function(){window._assinaturasVendasCache={};});
   }
+
+  // Cache global — fonte de dados para cálculos de comissão
+  window._todasVendasCache=todasVendas;
 
   // Meses disponíveis
   var mesKeys={};
