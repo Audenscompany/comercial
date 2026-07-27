@@ -18652,7 +18652,8 @@ async function calcSDRFromSheets(nivelIdx, month){
       return dt&&dt.getMonth()===_sMM&&dt.getFullYear()===_sMY;
     }).forEach(function(v){
       var fu=v.fu, m2=v.m;
-      var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||fu.sdr||'';
+      // fu.sdr tem prioridade: é o campo editado explicitamente (m.sdrName pode estar desatualizado)
+      var sdrRaw=fu.sdr||(m2&&(m2.sdrName||m2.sdr))||'';
       if(normCloserName(sdrRaw)!=='João') return;
       var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
       var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
