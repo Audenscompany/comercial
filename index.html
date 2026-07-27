@@ -18420,18 +18420,26 @@ async function calcCloserFromSheets(nivelIdx, month){
       var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
       var vFU=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
       var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'').slice(-10);
-      var empresa=(fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
+      var empresaKey=((fu.empresa||(m2&&m2.empresa))||'').toLowerCase().trim();
+      var nomeKey=((fu.nome||(m2&&m2.nome))||'').toLowerCase().trim();
+      var midKey=fu.meetingId||v.fid||'';
       var closerRaw=(m2&&m2.responsavel)||fu.closerNome||fu.closer||fu.responsavel||'';
-      _ccCand.push({fu:fu,m2:m2,tel:tel,empresa:empresa,mrr:vFU,closerRaw:closerRaw,origemRaw:v.origemRaw||''});
+      _ccCand.push({fu:fu,m2:m2,tel:tel,empresaKey:empresaKey,nomeKey:nomeKey,midKey:midKey,mrr:vFU,closerRaw:closerRaw,origemRaw:v.origemRaw||'',fid:v.fid});
     });
-    // Dedup por tel/empresa — maior MRR vence
+    // Dedup: meetingId > tel > empresa > nome — maior MRR vence
     _ccCand.sort(function(a,b){return b.mrr-a.mrr;});
-    var _dedupTc={},_dedupEc={};
+    var _dedupTc={},_dedupEc={},_dedupNc={},_dedupMIDc={},_dedupFIDc={};
     _ccCand.forEach(function(cv){
+      if(cv.fid&&_dedupFIDc[cv.fid]) return;
+      if(cv.midKey&&_dedupMIDc[cv.midKey]) return;
       if(cv.tel&&_dedupTc[cv.tel]) return;
-      if(cv.empresa&&_dedupEc[cv.empresa]) return;
+      if(cv.empresaKey&&_dedupEc[cv.empresaKey]) return;
+      if(cv.nomeKey&&_dedupNc[cv.nomeKey]) return;
+      if(cv.fid) _dedupFIDc[cv.fid]=1;
+      if(cv.midKey) _dedupMIDc[cv.midKey]=1;
       if(cv.tel) _dedupTc[cv.tel]=1;
-      if(cv.empresa) _dedupEc[cv.empresa]=1;
+      if(cv.empresaKey) _dedupEc[cv.empresaKey]=1;
+      if(cv.nomeKey) _dedupNc[cv.nomeKey]=1;
       var fu=cv.fu, m2=cv.m2;
       totalEquipeContratos++;
       if(normCloserName(cv.closerRaw)!=='Gustavo') return;
@@ -18644,19 +18652,30 @@ async function calcSDRFromSheets(nivelIdx, month){
       var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
       var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
       var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'').slice(-10);
-      var empresa=(fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
+      // empresa: somente campo empresa (sem fallback em nome para não misturar clientes diferentes)
+      var empresaKey=((fu.empresa||(m2&&m2.empresa))||'').toLowerCase().trim();
+      // nome do contato como chave extra de dedup
+      var nomeKey=((fu.nome||(m2&&m2.nome))||'').toLowerCase().trim();
+      // meetingId como chave mais confiável (dois followups do mesmo meeting = mesma venda)
+      var midKey=fu.meetingId||v.fid||'';
       var origemFU=(v.origemRaw||'').toLowerCase();
       var clienteNome=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
-      _sdrCand.push({tel:tel,empresa:empresa,mrr:mrr,origemFU:origemFU,clienteNome:clienteNome});
+      _sdrCand.push({tel:tel,empresaKey:empresaKey,nomeKey:nomeKey,midKey:midKey,mrr:mrr,origemFU:origemFU,clienteNome:clienteNome,fid:v.fid});
     });
-    // Dedup por tel (últimos 10 dígitos) e empresa — maior MRR vence
+    // Dedup: maior MRR vence; chaves: meetingId > tel > empresa > nome-do-contato
     _sdrCand.sort(function(a,b){return b.mrr-a.mrr;});
-    var _dedupT={},_dedupE={};
+    var _dedupT={},_dedupE={},_dedupN={},_dedupMID={},_dedupFID={};
     _sdrCand.forEach(function(sv){
-      if(sv.tel&&_dedupT[sv.tel]) return;
-      if(sv.empresa&&_dedupE[sv.empresa]) return;
+      if(sv.fid&&_dedupFID[sv.fid]) return;        // mesmo followup (não deveria ocorrer, mas por segurança)
+      if(sv.midKey&&_dedupMID[sv.midKey]) return;  // mesmo meeting → mesma venda
+      if(sv.tel&&_dedupT[sv.tel]) return;           // mesmo tel (normalizado 10 dígitos)
+      if(sv.empresaKey&&_dedupE[sv.empresaKey]) return; // mesma empresa
+      if(sv.nomeKey&&_dedupN[sv.nomeKey]) return;   // mesmo contato
+      if(sv.fid) _dedupFID[sv.fid]=1;
+      if(sv.midKey) _dedupMID[sv.midKey]=1;
       if(sv.tel) _dedupT[sv.tel]=1;
-      if(sv.empresa) _dedupE[sv.empresa]=1;
+      if(sv.empresaKey) _dedupE[sv.empresaKey]=1;
+      if(sv.nomeKey) _dedupN[sv.nomeKey]=1;
       result.vendas++;
       if(sv.origemFU.includes('social')){
         result.ssVendas++;
