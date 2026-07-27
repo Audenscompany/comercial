@@ -9705,7 +9705,7 @@ function renderReunioes(){
 
   // SDR ranking
   var sdrMap={};
-  dedupedRows.forEach(function(m){var s=(m.sdrName||m.sdr||'—').trim()||'—';if(!sdrMap[s])sdrMap[s]={ag:0,conf:0,real:0,ns:0};sdrMap[s].ag++;if(isConf(m))sdrMap[s].conf++;if(isReal(m))sdrMap[s].real++;if(isNs(m))sdrMap[s].ns++;});
+  dedupedRows.forEach(function(m){var s=normCloserName((m.sdrName||m.sdr||'').trim())||'—';if(!sdrMap[s])sdrMap[s]={ag:0,conf:0,real:0,ns:0};sdrMap[s].ag++;if(isConf(m))sdrMap[s].conf++;if(isReal(m))sdrMap[s].real++;if(isNs(m))sdrMap[s].ns++;});
   var sdrRank=Object.keys(sdrMap).map(function(s){return{name:s,d:sdrMap[s]};}).sort(function(a,b){return b.d.real-a.d.real;});
 
   // Capacidade
@@ -18660,14 +18660,17 @@ async function calcSDRFromSheets(nivelIdx, month){
     // ── REUNIÕES SDR: usa meetings Firebase (mesma fonte do painel BDR) ──
     var _rMParts=month.split('-');
     var _rMY=parseInt(_rMParts[0]),_rMM=parseInt(_rMParts[1])-1;
+    // Pré-indexa followups por meetingId — igual ao getFu() do ranking
+    var _fuByMid={};
+    Object.keys(followups||{}).forEach(function(fid){var f=followups[fid];if(f&&f.meetingId)_fuByMid[f.meetingId]=f;});
+    function _getFuSDR(m){return followups[m.id]||_fuByMid[m.id]||null;}
+    function _isRealizSDR(m){var fu=_getFuSDR(m);if(fu)return fu.comparecimento==='sim'||fu.resultado==='venda';var st=(m.status||'').toLowerCase();return st==='done'||st==='realizada'||st==='venda';}
     Object.values(meetings||{}).forEach(function(m){
       if(!m||m._retorno||m._sintetico) return;
       var sdrM=normCloserName(m.sdrName||m.sdr||'');
       if(sdrM!=='João') return;
-      // Status: realizada = compareceu à reunião
-      var status=(m.status||'').toLowerCase();
-      var isRealiz=(status==='done'||status==='realizada'||status==='venda');
-      if(!isRealiz) return;
+      // Status: realizada = mesma lógica do isReal() do ranking (fu.comparecimento ou m.status)
+      if(!_isRealizSDR(m)) return;
       // Data: usa dtISO da reunião (data agendada/realizada)
       var dtM=m.dtISO?new Date(m.dtISO):(m.scheduledAt?new Date(m.scheduledAt):null);
       if(!dtM||dtM.getMonth()!==_rMM||dtM.getFullYear()!==_rMY) return;
