@@ -18614,11 +18614,11 @@ async function calcSDRFromSheets(nivelIdx, month){
       // SDR: meeting é fonte primária; fu.sdr como fallback (followups sem meeting)
       var sdrRaw=(m2&&(m2.sdrName||m2.sdr))||fu.sdr||'';
       if(normCloserName(sdrRaw)!=='João') return;
-      // Dedup por telefone + nome (evita duplicatas de assinatura-sync)
+      // Dedup por telefone E por nome (evita duplicatas de assinatura-sync)
       var tel=(fu.tel||(m2&&m2.tel)||'').replace(/\D/g,'');
       var nomeKey=(fu.nome||(m2&&m2.nome)||'').toLowerCase().trim();
       if(tel&&_sdrTelsSeen[tel]) return;
-      if(!tel&&nomeKey&&_sdrNomesSeen[nomeKey]) return;
+      if(nomeKey&&_sdrNomesSeen[nomeKey]) return;
       if(tel) _sdrTelsSeen[tel]=1;
       if(nomeKey) _sdrNomesSeen[nomeKey]=1;
       // MRR: case-insensitive para tipoValor (TCV/tcv)
