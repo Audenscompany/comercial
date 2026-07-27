@@ -18396,21 +18396,32 @@ async function calcCloserFromSheets(nivelIdx, month){
     }
     var currentMonthStr=dateToMonthStr(new Date());
     if(month===currentMonthStr){
-      // Mês atual: mesma fonte que a aba Contratos (Sheets se GCal conectado, Firebase senão)
-      var fbContratos=isGcalConnected()?(await _fetchContratosSheet()):(await loadContratos());
-      fbContratos.forEach(function(c){
-        // Só contratos ativos (igual ao filtro "Ativos" da aba Contratos)
+      // Mês atual: Firebase (fonte de verdade para contratos adicionados via CRM)
+      var allFbContratos=await loadContratos();
+      // Filtra ativos do mês e deduplica por cliente (evita duplicatas de importações)
+      var _dedupMap={};
+      allFbContratos.forEach(function(c){
         if(c.ativo===false||c.dataCancelamento) return;
         var dtFB=parseBRDate(c.dataInicio||'');
         var rowMonthFB=dateToMonthStr(dtFB);
-        if(!rowMonthFB) return;
-        if(rowMonthFB===month) totalEquipeContratos++;
+        if(rowMonthFB!==month) return;
+        var clienteKey=(c.cliente||'').trim().toLowerCase();
+        if(!clienteKey) return;
+        var ts=c.updatedAt||c.createdAt||0;
+        // Mantém a entrada mais recente por cliente
+        if(!_dedupMap[clienteKey]||ts>(_dedupMap[clienteKey]._ts||0)){
+          _dedupMap[clienteKey]=Object.assign({},c,{_ts:ts});
+        }
+      });
+      var fbContratos=Object.values(_dedupMap);
+      totalEquipeContratos+=fbContratos.length;
+      fbContratos.forEach(function(c){
         var closerNormFB=normCloserName(c.closer||'');
-        if(closerNormFB==='Gustavo'&&rowMonthFB===month){
+        if(closerNormFB==='Gustavo'){
           var oriCFB=(c.origem||'').toLowerCase();
           var isColdCallFB=oriCFB.includes('cold')||oriCFB.includes('call');
           if(isColdCallFB){
-            result.contratos++; // cold call: conta para meta, comissão vai pelo CC 25%
+            result.contratos++; // cold call: conta para meta, comissão via CC 25%
             return;
           }
           result.contratos++;
