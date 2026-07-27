@@ -18396,12 +18396,12 @@ async function calcCloserFromSheets(nivelIdx, month){
     }
     var currentMonthStr=dateToMonthStr(new Date());
     if(month===currentMonthStr){
-      // Mês atual: Firebase é a fonte de verdade (contratos/ collection)
-      var fbContratos=await loadContratos();
+      // Mês atual: mesma fonte que a aba Contratos (Sheets se GCal conectado, Firebase senão)
+      var fbContratos=isGcalConnected()?(await _fetchContratosSheet()):(await loadContratos());
       fbContratos.forEach(function(c){
-        // Só contratos ATIVOS (igual ao filtro "Ativos" da aba Contratos)
+        // Só contratos ativos (igual ao filtro "Ativos" da aba Contratos)
         if(c.ativo===false||c.dataCancelamento) return;
-        var dtFB=c.dataInicio?parseBRDate(c.dataInicio):null;
+        var dtFB=parseBRDate(c.dataInicio||'');
         var rowMonthFB=dateToMonthStr(dtFB);
         if(!rowMonthFB) return;
         if(rowMonthFB===month) totalEquipeContratos++;
