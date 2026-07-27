@@ -13605,13 +13605,8 @@ async function gerarContracheque(modo){
     if(modo==='closer'){
       r = await calcCloserFromSheets(_careerLevels.gustavo||0, month);
     } else {
-      // Usa calcSDRFromFirebase (fonte correta) igual à visão de salário
-      var _ccSDRPdf=await loadContratos();
-      if(_ccSDRPdf.length>0){
-        r = await calcSDRFromFirebase(_careerLevels.joao||0, month);
-      } else {
-        r = await calcSDRFromSheets(_careerLevels.joao||0, month);
-      }
+      // Usa calcSDRFromSheets (mesma fonte que aba Vendas e Closer)
+      r = await calcSDRFromSheets(_careerLevels.joao||0, month);
     }
   }catch(e){
     alert('Erro ao calcular salário: '+e.message); return;
@@ -18444,6 +18439,25 @@ async function calcCloserFromSheets(nivelIdx, month){
         var origemRaw=(r.comercial&&r.comercial.origem)||'';
         _todasVC.push({fu:synFu,m:synM,fid:synId,origemRaw:origemRaw});
       });
+      // Step 3: sync de contratos — adiciona contratos sem followup nem assinatura no Firebase
+      // (ex: contratos criados diretamente no Firebase sem registro via CRM)
+      try{
+        var _ctrC=await loadContratos();
+        var _tSyncC={};
+        _todasVC.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncC[t]=1;if(t.length>10)_tSyncC[t.slice(-10)]=1;}});
+        _ctrC.forEach(function(c){
+          if(c.ativo===false||c._excluirComissao) return;
+          if(!c.dataInicio) return;
+          var telC=(c.kanbanKey||'').replace(/\D/g,'');
+          if(!telC) return;
+          var telShort=telC.slice(-10);
+          if(_tSyncC[telC]||_tSyncC[telShort]) return; // já tem followup ou assinatura
+          var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
+          var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
+          _tSyncC[telC]=1;_tSyncC[telShort]=1;
+          _todasVC.push({fu:synFuC,m:synMC,fid:'contrato_'+c.id,origemRaw:c.origem||''});
+        });
+      }catch(e3){console.warn('calcCloserFromSheets step3 contratos:',e3);}
       window._todasVendasCache=_todasVC;
     }
     // Coleta candidatos do mês para dedup por tel/empresa
@@ -18715,6 +18729,24 @@ async function calcSDRFromSheets(nivelIdx, month){
         var origemRaw=(r.comercial&&r.comercial.origem)||'';
         _todasV.push({fu:synFu,m:synM,fid:synId,origemRaw:origemRaw});
       });
+      // Step 3: sync de contratos — adiciona contratos sem followup nem assinatura no Firebase
+      try{
+        var _ctrS=await loadContratos();
+        var _tSyncS={};
+        _todasV.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncS[t]=1;if(t.length>10)_tSyncS[t.slice(-10)]=1;}});
+        _ctrS.forEach(function(c){
+          if(c.ativo===false||c._excluirComissao) return;
+          if(!c.dataInicio) return;
+          var telC=(c.kanbanKey||'').replace(/\D/g,'');
+          if(!telC) return;
+          var telShort=telC.slice(-10);
+          if(_tSyncS[telC]||_tSyncS[telShort]) return; // já tem followup ou assinatura
+          var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
+          var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
+          _tSyncS[telC]=1;_tSyncS[telShort]=1;
+          _todasV.push({fu:synFuC,m:synMC,fid:'contrato_'+c.id,origemRaw:c.origem||''});
+        });
+      }catch(e3){console.warn('calcSDRFromSheets step3 contratos:',e3);}
       window._todasVendasCache=_todasV;
     }
     // Filtra pelo mês e pelo SDR = João, coleta candidatos
@@ -19559,6 +19591,7 @@ async function triggerCloserCalc(mode){
   }
   resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados...</div>';
   _sheetDataCache = {}; _sheetValsTTLCache = {}; _sheetsMeta = {}; _contratosCache = null; // force refresh
+  window._todasVendasCache = null; // força rebuild com dados frescos + sync de contratos
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = mode==='gestor' ? (_careerLevels.gustavo||0) : (_careerLevels.gustavo||0);
   var r;
@@ -19633,21 +19666,16 @@ async function triggerSDRCalc(mode){
   }
   resEl.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader"></i> Buscando dados...</div>';
   _sheetDataCache = {}; _sheetsMeta = {}; _contratosCache = null;
+  window._todasVendasCache = null; // força rebuild com dados frescos + sync de contratos
   var month = sel ? sel.value : currentMonthStr();
   var nivelIdx = _careerLevels.joao||0;
   var r;
   try{
-    var allContratosSDR = await loadContratos();
-    if(allContratosSDR.length > 0){
-      r = await calcSDRFromFirebase(nivelIdx, month);
-    } else {
-      r = await calcSDRFromSheets(nivelIdx, month);
-    }
+    // Usa sempre calcSDRFromSheets (mesma fonte que aba Vendas e Closer)
+    r = await calcSDRFromSheets(nivelIdx, month);
   }
   catch(e){
-    // Firebase indisponível (regras expiradas?) — usa planilha como fallback
-    try{ r = await calcSDRFromSheets(nivelIdx, month); }
-    catch(e2){ resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e2.message+'</div>'; return; }
+    resEl.innerHTML='<div style="color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> Erro ao buscar dados: '+e.message+'</div>'; return;
   }
   if(r.error){resEl.innerHTML='<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:14px;color:var(--red);font-family:var(--font-bc),sans-serif;"><i class="ti ti-alert-circle"></i> '+r.error+'<br><small style="color:var(--muted);">Verifique se o Google está conectado e se a planilha está acessível.</small></div>';return;}
   var lv = SDR_LEVELS[nivelIdx];
@@ -24380,13 +24408,44 @@ function renderVendas(){
       if(fbDb)fbDb.ref('assinaturas/'+aid).update({_vendaRegistrada:true});
     });
   }else{
-    // Carrega assinaturas em background e re-renderiza
-    fbGet('assinaturas').then(function(data){
+    // Carrega assinaturas e contratos em background, depois re-renderiza
+    fbGet('assinaturas').then(async function(data){
       window._assinaturasVendasCache=data||{};
-      // Verifica se há pendentes antes de re-renderizar
-      var hasPendentes=Object.values(window._assinaturasVendasCache).some(function(r){return r.status==='assinado'&&!r._vendaRegistrada;});
-      if(hasPendentes) renderVendas();
+      // Pré-carrega contratos extras (sem followup nem assinatura) para Step 3
+      try{
+        var _ctrRV=await loadContratos();
+        var _tRV={};
+        Object.keys(followups||{}).forEach(function(fid){var fu2=followups[fid];if(!fu2||fu2.resultado!=='venda')return;var t2=(fu2.tel||'').replace(/\D/g,'');if(t2)_tRV[t2]=1;});
+        Object.values(data||{}).forEach(function(av){if(av.status!=='assinado')return;var tv=(av.telefone||'').replace(/\D/g,'');if(tv)_tRV[tv]=1;});
+        var extras=[];
+        _ctrRV.forEach(function(c){
+          if(c.ativo===false||c._excluirComissao) return;
+          if(!c.dataInicio) return;
+          var telC=(c.kanbanKey||'').replace(/\D/g,'');
+          if(!telC) return;
+          var telShort=telC.slice(-10);
+          if(_tRV[telC]||_tRV[telShort]) return;
+          var synFuE={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
+          var synME={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
+          _tRV[telC]=1;_tRV[telShort]=1;
+          extras.push({fu:synFuE,m:synME,fid:'contrato_'+c.id,origemRaw:c.origem||'',origemCat:categorizeOrigem(c.origem||'')});
+        });
+        window._contratosVendasExtra=extras;
+      }catch(e){window._contratosVendasExtra=[];}
+      window._todasVendasCache=null;
+      renderVendas();
     }).catch(function(){window._assinaturasVendasCache={};});
+  }
+
+  // Step 3: contratos extras pré-carregados (sem followup nem assinatura)
+  if(window._contratosVendasExtra&&window._contratosVendasExtra.length){
+    var _tExtraRV={};
+    todasVendas.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tExtraRV[t]=1;if(t.length>10)_tExtraRV[t.slice(-10)]=1;}});
+    window._contratosVendasExtra.forEach(function(entry){
+      var telE=(entry.m&&entry.m.tel||'').replace(/\D/g,'');
+      if(telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-10)])) return;
+      todasVendas.push(entry);
+    });
   }
 
   // Cache global — fonte de dados para cálculos de comissão
