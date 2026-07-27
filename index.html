@@ -18444,14 +18444,13 @@ async function calcCloserFromSheets(nivelIdx, month){
       try{
         var _ctrC=await loadContratos();
         var _tSyncC={};
-        _todasVC.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncC[t]=1;if(t.length>10)_tSyncC[t.slice(-10)]=1;}});
+        _todasVC.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncC[t]=1;_tSyncC[t.slice(-11)]=1;_tSyncC[t.slice(-10)]=1;}});
         _ctrC.forEach(function(c){
           if(c.ativo===false||c._excluirComissao) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
           if(!telC) return;
-          var telShort=telC.slice(-10);
-          if(_tSyncC[telC]||_tSyncC[telShort]) return; // já tem followup ou assinatura
+          if(_tSyncC[telC]||_tSyncC[telC.slice(-11)]||_tSyncC[telC.slice(-10)]) return; // já tem followup ou assinatura
           var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
           var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
           _tSyncC[telC]=1;_tSyncC[telShort]=1;
@@ -18733,14 +18732,13 @@ async function calcSDRFromSheets(nivelIdx, month){
       try{
         var _ctrS=await loadContratos();
         var _tSyncS={};
-        _todasV.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncS[t]=1;if(t.length>10)_tSyncS[t.slice(-10)]=1;}});
+        _todasV.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncS[t]=1;_tSyncS[t.slice(-11)]=1;_tSyncS[t.slice(-10)]=1;}});
         _ctrS.forEach(function(c){
           if(c.ativo===false||c._excluirComissao) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
           if(!telC) return;
-          var telShort=telC.slice(-10);
-          if(_tSyncS[telC]||_tSyncS[telShort]) return; // já tem followup ou assinatura
+          if(_tSyncS[telC]||_tSyncS[telC.slice(-11)]||_tSyncS[telC.slice(-10)]) return; // já tem followup ou assinatura
           var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
           var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
           _tSyncS[telC]=1;_tSyncS[telShort]=1;
@@ -24415,16 +24413,17 @@ function renderVendas(){
       try{
         var _ctrRV=await loadContratos();
         var _tRV={};
-        Object.keys(followups||{}).forEach(function(fid){var fu2=followups[fid];if(!fu2||fu2.resultado!=='venda')return;var t2=(fu2.tel||'').replace(/\D/g,'');if(t2)_tRV[t2]=1;});
-        Object.values(data||{}).forEach(function(av){if(av.status!=='assinado')return;var tv=(av.telefone||'').replace(/\D/g,'');if(tv)_tRV[tv]=1;});
+        // normaliza: guarda tel exato, last-10, last-11 para cobrir variações de código de país
+        function _addTelRV(t){if(!t)return;_tRV[t]=1;_tRV[t.slice(-11)]=1;_tRV[t.slice(-10)]=1;}
+        Object.keys(followups||{}).forEach(function(fid){var fu2=followups[fid];if(!fu2||fu2.resultado!=='venda')return;_addTelRV((fu2.tel||'').replace(/\D/g,''));});
+        Object.values(data||{}).forEach(function(av){if(av.status!=='assinado')return;_addTelRV((av.telefone||'').replace(/\D/g,''));});
         var extras=[];
         _ctrRV.forEach(function(c){
           if(c.ativo===false||c._excluirComissao) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
           if(!telC) return;
-          var telShort=telC.slice(-10);
-          if(_tRV[telC]||_tRV[telShort]) return;
+          if(_tRV[telC]||_tRV[telC.slice(-11)]||_tRV[telC.slice(-10)]) return;
           var synFuE={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
           var synME={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
           _tRV[telC]=1;_tRV[telShort]=1;
@@ -24440,10 +24439,10 @@ function renderVendas(){
   // Step 3: contratos extras pré-carregados (sem followup nem assinatura)
   if(window._contratosVendasExtra&&window._contratosVendasExtra.length){
     var _tExtraRV={};
-    todasVendas.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tExtraRV[t]=1;if(t.length>10)_tExtraRV[t.slice(-10)]=1;}});
+    todasVendas.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tExtraRV[t]=1;_tExtraRV[t.slice(-11)]=1;_tExtraRV[t.slice(-10)]=1;}});
     window._contratosVendasExtra.forEach(function(entry){
       var telE=(entry.m&&entry.m.tel||'').replace(/\D/g,'');
-      if(telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-10)])) return;
+      if(telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-11)]||_tExtraRV[telE.slice(-10)])) return;
       todasVendas.push(entry);
     });
   }
