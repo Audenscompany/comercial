@@ -24584,7 +24584,8 @@ function _renderVendasTabela(){
       var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
       var cliente=(fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa)||fu.nome||(m&&m.nome)||'—';
       var closer=(m&&m.responsavel)||fu.closer||fu.responsavel||'—';
-      var sdr=(m&&(m.sdrName||m.sdr))||fu.sdr||fu.sdrName||'—';
+      var _sdrRaw=(m&&(m.sdrName||m.sdr))||fu.sdr||fu.sdrName||'';
+      var sdr=normCloserName(_sdrRaw)||'—';
       var plano=planoLabels[fu.plano]||fu.plano||'—';
       var tipo=fu.tipoValor==='tcv'?'TCV':'MRR';
       var tipoCol=fu.tipoValor==='tcv'?'#fbbf24':'#60a5fa';
@@ -24817,12 +24818,17 @@ function abrirEditarVenda(fid){
   function _normOrigVal(s){if(!s)return'';var l=s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'trafego pago';if(l.includes('social')||l.includes('selling'))return'social selling';if(l.includes('cold'))return'cold call';if(l.includes('indica'))return'indicacao';if(l.includes('organ'))return'organico';if(l.includes('bdr'))return'bdr';return'';}
   var _selOrig=_normOrigVal(_curOrig);
   var origOpts=_origens.map(function(o){return'<option value="'+o.v+'"'+(_selOrig===o.v?' selected':'')+'>'+o.l+'</option>';}).join('');
-  // SDR atual
-  var _curSdr=(m&&(m.sdrName||m.sdr))||fu.sdr||'';
-  var _sdrNames=[];
-  Object.keys(USERS||{}).forEach(function(e){var u=USERS[e];if(u.sdr&&_sdrNames.indexOf(u.sdr)<0)_sdrNames.push(u.sdr);});
-  if(!_sdrNames.length)_sdrNames=['João','Gustavo'];
-  var sdrOpts='<option value="">— Sem SDR —</option>'+_sdrNames.map(function(s){var sel=_curSdr&&_curSdr.toLowerCase()===s.toLowerCase()?'selected':'';return'<option value="'+s+'" '+sel+'>'+s+'</option>';}).join('');
+  // SDR atual (normalizado)
+  var _curSdrRaw=(m&&(m.sdrName||m.sdr))||fu.sdr||'';
+  var _curSdr=normCloserName(_curSdrRaw)||'';
+  // SDRs conhecidos: coletados de todos os meetings + fallback
+  var _sdrNamesSet={};
+  Object.values(meetings||{}).forEach(function(mt){var s=normCloserName(mt&&(mt.sdrName||mt.sdr));if(s&&s!=='Lucas'&&s!=='Gustavo')_sdrNamesSet[s]=1;});
+  var _sdrNames=Object.keys(_sdrNamesSet).sort();
+  if(!_sdrNames.length)_sdrNames=['João'];
+  // Garante que closers também apareçam como opção de SDR se precisar
+  (CLOSERS||[]).forEach(function(c){if(_sdrNames.indexOf(c)<0)_sdrNames.push(c);});
+  var sdrOpts='<option value="">— Sem SDR —</option>'+_sdrNames.map(function(s){var sel=_curSdr===s?'selected':'';return'<option value="'+s+'" '+sel+'>'+s+'</option>';}).join('');
   var html='<div class="modal-ov active" id="modal-editar-venda" onclick="if(event.target===this)fecharEditarVenda()">'+
     '<div class="modal-box" style="max-width:480px;">'+
       '<div class="modal-hd"><div class="modal-title" style="color:var(--green);"><i class="ti ti-edit"></i> Editar Venda</div>'+
