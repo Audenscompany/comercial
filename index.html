@@ -18690,22 +18690,24 @@ async function calcSDRFromSheets(nivelIdx, month){
       if(!m||m._retorno||m._sintetico) return;
       var sdrM=normCloserName(m.sdrName||m.sdr||'');
       if(sdrM!=='João') return;
-      // Data: usa dtISO da reunião (data agendada/realizada)
-      var dtM=m.dtISO?new Date(m.dtISO):(m.scheduledAt?new Date(m.scheduledAt):null);
-      if(!dtM||dtM.getMonth()!==_rMM||dtM.getFullYear()!==_rMY) return;
+      // Data: usa APENAS dtISO — igual ao ranking (scheduledAt é timestamp interno, não data da reunião)
+      if(!m.dtISO) return;
+      var dtM=new Date(m.dtISO);
+      if(dtM.getMonth()!==_rMM||dtM.getFullYear()!==_rMY) return;
       // Status: realizada = mesma lógica do isReal() do ranking
       if(!_isRealizSDR(m)) return;
-      // Dedup por telefone — igual ao dedupLeads() do ranking
-      var telK=((m.tel||m.telefone||'').replace(/\D/g,'')||m.id||'');
-      if(telK&&_seenTelSDR[telK]) return;
-      if(telK) _seenTelSDR[telK]=true;
+      // Dedup por tel|nome|id — igual ao dedupLeads() do ranking
+      var telK=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();
+      if(!telK) return;
+      if(_seenTelSDR[telK]) return;
+      _seenTelSDR[telK]=true;
       var origemM=(m.origem||'').toLowerCase();
       var isSS=origemM.includes('social');
       result.agendamentos++;
       if(!isSS){ result.reunioesComp++; result.trafegoReun++; }
       if(isSS) result.ssReun++;
       // Registra detalhes para modal clicável
-      var dtLabel=dtM?String(dtM.getDate()).padStart(2,'0')+'/'+(String(dtM.getMonth()+1).padStart(2,'0'))+'/'+dtM.getFullYear():'—';
+      var dtLabel=String(dtM.getDate()).padStart(2,'0')+'/'+(String(dtM.getMonth()+1).padStart(2,'0'))+'/'+dtM.getFullYear();
       result.reunioesDetalhes.push({nome:m.nome||m.name||'—',data:dtLabel,origem:m.origem||'—',tipo:isSS?'SS':'Tráfego',closer:normCloserName(m.responsavel||m.closer||'—')});
     });
 
