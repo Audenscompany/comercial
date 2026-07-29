@@ -9730,21 +9730,31 @@ function renderReunioes(){
   var closerMap={};
   // realiz + proposta: usa meetings
   dedupedRows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};if(isReal(m))closerMap[c].real++;if(isProp(m))closerMap[c].prop++;});
-  // vendas: usa followups com _vendaDate (mesma fonte que aba Vendas)
-  Object.keys(followups||{}).forEach(function(fid){
-    var fu=followups[fid];
+  // vendas: com dedup por telefone. Usa _todasVendasCache (já dedupado + contratos extras) se disponível
+  var _closerVTel={};
+  function _addCloV(fu,m){
     if(!fu||fu.resultado!=='venda')return;
     if(typeof isVendaCancelada==='function'&&isVendaCancelada(fu))return;
-    var m=meetings[fu.meetingId]||meetings[fid];
     var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
     if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
     if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
     if(!dt||!inMes(dt,filtM,filtY))return;
+    var tel=((m&&m.tel)||fu.tel||'').replace(/\D/g,'').slice(-10);
+    if(tel&&tel.length>=8){if(_closerVTel[tel])return;_closerVTel[tel]=1;}
     var c=fu.closerNome||(fu.closer?normCloserName(fu.closer):'')||(fu.responsavel?normCloserName(fu.responsavel):'')||(m?normCloserName(m.responsavel||''):'')||'—';
     if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};
     closerMap[c].vend++;
     closerMap[c].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;
-  });
+  }
+  if(window._todasVendasCache){
+    // Caminho rápido: já dedupado e inclui contratos extras
+    window._todasVendasCache.forEach(function(v){_addCloV(v.fu,v.m);});
+  } else {
+    // Fallback: 3 passos com prioridade real > contrato > sintético
+    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&!fu._assinaturaSync&&!fu._contratoSync)_addCloV(fu,meetings[fu.meetingId]||meetings[fid]);});
+    if(window._contratosVendasExtra)window._contratosVendasExtra.forEach(function(v){_addCloV(v.fu,v.m);});
+    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&(fu._assinaturaSync||fu._contratoSync))_addCloV(fu,meetings[fu.meetingId]||meetings[fid]);});
+  }
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return b.d.vend-a.d.vend||b.d.real-a.d.real;});
 
   // SDR ranking
@@ -24564,6 +24574,26 @@ function renderVendas(){
       todasVendas.push(entry);
     });
   }
+
+  // Dedup por telefone — preferir followup real sobre sintético (_assinaturaSync/_contratoSync)
+  var _telDedup={};
+  var _todasDedup=[];
+  todasVendas.forEach(function(v){
+    var tel=((v.m&&v.m.tel)||v.fu.tel||'').replace(/\D/g,'');
+    var key=tel?tel.slice(-10):'';
+    if(!key||key.length<8){_todasDedup.push(v);return;}
+    if(_telDedup[key]===undefined){
+      _telDedup[key]=_todasDedup.length;
+      _todasDedup.push(v);
+    }else{
+      var isSynNew=!!(v.fu._assinaturaSync||v.fu._contratoSync);
+      var existIdx=_telDedup[key];
+      var isSynExist=!!(_todasDedup[existIdx].fu._assinaturaSync||_todasDedup[existIdx].fu._contratoSync);
+      if(!isSynNew&&isSynExist)_todasDedup[existIdx]=v; // real substitui sintético
+      // else: mantém o existente (real prioritário; empate→primeiro)
+    }
+  });
+  todasVendas=_todasDedup;
 
   // Cache global — fonte de dados para cálculos de comissão
   window._todasVendasCache=todasVendas;
