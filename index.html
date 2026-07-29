@@ -4498,25 +4498,41 @@ function getFollowupForMeeting(m){
   // 2) followup salvo com meetingId apontando para esta reunião
   var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
   if(byMid) return byMid;
-  // 3) fallback por telefone (janela de 14 dias) — mesma lógica do getFu() no ranking
   var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
-  if(mTel.length>=8&&m.dtISO){
-    var mDate=new Date(m.dtISO).getTime();
+  // 3) fallback por telefone — tel OU telefone, com ou sem campo dt
+  if(mTel.length>=8){
+    var mDate=m.dtISO?new Date(m.dtISO).getTime():null;
     var best=null,bestDiff=Infinity;
+    var phoneOnlyMatch=null; // match sem data, usado como último recurso
     Object.values(followups).forEach(function(f){
-      var fTel=(f.tel||'').replace(/\D/g,'');
-      if(fTel.slice(-9)!==mTel.slice(-9))return;
-      if(f.dt){var fDate=parseBRDate(f.dt);if(!fDate)return;var diff=Math.abs(mDate-fDate.getTime());if(diff<=14*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}}
+      var fTel=((f.tel||f.telefone||'')).replace(/\D/g,'');
+      if(fTel.length<8||fTel.slice(-9)!==mTel.slice(-9))return;
+      // Tenta match com data
+      if(mDate&&f.dt){
+        var fDate=parseBRDate(f.dt);
+        if(fDate){var diff=Math.abs(mDate-fDate.getTime());if(diff<=14*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}}
+      }
+      // Fallback sem data: qualquer followup com resultado=venda e mesmo tel
+      if(!phoneOnlyMatch&&(f.resultado==='venda'||f.comparecimento==='sim')) phoneOnlyMatch=f;
     });
     if(best) return best;
+    if(phoneOnlyMatch) return phoneOnlyMatch;
   }
-  // 4) fallback: contrato no Firebase com mesmo telefone (venda registrada sem followup)
+  // 4) fallback: contrato no Firebase com mesmo telefone (venda sem followup)
   if(mTel.length>=8&&_contratosCache&&_contratosCache.length){
-    var hasCtr=_contratosCache.some(function(c){
+    var ctr=_contratosCache.find(function(c){
       var cTel=((c.tel||c.telefone||'')).replace(/\D/g,'');
       return cTel.length>=8&&cTel.slice(-9)===mTel.slice(-9)&&!(c.ativo===false||c.dataCancelamento);
     });
-    if(hasCtr) return {resultado:'venda',_fromContrato:true};
+    if(ctr) return {resultado:'venda',_fromContrato:true,cliente:ctr.cliente};
+  }
+  // 5) fallback por nome do lead (sem telefone)
+  if(m.nome){
+    var mNome=(m.nome||'').toLowerCase().trim();
+    var byNome=Object.values(followups).find(function(f){
+      return (f.nome||'').toLowerCase().trim()===mNome&&(f.resultado==='venda'||f.comparecimento==='sim');
+    });
+    if(byNome) return byNome;
   }
   return null;
 }
