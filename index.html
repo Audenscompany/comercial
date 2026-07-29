@@ -20067,7 +20067,10 @@ function renderAudensBlitz(data){
   _blitzDiaSel = diaSel;
   var FBC = "font-family:'Barlow Condensed',sans-serif;";
 
-  function g(dia, vend, f){ var d = (data[dia]||{})[vend]||{}; return parseInt(d[f])||0; }
+  function g(dia, vend, f){
+    if(dia==='total') return BLITZ_DIAS.reduce(function(acc,d){ return acc + g(d.key,vend,f); },0);
+    var d=(data[dia]||{})[vend]||{}; return parseInt(d[f])||0;
+  }
   function ptsOf(dia, vend){ var t = 0; for(var f in BLITZ_PTS){ t += g(dia,vend,f)*BLITZ_PTS[f]; } return t; }
   function secTitle(icon, txt){
     return '<div style="'+FBC+'font-weight:700;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:7px;"><i class="ti ti-'+icon+'" style="color:var(--purple3);"></i> '+txt+'</div>';
@@ -20095,6 +20098,8 @@ function renderAudensBlitz(data){
       (sel ? 'background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.45);color:#f87171;' : 'background:transparent;border:1px solid var(--border);color:var(--muted);')+
       '">'+d.label+'</button>';
   }).join('');
+  var selTotal = diaSel==='total';
+  diaBtns += '<button onclick="blitzSelDia(\'total\')'+'" style="padding:5px 14px;border-radius:7px;cursor:pointer;'+FBC+'font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;'+(selTotal?'background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.45);color:#a78bfa;':'background:transparent;border:1px solid var(--border);color:var(--muted);')+'">TOTAL</button>';
   var cols = [['tentativas','Tentativas','×1'],['reunioes','Reuniões','×8'],['realizadas','Realizadas','×3'],['contratos','Contratos','×20']];
   var tot = {tentativas:0,reunioes:0,realizadas:0,contratos:0,pts:0};
   var thStyle = 'padding:8px 12px;'+FBC+'font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--border2);';
