@@ -834,7 +834,7 @@ function startRealtimeSync(){
       var _sdrRequired=['followup'];
       Object.keys(_navPermissions).forEach(function(em){
         var u=USERS[em];
-        if(u&&u.funcao==='sdr'){
+        if(u&&(u.funcao==='sdr'||u.funcao==='closer')){
           _sdrRequired.forEach(function(pg){
             if(_navPermissions[em].indexOf(pg)===-1) _navPermissions[em].push(pg);
           });
@@ -14273,7 +14273,7 @@ function renderNavPermissionsPanel(){
           // Se não tem permissão customizada, considera que tem tudo (padrão do role)
           var defaultPages=u.funcao==='sdr'
             ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
-            :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
+            :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
           // Usa estado temporário se houver alterações não salvas
           var currentAllowed=(_navPermTemp[email]!==undefined?_navPermTemp[email]:(allowed||defaultPages));
 
@@ -14325,7 +14325,7 @@ function navPermToggle(email, pageId, labelEl){
     var allowed=_navPermissions[email];
     var defaultPages=USERS[email]&&USERS[email].funcao==='sdr'
       ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
-      :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
+      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
     _navPermTemp[email]=(allowed||defaultPages).slice();
   }
   var idx=_navPermTemp[email].indexOf(pageId);
@@ -14361,7 +14361,7 @@ function saveNavPermissions(email){
   if(!toSave){
     var def=_navPermissions[email]||(USERS[email]&&USERS[email].funcao==='sdr'
       ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
-      :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr']);
+      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr']);
     toSave=def;
   }
   _navPermissions[email]=toSave;
