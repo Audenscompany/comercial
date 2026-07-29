@@ -4498,7 +4498,7 @@ function getFollowupForMeeting(m){
   // 2) followup salvo com meetingId apontando para esta reunião
   var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
   if(byMid) return byMid;
-  // 3) fallback por telefone (janela de 7 dias) — mesma lógica do getFu() no ranking
+  // 3) fallback por telefone (janela de 14 dias) — mesma lógica do getFu() no ranking
   var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
   if(mTel.length>=8&&m.dtISO){
     var mDate=new Date(m.dtISO).getTime();
@@ -4506,9 +4506,17 @@ function getFollowupForMeeting(m){
     Object.values(followups).forEach(function(f){
       var fTel=(f.tel||'').replace(/\D/g,'');
       if(fTel.slice(-9)!==mTel.slice(-9))return;
-      if(f.dt){var fDate=parseBRDate(f.dt);if(!fDate)return;var diff=Math.abs(mDate-fDate.getTime());if(diff<=7*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}}
+      if(f.dt){var fDate=parseBRDate(f.dt);if(!fDate)return;var diff=Math.abs(mDate-fDate.getTime());if(diff<=14*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}}
     });
     if(best) return best;
+  }
+  // 4) fallback: contrato no Firebase com mesmo telefone (venda registrada sem followup)
+  if(mTel.length>=8&&_contratosCache&&_contratosCache.length){
+    var hasCtr=_contratosCache.some(function(c){
+      var cTel=((c.tel||c.telefone||'')).replace(/\D/g,'');
+      return cTel.length>=8&&cTel.slice(-9)===mTel.slice(-9)&&!(c.ativo===false||c.dataCancelamento);
+    });
+    if(hasCtr) return {resultado:'venda',_fromContrato:true};
   }
   return null;
 }
@@ -18172,6 +18180,10 @@ async function loadContratos(forceRefresh){
   var val = snap.val()||{};
   _contratosCache = Object.entries(val).map(function(e){return Object.assign({},e[1],{id:e[0]});});
   _rebuildCancelledSet(_contratosCache);
+  // Após carregar contratos, re-verifica status de reuniões pendentes que têm contrato pelo telefone
+  // (cobre vendas registradas diretamente em /contratos/ sem followup correspondente)
+  _migratedStatuses = false;
+  if(typeof migrateStaleStatuses === 'function') migrateStaleStatuses();
   return _contratosCache;
 }
 
