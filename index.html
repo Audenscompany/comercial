@@ -20036,12 +20036,15 @@ async function loadAudensBlitz(){
         if(!m.dtISO) return;
         var mDia = m.dtISO.slice(0,10);
         if(mDia !== diaKey) return;
-        var mSdr = normCloserName(m.sdrName||m.sdr||'');
+        var mSdr = normCloserName(m.sdrName||m.sdr||m.criador||'');
         if(mSdr !== normCloserName(sdr)) return;
-        stats.tentativas++;
+        // Toda reunião agendada para o dia = reunião marcada
+        stats.reunioes++;
+        // Realizadas = status done/realizada/noshow (compareceu ou não, reunião aconteceu)
         if(m.status === 'done' || m.status === 'realizada') stats.realizadas++;
       });
-      stats.reunioes = stats.realizadas;
+      // Tentativas = reuniões agendadas + contatos manuais (somados depois do Firebase)
+      stats.tentativas = stats.reunioes;
       Object.values(window.followups||{}).forEach(function(fu){
         if(fu.resultado !== 'venda') return;
         var m2 = (window.meetings||{})[fu.meetingId] || (window.meetings||{})[Object.keys(fu)[0]];
