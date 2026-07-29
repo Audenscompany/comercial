@@ -9979,6 +9979,7 @@ function renderReunioes(){
         H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:6px;color:var(--purple3);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar resultado"><i class="ti ti-edit"></i></button>';
       }
       H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar dados da reunião"><i class="ti ti-settings"></i></button>';
+      H+='<button onclick="_deleteReuniao(\''+m.id+'\')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:6px;color:#f87171;padding:5px 9px;font-size:10px;cursor:pointer;" title="Apagar reuni\u00e3o"><i class="ti ti-trash"></i></button>';
       H+='</div></td>';
       H+='</tr>';
     });
@@ -18191,6 +18192,33 @@ async function atribuirCloserMeeting(tel, closer, btnEl){
     showSheetToast('✓ Closer "'+closer+'" atribuído para tel '+normTel,false);
     if(btnEl){var row=btnEl.closest('tr');if(row)row.style.opacity='0.4';}
   }catch(e){showSheetToast('Erro: '+e.message,true);if(btnEl){btnEl.disabled=false;btnEl.textContent='Salvar';}}
+}
+
+async function _deleteReuniao(mid){
+  var m = meetings[mid];
+  if(!m) return;
+  var nome = m.nome || 'esta reunião';
+  if(!confirm('Apagar a reunião com "'+nome+'"?
+Esta ação não pode ser desfeita.')) return;
+  // Remove do objeto local
+  delete meetings[mid];
+  // Remove do Firebase
+  try{
+    if(fbDb || initFirebase()){
+      await fbDb.ref('meetings/'+mid).remove();
+    }
+  }catch(e){ console.error('_deleteReuniao firebase error',e); }
+  // Remove follow-up vinculado (se existir)
+  if(followups && followups[mid]){
+    delete followups[mid];
+    try{
+      if(fbDb) await fbDb.ref('followups/'+mid).remove();
+    }catch(e){}
+  }
+  saveAll();
+  showSheetToast && showSheetToast('Reunião apagada.', false);
+  // Recarrega a página de reuniões
+  showPage('reunioes');
 }
 
 async function ocultarMeetingFirebase(tel, btnEl){
