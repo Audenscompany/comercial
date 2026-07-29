@@ -20009,8 +20009,15 @@ function _blitzRegistrarContato(tel, nome){
   }
   if(typeof fbDb !== 'undefined' && fbDb){
     fbDb.ref('kanban/'+key).update(updates);
+    // Contabilizar tentativa no Sales Blitz do dia
+    var _blitzDay = _blitzHojeKey();
+    var _blitzDias = ['2026-07-29','2026-07-30','2026-07-31'];
+    if(_blitzDias.indexOf(_blitzDay) === -1) _blitzDay = _blitzDias[0];
+    var _blitzRef = fbDb.ref('blitz/'+_blitzDay+'/'+sdrNorm);
+    _blitzRef.child('tentativas').transaction(function(v){ return (v||0)+1; });
+    _blitzRef.child('updatedAt').set(Date.now());
   }
-  alert('\u2713 Contato registrado para '+sdrNorm+'. Lead criado/atualizado no Kanban!');
+  alert('\u2713 Contato registrado para '+sdrNorm+'. Lead criado/atualizado no Kanban! (+1 tentativa no Blitz)');
 }
 
 async function loadAudensBlitz(){
@@ -20050,6 +20057,23 @@ async function loadAudensBlitz(){
       autoData[diaKey][sdr] = stats;
     });
   });
+  // Mesclar com tentativas manuais salvas no Firebase (via _blitzRegistrarContato)
+  try {
+    var fbSnap = await fbDb.ref('blitz').once('value');
+    var fbBlitz = fbSnap.val() || {};
+    BLITZ_DIAS_KEYS.forEach(function(diaKey){
+      BLITZ_SDRS.forEach(function(sdr){
+        var fbSdr = (fbBlitz[diaKey]||{})[sdr] || {};
+        var manual = parseInt(fbSdr.tentativas)||0;
+        if(manual > 0){
+          autoData[diaKey][sdr].tentativas += manual;
+          autoData[diaKey][sdr].pts = Object.keys(BLITZ_PTS).reduce(function(acc,f){
+            return acc + (autoData[diaKey][sdr][f]||0)*BLITZ_PTS[f];
+          }, 0);
+        }
+      });
+    });
+  } catch(e){ console.warn('blitz firebase read:', e); }
   var data = autoData;
   _blitzData = autoData;
   var hoje = _blitzHojeKey();
