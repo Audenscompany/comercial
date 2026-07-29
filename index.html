@@ -4429,7 +4429,7 @@ function showPage(id){
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
     if(id==='contratos') setTimeout(loadContratosPage,50);
-    if(id==='audens-day') setTimeout(loadAudensDay,50);
+    if(id==='audens-day') setTimeout(loadAudensBlitz,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
@@ -19893,7 +19893,7 @@ function renderAudensDay(){
       '<div class="page-title" style="display:flex;align-items:center;gap:10px;">'+
         '<i class="ti ti-star" style="color:#fde047;"></i> Audens Day'+
       '</div>'+
-      '<div class="page-sub">Recuperação de leads · Indicações de clientes</div>'+
+      '<div class="page-sub">Sales Blitz · Indicações de clientes</div>'+
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;">'+
       '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;text-transform:uppercase;">Janela:</span>'+
@@ -19909,43 +19909,30 @@ function renderAudensDay(){
     '</div>'+
     // Tabs
     '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;">'+
-      '<button id="adtab-leads" onclick="adShowTab(\'leads\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;">'+
-        '<i class="ti ti-users"></i> Leads de Recuperação</button>'+
+      '<button id="adtab-blitz" onclick="adShowTab(\'blitz\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;">'+
+        '<i class="ti ti-bolt" style="color:var(--amber);"></i> Sales Blitz</button>'+
       '<button id="adtab-ind" onclick="adShowTab(\'ind\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
         '<i class="ti ti-heart-handshake"></i> Indicações</button>'+
-      '<button id="adtab-comp" onclick="adShowTab(\'comp\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
-        '<i class="ti ti-trophy"></i> Competição</button>'+
-      '<button id="adtab-blitz" onclick="adShowTab(\'blitz\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
-        '<i class="ti ti-bolt" style="color:var(--amber);"></i> Sales Blitz</button>'+
     '</div>'+
-    '<div id="ad-tab-leads"><div id="audens-leads-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando leads...</div></div>'+
+    '<div id="ad-tab-blitz"><div id="audens-blitz-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando Sales Blitz...</div></div>'+
     '<div id="ad-tab-ind" style="display:none;"><div id="audens-ind-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando indicações...</div></div>'+
-    '<div id="ad-tab-comp" style="display:none;"><div id="audens-comp-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando competição...</div></div>'+
-    '<div id="ad-tab-blitz" style="display:none;"><div id="audens-blitz-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando Sales Blitz...</div></div>'+
   '</div>';
 }
 
 function adShowTab(tab){
-  document.getElementById('ad-tab-leads').style.display = tab==='leads'?'':'none';
-  document.getElementById('ad-tab-ind').style.display  = tab==='ind'?'':'none';
-  var compEl = document.getElementById('ad-tab-comp');
-  if(compEl) compEl.style.display = tab==='comp'?'':'none';
   var blitzEl = document.getElementById('ad-tab-blitz');
   if(blitzEl) blitzEl.style.display = tab==='blitz'?'':'none';
-  ['leads','ind','comp','blitz'].forEach(function(t){
+  var indEl = document.getElementById('ad-tab-ind');
+  if(indEl) indEl.style.display = tab==='ind'?'':'none';
+  ['blitz','ind'].forEach(function(t){
     var btn = document.getElementById('adtab-'+t);
     if(btn){
       btn.style.borderBottom = t===tab ? '2px solid var(--purple)' : '2px solid transparent';
       btn.style.color = t===tab ? 'var(--purple3)' : 'var(--muted)';
     }
   });
-  if(tab==='comp') loadAudensCompetition();
   if(tab==='blitz') loadAudensBlitz();
   if(tab==='ind') _loadAudensIndicacoes(document.getElementById('audens-ind-content'));
-  document.getElementById('adtab-leads').style.borderBottomColor = tab==='leads'?'var(--purple)':'transparent';
-  document.getElementById('adtab-leads').style.color = tab==='leads'?'var(--purple3)':'var(--muted)';
-  document.getElementById('adtab-ind').style.borderBottomColor = tab==='ind'?'var(--purple)':'transparent';
-  document.getElementById('adtab-ind').style.color = tab==='ind'?'var(--purple3)':'var(--muted)';
 }
 
 
