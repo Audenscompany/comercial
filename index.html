@@ -18198,8 +18198,7 @@ async function _deleteReuniao(mid){
   var m = meetings[mid];
   if(!m) return;
   var nome = m.nome || 'esta reunião';
-  if(!confirm('Apagar a reunião com "'+nome+'"?
-Esta ação não pode ser desfeita.')) return;
+  if(!confirm('Apagar a reuni\u00e3o com "'+nome+'"? Essa a\u00e7\u00e3o n\u00e3o pode ser desfeita.')) return;
   // Remove do objeto local
   delete meetings[mid];
   // Remove do Firebase
@@ -20051,14 +20050,14 @@ function _blitzDetail(dia, vendedor, campo){
       '</tr>';
   }).join('') : '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum lead encontrado.</td></tr>';
 
-  var html = '<div class="modal-ov active" id="modal-blitz-detail" onclick="if(event.target===this)document.getElementById('modal-blitz-detail').remove()">'+
+  var html = '<div class="modal-ov active" id="modal-blitz-detail" onclick="if(event.target===this)document.getElementById(\'modal-blitz-detail\').remove()">'+
     '<div class="modal-box" style="max-width:480px;">'+
       '<div class="modal-hd">'+
         '<div class="modal-title" style="display:flex;align-items:center;gap:10px;">'+
           _blitzAv(vendedor,28)+
           '<span>'+vendedor+' · '+label+' · '+diaLabel+'</span>'+
         '</div>'+
-        '<button class="modal-close" onclick="document.getElementById('modal-blitz-detail').remove()">×</button>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-blitz-detail\').remove()">×</button>'+
       '</div>'+
       '<div style="padding:4px 0 16px;">'+
         (allLeads.length ? '<div style="padding:8px 16px 4px;font-size:11px;color:var(--muted);">'+allLeads.length+' lead'+(allLeads.length>1?'s':'')+'</div>' : '')+
@@ -20238,7 +20237,7 @@ function renderAudensBlitz(data){
       var val = g(diaSel, v, c[0]);
       tot[c[0]] += val;
       var clickable = val > 0 ? 'cursor:pointer;text-decoration:underline dotted rgba(167,139,250,0.5);' : '';
-      var onclick = val > 0 ? ' onclick="_blitzDetail(''+diaSel+'',''+v+'',''+c[0]+'')"' : '';
+      var onclick = val > 0 ? ' onclick="_blitzDetail(\''+diaSel+'\',' + '\''+v+'\',' + '\''+c[0]+'\')"' : '';
       return '<td style="padding:10px 12px;text-align:center;font-weight:700;font-size:14px;color:'+(val>0?'var(--white)':'var(--muted)')+';'+clickable+'"'+onclick+'>'+val+'</td>';
     }).join('');
     var p = ptsOf(diaSel, v);
