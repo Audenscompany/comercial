@@ -14894,18 +14894,30 @@ function _fuStartLockListener(){
 }
 
 async function _fuToggleLock(tel9,leadNome){
-  if(!fbDb&&!initFirebase())return;
-  var lock=_fuLocks[tel9];
-  var myEmail=CU&&CU.email;
-  if(lock&&lock.email===myEmail){
-    // Release
-    await fbDb.ref('followup_locks/'+tel9).remove();
-  } else if(!lock){
-    // Claim
-    var myName=CU&&(CU.name||CU.closer||CU.email)||'Usuário';
-    await fbDb.ref('followup_locks/'+tel9).set({nome:myName,email:myEmail,leadNome:leadNome||'',at:Date.now()});
+  try{
+    if(!fbDb)initFirebase();
+    if(!fbDb){showSheetToast&&showSheetToast('Firebase não disponível',true);return;}
+    var lock=_fuLocks[tel9];
+    var myEmail=CU&&CU.email;
+    if(!myEmail){showSheetToast&&showSheetToast('Usuário não identificado',true);return;}
+    if(lock&&lock.email===myEmail){
+      await fbDb.ref('followup_locks/'+tel9).remove();
+      showSheetToast&&showSheetToast('Contato liberado.',false);
+    } else if(!lock){
+      var myName=(CU&&(CU.name||CU.closer))||myEmail;
+      await fbDb.ref('followup_locks/'+tel9).set({nome:myName,email:myEmail,leadNome:leadNome||'',at:Date.now()});
+      showSheetToast&&showSheetToast('Contato registrado! O lead está reservado para você.',false);
+    }
+    // If no listener yet, update local cache and re-render manually
+    if(!_fuLocksListening){
+      var snap=await fbDb.ref('followup_locks').once('value');
+      _fuLocks=snap.val()||{};
+      if(window._currentPage==='followup')renderFollowup();
+    }
+  }catch(e){
+    console.error('_fuToggleLock error',e);
+    showSheetToast&&showSheetToast('Erro: '+e.message,true);
   }
-  // Listener will re-render automatically
 }
 
 async function _fuLoadSheetLeads(){
