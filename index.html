@@ -4417,6 +4417,7 @@ function openNavGroupFor(pageId){
   });
 }
 function showPage(id){
+  window._currentPage=id;
   document.querySelectorAll('.nav-item').forEach(function(el){el.classList.remove('active');});
   var nel=document.getElementById('nav-'+id);if(nel)nel.classList.add('active');
   if(typeof openNavGroupFor==='function') openNavGroupFor(id);
@@ -14878,6 +14879,59 @@ function _fuMotivo(fu,ke){
   return obs||'Sem resposta';
 }
 
+async function _fuLoadSheetLeads(){
+  try{
+    var results=await Promise.all([
+      fetchSheetVals(SHEETS_IDS.reunioes,SHEETS_GIDS.reunioes),
+      fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads)
+    ]);
+    var reunRows=results[0]||[];
+    var leadsRows=results[1]||[];
+    // Build faturamento/fonte lookup by phone from leads sheet
+    // Leads cols: A=Data, B=Nome, C=Faturamento, D=Telefone, E=Fonte
+    var leadsByTel={};
+    leadsRows.slice(1).forEach(function(r){
+      var tel=(r[3]||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+      if(tel&&!leadsByTel[tel])leadsByTel[tel]={fat:r[2]||'',fonte:r[4]||''};
+    });
+    // Process meetings sheet rows
+    // Cols: A=DATA AGEND, B=CLIENTE, C=TELEFONE, D=DATA REALIZADA, E=STATUS, F=SDR, G=CLOSER, H=ORIGEM, I=EMPRESA
+    var sheetLeads=[];
+    reunRows.slice(1).forEach(function(r,idx){
+      var st=(r[4]||'').trim().toUpperCase();
+      var isReal=(st==='REALIZADA');
+      var isNS=(st==='NO-SHOW'||st==='NO SHOW'||st==='NOSHOW');
+      if(!isReal&&!isNS)return;
+      var tel=(r[2]||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+      var ld=tel?leadsByTel[tel]:null;
+      var fatStr=ld?ld.fat:'';
+      var fat=parseFaturamento(fatStr);
+      // parse dtRealized (col D) — DD/MM/YYYY or YYYY-MM-DD
+      var dtISO=null;
+      var dp=(r[3]||'').trim();
+      if(dp.match(/^\d{2}\/\d{2}\/\d{4}$/)){var pts=dp.split('/');dtISO=pts[2]+'-'+pts[1]+'-'+pts[0];}
+      else if(dp.match(/^\d{4}-\d{2}-\d{2}/)){dtISO=dp.slice(0,10);}
+      sheetLeads.push({
+        _fromSheet:true,
+        id:'sheet_'+(tel||idx),
+        nome:r[1]||'—',
+        empresa:r[8]||r[1]||'—',
+        tel:r[2]||'',
+        faturamento:fat,
+        origem:r[7]||(ld&&ld.fonte)||'',
+        sdr:r[5]||'—',
+        closer:r[6]||'—',
+        dtISO:dtISO,
+        statusSheet:st
+      });
+    });
+    _fuSheetCache=sheetLeads;
+  }catch(e){
+    console.warn('_fuLoadSheetLeads error',e);
+    _fuSheetCache=[];
+  }
+}
+
 function _fuBuildUniverse(){
   var now=new Date();
   var universe=[];
@@ -15036,11 +15090,63 @@ function _fuBuildUniverse(){
       motivo:'Venda recuperada',resultado:'venda',dtISO:dtISO,ke:ke
     });
   });
+  // Step 5.5: Leads da planilha de reuniões (histórico não sincronizado ao Firebase)
+  if(_fuSheetCache&&_fuSheetCache.length>0){
+    _fuSheetCache.forEach(function(sl){
+      var tel=(sl.tel||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
+      if(tel&&(vendaTels.has(tel)||processedTels.has(tel)))return;
+      if(tel)processedTels.add(tel);
+      // Exclude if upcoming meeting in next 5 days
+      var _hasUp=tel?Object.values(meetings).some(function(om){
+        if(om._hidden)return false;
+        var ot=(om.tel||'').replace(/\D/g,'');if(ot.length>9)ot=ot.slice(-9);
+        if(ot!==tel)return false;
+        var oSt=(om.status||'').toLowerCase();
+        if(oSt==='done'||oSt==='noshow'||oSt==='realizada'||oSt==='reagendado')return false;
+        if(!om.dtISO)return false;
+        var diff=(new Date(om.dtISO)-now)/86400000;
+        return diff>=-0.5&&diff<=5;
+      }):false;
+      if(_hasUp)return;
+      var isQual=sl.faturamento>=40000;
+      var isNS=(sl.statusSheet==='NO-SHOW'||sl.statusSheet==='NO SHOW'||sl.statusSheet==='NOSHOW');
+      var isReal=(sl.statusSheet==='REALIZADA');
+      var cat;
+      if(isNS&&isQual)cat='noshow';
+      else if(isReal||isNS)cat='nao_fechou';
+      else return;
+      var meetDate=sl.dtISO?new Date(sl.dtISO):null;
+      var days=meetDate?Math.floor((now-meetDate)/86400000):999;
+      var score=_fuScore(null,null,null,days);
+      var temp=_fuTemp(score);
+      universe.push({
+        id:sl.id,mid:null,
+        nome:sl.nome,empresa:sl.empresa,
+        tel:sl.tel,faturamento:sl.faturamento,
+        origem:sl.origem,sdr:sl.sdr,
+        closer:normCloserName(sl.closer)||'—',
+        meetDate:meetDate,days:days,
+        fu:null,fid:null,
+        category:cat,score:score,temp:temp,
+        motivo:isNS?'No-show na reunião':'Não fechou após reunião',
+        resultado:'',dtISO:sl.dtISO,ke:null,
+        _fromSheet:true
+      });
+    });
+  }
   return universe.sort(function(a,b){return b.score-a.score;});
 }
 
 function renderFollowup(){
   var tab=window._fuTab||'visao-geral';
+  // Trigger async load of sheet leads if not yet cached
+  if(_fuSheetCache===null&&!_fuSheetLoading){
+    _fuSheetLoading=true;
+    _fuLoadSheetLeads().then(function(){
+      _fuSheetLoading=false;
+      if(window._currentPage==='followup')renderFollowup();
+    });
+  }
   var universe=_fuBuildUniverse();
 
   // Counts per category
