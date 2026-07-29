@@ -1447,8 +1447,10 @@ async function confirmarAgendamentoReuniao(key){
       if(area2 && area2.getAttribute('data-page')==='kanban') showPage('kanban');
     }
   }catch(e){console.error('createGcalEvent error',e);}
-  // Agora dispara WA com meetLink (e mensagem de escassez) — nao bloqueia a UI
-  enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay, responsavel, meetLinkFinal);
+  // Agora dispara WA com meetLink — nao bloqueia a UI
+  // Leads de follow-up recebem confirmação simples (cliente já conhece a empresa)
+  var _isFollowupLead = !!(kanbanData[key]&&(kanbanData[key]._fromFollowup||kanbanData[key].origem==='Follow-up'));
+  enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay, responsavel, meetLinkFinal, false, _isFollowupLead);
   }finally{_confirmarAgendamentoBusy=false;}
 }
 // ===== Editar lead (dados do card do Kanban) =====
@@ -1737,7 +1739,7 @@ async function enviarLinkAssinaturaWA(telefone, nome, link){
 // Chama o endpoint /agendar da Cloud Function receberlead para disparar a
 // mensagem de confirmacao de reuniao (texto + imagens de resultado) via Z-API
 var _waConfirmSentAt = {}; // tel → timestamp — evita duplicatas em < 5 min
-async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink, isRetorno){
+async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, responsavel, meetLink, isRetorno, isFollowup){
   if(!telefone){console.warn('[WA] Confirmação não enviada: lead sem telefone (nome='+nome+')');return;}
   // Retornos recebem mensagem própria via /retorno — nunca /agendar
   if(isRetorno){console.warn('[WA] Confirmação /agendar ignorada para retorno de '+nome);return;}
@@ -1748,17 +1750,19 @@ async function enviarConfirmacaoReuniaoWA(telefone, nome, meetingDisplay, respon
     return;
   }
   _waConfirmSentAt[_tel]=_now;
+  // Follow-up leads: endpoint dedicado que envia só a confirmação simples (sem aquecimento)
+  var endpoint = isFollowup ? '/agendar-followup' : '/agendar';
   try{
     var payload={telefone:telefone, nome:nome, meetingDisplay:meetingDisplay};
     if(responsavel) payload.responsavel=responsavel;
     if(meetLink) payload.meetLink=meetLink;
-    var resp=await fetch(RECEBERLEAD_URL+'/agendar?secret='+WEBHOOK_SECRET,{
+    var resp=await fetch(RECEBERLEAD_URL+endpoint+'?secret='+WEBHOOK_SECRET,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)
     });
-    if(!resp.ok) console.warn('[WA] /agendar retornou',resp.status,'para',nome);
-    else console.log('[WA] Confirmação enviada para',nome,telefone);
+    if(!resp.ok) console.warn('[WA] '+endpoint+' retornou',resp.status,'para',nome);
+    else console.log('[WA] Confirmação ('+(isFollowup?'follow-up':'novo')+') enviada para',nome,telefone);
   }catch(e){
     // Em caso de erro, remove o timestamp para permitir nova tentativa
     delete _waConfirmSentAt[_tel];
