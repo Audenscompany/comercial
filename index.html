@@ -9730,44 +9730,28 @@ function renderReunioes(){
   var closerMap={};
   // realiz + proposta: usa meetings
   dedupedRows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};if(isReal(m))closerMap[c].real++;if(isProp(m))closerMap[c].prop++;});
-  // vendas: com dedup por telefone. Usa _todasVendasCache (já dedupado + contratos extras) se disponível
+  // vendas: mesma fonte e atribuição do Dashboard Comercial (m.responsavel tem prioridade)
   var _closerVTel={};
-  function _addCloV(fu,m){
+  Object.keys(followups||{}).forEach(function(fid){
+    var fu=followups[fid];
     if(!fu||fu.resultado!=='venda')return;
     if(typeof isVendaCancelada==='function'&&isVendaCancelada(fu))return;
+    var m=meetings[fu.meetingId]||meetings[fid];
     var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
     if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
     if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
     if(!dt||!inMes(dt,filtM,filtY))return;
+    // Dedup por telefone — evita contar followup sintético junto com real do mesmo cliente
     var tel=((m&&m.tel)||fu.tel||'').replace(/\D/g,'').slice(-10);
     if(tel&&tel.length>=8){if(_closerVTel[tel])return;_closerVTel[tel]=1;}
-    var c=fu.closerNome||(fu.closer?normCloserName(fu.closer):'')||(fu.responsavel?normCloserName(fu.responsavel):'')||(m?normCloserName(m.responsavel||''):'')||'—';
+    // Atribuição igual ao Dashboard: m.responsavel primeiro
+    var raw=(m&&m.responsavel)||(fu.closerNome)||(fu.closer)||(fu.responsavel)||'';
+    if(!raw&&fu.tel){var ft=(fu.tel||'').replace(/\D/g,'');var kb=Object.values(kanbanData||{}).find(function(k){return(k.telefone||'').replace(/\D/g,'')===ft;});if(kb)raw=kb.responsavel||'';}
+    var c=normCloserName(raw)||'—';
     if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};
     closerMap[c].vend++;
     closerMap[c].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;
-  }
-  if(window._todasVendasCache){
-    // Caminho rápido: já dedupado e inclui contratos extras
-    window._todasVendasCache.forEach(function(v){_addCloV(v.fu,v.m);});
-  } else {
-    // Fallback: 3 passos com prioridade real > contrato > sintético
-    // 1. followups reais
-    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&!fu._assinaturaSync&&!fu._contratoSync)_addCloV(fu,meetings[fu.meetingId]||meetings[fid]);});
-    // 2. contratos sem followup — usa _contratosVendasExtra ou _contratosCache diretamente
-    if(window._contratosVendasExtra){
-      window._contratosVendasExtra.forEach(function(v){_addCloV(v.fu,v.m);});
-    } else if(window._contratosCache){
-      window._contratosCache.forEach(function(c){
-        if(c.ativo===false||c._excluirComissao||!c.dataInicio)return;
-        var telC=(c.kanbanKey||'').replace(/\D/g,'');if(!telC)return;
-        var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,closerNome:normCloserName(c.closer||''),_contratoSync:true};
-        var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done'};
-        _addCloV(synFuC,synMC);
-      });
-    }
-    // 3. sintéticos — só contam se não houver real para o mesmo telefone
-    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&(fu._assinaturaSync||fu._contratoSync))_addCloV(fu,meetings[fu.meetingId]||meetings[fid]);});
-  }
+  });
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return b.d.vend-a.d.vend||b.d.real-a.d.real;});
 
   // SDR ranking
