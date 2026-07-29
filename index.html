@@ -830,6 +830,16 @@ function startRealtimeSync(){
       var prevPerm=JSON.stringify(_navPermissions);
       _navPermissions={};
       Object.keys(raw).forEach(function(k){ _navPermissions[k.replace(/\|/g,'.').replace(/~/g,'@')]=raw[k]; });
+      // Garante que páginas padrão do role estão sempre presentes (evita sumir após load Firebase)
+      var _sdrRequired=['followup'];
+      Object.keys(_navPermissions).forEach(function(em){
+        var u=USERS[em];
+        if(u&&u.funcao==='sdr'){
+          _sdrRequired.forEach(function(pg){
+            if(_navPermissions[em].indexOf(pg)===-1) _navPermissions[em].push(pg);
+          });
+        }
+      });
       // Reconstrói nav se as permissões mudaram (Firebase carregou depois do buildNav inicial)
       if(JSON.stringify(_navPermissions)!==prevPerm) buildNav();
     }
@@ -14256,7 +14266,7 @@ function renderNavPermissionsPanel(){
           var roleLabel=u.funcao==='sdr'?'SDR':'Closer';
           // Se não tem permissão customizada, considera que tem tudo (padrão do role)
           var defaultPages=u.funcao==='sdr'
-            ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
+            ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
             :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
           // Usa estado temporário se houver alterações não salvas
           var currentAllowed=(_navPermTemp[email]!==undefined?_navPermTemp[email]:(allowed||defaultPages));
@@ -14308,7 +14318,7 @@ function navPermToggle(email, pageId, labelEl){
   if(!_navPermTemp[email]){
     var allowed=_navPermissions[email];
     var defaultPages=USERS[email]&&USERS[email].funcao==='sdr'
-      ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
+      ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
       :['ligar','tarefas','dash-comercial','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
     _navPermTemp[email]=(allowed||defaultPages).slice();
   }
