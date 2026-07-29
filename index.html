@@ -9955,7 +9955,7 @@ function renderReunioes(){
       var fu=getFu(m);
       var closer=normCloserName(m.responsavel||'')||'—';
       var sdr=(m.sdrName||m.sdr||'—');
-      var hasResult=!!(fu&&fu.comparecimento)||isRealizada(m.status);
+      var hasResult=!!(fu&&(fu.comparecimento||fu.resultado));
       var isVend=isVenda(m);
       var rowBg=isVend?'rgba(34,197,94,0.04)':isNs(m)?'rgba(239,68,68,0.03)':'';
       var res='—';
@@ -19996,6 +19996,62 @@ function _blitzAv(n, size){
   return '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:'+Math.floor(size*0.4)+'px;font-weight:700;color:#fff;flex-shrink:0;">'+ini+'</div>';
 }
 
+function _blitzDetail(dia, vendedor, campo){
+  var labelMap = {tentativas:'Tentativas',reunioes:'Reuniões Marcadas',realizadas:'Realizadas',contratos:'Contratos'};
+  var label = labelMap[campo] || campo;
+
+  // Collect leads across days if TOTAL
+  var dias = dia === 'total' ? ['2026-07-29','2026-07-30','2026-07-31'] : [dia];
+  var allLeads = [];
+  dias.forEach(function(d){
+    var stats = (_blitzData&&_blitzData[d]&&_blitzData[d][vendedor]) || {};
+    var leads = (stats._leads && stats._leads[campo]) || [];
+    leads.forEach(function(m){ if(allLeads.indexOf(m)<0) allLeads.push(m); });
+  });
+
+  var diaLabel = dia === 'total' ? 'TOTAL (Qua-Sex)' : dias[0].split('-').slice(1).reverse().join('/');
+  var rows = allLeads.length ? allLeads.map(function(m){
+    if(!m) return '';
+    var nome = m.nome || m.nomeCliente || '—';
+    var dt = m.dtISO ? m.dtISO.slice(0,10).split('-').reverse().join('/') : '—';
+    var origem = m.origem || '—';
+    var status = m.status || '—';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<td style="padding:8px 12px;font-size:12px;color:var(--white);font-weight:500;">'+nome+'</td>'+
+      '<td style="padding:8px 12px;font-size:11px;color:var(--muted);">'+dt+'</td>'+
+      '<td style="padding:8px 12px;font-size:11px;color:var(--muted);">'+origem+'</td>'+
+      '</tr>';
+  }).join('') : '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum lead encontrado.</td></tr>';
+
+  var html = '<div class="modal-ov active" id="modal-blitz-detail" onclick="if(event.target===this)document.getElementById('modal-blitz-detail').remove()">'+
+    '<div class="modal-box" style="max-width:480px;">'+
+      '<div class="modal-hd">'+
+        '<div class="modal-title" style="display:flex;align-items:center;gap:10px;">'+
+          _blitzAv(vendedor,28)+
+          '<span>'+vendedor+' · '+label+' · '+diaLabel+'</span>'+
+        '</div>'+
+        '<button class="modal-close" onclick="document.getElementById('modal-blitz-detail').remove()">×</button>'+
+      '</div>'+
+      '<div style="padding:4px 0 16px;">'+
+        (allLeads.length ? '<div style="padding:8px 16px 4px;font-size:11px;color:var(--muted);">'+allLeads.length+' lead'+(allLeads.length>1?'s':'')+'</div>' : '')+
+        '<div style="overflow-x:auto;">'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+          '<thead><tr>'+
+            '<th style="padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">Lead</th>'+
+            '<th style="padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">Data Reunião</th>'+
+            '<th style="padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">Origem</th>'+
+          '</tr></thead>'+
+          '<tbody>'+rows+'</tbody>'+
+        '</table>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  var old = document.getElementById('modal-blitz-detail');
+  if(old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
 function blitzSelDia(dia){
   _blitzDiaSel = dia;
   var el = document.getElementById('audens-blitz-content');
@@ -20047,23 +20103,21 @@ async function loadAudensBlitz(){
     autoData[diaKey] = {};
     BLITZ_SDRS.forEach(function(sdr){
       var stats = {tentativas:0, reunioes:0, realizadas:0, contratos:0, pts:0};
+      var leads = {tentativas:[],reunioes:[],realizadas:[],contratos:[]};
       Object.values(window.meetings||{}).forEach(function(m){
         var mSdr = normCloserName(m.sdrName||m.sdr||m.criador||'');
         if(mSdr !== normCloserName(sdr)) return;
-        // Reunião marcada: conta pelo dia em que FOI AGENDADA (scheduledAt), não pela data da reunião
-        // Fallback para dtISO se scheduledAt não existir (reuniões antigas)
         var agendadoEm = m.scheduledAt
           ? (function(ts){ var d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })(m.scheduledAt)
           : (m.dtISO ? m.dtISO.slice(0,10) : null);
-        if(agendadoEm === diaKey) stats.reunioes++;
-        // Realizadas: conta pelo dia em que a reunião ACONTECEU (dtISO)
-        if(m.dtISO && m.dtISO.slice(0,10) === diaKey && (m.status === 'done' || m.status === 'realizada')) stats.realizadas++;
+        if(agendadoEm === diaKey){ stats.reunioes++; leads.reunioes.push(m); }
+        if(m.dtISO && m.dtISO.slice(0,10) === diaKey && (m.status === 'done' || m.status === 'realizada')){ stats.realizadas++; leads.realizadas.push(m); }
       });
-      // Tentativas = reuniões agendadas (marcadas no dia) + contatos manuais do Firebase
       stats.tentativas = stats.reunioes;
+      leads.tentativas = leads.reunioes.slice();
       Object.values(window.followups||{}).forEach(function(fu){
         if(fu.resultado !== 'venda') return;
-        var m2 = (window.meetings||{})[fu.meetingId] || (window.meetings||{})[Object.keys(fu)[0]];
+        var m2 = (window.meetings||{})[fu.meetingId];
         var mSdr2 = normCloserName(fu.sdrNome||(m2?(m2.sdrName||m2.sdr||''):'')||'');
         if(mSdr2 !== normCloserName(sdr)) return;
         var dt = typeof _vendaDate === 'function' ? _vendaDate(fu, m2) : null;
@@ -20071,8 +20125,10 @@ async function loadAudensBlitz(){
         var dtKey = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
         if(dtKey !== diaKey) return;
         stats.contratos++;
+        leads.contratos.push(m2||{nome:fu.nomeCliente||'',_fu:fu});
       });
-      stats.pts = stats.tentativas*1 + stats.reunioes*8 + stats.realizadas*3 + stats.contratos*20;
+      stats.pts = stats.tentativas*1 + stats.reunioes*3 + stats.realizadas*8 + stats.contratos*20;
+      stats._leads = leads;
       autoData[diaKey][sdr] = stats;
     });
   });
@@ -20153,7 +20209,9 @@ function renderAudensBlitz(data){
     var tds = cols.map(function(c){
       var val = g(diaSel, v, c[0]);
       tot[c[0]] += val;
-      return '<td style="padding:10px 12px;text-align:center;font-weight:700;font-size:14px;color:'+(val>0?'var(--white)':'var(--muted)')+';">'+val+'</td>';
+      var clickable = val > 0 ? 'cursor:pointer;text-decoration:underline dotted rgba(167,139,250,0.5);' : '';
+      var onclick = val > 0 ? ' onclick="_blitzDetail(''+diaSel+'',''+v+'',''+c[0]+'')"' : '';
+      return '<td style="padding:10px 12px;text-align:center;font-weight:700;font-size:14px;color:'+(val>0?'var(--white)':'var(--muted)')+';'+clickable+'"'+onclick+'>'+val+'</td>';
     }).join('');
     var p = ptsOf(diaSel, v);
     tot.pts += p;
