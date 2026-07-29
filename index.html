@@ -9751,8 +9751,21 @@ function renderReunioes(){
     window._todasVendasCache.forEach(function(v){_addCloV(v.fu,v.m);});
   } else {
     // Fallback: 3 passos com prioridade real > contrato > sintético
+    // 1. followups reais
     Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&!fu._assinaturaSync&&!fu._contratoSync)_addCloV(fu,meetings[fu.meetingId]||meetings[fid]);});
-    if(window._contratosVendasExtra)window._contratosVendasExtra.forEach(function(v){_addCloV(v.fu,v.m);});
+    // 2. contratos sem followup — usa _contratosVendasExtra ou _contratosCache diretamente
+    if(window._contratosVendasExtra){
+      window._contratosVendasExtra.forEach(function(v){_addCloV(v.fu,v.m);});
+    } else if(window._contratosCache){
+      window._contratosCache.forEach(function(c){
+        if(c.ativo===false||c._excluirComissao||!c.dataInicio)return;
+        var telC=(c.kanbanKey||'').replace(/\D/g,'');if(!telC)return;
+        var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,closerNome:normCloserName(c.closer||''),_contratoSync:true};
+        var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done'};
+        _addCloV(synFuC,synMC);
+      });
+    }
+    // 3. sintéticos — só contam se não houver real para o mesmo telefone
     Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&(fu._assinaturaSync||fu._contratoSync))_addCloV(fu,meetings[fu.meetingId]||meetings[fid]);});
   }
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return b.d.vend-a.d.vend||b.d.real-a.d.real;});
