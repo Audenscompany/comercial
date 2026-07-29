@@ -14920,6 +14920,23 @@ function _fuBuildUniverse(){
     var isPerdido=fu&&fu.resultado==='perdido';
     var isVenda=fu&&fu.resultado==='venda';
     if(isVenda)return;
+    // Exclui leads com reunião futura agendada nos próximos 5 dias
+    // (têm meeting pendente recente — não precisam de follow-up agora)
+    var _hasUpcomingMeeting = (function(){
+      var tel9 = tel;
+      return Object.values(meetings).some(function(om){
+        if(om._hidden) return false;
+        var oTel = (om.tel||'').replace(/\D/g,''); if(oTel.length>9) oTel=oTel.slice(-9);
+        if(oTel !== tel9) return false;
+        var oSt = (om.status||'').toLowerCase();
+        if(oSt === 'done' || oSt === 'noshow' || oSt === 'realizada' || oSt === 'reagendado') return false;
+        if(!om.dtISO) return false;
+        var diff = (new Date(om.dtISO) - now) / 86400000;
+        return diff >= -0.5 && diff <= 5; // nos próximos 5 dias (inclui hoje)
+      });
+    })();
+    if(_hasUpcomingMeeting) return; // sai das abas de follow-up
+
     // Category
     var cat;
     if(isPerdido)cat='perdido';
@@ -14956,11 +14973,24 @@ function _fuBuildUniverse(){
     var tel=(ke.telefone||ke.tel||'').replace(/\D/g,'');if(tel.length>9)tel=tel.slice(-9);
     if(tel&&(vendaTels.has(tel)||processedTels.has(tel)))return;
     // Check if they have a meeting
+    // Verifica se tem reunião já marcada (qualquer) ou reunião futura nos próximos 5 dias
     var hasMeeting=Object.values(meetings).some(function(m){
       var mt=(m.tel||'').replace(/\D/g,'');if(mt.length>9)mt=mt.slice(-9);
       return (mt&&mt===tel)||(m.kanbanKey===key);
     });
     if(hasMeeting)return;
+    // Sem reunião prévia — também exclui se tiver reunião futura nos próximos 5 dias via kanbanKey
+    var hasUpcoming=Object.values(meetings).some(function(m){
+      if(m._hidden) return false;
+      var mt=(m.tel||'').replace(/\D/g,'');if(mt.length>9)mt=mt.slice(-9);
+      if(mt !== tel && m.kanbanKey !== key) return false;
+      var oSt=(m.status||'').toLowerCase();
+      if(oSt==='done'||oSt==='noshow'||oSt==='realizada'||oSt==='reagendado') return false;
+      if(!m.dtISO) return false;
+      var diff=(new Date(m.dtISO)-now)/86400000;
+      return diff >= -0.5 && diff <= 5;
+    });
+    if(hasUpcoming) return;
     var stNorm=(ke.status||'').toLowerCase();
     if(stNorm==='fechado'||stNorm==='perdido')return;
     // Check created date
