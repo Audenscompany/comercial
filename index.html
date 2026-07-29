@@ -19885,10 +19885,13 @@ function renderAudensDay(){
         '<i class="ti ti-heart-handshake"></i> Indicações</button>'+
       '<button id="adtab-comp" onclick="adShowTab(\'comp\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
         '<i class="ti ti-trophy"></i> Competição</button>'+
+      '<button id="adtab-blitz" onclick="adShowTab(\'blitz\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
+        '<i class="ti ti-bolt" style="color:var(--amber);"></i> Sales Blitz</button>'+
     '</div>'+
     '<div id="ad-tab-leads"><div id="audens-leads-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando leads...</div></div>'+
     '<div id="ad-tab-ind" style="display:none;"><div id="audens-ind-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando indicações...</div></div>'+
     '<div id="ad-tab-comp" style="display:none;"><div id="audens-comp-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando competição...</div></div>'+
+    '<div id="ad-tab-blitz" style="display:none;"><div id="audens-blitz-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando Sales Blitz...</div></div>'+
   '</div>';
 }
 
@@ -19897,7 +19900,9 @@ function adShowTab(tab){
   document.getElementById('ad-tab-ind').style.display  = tab==='ind'?'':'none';
   var compEl = document.getElementById('ad-tab-comp');
   if(compEl) compEl.style.display = tab==='comp'?'':'none';
-  ['leads','ind','comp'].forEach(function(t){
+  var blitzEl = document.getElementById('ad-tab-blitz');
+  if(blitzEl) blitzEl.style.display = tab==='blitz'?'':'none';
+  ['leads','ind','comp','blitz'].forEach(function(t){
     var btn = document.getElementById('adtab-'+t);
     if(btn){
       btn.style.borderBottom = t===tab ? '2px solid var(--purple)' : '2px solid transparent';
@@ -19905,12 +19910,323 @@ function adShowTab(tab){
     }
   });
   if(tab==='comp') loadAudensCompetition();
+  if(tab==='blitz') loadAudensBlitz();
   if(tab==='ind') _loadAudensIndicacoes(document.getElementById('audens-ind-content'));
   document.getElementById('adtab-leads').style.borderBottomColor = tab==='leads'?'var(--purple)':'transparent';
   document.getElementById('adtab-leads').style.color = tab==='leads'?'var(--purple3)':'var(--muted)';
   document.getElementById('adtab-ind').style.borderBottomColor = tab==='ind'?'var(--purple)':'transparent';
   document.getElementById('adtab-ind').style.color = tab==='ind'?'var(--purple3)':'var(--muted)';
 }
+
+
+// ==================== SALES BLITZ (Força-Tarefa de Fechamento 29–31 Jul 2026) ====================
+var BLITZ_DIAS = [
+  {key:'2026-07-29', label:'Qua 29'},
+  {key:'2026-07-30', label:'Qui 30'},
+  {key:'2026-07-31', label:'Sex 31'}
+];
+var BLITZ_VENDEDORES = ['Lucas','Gustavo'];
+var BLITZ_PTS = {contatos:1, conversas:3, reunioes:8, propostas:5, contratos:20};
+var _blitzData = {};
+var _blitzDiaSel = null;
+var _blitzCountdownInt = null;
+
+function _blitzHojeKey(){
+  var d = new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+function _blitzCountdownTxt(){
+  var end = new Date(2026,6,31,23,59,59).getTime();
+  var diff = end - Date.now();
+  if(diff <= 0) return 'BLITZ ENCERRADO';
+  var dias = Math.floor(diff/86400000);
+  var h = Math.floor((diff%86400000)/3600000);
+  var m = Math.floor((diff%3600000)/60000);
+  return (dias>0 ? dias+' dia'+(dias===1?'':'s')+', ' : '')+h+'h '+m+'min restantes';
+}
+
+function _blitzStartCountdown(){
+  if(_blitzCountdownInt){ clearInterval(_blitzCountdownInt); _blitzCountdownInt = null; }
+  _blitzCountdownInt = setInterval(function(){
+    var el = document.getElementById('blitz-countdown');
+    if(!el){ clearInterval(_blitzCountdownInt); _blitzCountdownInt = null; return; }
+    el.textContent = _blitzCountdownTxt();
+  }, 60000);
+}
+
+function _blitzAv(n){
+  var ini = (n||'?').split(' ').slice(0,2).map(function(p){return p[0]||'';}).join('').toUpperCase();
+  return '<div style="width:26px;height:26px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;">'+ini+'</div>';
+}
+
+function blitzSelDia(dia){
+  _blitzDiaSel = dia;
+  var el = document.getElementById('audens-blitz-content');
+  if(el){ el.innerHTML = renderAudensBlitz(_blitzData); _blitzStartCountdown(); }
+}
+
+function blitzToggleScript(n){
+  var b = document.getElementById('blitz-script-body-'+n);
+  var c = document.getElementById('blitz-script-chev-'+n);
+  if(!b) return;
+  var open = b.style.display !== 'none';
+  b.style.display = open ? 'none' : 'block';
+  if(c) c.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
+function _blitzFillForm(){
+  var dia = document.getElementById('blitz-dia-sel');
+  var vend = document.getElementById('blitz-vend-sel');
+  if(!dia||!vend) return;
+  var d = (_blitzData[dia.value]||{})[vend.value]||{};
+  ['contatos','conversas','reunioes','propostas','contratos'].forEach(function(f){
+    var el = document.getElementById('blitz-f-'+f);
+    if(el) el.value = parseInt(d[f])||0;
+  });
+}
+
+async function saveBlitzActivity(dia, vendedor, atividade, valor){
+  if(!fbDb || !dia || !vendedor || !atividade) return;
+  await fbDb.ref('blitz/'+dia+'/'+vendedor+'/'+atividade).set(parseInt(valor)||0);
+}
+
+async function _salvarBlitzDia(){
+  var diaEl = document.getElementById('blitz-dia-sel');
+  var vendEl = document.getElementById('blitz-vend-sel');
+  var dia = diaEl ? diaEl.value : '';
+  var vend = vendEl ? vendEl.value : '';
+  if(!dia || !vend) return;
+  if(!fbDb){ alert('Firebase indisponível'); return; }
+  var fields = ['contatos','conversas','reunioes','propostas','contratos'];
+  var updates = {};
+  fields.forEach(function(f){
+    var el = document.getElementById('blitz-f-'+f);
+    if(el) updates[f] = parseInt(el.value)||0;
+  });
+  updates.updatedAt = Date.now();
+  try{
+    await fbDb.ref('blitz/'+dia+'/'+vend).update(updates);
+    alert('✓ Atividades salvas!');
+    loadAudensBlitz();
+  }catch(e){
+    alert('Erro ao salvar: '+(e && e.message ? e.message : e));
+  }
+}
+
+async function loadAudensBlitz(){
+  var el = document.getElementById('audens-blitz-content');
+  if(!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;padding:20px;"><i class="ti ti-loader ti-spin"></i> Carregando Sales Blitz...</div>';
+  var data = {};
+  try{
+    if(fbDb){
+      var snap = await fbDb.ref('blitz').once('value');
+      data = snap.val() || {};
+    }
+  }catch(e){ console.warn('blitz load', e); }
+  _blitzData = data;
+  var hoje = _blitzHojeKey();
+  if(!_blitzDiaSel){
+    _blitzDiaSel = BLITZ_DIAS.some(function(d){return d.key===hoje;}) ? hoje : BLITZ_DIAS[0].key;
+  }
+  el.innerHTML = renderAudensBlitz(data);
+  _blitzStartCountdown();
+}
+
+function renderAudensBlitz(data){
+  data = data || {};
+  var hoje = _blitzHojeKey();
+  var diaSel = _blitzDiaSel || (BLITZ_DIAS.some(function(d){return d.key===hoje;}) ? hoje : BLITZ_DIAS[0].key);
+  _blitzDiaSel = diaSel;
+  var FBC = "font-family:'Barlow Condensed',sans-serif;";
+
+  function g(dia, vend, f){ var d = (data[dia]||{})[vend]||{}; return parseInt(d[f])||0; }
+  function ptsOf(dia, vend){ var t = 0; for(var f in BLITZ_PTS){ t += g(dia,vend,f)*BLITZ_PTS[f]; } return t; }
+  function secTitle(icon, txt){
+    return '<div style="'+FBC+'font-weight:700;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:7px;"><i class="ti ti-'+icon+'" style="color:var(--purple3);"></i> '+txt+'</div>';
+  }
+  var CARD = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;';
+
+  // ---------- A) Banner ----------
+  var pills = BLITZ_DIAS.map(function(d){
+    var isHoje = d.key===hoje;
+    return '<span style="padding:4px 14px;border-radius:999px;'+FBC+'font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;'+
+      (isHoje ? 'background:rgba(255,255,255,0.25);color:#fff;border:1px solid rgba(255,255,255,0.5);' : 'background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.15);')+
+      '">'+d.label+(isHoje?' ✓ hoje':'')+'</span>';
+  }).join('');
+  var banner = '<div style="background:linear-gradient(135deg,#7f1d1d 0%,#dc2626 45%,#ea580c 100%);border:1px solid rgba(239,68,68,0.5);border-radius:14px;padding:22px 24px;margin-bottom:20px;">'+
+    '<div style="'+FBC+'font-weight:700;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.9);"><i class="ti ti-bolt"></i> Força-Tarefa de Fechamento · 29–31 Jul 2026</div>'+
+    '<div id="blitz-countdown" style="font-family:\'Bebas Neue\',sans-serif;font-size:38px;color:#fff;line-height:1.1;margin:8px 0 4px;">'+_blitzCountdownTxt()+'</div>'+
+    '<div style="font-size:13px;color:rgba(255,255,255,0.85);'+FBC+'letter-spacing:0.5px;">Sprint de 3 dias — quem traz contrato é lead morno, não frio</div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'+pills+'</div>'+
+  '</div>';
+
+  // ---------- B) Placar de atividades ----------
+  var diaBtns = BLITZ_DIAS.map(function(d){
+    var sel = d.key===diaSel;
+    return '<button onclick="blitzSelDia(\''+d.key+'\')" style="padding:5px 14px;border-radius:7px;cursor:pointer;'+FBC+'font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;'+
+      (sel ? 'background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.45);color:#f87171;' : 'background:transparent;border:1px solid var(--border);color:var(--muted);')+
+      '">'+d.label+'</button>';
+  }).join('');
+  var cols = [['contatos','Tentativas','×1'],['conversas','Conversas','×3'],['reunioes','Reuniões','×8'],['propostas','Propostas','×5'],['contratos','Contratos','×20']];
+  var tot = {contatos:0,conversas:0,reunioes:0,propostas:0,contratos:0,pts:0};
+  var thStyle = 'padding:8px 12px;'+FBC+'font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--border2);';
+  var thead = '<tr><th style="'+thStyle+'text-align:left;">Vendedor</th>'+
+    cols.map(function(c){ return '<th style="'+thStyle+'">'+c[1]+' <span style="color:rgba(255,255,255,0.25);font-size:9px;">'+c[2]+'</span></th>'; }).join('')+
+    '<th style="'+thStyle+'">Pts</th></tr>';
+  var rows = BLITZ_VENDEDORES.map(function(v){
+    var tds = cols.map(function(c){
+      var val = g(diaSel, v, c[0]);
+      tot[c[0]] += val;
+      return '<td style="padding:10px 12px;text-align:center;font-weight:700;font-size:14px;color:'+(val>0?'var(--white)':'var(--muted)')+';">'+val+'</td>';
+    }).join('');
+    var p = ptsOf(diaSel, v);
+    tot.pts += p;
+    return '<tr style="border-bottom:1px solid var(--border);">'+
+      '<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:8px;">'+_blitzAv(v)+'<span style="font-weight:700;color:var(--white);'+FBC+'font-size:14px;letter-spacing:0.5px;">'+esc(v)+'</span></div></td>'+
+      tds+
+      '<td style="padding:10px 12px;text-align:center;"><span style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(p>0?'#fde047':'var(--muted)')+';">'+p+'</span></td>'+
+    '</tr>';
+  }).join('');
+  var tfoot = '<tr style="background:rgba(255,255,255,0.03);">'+
+    '<td style="padding:10px 12px;'+FBC+'font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Total</td>'+
+    cols.map(function(c){ return '<td style="padding:10px 12px;text-align:center;font-weight:700;color:var(--white);">'+tot[c[0]]+'</td>'; }).join('')+
+    '<td style="padding:10px 12px;text-align:center;"><span style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">'+tot.pts+'</span></td>'+
+  '</tr>';
+  var placar = '<div style="'+CARD+'margin-bottom:20px;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px;">'+
+      secTitle('scoreboard','Placar de Atividades')+
+      '<div style="display:flex;gap:6px;">'+diaBtns+'</div>'+
+    '</div>'+
+    '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+thead+rows+tfoot+'</table></div>'+
+    '<div style="margin-top:10px;font-size:11px;color:var(--muted);'+FBC+'letter-spacing:0.5px;">Pontuação: tentativa 1pt · conversa 3pt · reunião 8pt · proposta 5pt · contrato 20pt</div>'+
+  '</div>';
+
+  // ---------- C) Registrar atividades ----------
+  var selStyle = 'background:var(--bg2);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;color:var(--white);font-size:13px;'+FBC+'font-weight:700;letter-spacing:0.5px;cursor:pointer;outline:none;';
+  var inpStyle = 'background:var(--bg2);border:1px solid var(--border2);border-radius:7px;padding:7px 8px;color:var(--white);font-size:14px;font-weight:700;width:100%;text-align:center;outline:none;';
+  var lblStyle = FBC+'font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;';
+  var kpiFields = [['contatos','Tentativas'],['conversas','Conversas'],['reunioes','Reuniões'],['propostas','Propostas'],['contratos','Contratos']];
+  var kpiInputs = kpiFields.map(function(f){
+    return '<div><label style="'+lblStyle+'">'+f[1]+'</label><input type="number" min="0" id="blitz-f-'+f[0]+'" value="0" style="'+inpStyle+'"></div>';
+  }).join('');
+  var diaOpts = BLITZ_DIAS.map(function(d){ return '<option value="'+d.key+'"'+(d.key===diaSel?' selected':'')+'>'+d.label+'</option>'; }).join('');
+  var vendOpts = BLITZ_VENDEDORES.map(function(v){ return '<option value="'+esc(v)+'">'+esc(v)+'</option>'; }).join('');
+  var registro = '<div style="'+CARD+'margin-bottom:20px;">'+
+    secTitle('pencil-plus','Registrar Atividades')+
+    '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">'+
+      '<div><label style="'+lblStyle+'">Dia</label><select id="blitz-dia-sel" onchange="_blitzFillForm()" style="'+selStyle+'">'+diaOpts+'</select></div>'+
+      '<div><label style="'+lblStyle+'">Vendedor</label><select id="blitz-vend-sel" onchange="_blitzFillForm()" style="'+selStyle+'">'+vendOpts+'</select></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(5,minmax(70px,1fr));gap:10px;flex:1;min-width:280px;">'+kpiInputs+'</div>'+
+      '<button onclick="_salvarBlitzDia()" style="padding:8px 20px;background:var(--green);border:none;border-radius:8px;color:#052e16;'+FBC+'font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+    '</div>'+
+    '<div style="margin-top:8px;font-size:11px;color:var(--muted);'+FBC+'">Os valores são o acumulado do dia (substituem o registro anterior).</div>'+
+  '</div>';
+
+  // ---------- D) Prioridade de abordagem ----------
+  var prios = [
+    {emo:'🔴', cor:'var(--red)', bg:'rgba(239,68,68,0.08)', brd:'rgba(239,68,68,0.35)', t:'1 · Propostas paradas', d:'Já recebeu proposta e não respondeu. Maior chance de contrato no curto prazo.', a:'Ligar agora · Script 1'},
+    {emo:'🟠', cor:'var(--amber)', bg:'rgba(245,158,11,0.08)', brd:'rgba(245,158,11,0.35)', t:'2 · Leads recentes', d:'~130 leads nos últimos 30 dias sem reunião marcada. Ainda estão mornos.', a:'Ligar + WhatsApp · Script 2'},
+    {emo:'🟡', cor:'#fde047', bg:'rgba(253,224,71,0.06)', brd:'rgba(253,224,71,0.3)', t:'3 · Clientes ativos', d:'Indicações e upsell na carteira atual. Relacionamento gera contrato rápido.', a:'Relacionamento · Script 3'},
+    {emo:'🔵', cor:'var(--cyan)', bg:'rgba(6,182,212,0.08)', brd:'rgba(6,182,212,0.35)', t:'4 · Leads perdidos/antigos', d:'Reativação com novo motivo de contato: case novo, condição de fechamento.', a:'Novo motivo · Script 4'},
+    {emo:'⚫', cor:'var(--muted)', bg:'rgba(255,255,255,0.03)', brd:'var(--border2)', t:'5 · Mídia paga', d:'Reativar AD70 (R$13,73/lead) e escalar AD68 para alimentar o funil.', a:'Ops de mídia'}
+  ];
+  var prioCards = prios.map(function(p){
+    return '<div style="background:'+p.bg+';border:1px solid '+p.brd+';border-left:4px solid '+p.cor+';border-radius:12px;padding:16px;">'+
+      '<div style="'+FBC+'font-weight:700;font-size:15px;letter-spacing:0.5px;color:var(--white);margin-bottom:6px;">'+p.emo+' '+p.t+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px;">'+p.d+'</div>'+
+      '<span style="display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid '+p.brd+';color:'+p.cor+';'+FBC+'font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;">'+p.a+'</span>'+
+    '</div>';
+  }).join('');
+  var prioridade = '<div style="margin-bottom:20px;">'+
+    secTitle('target-arrow','Prioridade de Abordagem')+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">'+prioCards+'</div>'+
+  '</div>';
+
+  // ---------- E) Scripts prontos ----------
+  var scripts = [
+    {n:1, cor:'var(--red)', t:'Script 1 — Proposta parada', txt:'"[Nome], tudo bem? Estou fechando o planejamento de agosto aqui na Audens e a sua proposta está na minha mesa. Consegui uma condição interna que só consigo segurar até sexta (31/07): [bônus/trava de preço]. Se fizer sentido, a gente assina essa semana e sua campanha já entra no ar na primeira semana de agosto. Faz sentido 15 minutos hoje ou amanhã para eu te mostrar?"'},
+    {n:2, cor:'var(--amber)', t:'Script 2 — Lead de anúncio sem reunião', txt:'"[Nome], vi que você pediu informações sobre a assessoria da Audens há alguns dias. Estou pessoalmente entrando em contato com quem se cadastrou em julho porque temos [X] vagas de onboarding para agosto com [bônus]. Me conta rapidinho: hoje o seu marketing está com quem? O que te fez buscar uma assessoria?"'},
+    {n:3, cor:'#fde047', t:'Script 3 — Cliente ativo (indicação)', txt:'"[Nome], antes de mais nada: [comentário real sobre resultado recente]. Estou expandindo a carteira de agosto e prefiro crescer com gente parecida com você. Quem você conhece — fornecedor, parceiro, amigo empresário — que precisaria de marketing bem-feito? Se a indicação fechar, você ganha [recompensa]."'},
+    {n:4, cor:'var(--cyan)', t:'Script 4 — Lead perdido', txt:'"[Nome], a gente conversou há algum tempo sobre a assessoria e na época não era o momento. Te procuro porque acabamos de [case: resultado concreto] e lembrei de você. Muita coisa mudou na nossa entrega desde então. Vale 15 minutos para eu te mostrar o que fizemos lá? Sem compromisso — e se fizer sentido, essa semana tenho uma condição de fechamento de mês."'}
+  ];
+  var scriptAcc = scripts.map(function(s){
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">'+
+      '<div onclick="blitzToggleScript('+s.n+')" style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;user-select:none;">'+
+        '<div style="'+FBC+'font-weight:700;font-size:14px;letter-spacing:0.5px;color:'+s.cor+';"><i class="ti ti-script" style="margin-right:6px;"></i>'+s.t+'</div>'+
+        '<i id="blitz-script-chev-'+s.n+'" class="ti ti-chevron-down" style="color:var(--muted);transition:transform 0.2s;"></i>'+
+      '</div>'+
+      '<div id="blitz-script-body-'+s.n+'" style="display:none;padding:0 16px 14px;font-size:13px;color:var(--white);line-height:1.65;border-top:1px solid var(--border);padding-top:12px;">'+esc(s.txt)+'</div>'+
+    '</div>';
+  }).join('');
+  var scriptsBlock = '<div style="margin-bottom:20px;">'+
+    secTitle('script','Scripts Prontos')+
+    '<div style="display:flex;flex-direction:column;gap:8px;">'+scriptAcc+'</div>'+
+  '</div>';
+
+  // ---------- F) Metas do dia ----------
+  var nVend = BLITZ_VENDEDORES.length;
+  var metas = [
+    {label:'Tentativas (ligação + WhatsApp)', meta:'40–60', field:'contatos', target:40*nVend},
+    {label:'Conversas reais', meta:'10–15', field:'conversas', target:10*nVend},
+    {label:'Reuniões/calls marcadas', meta:'3–5', field:'reunioes', target:3*nVend},
+    {label:'Propostas apresentadas', meta:'100% carteira', field:'propostas', target:null},
+    {label:'Contratos assinados', meta:'meta ÷ time', field:'contratos', target:null}
+  ];
+  var metaRows = metas.map(function(m){
+    var atual = tot[m.field]||0;
+    var status;
+    if(m.target){
+      var pct = Math.min(100, Math.round(atual/m.target*100));
+      var barCor = pct>=100 ? 'var(--green)' : (pct>=50 ? 'var(--amber)' : 'var(--red)');
+      status = '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<div style="flex:1;height:7px;background:rgba(255,255,255,0.07);border-radius:4px;overflow:hidden;min-width:80px;"><div style="width:'+pct+'%;height:100%;background:'+barCor+';border-radius:4px;"></div></div>'+
+        '<span style="'+FBC+'font-size:11px;font-weight:700;color:'+barCor+';white-space:nowrap;">'+atual+'/'+m.target+' ('+pct+'%)</span>'+
+      '</div>';
+    }else{
+      status = '<span style="'+FBC+'font-size:12px;font-weight:700;color:'+(atual>0?'var(--green)':'var(--muted)')+';">'+(atual>0 ? atual+' registrado'+(atual===1?'':'s') : '—')+'</span>';
+    }
+    return '<tr style="border-bottom:1px solid var(--border);">'+
+      '<td style="padding:9px 12px;font-size:13px;color:var(--white);'+FBC+'letter-spacing:0.3px;">'+m.label+'</td>'+
+      '<td style="padding:9px 12px;text-align:center;'+FBC+'font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;">'+m.meta+'</td>'+
+      '<td style="padding:9px 12px;">'+status+'</td>'+
+    '</tr>';
+  }).join('');
+  var diaLbl = ''; BLITZ_DIAS.forEach(function(d){ if(d.key===diaSel) diaLbl = d.label; });
+  var metasBlock = '<div style="'+CARD+'margin-bottom:20px;">'+
+    secTitle('flag-check','Metas do Dia · '+diaLbl+' (time)')+
+    '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
+      '<tr>'+
+        '<th style="'+thStyle+'text-align:left;">Indicador</th>'+
+        '<th style="'+thStyle+'">Meta/vendedor/dia</th>'+
+        '<th style="'+thStyle+'text-align:left;">Status</th>'+
+      '</tr>'+metaRows+
+    '</table></div>'+
+  '</div>';
+
+  // ---------- G) Huddle schedule ----------
+  var huddles = [
+    {emo:'🌅', hora:'08h45', t:'Kickoff', d:'Placar, meta do dia, um aprendizado de ontem', cor:'var(--amber)', brd:'rgba(245,158,11,0.35)'},
+    {emo:'🌇', hora:'17h30', t:'Fechamento', d:'O que travou, o que a gerência destrava', cor:'var(--purple3)', brd:'rgba(168,85,247,0.35)'}
+  ];
+  var huddleCards = huddles.map(function(h){
+    return '<div style="'+CARD+'border-color:'+h.brd+';display:flex;align-items:center;gap:14px;">'+
+      '<div style="font-size:28px;">'+h.emo+'</div>'+
+      '<div>'+
+        '<div style="'+FBC+'font-weight:700;font-size:16px;letter-spacing:1px;color:'+h.cor+';">'+h.hora+' — '+h.t+'</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+h.d+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  var huddleBlock = '<div style="margin-bottom:8px;">'+
+    secTitle('users-group','Huddles Fixos')+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">'+huddleCards+'</div>'+
+  '</div>';
+
+  return banner + placar + registro + prioridade + scriptsBlock + metasBlock + huddleBlock;
+}
+
 
 // Converte faturamento string em número para ordenação
 function _fatScore(fat){
