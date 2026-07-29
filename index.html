@@ -4492,11 +4492,31 @@ function crmDedupSheets(rows){
   return out;
 }
 
+function getFollowupForMeeting(m){
+  // 1) chave direta (caso mais comum)
+  if(followups[m.id]) return followups[m.id];
+  // 2) followup salvo com meetingId apontando para esta reunião
+  var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
+  if(byMid) return byMid;
+  // 3) fallback por telefone (janela de 7 dias) — mesma lógica do getFu() no ranking
+  var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
+  if(mTel.length>=8&&m.dtISO){
+    var mDate=new Date(m.dtISO).getTime();
+    var best=null,bestDiff=Infinity;
+    Object.values(followups).forEach(function(f){
+      var fTel=(f.tel||'').replace(/\D/g,'');
+      if(fTel.slice(-9)!==mTel.slice(-9))return;
+      if(f.dt){var fDate=parseBRDate(f.dt);if(!fDate)return;var diff=Math.abs(mDate-fDate.getTime());if(diff<=7*24*60*60*1000&&diff<bestDiff){bestDiff=diff;best=f;}}
+    });
+    if(best) return best;
+  }
+  return null;
+}
 function getMeetingStatus(m){
   var st = m.status || 'pending';
-  if(st === 'pending' && followups[m.id]){
-    var fu = followups[m.id];
-    st = fu.resultado === 'noshow' ? 'noshow' : 'done';
+  if(st === 'pending'){
+    var fu = getFollowupForMeeting(m);
+    if(fu) st = fu.resultado === 'noshow' ? 'noshow' : 'done';
   }
   return st;
 }
@@ -4603,8 +4623,9 @@ function migrateStaleStatuses(){
   var fixed = 0;
   Object.values(meetings).forEach(function(m){
     // 1) pending/sem-status com followup → atualiza para done/noshow
-    if((m.status==='pending'||!m.status) && followups[m.id]){
-      var fu = followups[m.id];
+    var _fuMig=getFollowupForMeeting(m);
+    if((m.status==='pending'||!m.status) && _fuMig){
+      var fu = _fuMig;
       var newSt = fu.resultado==='noshow' ? 'noshow' : 'done';
       meetings[m.id].status = newSt;
       saveMeetingFB(m.id, meetings[m.id]);
@@ -4612,7 +4633,7 @@ function migrateStaleStatuses(){
     }
     // 2) marcado como 'done' pelo sheet-sync mas sem followup no CRM → volta para pending
     // EXCETO se a venda foi intencionalmente removida (followupRemovido)
-    else if(m.status==='done' && !followups[m.id] && !m.followupRemovido){
+    else if(m.status==='done' && !getFollowupForMeeting(m) && !m.followupRemovido){
       meetings[m.id].status = 'pending';
       saveMeetingFB(m.id, meetings[m.id]);
       fixed++;
@@ -4626,7 +4647,7 @@ function getPendingFollowups(){
   return allMtgs.filter(function(m){
     var _st=getMeetingStatus(m);
     if(_st==='done'||_st==='noshow'||_st==='reagendado') return false;
-    if(followups[m.id]) return false;
+    if(getFollowupForMeeting(m)) return false; // exclui se tem followup por qualquer lookup
     if(_dispensadosLS[m.id]) return false; // dispensado via X (persiste em localStorage)
     var _dtMs=m.dtISO?new Date(m.dtISO).getTime():NaN;
     if(isNaN(_dtMs)) return false; // data inválida/ausente — não exibir
