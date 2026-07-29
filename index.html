@@ -4538,6 +4538,8 @@ function getFollowupForMeeting(m){
 }
 function getMeetingStatus(m){
   var st = m.status || 'pending';
+  // Normaliza qualquer variante de "realizada" para 'done'
+  if(st!=='pending'&&st!=='noshow'&&st!=='reagendado'&&isRealizada(st)) return 'done';
   if(st === 'pending'){
     var fu = getFollowupForMeeting(m);
     if(fu) st = fu.resultado === 'noshow' ? 'noshow' : 'done';
@@ -4616,13 +4618,14 @@ async function syncReunioesFBFromSheet(){
       }
       if(!m){ skipped++; return; }
 
-      // REALIZADA: se já tem followup no CRM → 'done'; senão → 'pending' para registrar resultado
+      // REALIZADA/VENDA: marca como done independente de ter followup no CRM
       // AGENDADA/PENDENTE: sempre 'pending' (reunião ainda não aconteceu)
+      var _hasFuOrCtr=getFollowupForMeeting(m)!=null;
       var newSt = (stSheet==='NO-SHOW'||stSheet==='NO SHOW'||stSheet==='NOSHOW') ? 'noshow'
                : (stSheet==='REAGENDADO') ? 'reagendado'
-               : (stSheet==='REALIZADA'||stSheet==='REALIZADO') ? (followups[m.id] ? 'done' : 'pending')
+               : (stSheet==='REALIZADA'||stSheet==='REALIZADO'||stSheet==='VENDA') ? 'done'
                : (stSheet==='AGENDADA'||stSheet==='PENDENTE') ? 'pending'
-               : (followups[m.id] ? 'done' : 'pending');
+               : (_hasFuOrCtr ? 'done' : 'pending');
       // Não sobrescrever 'reagendado' manual com 'pending' do sheet (seria desfazer um dismiss)
       if(m.status==='reagendado' && newSt==='pending') return;
       // Não reverter reunião cuja venda foi intencionalmente removida
@@ -4646,21 +4649,15 @@ function migrateStaleStatuses(){
   _migratedStatuses = true;
   var fixed = 0;
   Object.values(meetings).forEach(function(m){
-    // 1) pending/sem-status com followup → atualiza para done/noshow
-    var _fuMig=getFollowupForMeeting(m);
-    if((m.status==='pending'||!m.status) && _fuMig){
-      var fu = _fuMig;
-      var newSt = fu.resultado==='noshow' ? 'noshow' : 'done';
-      meetings[m.id].status = newSt;
-      saveMeetingFB(m.id, meetings[m.id]);
-      fixed++;
-    }
-    // 2) marcado como 'done' pelo sheet-sync mas sem followup no CRM → volta para pending
-    // EXCETO se a venda foi intencionalmente removida (followupRemovido)
-    else if(m.status==='done' && !getFollowupForMeeting(m) && !m.followupRemovido){
-      meetings[m.id].status = 'pending';
-      saveMeetingFB(m.id, meetings[m.id]);
-      fixed++;
+    // pending/sem-status com followup ou contrato → atualiza para done/noshow
+    if(m.status==='pending'||!m.status){
+      var _fuMig=getFollowupForMeeting(m);
+      if(_fuMig){
+        var newSt = _fuMig.resultado==='noshow' ? 'noshow' : 'done';
+        meetings[m.id].status = newSt;
+        saveMeetingFB(m.id, meetings[m.id]);
+        fixed++;
+      }
     }
   });
   if(fixed > 0) console.log('[CRM] Corrigidos '+fixed+' status de reuniões no Firebase.');
@@ -9936,7 +9933,7 @@ function renderReunioes(){
       var fu=getFu(m);
       var closer=normCloserName(m.responsavel||'')||'—';
       var sdr=(m.sdrName||m.sdr||'—');
-      var hasResult=!!(fu&&fu.comparecimento);
+      var hasResult=!!(fu&&fu.comparecimento)||isRealizada(m.status);
       var isVend=isVenda(m);
       var rowBg=isVend?'rgba(34,197,94,0.04)':isNs(m)?'rgba(239,68,68,0.03)':'';
       var res='—';
@@ -18196,10 +18193,6 @@ async function loadContratos(forceRefresh){
   var val = snap.val()||{};
   _contratosCache = Object.entries(val).map(function(e){return Object.assign({},e[1],{id:e[0]});});
   _rebuildCancelledSet(_contratosCache);
-  // Após carregar contratos, re-verifica status de reuniões pendentes que têm contrato pelo telefone
-  // (cobre vendas registradas diretamente em /contratos/ sem followup correspondente)
-  _migratedStatuses = false;
-  if(typeof migrateStaleStatuses === 'function') migrateStaleStatuses();
   return _contratosCache;
 }
 
