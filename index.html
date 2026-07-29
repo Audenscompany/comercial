@@ -20048,17 +20048,18 @@ async function loadAudensBlitz(){
     BLITZ_SDRS.forEach(function(sdr){
       var stats = {tentativas:0, reunioes:0, realizadas:0, contratos:0, pts:0};
       Object.values(window.meetings||{}).forEach(function(m){
-        if(!m.dtISO) return;
-        var mDia = m.dtISO.slice(0,10);
-        if(mDia !== diaKey) return;
         var mSdr = normCloserName(m.sdrName||m.sdr||m.criador||'');
         if(mSdr !== normCloserName(sdr)) return;
-        // Toda reunião agendada para o dia = reunião marcada
-        stats.reunioes++;
-        // Realizadas = status done/realizada/noshow (compareceu ou não, reunião aconteceu)
-        if(m.status === 'done' || m.status === 'realizada') stats.realizadas++;
+        // Reunião marcada: conta pelo dia em que FOI AGENDADA (scheduledAt), não pela data da reunião
+        // Fallback para dtISO se scheduledAt não existir (reuniões antigas)
+        var agendadoEm = m.scheduledAt
+          ? (function(ts){ var d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })(m.scheduledAt)
+          : (m.dtISO ? m.dtISO.slice(0,10) : null);
+        if(agendadoEm === diaKey) stats.reunioes++;
+        // Realizadas: conta pelo dia em que a reunião ACONTECEU (dtISO)
+        if(m.dtISO && m.dtISO.slice(0,10) === diaKey && (m.status === 'done' || m.status === 'realizada')) stats.realizadas++;
       });
-      // Tentativas = reuniões agendadas + contatos manuais (somados depois do Firebase)
+      // Tentativas = reuniões agendadas (marcadas no dia) + contatos manuais do Firebase
       stats.tentativas = stats.reunioes;
       Object.values(window.followups||{}).forEach(function(fu){
         if(fu.resultado !== 'venda') return;
