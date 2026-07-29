@@ -19925,8 +19925,8 @@ var BLITZ_DIAS = [
   {key:'2026-07-30', label:'Qui 30'},
   {key:'2026-07-31', label:'Sex 31'}
 ];
-var BLITZ_VENDEDORES = ['Lucas','Gustavo'];
-var BLITZ_PTS = {contatos:1, conversas:3, reunioes:8, propostas:5, contratos:20};
+var BLITZ_VENDEDORES = ['Lucas','Gustavo','João'];
+var BLITZ_PTS = {tentativas:1, reunioes:8, realizadas:3, contratos:20};
 var _blitzData = {};
 var _blitzDiaSel = null;
 var _blitzCountdownInt = null;
@@ -19955,9 +19955,13 @@ function _blitzStartCountdown(){
   }, 60000);
 }
 
-function _blitzAv(n){
+function _blitzAv(n, size){
+  size = size || 26;
+  var emailMap = {'Lucas':'lucas@audens.com','Gustavo':'gustavo@audens.com','Jo\u00e3o':'joao@audens.com','Joao':'joao@audens.com'};
+  var email = emailMap[n] || emailMap[(n||'').split(' ')[0]];
+  if(email && typeof renderUserAvatar === 'function') return renderUserAvatar(email, size, Math.floor(size*0.4), 'rgba(167,139,250,0.15)');
   var ini = (n||'?').split(' ').slice(0,2).map(function(p){return p[0]||'';}).join('').toUpperCase();
-  return '<div style="width:26px;height:26px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;">'+ini+'</div>';
+  return '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:var(--purple3);display:inline-flex;align-items:center;justify-content:center;font-size:'+Math.floor(size*0.4)+'px;font-weight:700;color:#fff;flex-shrink:0;">'+ini+'</div>';
 }
 
 function blitzSelDia(dia){
@@ -19975,57 +19979,62 @@ function blitzToggleScript(n){
   if(c) c.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
 }
 
-function _blitzFillForm(){
-  var dia = document.getElementById('blitz-dia-sel');
-  var vend = document.getElementById('blitz-vend-sel');
-  if(!dia||!vend) return;
-  var d = (_blitzData[dia.value]||{})[vend.value]||{};
-  ['contatos','conversas','reunioes','propostas','contratos'].forEach(function(f){
-    var el = document.getElementById('blitz-f-'+f);
-    if(el) el.value = parseInt(d[f])||0;
-  });
-}
-
-async function saveBlitzActivity(dia, vendedor, atividade, valor){
-  if(!fbDb || !dia || !vendedor || !atividade) return;
-  await fbDb.ref('blitz/'+dia+'/'+vendedor+'/'+atividade).set(parseInt(valor)||0);
-}
-
-async function _salvarBlitzDia(){
-  var diaEl = document.getElementById('blitz-dia-sel');
-  var vendEl = document.getElementById('blitz-vend-sel');
-  var dia = diaEl ? diaEl.value : '';
-  var vend = vendEl ? vendEl.value : '';
-  if(!dia || !vend) return;
-  if(!fbDb){ alert('Firebase indisponível'); return; }
-  var fields = ['contatos','conversas','reunioes','propostas','contratos'];
-  var updates = {};
-  fields.forEach(function(f){
-    var el = document.getElementById('blitz-f-'+f);
-    if(el) updates[f] = parseInt(el.value)||0;
-  });
-  updates.updatedAt = Date.now();
-  try{
-    await fbDb.ref('blitz/'+dia+'/'+vend).update(updates);
-    alert('✓ Atividades salvas!');
-    loadAudensBlitz();
-  }catch(e){
-    alert('Erro ao salvar: '+(e && e.message ? e.message : e));
+function _blitzRegistrarContato(tel, nome){
+  var sdr = prompt('Quem vai contatar '+nome+'?\n(Lucas / Gustavo / Jo\u00e3o)', (typeof CU !== 'undefined' && CU) ? (normCloserName(CU.closer||CU.name||'')||'Lucas') : 'Lucas');
+  if(!sdr) return;
+  var sdrNorm = {'lucas':'Lucas','gustavo':'Gustavo','joao':'Jo\u00e3o'}[(sdr||'').toLowerCase().replace(/\u00e3/g,'a').replace(/\u00f5/g,'o')] || sdr;
+  var key = (tel||'').replace(/\D/g,'');
+  if(!key) return;
+  var updates = {audensDay:true, audensDayResp:sdrNorm, _blitzContato:Date.now()};
+  if(typeof kanbanData !== 'undefined'){
+    if(!kanbanData[key]) kanbanData[key] = {nome:nome||'', telefone:key, status:'novo', origem:'Blitz', _createdAt:Date.now()};
+    Object.assign(kanbanData[key], updates);
   }
+  if(typeof fbDb !== 'undefined' && fbDb){
+    fbDb.ref('kanban/'+key).update(updates);
+  }
+  alert('\u2713 Contato registrado para '+sdrNorm+'. Lead criado/atualizado no Kanban!');
 }
 
 async function loadAudensBlitz(){
   var el = document.getElementById('audens-blitz-content');
   if(!el) return;
   el.innerHTML = '<div style="color:var(--muted);font-family:var(--font-bc),sans-serif;padding:20px;"><i class="ti ti-loader ti-spin"></i> Carregando Sales Blitz...</div>';
-  var data = {};
-  try{
-    if(fbDb){
-      var snap = await fbDb.ref('blitz').once('value');
-      data = snap.val() || {};
-    }
-  }catch(e){ console.warn('blitz load', e); }
-  _blitzData = data;
+  // Calcula placar automático dos SDRs a partir de meetings + followups
+  var BLITZ_DIAS_KEYS = ['2026-07-29','2026-07-30','2026-07-31'];
+  var BLITZ_SDRS = ['Lucas','Gustavo','Jo\u00e3o'];
+  var autoData = {};
+  BLITZ_DIAS_KEYS.forEach(function(diaKey){
+    autoData[diaKey] = {};
+    BLITZ_SDRS.forEach(function(sdr){
+      var stats = {tentativas:0, reunioes:0, realizadas:0, contratos:0, pts:0};
+      Object.values(window.meetings||{}).forEach(function(m){
+        if(!m.dtISO) return;
+        var mDia = m.dtISO.slice(0,10);
+        if(mDia !== diaKey) return;
+        var mSdr = normCloserName(m.sdrName||m.sdr||'');
+        if(mSdr !== normCloserName(sdr)) return;
+        stats.tentativas++;
+        if(m.status === 'done' || m.status === 'realizada') stats.realizadas++;
+      });
+      stats.reunioes = stats.realizadas;
+      Object.values(window.followups||{}).forEach(function(fu){
+        if(fu.resultado !== 'venda') return;
+        var m2 = (window.meetings||{})[fu.meetingId] || (window.meetings||{})[Object.keys(fu)[0]];
+        var mSdr2 = normCloserName(fu.sdrNome||(m2?(m2.sdrName||m2.sdr||''):'')||'');
+        if(mSdr2 !== normCloserName(sdr)) return;
+        var dt = typeof _vendaDate === 'function' ? _vendaDate(fu, m2) : null;
+        if(!dt) return;
+        var dtKey = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+        if(dtKey !== diaKey) return;
+        stats.contratos++;
+      });
+      stats.pts = stats.tentativas*1 + stats.reunioes*8 + stats.realizadas*3 + stats.contratos*20;
+      autoData[diaKey][sdr] = stats;
+    });
+  });
+  var data = autoData;
+  _blitzData = autoData;
   var hoje = _blitzHojeKey();
   if(!_blitzDiaSel){
     _blitzDiaSel = BLITZ_DIAS.some(function(d){return d.key===hoje;}) ? hoje : BLITZ_DIAS[0].key;
@@ -20069,8 +20078,8 @@ function renderAudensBlitz(data){
       (sel ? 'background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.45);color:#f87171;' : 'background:transparent;border:1px solid var(--border);color:var(--muted);')+
       '">'+d.label+'</button>';
   }).join('');
-  var cols = [['contatos','Tentativas','×1'],['conversas','Conversas','×3'],['reunioes','Reuniões','×8'],['propostas','Propostas','×5'],['contratos','Contratos','×20']];
-  var tot = {contatos:0,conversas:0,reunioes:0,propostas:0,contratos:0,pts:0};
+  var cols = [['tentativas','Tentativas','×1'],['reunioes','Reuniões','×8'],['realizadas','Realizadas','×3'],['contratos','Contratos','×20']];
+  var tot = {tentativas:0,reunioes:0,realizadas:0,contratos:0,pts:0};
   var thStyle = 'padding:8px 12px;'+FBC+'font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--border2);';
   var thead = '<tr><th style="'+thStyle+'text-align:left;">Vendedor</th>'+
     cols.map(function(c){ return '<th style="'+thStyle+'">'+c[1]+' <span style="color:rgba(255,255,255,0.25);font-size:9px;">'+c[2]+'</span></th>'; }).join('')+
@@ -20100,28 +20109,7 @@ function renderAudensBlitz(data){
       '<div style="display:flex;gap:6px;">'+diaBtns+'</div>'+
     '</div>'+
     '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+thead+rows+tfoot+'</table></div>'+
-    '<div style="margin-top:10px;font-size:11px;color:var(--muted);'+FBC+'letter-spacing:0.5px;">Pontuação: tentativa 1pt · conversa 3pt · reunião 8pt · proposta 5pt · contrato 20pt</div>'+
-  '</div>';
-
-  // ---------- C) Registrar atividades ----------
-  var selStyle = 'background:var(--bg2);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;color:var(--white);font-size:13px;'+FBC+'font-weight:700;letter-spacing:0.5px;cursor:pointer;outline:none;';
-  var inpStyle = 'background:var(--bg2);border:1px solid var(--border2);border-radius:7px;padding:7px 8px;color:var(--white);font-size:14px;font-weight:700;width:100%;text-align:center;outline:none;';
-  var lblStyle = FBC+'font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;';
-  var kpiFields = [['contatos','Tentativas'],['conversas','Conversas'],['reunioes','Reuniões'],['propostas','Propostas'],['contratos','Contratos']];
-  var kpiInputs = kpiFields.map(function(f){
-    return '<div><label style="'+lblStyle+'">'+f[1]+'</label><input type="number" min="0" id="blitz-f-'+f[0]+'" value="0" style="'+inpStyle+'"></div>';
-  }).join('');
-  var diaOpts = BLITZ_DIAS.map(function(d){ return '<option value="'+d.key+'"'+(d.key===diaSel?' selected':'')+'>'+d.label+'</option>'; }).join('');
-  var vendOpts = BLITZ_VENDEDORES.map(function(v){ return '<option value="'+esc(v)+'">'+esc(v)+'</option>'; }).join('');
-  var registro = '<div style="'+CARD+'margin-bottom:20px;">'+
-    secTitle('pencil-plus','Registrar Atividades')+
-    '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">'+
-      '<div><label style="'+lblStyle+'">Dia</label><select id="blitz-dia-sel" onchange="_blitzFillForm()" style="'+selStyle+'">'+diaOpts+'</select></div>'+
-      '<div><label style="'+lblStyle+'">Vendedor</label><select id="blitz-vend-sel" onchange="_blitzFillForm()" style="'+selStyle+'">'+vendOpts+'</select></div>'+
-      '<div style="display:grid;grid-template-columns:repeat(5,minmax(70px,1fr));gap:10px;flex:1;min-width:280px;">'+kpiInputs+'</div>'+
-      '<button onclick="_salvarBlitzDia()" style="padding:8px 20px;background:var(--green);border:none;border-radius:8px;color:#052e16;'+FBC+'font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-device-floppy"></i> Salvar</button>'+
-    '</div>'+
-    '<div style="margin-top:8px;font-size:11px;color:var(--muted);'+FBC+'">Os valores são o acumulado do dia (substituem o registro anterior).</div>'+
+    '<div style="margin-top:10px;font-size:11px;color:var(--muted);'+FBC+'letter-spacing:0.5px;">Pontuação automática (CRM): tentativa 1pt · reunião 8pt · realizada 3pt · contrato 20pt</div>'+
   '</div>';
 
   // ---------- D) Prioridade de abordagem ----------
@@ -20142,6 +20130,66 @@ function renderAudensBlitz(data){
   var prioridade = '<div style="margin-bottom:20px;">'+
     secTitle('target-arrow','Prioridade de Abordagem')+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">'+prioCards+'</div>'+
+  '</div>';
+
+  // ---------- D2) Follow-up de Base (últimos 180 dias) ----------
+  var _180ago = Date.now() - 180*24*60*60*1000;
+  var _vendasTels = {};
+  Object.values(window.followups||{}).forEach(function(fu){
+    if(fu.resultado==='venda'){
+      var mv=window.meetings&&window.meetings[fu.meetingId];
+      var tv=((mv&&mv.tel)||fu.tel||'').replace(/\D/g,'').slice(-10);
+      if(tv) _vendasTels[tv]=1;
+    }
+  });
+  var followupLeads = [];
+  var _ftDedupe = {};
+  Object.values(window.meetings||{}).forEach(function(m){
+    if(!m.dtISO) return;
+    var ts = new Date(m.dtISO).getTime();
+    if(ts < _180ago) return;
+    var tel = (m.tel||'').replace(/\D/g,'').slice(-10);
+    if(!tel || _ftDedupe[tel]) return;
+    if(_vendasTels[tel]) return; // já virou cliente
+    _ftDedupe[tel] = 1;
+    followupLeads.push(m);
+  });
+  followupLeads.sort(function(a,b){return (b.dtISO||'').localeCompare(a.dtISO||'');});
+  followupLeads = followupLeads.slice(0, 50);
+  var fuThStyle = 'padding:6px 8px;font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;';
+  var fuRows = followupLeads.map(function(m){
+    var telDigits = (m.tel||'').replace(/\D/g,'');
+    var dtObj = new Date(m.dtISO);
+    var dtFmt = isNaN(dtObj.getTime()) ? '—' : ('0'+dtObj.getDate()).slice(-2)+'/'+('0'+(dtObj.getMonth()+1)).slice(-2)+'/'+dtObj.getFullYear();
+    var closer = m.responsavel||m.closerName||m.closer||'';
+    var nomeSafe = esc((m.nome||'').replace(/'/g,''));
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+      '<td style="padding:8px 8px;font-size:12px;color:var(--white);font-weight:600;">'+esc(m.nome||'—')+
+        '<div style="font-size:10px;color:var(--muted);">'+esc(m.tel||'')+'</div></td>'+
+      '<td style="padding:8px 8px;"><div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--white);">'+_blitzAv(closer||'?',20)+'<span>'+esc(closer||'—')+'</span></div></td>'+
+      '<td style="padding:8px 8px;font-size:11px;color:var(--muted);">'+dtFmt+'</td>'+
+      '<td style="padding:8px 8px;text-align:right;">'+
+        '<button onclick="_blitzRegistrarContato(\''+telDigits+'\',\''+nomeSafe+'\')" style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:4px 10px;font-size:10px;color:#4ade80;cursor:pointer;font-weight:700;">+ Registrar contato</button></td>'+
+    '</tr>';
+  }).join('');
+  var followupBase = '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;">'+
+    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;">'+
+      '<i class="ti ti-refresh" style="color:var(--cyan);"></i> FOLLOW-UP DE BASE — ÚLTIMOS 180 DIAS '+
+      '<span style="font-size:10px;color:var(--muted);font-weight:400;">('+followupLeads.length+' leads com reunião sem fechar)</span>'+
+    '</div>'+
+    (followupLeads.length ?
+    '<div style="max-height:380px;overflow-y:auto;">'+
+      '<table style="width:100%;border-collapse:collapse;">'+
+        '<thead><tr style="border-bottom:1px solid var(--border);">'+
+          '<th style="text-align:left;'+fuThStyle+'">LEAD</th>'+
+          '<th style="text-align:left;'+fuThStyle+'">CLOSER</th>'+
+          '<th style="text-align:left;'+fuThStyle+'">ÚLTIMA REUNIÃO</th>'+
+          '<th style="text-align:right;'+fuThStyle+'">AÇÃO</th>'+
+        '</tr></thead>'+
+        '<tbody>'+fuRows+'</tbody>'+
+      '</table>'+
+    '</div>' :
+    '<div style="font-size:12px;color:var(--muted);">Nenhum lead com reunião pendente nos últimos 180 dias.</div>')+
   '</div>';
 
   // ---------- E) Scripts prontos ----------
@@ -20168,10 +20216,8 @@ function renderAudensBlitz(data){
   // ---------- F) Metas do dia ----------
   var nVend = BLITZ_VENDEDORES.length;
   var metas = [
-    {label:'Tentativas (ligação + WhatsApp)', meta:'40–60', field:'contatos', target:40*nVend},
-    {label:'Conversas reais', meta:'10–15', field:'conversas', target:10*nVend},
-    {label:'Reuniões/calls marcadas', meta:'3–5', field:'reunioes', target:3*nVend},
-    {label:'Propostas apresentadas', meta:'100% carteira', field:'propostas', target:null},
+    {label:'Tentativas (reuniões agendadas no dia)', meta:'40–60', field:'tentativas', target:40*nVend},
+    {label:'Reuniões realizadas', meta:'3–5', field:'realizadas', target:3*nVend},
     {label:'Contratos assinados', meta:'meta ÷ time', field:'contratos', target:null}
   ];
   var metaRows = metas.map(function(m){
@@ -20224,7 +20270,7 @@ function renderAudensBlitz(data){
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">'+huddleCards+'</div>'+
   '</div>';
 
-  return banner + placar + registro + prioridade + scriptsBlock + metasBlock + huddleBlock;
+  return banner + placar + prioridade + followupBase + scriptsBlock + metasBlock + huddleBlock;
 }
 
 
