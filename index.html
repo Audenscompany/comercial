@@ -20140,7 +20140,10 @@ async function loadAudensBlitz(){
         if(m.scheduledAt){
           var _d=new Date(m.scheduledAt);
           var agendadoEm=_d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');
-          if(agendadoEm === diaKey && BLITZ_RANGE.indexOf(agendadoEm) > -1){ stats.reunioes++; leads.reunioes.push(m); }
+          // Também exige que a data da reunião seja >= início do blitz (evita reuniões antigas reagendadas)
+          var meetDate = m.dtISO ? m.dtISO.slice(0,10) : '';
+          var blitzStart = BLITZ_RANGE[0];
+          if(agendadoEm === diaKey && BLITZ_RANGE.indexOf(agendadoEm) > -1 && (!meetDate || meetDate >= blitzStart)){ stats.reunioes++; leads.reunioes.push(m); }
         }
         // Realizadas: pelo dia em que a reunião aconteceu (dtISO), dentro do blitz
         if(m.dtISO && m.dtISO.slice(0,10) === diaKey && BLITZ_RANGE.indexOf(diaKey) > -1 && (m.status === 'done' || m.status === 'realizada')){ stats.realizadas++; leads.realizadas.push(m); }
