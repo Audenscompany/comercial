@@ -14825,6 +14825,8 @@ function renderSDRRegistrar(){
 var _fuTab='visao-geral';
 var _fuSheetCache=null;
 var _fuSheetLoading=false;
+var _fuLocks={};
+var _fuLocksListening=false;
 
 function _fuScore(m,fu,ke,daysSinceMeeting){
   var score=0;
@@ -14879,6 +14881,31 @@ function _fuMotivo(fu,ke){
   if(r==='perdido')return fu.motivoPerda||'Perdido';
   var obs=(fu.observacoes||fu.obs||'').trim();
   return obs||'Sem resposta';
+}
+
+function _fuStartLockListener(){
+  if(_fuLocksListening)return;
+  if(!fbDb&&!initFirebase())return;
+  _fuLocksListening=true;
+  fbDb.ref('followup_locks').on('value',function(snap){
+    _fuLocks=snap.val()||{};
+    if(window._currentPage==='followup')renderFollowup();
+  });
+}
+
+async function _fuToggleLock(tel9,leadNome){
+  if(!fbDb&&!initFirebase())return;
+  var lock=_fuLocks[tel9];
+  var myEmail=CU&&CU.email;
+  if(lock&&lock.email===myEmail){
+    // Release
+    await fbDb.ref('followup_locks/'+tel9).remove();
+  } else if(!lock){
+    // Claim
+    var myName=CU&&(CU.name||CU.closer||CU.email)||'Usuário';
+    await fbDb.ref('followup_locks/'+tel9).set({nome:myName,email:myEmail,leadNome:leadNome||'',at:Date.now()});
+  }
+  // Listener will re-render automatically
 }
 
 async function _fuLoadSheetLeads(){
@@ -15141,6 +15168,8 @@ function _fuBuildUniverse(){
 
 function renderFollowup(){
   var tab=window._fuTab||'visao-geral';
+  // Start real-time lock listener
+  _fuStartLockListener();
   // Trigger async load of sheet leads if not yet cached
   if(_fuSheetCache===null&&!_fuSheetLoading){
     _fuSheetLoading=true;
@@ -15387,9 +15416,21 @@ function _fuRenderLeadTable(universe,category,title,subtitle){
         ?'<button onclick="_fuAtivarKanban(\''+_kbKey+'\',\''+esc(l.nome||'').replace(/'/g,'\\\'')+'\')" style="background:rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.3);border-radius:6px;color:#22d3ee;padding:4px 8px;font-size:12px;cursor:pointer;" title="Ver no Kanban"><i class="ti ti-layout-kanban"></i></button>'
         :'<button onclick="_fuAtivarKanban(\''+_kbKey+'\',\''+esc(l.nome||'').replace(/'/g,'\\\'')+'\')" style="background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.3);border-radius:6px;color:#fbbf24;padding:4px 8px;font-size:12px;cursor:pointer;" title="Criar no Kanban"><i class="ti ti-layout-kanban"></i></button>')
       :'';
-    var actions='<div style="display:flex;gap:4px;flex-shrink:0;">'
+    var _tel9=(l.tel||'').replace(/\D/g,'');if(_tel9.length>9)_tel9=_tel9.slice(-9);
+    var _lock=_tel9?_fuLocks[_tel9]:null;
+    var _isMyLock=_lock&&CU&&_lock.email===CU.email;
+    var _lockHtml='';
+    if(_lock&&!_isMyLock){
+      _lockHtml='<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:20px;padding:3px 9px;font-size:10px;font-weight:600;white-space:nowrap;"><i class="ti ti-user-check" style="font-size:10px;"></i>'+_lock.nome+' em contato</span>';
+    } else if(_isMyLock){
+      _lockHtml='<button onclick="_fuToggleLock(\''+_tel9+'\',\'\')" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:20px;color:#22c55e;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;" title="Clique para liberar"><i class="ti ti-user-check" style="font-size:10px;"></i>Você em contato</button>';
+    } else if(_tel9){
+      _lockHtml='<button onclick="_fuToggleLock(\''+_tel9+'\',\'\')" style="background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:20px;color:#818cf8;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-phone-call" style="font-size:10px;"></i>Registrar contato</button>';
+    }
+    var actions='<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;flex-wrap:wrap;">'
+      +_lockHtml
       +(l.tel?'<a href="'+wa+'" target="_blank" style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);border-radius:6px;color:#22c55e;padding:4px 8px;font-size:12px;text-decoration:none;" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i></a>':'')
-      +(l.mid&&category!=='recuperado'&&category!=='perdido'?'<button onclick="openFollowup(meetings[\''+l.mid+'\'],false)" style="background:rgba(147,51,234,0.1);border:1px solid rgba(147,51,234,0.25);border-radius:6px;color:#a78bfa;padding:4px 8px;font-size:12px;cursor:pointer;" title="Registrar contato"><i class="ti ti-clipboard-check"></i></button>':'')
+      +(l.mid&&category!=='recuperado'&&category!=='perdido'?'<button onclick="openFollowup(meetings[\''+l.mid+'\'],false)" style="background:rgba(147,51,234,0.1);border:1px solid rgba(147,51,234,0.25);border-radius:6px;color:#a78bfa;padding:4px 8px;font-size:12px;cursor:pointer;" title="Registrar resultado"><i class="ti ti-clipboard-check"></i></button>':'')
       +(l.mid&&(category==='noshow'||category==='sem_reuniao')?'<button onclick="_openReunEdit(\''+l.mid+'\')" style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);border-radius:6px;color:#3b82f6;padding:4px 8px;font-size:12px;cursor:pointer;" title="Editar reunião"><i class="ti ti-calendar-plus"></i></button>':'')
       +_kbBtn
       +'<button onclick="_fuOpenLead(\''+l.id+'\')" style="background:var(--bg);border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:4px 8px;font-size:12px;cursor:pointer;" title="Ver detalhes"><i class="ti ti-chevron-right"></i></button>'
