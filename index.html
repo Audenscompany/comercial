@@ -5883,7 +5883,7 @@ function _finNormalizeLegacy(saidas,entradas,recebimentos){
     ledger.push({id:e[0],type:'receita',amount:parseFloat(d.valor)||0,
       date:d.data||'',dueDate:d.data||'',description:d.descricao||'Entrada manual',
       category:d.categoria||'Manual',accountId:'legado',status:'confirmado',
-      origin:'manual',createdAt:d.createdAt||0,createdBy:d.criadoPor||'',_raw:d});
+      origin:'manual',createdAt:d.createdAt||0,createdBy:d.criadoPor||'',_src:'entradas_manuais',_raw:d});
   });
   Object.entries(recebimentos||{}).forEach(function(e){
     var d=Object.assign({},e[1],{_id:e[0],_src:'recebimentos'});
@@ -7601,7 +7601,8 @@ async function finDeletarLancamento(tipo,id){
   if(!confirm('Excluir este lançamento?')) return;
   await fbDb.ref('financeiro/'+tipo+'/'+id).remove();
   showSheetToast('Lançamento excluído.');
-  loadFinanceiroData();
+  _finState.loaded=false;
+  startFinanceiroListeners();
 }
 function finUpdateBulkBar(){
   var chks=document.querySelectorAll('.fin-chk');
