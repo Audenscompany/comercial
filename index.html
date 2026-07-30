@@ -20179,7 +20179,7 @@ var BLITZ_DIAS = [
   {key:'2026-07-31', label:'Sex 31'}
 ];
 var BLITZ_VENDEDORES = ['Lucas','Gustavo','João'];
-var BLITZ_PTS = {tentativas:1, reunioes:3, realizadas:8, contratos:20};
+var BLITZ_PTS = {tentativas:1, reunioes:3, realizadas:8, contratos:20, daily:8};
 var _blitzData = {};
 var _blitzDiaSel = null;
 var _blitzCountdownInt = null;
@@ -20361,7 +20361,7 @@ async function loadAudensBlitz(){
       autoData[diaKey][sdr] = stats;
     });
   });
-  // Mesclar com tentativas manuais salvas no Firebase (via _blitzRegistrarContato)
+  // Mesclar com tentativas manuais + daily salvas no Firebase
   try {
     var fbSnap = await fbDb.ref('blitz').once('value');
     var fbBlitz = fbSnap.val() || {};
@@ -20369,12 +20369,13 @@ async function loadAudensBlitz(){
       BLITZ_SDRS.forEach(function(sdr){
         var fbSdr = (fbBlitz[diaKey]||{})[sdr] || {};
         var manual = parseInt(fbSdr.tentativas)||0;
-        if(manual > 0){
-          autoData[diaKey][sdr].tentativas += manual;
-          autoData[diaKey][sdr].pts = Object.keys(BLITZ_PTS).reduce(function(acc,f){
-            return acc + (autoData[diaKey][sdr][f]||0)*BLITZ_PTS[f];
-          }, 0);
-        }
+        if(manual > 0) autoData[diaKey][sdr].tentativas += manual;
+        // Presença na daily (0 ou 1)
+        autoData[diaKey][sdr].daily = fbSdr.daily ? 1 : 0;
+        // Recalcula pts incluindo daily
+        autoData[diaKey][sdr].pts = Object.keys(BLITZ_PTS).reduce(function(acc,f){
+          return acc + (autoData[diaKey][sdr][f]||0)*BLITZ_PTS[f];
+        }, 0);
       });
     });
   } catch(e){ console.warn('blitz firebase read:', e); }
@@ -20386,6 +20387,17 @@ async function loadAudensBlitz(){
   }
   el.innerHTML = renderAudensBlitz(data);
   _blitzStartCountdown();
+}
+
+async function _blitzToggleDaily(dia, sdr){
+  try{
+    if(!fbDb)initFirebase();
+    if(!fbDb)return;
+    var snap=await fbDb.ref('blitz/'+dia+'/'+sdr+'/daily').once('value');
+    var cur=snap.val()||false;
+    await fbDb.ref('blitz/'+dia+'/'+sdr+'/daily').set(!cur);
+    loadAudensBlitz();
+  }catch(e){console.error('_blitzToggleDaily',e);}
 }
 
 function renderAudensBlitz(data){
@@ -20428,11 +20440,13 @@ function renderAudensBlitz(data){
   }).join('');
   var selTotal = diaSel==='total';
   diaBtns += '<button onclick="blitzSelDia(\'total\')'+'" style="padding:5px 14px;border-radius:7px;cursor:pointer;'+FBC+'font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;'+(selTotal?'background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.45);color:#a78bfa;':'background:transparent;border:1px solid var(--border);color:var(--muted);')+'">TOTAL</button>';
-  var cols = [['tentativas','Tentativas','×1'],['reunioes','Reuniões','×8'],['realizadas','Realizadas','×3'],['contratos','Contratos','×20']];
-  var tot = {tentativas:0,reunioes:0,realizadas:0,contratos:0,pts:0};
+  var cols = [['tentativas','Tentativas','×1'],['reunioes','Reuniões','×3'],['realizadas','Realizadas','×8'],['contratos','Contratos','×20']];
+  var isLucas=CU&&(CU.name==='Lucas'||CU.email==='lucas@audens.com'||CU.closer==='Lucas');
+  var tot = {tentativas:0,reunioes:0,realizadas:0,contratos:0,daily:0,pts:0};
   var thStyle = 'padding:8px 12px;'+FBC+'font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--border2);';
   var thead = '<tr><th style="'+thStyle+'text-align:left;">Vendedor</th>'+
     cols.map(function(c){ return '<th style="'+thStyle+'">'+c[1]+' <span style="color:rgba(255,255,255,0.25);font-size:9px;">'+c[2]+'</span></th>'; }).join('')+
+    '<th style="'+thStyle+'color:#fbbf24;">Daily <span style="color:rgba(255,255,255,0.25);font-size:9px;">×8</span></th>'+
     '<th style="'+thStyle+'">Pts</th></tr>';
   var rows = BLITZ_VENDEDORES.map(function(v){
     var tds = cols.map(function(c){
@@ -20442,17 +20456,29 @@ function renderAudensBlitz(data){
       var onclick = val > 0 ? ' onclick="_blitzDetail(\''+diaSel+'\',' + '\''+v+'\',' + '\''+c[0]+'\')"' : '';
       return '<td style="padding:10px 12px;text-align:center;font-weight:700;font-size:14px;color:'+(val>0?'var(--white)':'var(--muted)')+';'+clickable+'"'+onclick+'>'+val+'</td>';
     }).join('');
+    // Daily presence cell
+    var dVal = g(diaSel, v, 'daily');
+    tot.daily = (tot.daily||0) + dVal;
+    var dailyCell;
+    if(diaSel==='total'){
+      dailyCell = '<td style="padding:10px 12px;text-align:center;font-weight:700;font-size:14px;color:'+(dVal>0?'#fbbf24':'var(--muted)')+';">'+dVal+'</td>';
+    } else if(isLucas){
+      dailyCell = '<td style="padding:10px 12px;text-align:center;"><button onclick="_blitzToggleDaily(\''+diaSel+'\',\''+v+'\')" style="background:'+(dVal?'rgba(251,191,36,0.18)':'rgba(255,255,255,0.04)')+';border:1px solid '+(dVal?'rgba(251,191,36,0.4)':'var(--border)')+';border-radius:8px;padding:5px 16px;cursor:pointer;font-size:20px;color:'+(dVal?'#fbbf24':'var(--muted)')+';" title="'+(dVal?'Presente — clique para remover':'Marcar presença na daily')+'">'+(dVal?'✓':'—')+'</button></td>';
+    } else {
+      dailyCell = '<td style="padding:10px 12px;text-align:center;font-size:20px;color:'+(dVal?'#fbbf24':'var(--muted)')+';">'+(dVal?'✓':'—')+'</td>';
+    }
     var p = ptsOf(diaSel, v);
     tot.pts += p;
     return '<tr style="border-bottom:1px solid var(--border);">'+
       '<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:8px;">'+_blitzAv(v)+'<span style="font-weight:700;color:var(--white);'+FBC+'font-size:14px;letter-spacing:0.5px;">'+esc(v)+'</span></div></td>'+
-      tds+
+      tds+dailyCell+
       '<td style="padding:10px 12px;text-align:center;"><span style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(p>0?'#fde047':'var(--muted)')+';">'+p+'</span></td>'+
     '</tr>';
   }).join('');
   var tfoot = '<tr style="background:rgba(255,255,255,0.03);">'+
     '<td style="padding:10px 12px;'+FBC+'font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Total</td>'+
     cols.map(function(c){ return '<td style="padding:10px 12px;text-align:center;font-weight:700;color:var(--white);">'+tot[c[0]]+'</td>'; }).join('')+
+    '<td style="padding:10px 12px;text-align:center;font-weight:700;color:#fbbf24;">'+(tot.daily||0)+'</td>'+
     '<td style="padding:10px 12px;text-align:center;"><span style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">'+tot.pts+'</span></td>'+
   '</tr>';
   var placar = '<div style="'+CARD+'margin-bottom:20px;">'+
@@ -20461,7 +20487,7 @@ function renderAudensBlitz(data){
       '<div style="display:flex;gap:6px;">'+diaBtns+'</div>'+
     '</div>'+
     '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+thead+rows+tfoot+'</table></div>'+
-    '<div style="margin-top:10px;font-size:11px;color:var(--muted);'+FBC+'letter-spacing:0.5px;">Pontuação automática (CRM): tentativa 1pt · reunião 3pt · realizada 8pt · contrato 20pt</div>'+
+    '<div style="margin-top:10px;font-size:11px;color:var(--muted);'+FBC+'letter-spacing:0.5px;">Pontuação automática (CRM): tentativa 1pt · reunião 3pt · realizada 8pt · contrato 20pt · daily 8pt</div>'+
   '</div>';
 
   // ---------- D) Prioridade de abordagem ----------
