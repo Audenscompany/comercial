@@ -9790,17 +9790,20 @@ function renderReunioes(){
 
   function statusBadge(m){
     var fu=getFu(m);
+    var dt=m.dtISO?new Date(m.dtISO):null;
+    var isFuture=dt&&dt>now;
     if(fu){
       if(fu.resultado==='venda')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">🏆 Venda</span>';
       if(fu.resultado==='proposta')return '<span style="background:rgba(59,130,246,0.15);color:#3b82f6;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Proposta</span>';
-      if(fu.comparecimento==='nao')return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">No-show</span>';
-      if(fu.comparecimento==='sim')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Realizada</span>';
+      if(!isFuture&&fu.comparecimento==='nao')return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">No-show</span>';
+      if(!isFuture&&fu.comparecimento==='sim')return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Realizada</span>';
     }
-    var st=(m.status||'').toLowerCase();
-    if(st.includes('noshow')||st.includes('no-show'))return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">No-show</span>';
-    if(isRealizada(m.status))return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Realizada</span>';
-    var dt=m.dtISO?new Date(m.dtISO):null;
-    if(dt&&dt<now)return '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">⏳ Pendente</span>';
+    if(!isFuture){
+      var st=(m.status||'').toLowerCase();
+      if(st.includes('noshow')||st.includes('no-show'))return '<span style="background:rgba(239,68,68,0.15);color:#ef4444;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">No-show</span>';
+      if(isRealizada(m.status))return '<span style="background:rgba(34,197,94,0.15);color:#22c55e;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Realizada</span>';
+      if(dt&&dt<now)return '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">⏳ Pendente</span>';
+    }
     return '<span style="background:rgba(107,114,128,0.15);color:#9ca3af;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;">Agendada</span>';
   }
   function fmtDt(iso){if(!iso)return '—';var d=new Date(iso);return d.getDate().toString().padStart(2,'0')+'/'+(d.getMonth()+1).toString().padStart(2,'0')+' '+d.getHours().toString().padStart(2,'0')+'h';}
@@ -9841,9 +9844,9 @@ function renderReunioes(){
   // ═══ TAB: HOJE ══════════════════════════════════════════════════════════════
   if(tab==='hoje'){
     // Mini KPIs for today
-    var tReal=todayMeets.filter(isReal).length;
-    var tNs=todayMeets.filter(isNs).length;
-    var tPend=todayMeets.filter(function(m){var fu=getFu(m);if(fu)return false;var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt<=now;}).length;
+    var tReal=todayMeets.filter(function(m){var dt=m.dtISO?new Date(m.dtISO):null;if(dt&&dt>now)return false;return isReal(m);}).length;
+    var tNs=todayMeets.filter(function(m){var dt=m.dtISO?new Date(m.dtISO):null;if(dt&&dt>now)return false;return isNs(m);}).length;
+    var tPend=todayMeets.filter(function(m){var fu=getFu(m);if(fu&&(fu.comparecimento))return false;var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt<=now&&!isReal(m)&&!isNs(m);}).length;
     var tFut=todayMeets.filter(function(m){var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt>now;}).length;
 
     H+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">';
