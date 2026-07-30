@@ -20232,18 +20232,25 @@ function _blitzDetail(dia, vendedor, campo){
   });
 
   var diaLabel = dia === 'total' ? 'TOTAL (Qua-Sex)' : dias[0].split('-').slice(1).reverse().join('/');
+  var isLucasDetail = CU&&(CU.name==='Lucas'||CU.email==='lucas@audens.com'||CU.closer==='Lucas');
   var rows = allLeads.length ? allLeads.map(function(m){
     if(!m) return '';
     var nome = m.nome || m.nomeCliente || '—';
     var dt = m.dtISO ? m.dtISO.slice(0,10).split('-').reverse().join('/') : '—';
     var origem = m.origem || '—';
-    var status = m.status || '—';
+    var overrideBtn = '';
+    if(campo==='contratos'&&isLucasDetail&&m._fuKey){
+      var curSdr=m._overrideSdr||vendedor;
+      var opts=['Lucas','Gustavo','João'].filter(function(s){return s!==curSdr;});
+      overrideBtn='<button onclick="_blitzOverrideContrato(''+m._fuKey+'',this)" title="Corrigir SDR" style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:6px;color:#fbbf24;padding:3px 8px;font-size:10px;cursor:pointer;white-space:nowrap;">✎ '+(m._overrideSdr||'corrigir')+'</button>';
+    }
     return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
       '<td style="padding:8px 12px;font-size:12px;color:var(--white);font-weight:500;">'+nome+'</td>'+
       '<td style="padding:8px 12px;font-size:11px;color:var(--muted);">'+dt+'</td>'+
       '<td style="padding:8px 12px;font-size:11px;color:var(--muted);">'+origem+'</td>'+
+      '<td style="padding:6px 8px;">'+overrideBtn+'</td>'+
       '</tr>';
-  }).join('') : '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum lead encontrado.</td></tr>';
+  }).join('') : '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum lead encontrado.</td></tr>';
 
   var html = '<div class="modal-ov active" id="modal-blitz-detail" onclick="if(event.target===this)document.getElementById(\'modal-blitz-detail\').remove()">'+
     '<div class="modal-box" style="max-width:480px;">'+
@@ -20262,6 +20269,7 @@ function _blitzDetail(dia, vendedor, campo){
             '<th style="padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">Lead</th>'+
             '<th style="padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">Data Reunião</th>'+
             '<th style="padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">Origem</th>'+
+            '<th style="border-bottom:1px solid var(--border);"></th>'+
           '</tr></thead>'+
           '<tbody>'+rows+'</tbody>'+
         '</table>'+
@@ -20320,6 +20328,12 @@ async function loadAudensBlitz(){
   // Calcula placar automático dos SDRs a partir de meetings + followups
   var BLITZ_DIAS_KEYS = ['2026-07-29','2026-07-30','2026-07-31'];
   var BLITZ_SDRS = ['Lucas','Gustavo','Jo\u00e3o'];
+  // Carrega overrides de SDR para contratos (ex: reunião criada pelo Lucas mas agendada pelo João)
+  var _contratosOverride = {};
+  try {
+    var _ovSnap = await fbDb.ref('blitz/contratos_override').once('value');
+    _contratosOverride = _ovSnap.val() || {};
+  } catch(e){ _contratosOverride = {}; }
   var autoData = {};
   BLITZ_DIAS_KEYS.forEach(function(diaKey){
     autoData[diaKey] = {};
@@ -20348,14 +20362,17 @@ async function loadAudensBlitz(){
       Object.values(window.followups||{}).forEach(function(fu){
         if(fu.resultado !== 'venda') return;
         var m2 = (window.meetings||{})[fu.meetingId];
-        var mSdr2 = normCloserName((m2?(m2.sdrName||m2.sdr||''):'')||fu.sdrNome||'');
+        // Verifica override manual de SDR (Lucas pode reatribuir um contrato para João/Gustavo)
+        var _fuKey = fu.meetingId || Object.keys(window.followups||{}).find(function(k){return window.followups[k]===fu;}) || '';
+        var _overrideSdr = _fuKey && _contratosOverride[_fuKey] ? _contratosOverride[_fuKey] : null;
+        var mSdr2 = _overrideSdr ? normCloserName(_overrideSdr) : normCloserName((m2?(m2.sdrName||m2.sdr||''):'')||fu.sdrNome||'');
         if(mSdr2 !== normCloserName(sdr)) return;
         var dt = typeof _vendaDate === 'function' ? _vendaDate(fu, m2) : null;
         if(!dt) return;
         var dtKey = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
         if(dtKey !== diaKey) return;
         stats.contratos++;
-        leads.contratos.push(m2||{nome:fu.nomeCliente||'',_fu:fu});
+        leads.contratos.push(Object.assign({},m2||{nome:fu.nomeCliente||''},{_fu:fu,_fuKey:_fuKey,_overrideSdr:_overrideSdr}));
       });
       stats.pts = stats.tentativas*1 + stats.reunioes*3 + stats.realizadas*8 + stats.contratos*20;
       stats._leads = leads;
@@ -20388,6 +20405,24 @@ async function loadAudensBlitz(){
   }
   el.innerHTML = renderAudensBlitz(data);
   _blitzStartCountdown();
+}
+
+async function _blitzOverrideContrato(fuKey, btn){
+  var sdrs = ['Lucas','Gustavo','João'];
+  var cur = btn ? btn.textContent.replace('✎ ','').trim() : '';
+  // Rotate to next SDR
+  var idx = sdrs.indexOf(cur);
+  var next = sdrs[(idx+1)%sdrs.length];
+  var confirmed = confirm('Atribuir este contrato para '+next+'?');
+  if(!confirmed) return;
+  try{
+    if(!fbDb)initFirebase();
+    await fbDb.ref('blitz/contratos_override/'+fuKey).set(next);
+    loadAudensBlitz();
+    var old=document.getElementById('modal-blitz-detail');if(old)old.remove();
+  }catch(e){
+    alert('Erro: '+e.message);
+  }
 }
 
 async function _blitzToggleDaily(dia, sdr){
