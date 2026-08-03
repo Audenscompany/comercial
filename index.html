@@ -25201,33 +25201,19 @@ function editarMetaVendas(){
 }
 
 async function loadVendasSheets(){
+  // Firebase é a fonte de verdade — usa o cache já computado por renderVendas() (deduped + assinaturas + contratos extras)
   var now=new Date();
   var filtM=_vendasMesFiltro?_vendasMesFiltro.m:now.getMonth();
   var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
   try{
-    // Garante que contratos cancelados estão carregados (preenche _cancelledContratoKeys)
-    await loadContratos();
-    var isCurrentMonth=(filtM===now.getMonth()&&filtY===now.getFullYear());
-    var finalCount=0;
-    if(isCurrentMonth){
-      // Mês atual: usa o cache já computado pelo renderVendas() (deduped + assinaturas + contratos extras)
-      var _cache=window._vendasDataCache;
-      if(_cache&&_cache.length>0){
-        finalCount=_cache.filter(function(v){
-          var dt=_vendaDate(v.fu,v.m);
-          if(!dt&&v.fu.dataInicio)dt=new Date(v.fu.dataInicio+'T12:00:00');
-          if(!dt&&v.m&&v.m.dtISO)dt=new Date(v.m.dtISO);
-          return dt&&dt.getMonth()===filtM&&dt.getFullYear()===filtY;
-        }).length;
-      }
-    }else{
-      // Meses anteriores: Sheets
-      var data=await loadDataHybrid();
-      finalCount=(data.clientes&&data.clientes.rows||[]).filter(function(c){
-        var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INÍCIO','Data de Inicio','Data Inicio','DataInicio']));
-        return d&&d.getMonth()===filtM&&d.getFullYear()===filtY;
-      }).length;
-    }
+    var _cache=window._vendasDataCache;
+    if(!_cache||!_cache.length)return;
+    var finalCount=_cache.filter(function(v){
+      var dt=_vendaDate(v.fu,v.m);
+      if(!dt&&v.fu.dataInicio)dt=new Date(v.fu.dataInicio+'T12:00:00');
+      if(!dt&&v.m&&v.m.dtISO)dt=new Date(v.m.dtISO);
+      return dt&&dt.getMonth()===filtM&&dt.getFullYear()===filtY;
+    }).length;
     if(finalCount>0){
       var el=document.getElementById('v-total-vendas');
       if(el)el.textContent=finalCount;
