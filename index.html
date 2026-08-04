@@ -27217,21 +27217,63 @@ function _carDrawVerified(ctx,cx,cy,r){
   ctx.closePath();ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=r*0.22;ctx.lineCap='round';ctx.lineJoin='round';
   ctx.beginPath();ctx.moveTo(cx-r*0.42,cy+r*0.02);ctx.lineTo(cx-r*0.1,cy+r*0.34);ctx.lineTo(cx+r*0.46,cy-r*0.3);ctx.stroke();
 }
+function _carCoverMonth(){
+  var mn=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  var now=new Date();return mn[now.getMonth()]+', @'+now.getFullYear();
+}
+function _carDrawTopBarCover(ctx){
+  var p=_carState.profile,fH=104,mX=40,fY=44,fW=_carW-mX*2;
+  _carRR(ctx,mX,fY,fW,fH,fH/2);
+  ctx.fillStyle='rgba(15,15,17,0.72)';ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.textBaseline='middle';var cy=fY+fH/2,gx=mX+42;
+  var gr=ctx.createLinearGradient(gx-30,cy-30,gx+30,cy+30);gr.addColorStop(0,'#ffa000');gr.addColorStop(.5,'#ff1b5e');gr.addColorStop(1,'#8a2be2');
+  ctx.strokeStyle=gr;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(gx,cy,28,0,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.55)';ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.arc(gx,cy,15,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(gx,cy-15);ctx.lineTo(gx,cy+15);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(gx,cy,6.5,15,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(gx-15,cy);ctx.lineTo(gx+15,cy);ctx.stroke();
+  var tx=gx+48;ctx.textAlign='left';
+  ctx.font='600 26px Poppins';ctx.fillStyle='rgba(255,255,255,0.92)';ctx.fillText(p.name||'',tx,cy-14);
+  ctx.font='400 22px Poppins';ctx.fillStyle='rgba(255,255,255,0.42)';ctx.fillText(p.handle||'',tx,cy+16);
+  var dx=tx+Math.max(ctx.measureText(p.name||'').width,220)+38;
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(dx,cy-24);ctx.lineTo(dx,cy+24);ctx.stroke();
+  var cx2=dx+26;
+  ctx.font='600 24px Poppins';ctx.fillStyle='rgba(255,255,255,0.85)';ctx.fillText('Marketing',cx2,cy-14);
+  ctx.font='400 20px Poppins';ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fillText('Food Service',cx2,cy+16);
+  ctx.textAlign='right';ctx.font='500 24px Poppins';ctx.fillStyle='rgba(255,255,255,0.6)';ctx.fillText(_carCoverMonth(),mX+fW-40,cy);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+}
+function _carDrawPillCenteredCover(ctx,cx,cy){
+  var p=_carState.profile,aR=40,padL=12,gap=16,hV=p.verified?46:0;
+  ctx.font='500 38px Poppins';var hw=ctx.measureText(p.handle).width;
+  var pw=padL+aR*2+gap+hw+hV+22,ph=aR*2+20;var x=cx-pw/2,y=cy-ph/2;
+  _carRR(ctx,x,y,pw,ph,ph/2);ctx.fillStyle='rgba(15,15,17,0.82)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.16)';ctx.lineWidth=1.5;ctx.stroke();
+  var ax=x+padL+aR,ay=y+ph/2;_carDrawAR(ctx,ax,ay,aR);
+  ctx.fillStyle='#fff';ctx.font='500 38px Poppins';ctx.textAlign='left';ctx.textBaseline='middle';
+  var hx=ax+aR+gap;ctx.fillText(p.handle,hx,ay+2);
+  if(p.verified)_carDrawVerified(ctx,hx+hw+24,ay,17);
+  ctx.textBaseline='alphabetic';
+}
 function _carDrawCover(ctx,slide){
   ctx.fillStyle='#000';ctx.fillRect(0,0,_carW,_carH);
-  if(slide.img){_carCF(ctx,slide.img,0,0,_carW,_carH,slide.imgOffX||0,slide.imgOffY||0,slide.imgZoom||1);}else{var g=ctx.createRadialGradient(_carW/2,420,80,_carW/2,500,900);g.addColorStop(0,'#3a2a18');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,_carH);}
-  var g2=ctx.createLinearGradient(0,0,0,_carH);g2.addColorStop(0,'rgba(0,0,0,0.25)');g2.addColorStop(.35,'rgba(0,0,0,0.05)');g2.addColorStop(.55,'rgba(0,0,0,0.45)');g2.addColorStop(.8,'rgba(0,0,0,0.86)');g2.addColorStop(1,'rgba(0,0,0,0.94)');ctx.fillStyle=g2;ctx.fillRect(0,0,_carW,_carH);
-  var size=_carState.coverSize;ctx.textAlign='left';ctx.textBaseline='alphabetic';var lines;
-  while(true){ctx.font='400 '+size+'px Anton';lines=_carWL(ctx,(slide.title||'').toUpperCase(),1000);if(lines.length<=5||size<=54)break;size-=4;}
-  var lineH=Math.round(size*1.18),bodyLines=[],bodyLineH=0;
-  if(slide.body){ctx.font='400 '+Math.max(34,_carState.bodySize-4)+'px Poppins';bodyLines=_carWL(ctx,slide.body,1000);bodyLineH=Math.round((_carState.bodySize-4)*1.5);}
-  var bodyBlockH=bodyLines.length?bodyLines.length*bodyLineH+30:0,titleBottom=1205-bodyBlockH,titleTop=titleBottom-lines.length*lineH,py=titleTop-95;
-  _carDrawAR(ctx,97,py,57);ctx.fillStyle='#fff';ctx.font='600 46px Poppins';ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=12;ctx.fillText(_carState.profile.name,172,py-4);
-  if(_carState.profile.verified){var nw2=ctx.measureText(_carState.profile.name).width;ctx.shadowBlur=0;_carDrawVerified(ctx,172+nw2+34,py-18,21);}
-  ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=12;ctx.fillStyle='#c9c9c9';ctx.font='400 38px Poppins';ctx.fillText(_carState.profile.handle,172,py+48);
-  ctx.fillStyle='#fff';ctx.font='400 '+size+'px Anton';ctx.shadowColor='rgba(0,0,0,0.75)';ctx.shadowBlur=22;lines.forEach(function(ln,i){ctx.fillText(ln,40,titleTop+lineH*(i+0.85));});
-  if(bodyLines.length){ctx.font='400 '+Math.max(34,_carState.bodySize-4)+'px Poppins';ctx.fillStyle='#ececec';bodyLines.forEach(function(ln,i){ctx.fillText(ln,40,titleBottom+40+bodyLineH*(i+0.7));});}
-  ctx.shadowBlur=0;_carDrawFooter(ctx,false);
+  if(slide.img){_carCF(ctx,slide.img,0,0,_carW,_carH,slide.imgOffX||0,slide.imgOffY||0,slide.imgZoom||1);}
+  else{var g=ctx.createRadialGradient(_carW/2,_carH*0.42,80,_carW/2,_carH*0.5,900);g.addColorStop(0,'#3a2a18');g.addColorStop(1,'#000');ctx.fillStyle=g;ctx.fillRect(0,0,_carW,_carH);}
+  var g2=ctx.createLinearGradient(0,0,0,_carH);g2.addColorStop(0,'rgba(0,0,0,0.45)');g2.addColorStop(.25,'rgba(0,0,0,0.05)');g2.addColorStop(.58,'rgba(0,0,0,0.4)');g2.addColorStop(.82,'rgba(0,0,0,0.9)');g2.addColorStop(1,'rgba(0,0,0,0.98)');ctx.fillStyle=g2;ctx.fillRect(0,0,_carW,_carH);
+  _carDrawTopBarCover(ctx);
+  var cx=_carW/2,size=_carState.coverSize+8,lines;
+  ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  while(true){ctx.font='700 '+size+'px Poppins';lines=_carWL(ctx,slide.title||'',_carW-120);if(lines.length<=5||size<=58)break;size-=4;}
+  var lineH=Math.round(size*1.14);
+  var bottomHint=_carH-70,blockBottom=bottomHint-70,titleTop=blockBottom-lines.length*lineH;
+  ctx.fillStyle='#fff';ctx.font='700 '+size+'px Poppins';ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=24;
+  lines.forEach(function(ln,i){ctx.fillText(ln,cx,titleTop+lineH*(i+0.85));});
+  ctx.shadowBlur=0;
+  _carDrawPillCenteredCover(ctx,cx,titleTop-74);
+  ctx.textAlign='center';ctx.font='500 26px Poppins';ctx.fillStyle='rgba(255,255,255,0.65)';
+  ctx.fillText(_carState.footerText||'Arrasta para o lado ›',cx,bottomHint);
+  ctx.textAlign='left';
 }
 function _carDrawProfilePillBody(ctx,x,y){
   var p=_carState.profile,aR=44,padL=14,gap=20;
