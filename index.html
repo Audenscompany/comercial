@@ -27158,14 +27158,59 @@ var _carBanco=[
   {id:'p5',label:'Gestão & rotina',cor:'#3b82f6',titulos:['Fechar na segunda pode estar te custando mais caro do que você imagina','A rotina de 1h por semana que substitui "apagar incêndio" por gestão','Os 5 relatórios que todo dono de delivery deveria olhar','Como sair da operação sem a operação desabar (meu passo a passo real)','Equipe desmotivada não é falta de mimo. É falta disso aqui.','O checklist de abertura e fechamento que reduziu meu desperdício em 30%','Como eu treino atendente para vender mais sem parecer vendedor','Dono que faz tudo = negócio que não cresce. Por onde começar a delegar.','Estoque: a rotina de 20 minutos que evita compra no desespero','Como lidar com avaliação 1 estrela (o script que transforma hater em cliente)','Horário de pico: como preparar a cozinha para não travar na sexta à noite','Meta para equipe de delivery: como definir sem criar guerra interna','O que eu automatizei na minha operação (e o que nunca vou automatizar)','Sazonalidade existe. Despreparo também. Como planejar os meses fracos.','Por que eu abro no domingo (e os números que sustentam a decisão)']},
   {id:'p6',label:'Opinião quente',cor:'#f97316',titulos:['O iFood não é vilão. Dono despreparado é. (opinião impopular)','Delivery no Brasil virou uma guerra de desconto — e todo mundo está perdendo','A verdade sobre a taxa do entregador que ninguém quer discutir','"Cliente não tem dinheiro" é a desculpa mais cara do food service','Por que eu NÃO abriria franquia de hamburgueria em 2026','Hambúrguer artesanal morreu? O que os números mostram','Agências genéricas estão quebrando restaurantes — e cobram caro por isso','O salário justo de um chapeiro em 2026 (preparado para o debate?)','Dark kitchen: promessa de ouro ou cilada? Minha visão depois de operar delivery','Se eu fosse o iFood, faria isso com as taxas (análise fria)','Restaurante que não coleta dado de cliente vai morrer. Prazo: 2 anos.','A geração que quer abrir negócio mas não quer operar negócio','Por que 80% dos deliveries fecham em 2 anos','Cardápio com 60 itens é insegurança, não variedade','O maior concorrente da sua hamburgueria não é outra hamburgueria']}
 ];
+var _carUsados=(function(){try{return JSON.parse(localStorage.getItem('car_titulos_usados')||'[]');}catch(e){return [];}})();
+function _carSalvaUsados(){
+  try{localStorage.setItem('car_titulos_usados',JSON.stringify(_carUsados));}catch(e){}
+  try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('carrossel/titulos_usados').set(_carUsados);}catch(e){}
+}
+function carTituloUsado(t){return _carUsados.indexOf(t)>=0;}
+function carToggleUsado(t,ev){
+  if(ev){ev.stopPropagation();}
+  var i=_carUsados.indexOf(t);
+  if(i>=0)_carUsados.splice(i,1);else _carUsados.push(t);
+  _carSalvaUsados();carRenderBanco();
+}
 function carUsarTitulo(t){
   var bt=document.getElementById('car-batch');if(!bt)return;
   var v=bt.value.trim();
   if(v){ if(!confirm('Inserir "'+t.slice(0,40)+'..." como capa? (o texto atual será mantido abaixo)')) return;
     bt.value=t+'\n\n'+v;
   } else { bt.value=t; }
-  carToast('Título inserido na capa');
-  var sel=document.getElementById('car-banco-sel');if(sel)sel.value='';
+  // marca automaticamente como usado
+  if(!carTituloUsado(t)){_carUsados.push(t);_carSalvaUsados();}
+  carRenderBanco();
+  carToast('Título inserido na capa e marcado como usado');
+  var busca=document.getElementById('car-banco-busca');
+}
+function carRenderBanco(){
+  var box=document.getElementById('car-banco-list');if(!box)return;
+  var q=(document.getElementById('car-banco-busca')||{}).value||'';
+  q=q.toLowerCase().trim();
+  var soDisp=(document.getElementById('car-banco-filtro')||{}).checked;
+  var total=0,usados=0;
+  _carBanco.forEach(function(p){p.titulos.forEach(function(t){total++;if(carTituloUsado(t))usados++;});});
+  var cnt=document.getElementById('car-banco-cont');
+  if(cnt)cnt.textContent=usados+'/'+total+' usados';
+  var html='';
+  _carBanco.forEach(function(p){
+    var rows=p.titulos.filter(function(t){
+      if(q&&t.toLowerCase().indexOf(q)<0)return false;
+      if(soDisp&&carTituloUsado(t))return false;
+      return true;
+    });
+    if(!rows.length)return;
+    html+='<div style="font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+p.cor+';margin:12px 0 6px;">'+p.label+'</div>';
+    rows.forEach(function(t){
+      var used=carTituloUsado(t);
+      var e=t.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      html+='<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:8px;margin-bottom:4px;background:'+(used?'rgba(255,255,255,0.02)':'rgba(255,255,255,0.04)')+';border:1px solid '+(used?'transparent':'var(--border)')+';">'+
+        '<div onclick="carToggleUsado(\''+e+'\',event)" title="'+(used?'Marcar como não usado':'Marcar como usado')+'" style="flex-shrink:0;width:18px;height:18px;border-radius:5px;border:1.5px solid '+(used?'#39d98a':'var(--border2,#555)')+';background:'+(used?'#39d98a':'transparent')+';cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;">'+(used?'<i class="ti ti-check" style="font-size:12px;color:#0a0a0a;"></i>':'')+'</div>'+
+        '<div onclick="carUsarTitulo(\''+e+'\')" style="flex:1;font-size:12px;line-height:1.4;cursor:pointer;color:'+(used?'var(--muted)':'var(--white)')+';text-decoration:'+(used?'line-through':'none')+';">'+t+'</div>'+
+        '</div>';
+    });
+  });
+  if(!html)html='<div style="color:var(--muted);font-size:11px;padding:16px;text-align:center;">Nenhum título encontrado.</div>';
+  box.innerHTML=html;
 }
 var _carState={slides:[],profile:{name:'',handle:'',verified:true,avatar:null},footerText:'Arrasta para o lado >',followBadge:true,coverSize:80,innerSize:86,bodySize:42,imgHeight:52};
 var _carTargetSlide=-1,_carW=1080,_carH=1350;
@@ -27578,6 +27623,16 @@ async function carInitPage(){
   // Load saved OpenAI key
   var savedKey=localStorage.getItem('audens_openai_key');
   if(savedKey){var ki=document.getElementById('car-img-key');if(ki){ki.value=savedKey;var ks=document.getElementById('car-key-status');if(ks)ks.style.display='block';}}
+  // Banco de títulos — carrega usados do Firebase e renderiza a lista
+  try{
+    if(typeof fbDb!=='undefined'&&fbDb){
+      fbDb.ref('carrossel/titulos_usados').once('value').then(function(snap){
+        var v=snap.val();
+        if(Array.isArray(v)&&v.length){_carUsados=v;try{localStorage.setItem('car_titulos_usados',JSON.stringify(v));}catch(e){}}
+        carRenderBanco();
+      }).catch(function(){carRenderBanco();});
+    }else{carRenderBanco();}
+  }catch(e){carRenderBanco();}
   // Load daily brief from Firebase (image style + story/reels ideas)
   _carLoadDailyBrief();
 }
@@ -27753,7 +27808,7 @@ function renderCarrossel(){
         '<div style="padding:18px 20px 24px;overflow-y:auto;max-height:calc(100vh - 230px);">'+
           // ── Conteúdo ──
           '<div id="car-pane-conteudo">'+
-            '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Banco de títulos (90)</div>'+'<select id="car-banco-sel" onchange="if(this.value)carUsarTitulo(this.value)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;margin-bottom:6px;">'+'<option value="">Escolha um título pronto...</option>'+_carBanco.map(function(p){return '<optgroup label="'+p.label+'">'+p.titulos.map(function(t){var e=t.replace(/"/g,"&quot;");return '<option value="'+e+'">'+e+'</option>';}).join('')+'</optgroup>';}).join('')+'</select>'+'<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:18px;">O título vira a capa. Complete o corpo dos demais slides abaixo.</div>'+'<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Texto em lote</div>'+
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+'<span style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Banco de títulos</span>'+'<span id="car-banco-cont" style="font-size:10px;font-weight:700;color:#39d98a;">0/90 usados</span>'+'</div>'+'<input id="car-banco-busca" oninput="carRenderBanco()" placeholder="Buscar título..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:9px 12px;outline:none;box-sizing:border-box;margin-bottom:6px;">'+'<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px;color:var(--muted);margin-bottom:8px;"><input type="checkbox" id="car-banco-filtro" onchange="carRenderBanco()" style="accent-color:var(--accent);width:14px;height:14px;"> Esconder os que já usei</label>'+'<div id="car-banco-list" style="max-height:280px;overflow-y:auto;padding-right:4px;margin-bottom:8px;"></div>'+'<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:18px;">Clique no título para virar capa (marca como usado). Clique no ✓ para marcar/desmarcar manualmente.</div>'+'<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Texto em lote</div>'+
             '<textarea id="car-batch" style="width:100%;min-height:180px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:11px 12px;outline:none;resize:vertical;line-height:1.5;" placeholder="Título (Linha 1)&#10;Corpo (Linhas seguintes)&#10;&#10;Linha vazia separa slides. 1º bloco = capa."></textarea>'+
             '<button onclick="carApplyBatch()" style="display:block;width:100%;margin-top:10px;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Aplicar texto</button>'+
             '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;margin-bottom:18px;">1ª linha = título · restante = corpo · 1º bloco = capa</div>'+
