@@ -27974,6 +27974,7 @@ function renderCarrossel(){
     // Tabs
     +'<div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;">'
     +'<div onclick="carRSwitchTab(\'editor\')" id="crt-editor" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:#a78bfa;border-bottom:2px solid #7c3aed;letter-spacing:.5px;">EDITOR</div>'
+    +'<div onclick="carRSwitchTab(\'imagem\')" id="crt-imagem" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">IMAGEM</div>'
     +'<div onclick="carRSwitchTab(\'ia\')" id="crt-ia" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">IA</div>'
     +'<div onclick="carRSwitchTab(\'design\')" id="crt-design" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">DESIGN</div>'
     +'</div>'
@@ -27990,7 +27991,33 @@ function renderCarrossel(){
     +'</div>'
     +'<button onclick="carDownloadSlide(_carCurIdx)" style="width:100%;padding:8px;margin-top:6px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;color:rgba(255,255,255,0.4);font-size:10px;cursor:pointer;">↓ Download slide atual</button>'
     +'</div></div>'
-    // ── IA PANE ──
+    // \u2500\u2500 IMAGEM PANE \u2500\u2500
+    +'<div id="car-pane-imagem" style="flex:1;overflow-y:auto;padding:14px;display:none;flex-direction:column;gap:11px;">'
+    +'<div style="background:rgba(225,48,108,0.08);border:1px solid rgba(225,48,108,0.2);border-radius:8px;padding:9px 10px;font-size:10.5px;color:rgba(255,255,255,0.55);line-height:1.5;">A imagem entra como <b>fundo</b>. Use na <b>capa</b> (slide 1). Os demais slides ficam com fundo preto.</div>'
+    // OpenAI key
+    +'<div><div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:5px;">CHAVE OPENAI (imagens)</div>'
+    +'<div style="display:flex;gap:6px;">'
+    +'<input type="password" id="car-img-key" placeholder="sk-..." value="'+(localStorage.getItem('audens_openai_key')||'')+'" style="flex:1;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#fff;font-size:11px;">'
+    +'<button onclick="_carSaveImgKey()" style="padding:7px 10px;background:#e1306c;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;">OK</button>'
+    +'</div>'
+    +'<div id="car-key-status" style="font-size:9px;color:#39d98a;margin-top:4px;display:'+(localStorage.getItem('audens_openai_key')?'block':'none')+';">Chave salva no navegador</div></div>'
+    // Model + quality
+    +'<div style="display:flex;gap:8px;">'
+    +'<div style="flex:1;"><div style="font-size:9px;color:rgba(255,255,255,0.3);margin-bottom:4px;">Modelo</div><select id="car-img-model" onchange="carUpdateEstimate()" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;font-size:11px;padding:7px 8px;"><option value="gpt-image-1.5">gpt-image-1.5</option><option value="gpt-image-1-mini">mini (barato)</option></select></div>'
+    +'<div style="flex:1;"><div style="font-size:9px;color:rgba(255,255,255,0.3);margin-bottom:4px;">Qualidade</div><select id="car-img-quality" onchange="carUpdateEstimate()" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;font-size:11px;padding:7px 8px;"><option value="low">Baixa</option><option value="medium" selected>Média</option><option value="high">Alta</option></select></div>'
+    +'</div>'
+    // Style
+    +'<div><div style="font-size:9px;color:rgba(255,255,255,0.3);margin-bottom:4px;">Estilo visual da imagem</div>'
+    +'<textarea id="car-img-style" rows="4" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 10px;color:#fff;font-size:11px;line-height:1.45;resize:vertical;box-sizing:border-box;">'+_carImgStyleDefault+'</textarea></div>'
+    // Buttons
+    +'<button onclick="carGerarImagemSlide(_carCurIdx,this)" style="width:100%;padding:10px;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">\ud83c\udfa8 Gerar imagem do slide atual</button>'
+    +'<button id="car-img-all-btn" onclick="carGerarTodasImagens()" style="width:100%;padding:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:rgba(255,255,255,0.7);font-size:11px;font-weight:600;cursor:pointer;">Gerar p/ todos os slides</button>'
+    +'<button onclick="_carUploadSlideImg()" style="width:100%;padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:7px;color:rgba(255,255,255,0.5);font-size:10px;cursor:pointer;">\ud83d\udcf7 Enviar imagem do computador</button>'
+    +'<button onclick="_carRemoveImg()" style="width:100%;padding:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:7px;color:#f87171;font-size:10px;cursor:pointer;">Remover imagem (fundo preto)</button>'
+    +'<div id="car-img-status" style="font-size:11px;line-height:1.5;min-height:14px;"></div>'
+    +'<div id="car-img-est" style="font-size:10px;color:rgba(255,255,255,0.3);line-height:1.5;"></div>'
+    +'</div>'
+    // \u2500\u2500 IA PANE \u2500\u2500
     +'<div id="car-pane-ia" style="flex:1;overflow-y:auto;padding:14px;display:none;flex-direction:column;gap:11px;">'
     // API Key
     +'<div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px;padding:10px;">'
@@ -28031,6 +28058,116 @@ function renderCarrossel(){
   return H;
 }
 
+// ===== GERAÇÃO DE IMAGEM POR IA (OpenAI gpt-image) =====
+var _carImgPrices={'gpt-image-1.5':{low:0.014,medium:0.051,high:0.20},'gpt-image-1-mini':{low:0.008,medium:0.017,high:0.054}};
+var _carGerandoLote=false;
+var _carImgStyleDefault='Fotografia cinematográfica e sombria para hamburgueria gourmet: fundo escuro, luz quente e dramática vinda de cima, vapor sutil, superfícies rústicas de madeira e metal, estilo editorial ultra realista, composição vertical com o terço inferior mais escuro para overlay de texto. A imagem NÃO pode conter nenhum texto, letra, número ou logotipo.';
+
+function _carSaveImgKey(){
+  var inp=document.getElementById('car-img-key');if(!inp)return;
+  var v=inp.value.trim();
+  window._carImgKey=v;
+  try{localStorage.setItem('audens_openai_key',v);}catch(e){}
+  carToast(v?'✅ Chave OpenAI salva!':'Chave removida');
+  var ks=document.getElementById('car-key-status');if(ks)ks.style.display=v?'block':'none';
+}
+
+function carUpdateEstimate(){
+  var el=document.getElementById('car-img-est');if(!el)return;
+  var n=_carState.slides.length||8;
+  var mdl=document.getElementById('car-img-model');var ql=document.getElementById('car-img-quality');
+  var p=(mdl&&ql&&_carImgPrices[mdl.value]&&_carImgPrices[mdl.value][ql.value])||0;
+  el.innerHTML='Custo estimado: <b>~US$ '+(p*n).toFixed(2)+'</b> · '+n+' slides (~US$ '+p.toFixed(3)+'/imagem)';
+}
+
+async function _carBuildImgPrompt(slide,idx){
+  var conceito=slide.text||'';
+  var _styleEl=document.getElementById('car-img-style');
+  var suffix=(_styleEl&&_styleEl.value.trim())||_carImgStyleDefault;
+  var ck=window._carApiKey||localStorage.getItem('car_api_key')||'';
+  if(!ck)return 'Cinematic food photography for a burger delivery Instagram carousel. Scene concept: "'+conceito+'". Dark editorial, warm dramatic lighting, food service environment, lower third darker for text overlay. '+suffix;
+  var total=_carState.slides.length,slideNum=(idx||0)+1;
+  var temaGeral=_carState.slides[0]?_carState.slides[0].text:'';
+  var cenasUsadas='';
+  for(var j=0;j<(idx||0);j++){var sj=_carState.slides[j];if(sj&&sj.imgDesc)cenasUsadas+='Slide '+(j+1)+': '+sj.imgDesc+'\n';}
+  var sysPt='You are a world-class food photography art director for Instagram carousels targeting burger restaurant owners and delivery operations. Your output is a single image generation prompt in English — nothing else.\n\nMISSION: Transform the slide concept into a PHOTOREALISTIC and CONCEPTUALLY CLEAR scene shot inside a real burger restaurant — not AI art, not stock, not clean studio.\n\nPHOTOREALISM: specify camera (Canon EOS R5, 85mm f/1.4, ISO 400-1600), real hard directional lighting, authentic food textures (maillard crust, cheese melt flow, brioche pores, grease spots), imperfections (crumbs, tilt, asymmetry), depth of field (what is sharp vs blurred), dark warm color grade (deep brown shadows, amber highlights), subtle film grain. NEVER use: perfect, beautiful, stunning, vibrant, glossy.\n\nSCENE UNIVERSE (food service only, no abstract symbols): burgers mid-assembly, patty on griddle with steam, cheese melting, hands placing toppings, kitchen during rush, ticket printer, delivery bags, packaging in motion, sauce pour, cross-section, POS screen. NO chess/hourglass/trophy/lightbulb/rocket metaphors.\n\nCOMPOSITION (vertical 4:5): main subject upper 60%, lower 35% darker and empty for text overlay. Vary angle each slide.\n\nOUTPUT: image prompt in English, 5-7 sentences. No titles, no bullets, no quotes. On a final line starting with "CENA:" write one short sentence in Portuguese describing the image.';
+  var userMsg='TEMA GERAL:\n"'+temaGeral+'"\n\nSLIDE '+slideNum+' de '+total+':\n"'+(slide.text||'')+'"\n\nCENAS JÁ USADAS:\n'+(cenasUsadas||'Nenhuma ainda.');
+  try{
+    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'x-api-key':ck,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,system:sysPt,messages:[{role:'user',content:userMsg}]})});
+    var d=await r.json();
+    if(d.error||!d.content||!d.content[0])throw new Error('fallback');
+    var text=d.content[0].text.trim();
+    var cenaMatch=text.match(/\nCENA:\s*(.+)/);
+    if(cenaMatch){slide.imgDesc=cenaMatch[1].trim();text=text.replace(/\nCENA:[\s\S]*$/,'').trim();}
+    else{slide.imgDesc=(text.split('.')[0]||'').trim()+'.';}
+    return text+'\n\n'+suffix;
+  }catch(e2){
+    return 'Cinematic burger restaurant food photography. Scene: "'+conceito+'". Dark editorial, warm dramatic lighting, authentic food service environment, lower third darker. '+suffix;
+  }
+}
+
+async function _carFetchImagem(slide,idx){
+  var key=window._carImgKey||localStorage.getItem('audens_openai_key')||'';
+  var keyEl=document.getElementById('car-img-key');
+  if(!key&&keyEl)key=keyEl.value.trim();
+  if(!key)throw new Error('Cole sua chave OpenAI na aba Imagem.');
+  var mdl=document.getElementById('car-img-model');
+  var ql=document.getElementById('car-img-quality');
+  var r=await fetch('https://api.openai.com/v1/images/generations',{
+    method:'POST',
+    headers:{'content-type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify({model:mdl?mdl.value:'gpt-image-1.5',prompt:await _carBuildImgPrompt(slide,idx),size:'1024x1536',quality:ql?ql.value:'medium',n:1})
+  });
+  var d=await r.json();
+  if(!r.ok)throw new Error(d.error&&d.error.message||('HTTP '+r.status));
+  var b64=d.data[0].b64_json;
+  var img=new Image();
+  await new Promise(function(res,rej){img.onload=res;img.onerror=rej;img.src='data:image/png;base64,'+b64;});
+  return img;
+}
+
+async function carGerarImagemSlide(i,btn){
+  i=(typeof i==='number')?i:_carCurIdx;
+  if(!_carState.slides[i]){carToast('Selecione um slide.');return;}
+  var st=document.getElementById('car-img-status');
+  try{
+    if(btn){btn.disabled=true;btn._t=btn.textContent;btn.textContent='Gerando...';}
+    if(st){st.style.color='rgba(255,255,255,0.5)';st.textContent='Gerando imagem do '+(i===0?'capa':'slide '+(i+1))+'...';}
+    _carState.slides[i].img=await _carFetchImagem(_carState.slides[i],i);
+    carDrawSlide(i);_carSelectSlide(i);_carRebuildTimeline();carScheduleSave();
+    if(st){st.style.color='#39d98a';st.textContent='✅ Imagem do '+(i===0?'capa':'slide '+(i+1))+' pronta!';}
+    carToast('Imagem gerada');
+  }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}carToast('Erro: '+e.message);}
+  if(btn){btn.disabled=false;btn.textContent=btn._t||'🎨 Gerar imagem de fundo';}
+}
+
+async function carGerarTodasImagens(){
+  if(_carGerandoLote)return;
+  if(!_carState.slides.length){carToast('Crie os slides primeiro.');return;}
+  var st=document.getElementById('car-img-status');
+  var key=window._carImgKey||localStorage.getItem('audens_openai_key')||'';
+  if(!key){if(st){st.style.color='#ff5c7a';st.textContent='Cole sua chave OpenAI acima.';}return;}
+  _carGerandoLote=true;
+  var btn=document.getElementById('car-img-all-btn');if(btn)btn.disabled=true;
+  var ok=0,falhas=[];
+  for(var i=0;i<_carState.slides.length;i++){
+    if(st){st.style.color='rgba(255,255,255,0.5)';st.textContent='Gerando imagem '+(i+1)+' de '+_carState.slides.length+'... ('+ok+' prontas)';}
+    try{_carState.slides[i].img=await _carFetchImagem(_carState.slides[i],i);carDrawSlide(i);ok++;}
+    catch(e){falhas.push((i+1)+': '+e.message);if(/api key|401|authent/i.test(e.message))break;}
+  }
+  _carRebuildTimeline();_carSelectSlide(_carCurIdx);carScheduleSave();
+  if(st){st.style.color=falhas.length?'#ff5c7a':'#39d98a';st.textContent=ok+' de '+_carState.slides.length+' imagens geradas.'+(falhas.length?' Falhas: slide '+falhas.join(' | '):'');}
+  _carGerandoLote=false;if(btn)btn.disabled=false;
+}
+
+function _carRemoveImg(){
+  var s=_carState.slides[_carCurIdx];if(!s){return;}
+  s.img=null;carDrawSlide(_carCurIdx);_carSelectSlide(_carCurIdx);_carRebuildTimeline();carScheduleSave();
+  carToast('Imagem removida — fundo preto');
+}
+
 function _carSaveApiKey(){
   var inp=document.getElementById('car-api-key-input');
   if(!inp)return;
@@ -28042,7 +28179,7 @@ function _carSaveApiKey(){
 }
 
 function carRSwitchTab(tab){
-  ['editor','ia','design'].forEach(function(t){
+  ['editor','imagem','ia','design'].forEach(function(t){
     var p=document.getElementById('car-pane-'+t);
     var h=document.getElementById('crt-'+t);
     if(!p||!h)return;
@@ -28051,6 +28188,7 @@ function carRSwitchTab(tab){
     h.style.color=active?'#a78bfa':'rgba(255,255,255,0.3)';
     h.style.borderBottomColor=active?'#7c3aed':'transparent';
   });
+  if(tab==='imagem'&&typeof carUpdateEstimate==='function')carUpdateEstimate();
 }
 
 
