@@ -8618,6 +8618,7 @@ function renderFollowupBody(){
           '<input class="f-input" type="text" id="fu-vencimento" placeholder="Ex: todo dia 10 / 50% entrada + 50% em 30d / dias 15 e 30" style="margin-bottom:0;">'+
         '</div>'+
         '<div id="fu-bonus-preview" style="padding:10px 12px;background:rgba(253,224,71,0.08);border:1px solid rgba(253,224,71,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#fde047;margin-top:10px;"></div>'+
+        fuAdicionaisHTML('fu')+
         '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
           '<button type="button" id="fu-seg-loja-btn" onclick="fuToggleSegLoja()" style="width:100%;padding:9px;background:rgba(123,47,255,0.1);border:1px dashed rgba(123,47,255,0.35);border-radius:8px;color:var(--purple3);font-size:12px;font-weight:600;cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:.5px;">'+
             '+ CLIENTE TEM 2 LOJAS (registrar 2ª venda com CNPJ diferente)'+
@@ -8759,6 +8760,47 @@ var CONTRATO_TEMPLATES={
   premium:'assets/contratos/contrato-premium.docx',
   elite:'assets/contratos/contrato-elite.docx'
 };
+// Catálogo de serviços adicionais (valores mensais)
+var ADICIONAIS_CATALOGO=[
+  {id:'ifood',nome:'Gestão de iFood',valor:600},
+  {id:'99food',nome:'Gestão de 99Food',valor:600},
+  {id:'precificacao',nome:'Planilha de Precificação',valor:97},
+  {id:'crm',nome:'Gestão de CRM – Estratégia Retenção Audens Pro + Repediu',valor:800},
+  {id:'cardapio',nome:'Criação de Cardápio Digital (até 5 campanhas/mês)',valor:300}
+];
+function fuAdicionaisSelecionados(prefix){
+  prefix=prefix||'fu';
+  return ADICIONAIS_CATALOGO.filter(function(a){var el=document.getElementById(prefix+'-adic-'+a.id);return el&&el.checked;})
+    .map(function(a){return {id:a.id,nome:a.nome,valor:a.valor};});
+}
+function fuUpdateAdicionais(prefix){
+  prefix=prefix||'fu';
+  var sel=fuAdicionaisSelecionados(prefix);
+  var soma=sel.reduce(function(s,a){return s+a.valor;},0);
+  var valEl=document.getElementById(prefix+'-adic-valor');
+  if(valEl&&!valEl.dataset.userEdited)valEl.value=soma||'';
+  var sugEl=document.getElementById(prefix+'-adic-sugestao');
+  if(sugEl)sugEl.textContent=sel.length?('Soma de tabela: R$ '+soma.toLocaleString('pt-BR')+'/mês · '+sel.length+' adicional(is)'):'Nenhum adicional selecionado';
+  if(typeof updateBonusPreview==='function')try{updateBonusPreview();}catch(e){}
+}
+function fuAdicionaisHTML(prefix){
+  prefix=prefix||'fu';
+  var rows=ADICIONAIS_CATALOGO.map(function(a){
+    return '<label style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;background:rgba(123,47,255,0.05);border:1px solid rgba(123,47,255,0.15);cursor:pointer;margin-bottom:6px;">'+
+      '<input type="checkbox" id="'+prefix+'-adic-'+a.id+'" onchange="fuUpdateAdicionais(\''+prefix+'\')" style="accent-color:var(--purple3);width:16px;height:16px;flex-shrink:0;">'+
+      '<span style="flex:1;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--white);">'+a.nome+'</span>'+
+      '<span style="font-size:12px;font-weight:700;color:var(--purple3);white-space:nowrap;">R$ '+a.valor.toLocaleString('pt-BR')+'/mês</span>'+
+    '</label>';
+  }).join('');
+  return '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
+    '<label class="f-label" style="margin-bottom:10px;display:block;">Serviços adicionais (opcional)</label>'+
+    rows+
+    '<div id="'+prefix+'-adic-sugestao" style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin:8px 0 6px;">Nenhum adicional selecionado</div>'+
+    '<label class="f-label">Valor combinado dos adicionais (R$/mês)</label>'+
+    '<input class="f-input" type="number" id="'+prefix+'-adic-valor" placeholder="0" oninput="this.dataset.userEdited=\'1\';if(typeof updateBonusPreview===\'function\')updateBonusPreview();" style="margin-bottom:0;">'+
+    '<div style="font-size:10.5px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin-top:6px;">Valor negociado dos adicionais. Soma no valor da venda e aparece no contrato.</div>'+
+  '</div>';
+}
 function addMonthsISO(dateISO,months){
   var d=new Date(dateISO+'T00:00:00');
   d.setMonth(d.getMonth()+(parseInt(months,10)||0));
@@ -9033,6 +9075,14 @@ async function generateContratoDocx(dados){
         formaPagamento+='.';
       }
     }
+    // Serviços adicionais contratados
+    var adicTxt='';
+    if(dados.adicionais&&dados.adicionais.length){
+      var nomes=dados.adicionais.map(function(a){return a.nome;});
+      var listaTxt=nomes.length>1?(nomes.slice(0,-1).join(', ')+' e '+nomes[nomes.length-1]):nomes[0];
+      adicTxt=' Serviços adicionais contratados: '+listaTxt+(dados.adicionaisValor?', no valor combinado de R$ '+fmtMoeda(dados.adicionaisValor)+' mensais, já incluído no valor total acima':'')+'.';
+      formaPagamento+=adicTxt;
+    }
 
     doc.render({
       nome_cliente:dados.nomeCliente||'',
@@ -9041,6 +9091,7 @@ async function generateContratoDocx(dados){
       data_inicio:fmtDataBR(dataInicio),
       data_fim:fmtDataBR(dataFim),
       forma_pagamento:formaPagamento,
+      adicionais:(adicTxt||'').trim(),
       mmr:dados.tipoValor==='mmr'
     });
 
@@ -9170,6 +9221,13 @@ function saveFollowup(){
   var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
+  // Serviços adicionais — soma no valor da venda
+  var adicionais=venda?fuAdicionaisSelecionados('fu'):[];
+  var adicValor=venda?(parseFloat((document.getElementById('fu-adic-valor')||{}).value)||0):0;
+  if(venda&&adicValor>0){
+    if(tipoValor==='mmr'){mensalidade+=adicValor;contrato+=adicValor*(duracao||1);}
+    else{contrato+=adicValor*(duracao||1);}
+  }
   var retornoData='';
   var motivo=(choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
   var retornoTime='09:00';
@@ -9188,6 +9246,7 @@ function saveFollowup(){
     resultado:venda?'venda':choice,
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
+    adicionais:adicionais,adicionaisValor:adicValor,
     bonusComp:BONUS_COMP,bonusVenda:venda?mensBase*BONUS_VENDA_PCT:0,
     motivo:motivo,
     retornoData:retornoData,retornoTime:retornoTime,
@@ -9266,6 +9325,8 @@ function saveFollowup(){
       tipoValor:tipoValor,
       valorTotal:contrato,
       valorParcela:mensalidade,
+      adicionais:adicionais,
+      adicionaisValor:adicValor,
       frequencia:frequencia,
       vencimento:vencimento,
       closer:_fuMeeting.responsavel||'',
