@@ -27784,6 +27784,28 @@ async function carRestoreSession(){
 function carClearSession(){if(!confirm('Limpar carrossel atual?'))return;_carState.slides=[];_carCurIdx=0;_carRebuildTimeline();localStorage.removeItem('car_session_v3');carToast('Carrossel limpo');}
 
 async function carInitPage(){
+  // Fix height: measure actual available space and set explicit px height
+  setTimeout(function(){
+    var mc=document.querySelector('.main-content');
+    var body=document.getElementById('car-body-row');
+    if(body){
+      var top=body.getBoundingClientRect().top;
+      var avail=window.innerHeight-top-2;
+      body.style.height=avail+'px';
+    }
+    if(mc){mc._carOrigOY=mc.style.overflowY;mc.style.overflowY='hidden';}
+    // Restore on navigation away
+    if(window._carNavRestore)document.removeEventListener('click',window._carNavRestore);
+    window._carNavRestore=function(e){
+      var ni=e.target.closest('.nav-item');
+      if(ni){
+        var mc2=document.querySelector('.main-content');
+        if(mc2)mc2.style.overflowY=mc2._carOrigOY||'auto';
+      }
+    };
+    document.addEventListener('click',window._carNavRestore);
+  },60);
+  // Restore session
   var restored=await carRestoreSession();
   if(restored){_carRebuildTimeline();_carSelectSlide(0);carToast('Sessão restaurada — '+_carState.slides.length+' slides');}
 }
@@ -27815,7 +27837,7 @@ function renderCarrossel(){
     +'</div></div>';
 
   // ── Body: 3 colunas ──
-  H+='<div style="flex:1;display:flex;overflow:hidden;">';
+  H+='<div id="car-body-row" style="flex:1;display:flex;overflow:hidden;">';
 
   // ── COL 1: Banco (240px) ──
   H+='<div style="width:240px;min-width:240px;border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;overflow:hidden;">'
