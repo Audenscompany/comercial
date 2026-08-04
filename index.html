@@ -27334,156 +27334,160 @@ function _carGetMonth(){
   var now=new Date();return mn[now.getMonth()]+', @'+now.getFullYear();
 }
 
+// Rounded-rect path helper
+function _carPill(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
 function _carDrawProfilePill(ctx,x,y){
   var d=_carState.design;
-  var avatarR=28;
-  // Avatar circle
+  var avatarR=27, padL=8, gap=14, hVerified=d.verified?42:0;
+  ctx.font='500 30px Inter,-apple-system,sans-serif';
+  var handleW=ctx.measureText(d.handle).width;
+  var pillW=padL+avatarR*2+gap+handleW+hVerified+22;
+  var pillH=avatarR*2+16;
+  var pillY=y;
+  // Pill background (slightly lifted + border)
+  _carPill(ctx,x,pillY,pillW,pillH,pillH/2);
+  ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1.5;ctx.stroke();
+  // Avatar with gradient ring
+  var ax=x+padL+avatarR, ay=pillY+pillH/2;
+  var ring=ctx.createLinearGradient(ax-avatarR,ay-avatarR,ax+avatarR,ay+avatarR);
+  ring.addColorStop(0,'#f09433');ring.addColorStop(0.5,'#e6683c');ring.addColorStop(1,'#bc1888');
+  ctx.beginPath();ctx.arc(ax,ay,avatarR,0,Math.PI*2);ctx.strokeStyle=ring;ctx.lineWidth=2.5;ctx.stroke();
   ctx.save();
-  ctx.beginPath();ctx.arc(x+avatarR,y+avatarR,avatarR,0,Math.PI*2);ctx.clip();
-  if(d.avatar){ctx.drawImage(d.avatar,x,y,avatarR*2,avatarR*2);}
-  else{var g=ctx.createLinearGradient(x,y,x+avatarR*2,y+avatarR*2);g.addColorStop(0,'#7c3aed');g.addColorStop(1,'#3b82f6');ctx.fillStyle=g;ctx.fillRect(x,y,avatarR*2,avatarR*2);}
+  ctx.beginPath();ctx.arc(ax,ay,avatarR-3,0,Math.PI*2);ctx.clip();
+  if(d.avatar){ctx.drawImage(d.avatar,ax-avatarR+3,ay-avatarR+3,(avatarR-3)*2,(avatarR-3)*2);}
+  else{var g=ctx.createLinearGradient(ax-avatarR,ay-avatarR,ax+avatarR,ay+avatarR);g.addColorStop(0,'#7c3aed');g.addColorStop(1,'#3b82f6');ctx.fillStyle=g;ctx.fillRect(ax-avatarR,ay-avatarR,avatarR*2,avatarR*2);}
   ctx.restore();
-  // Handle text
-  ctx.font='600 30px Inter,sans-serif';
-  ctx.fillStyle='#ffffff';
-  ctx.textBaseline='middle';
-  ctx.fillText(d.handle,x+avatarR*2+14,y+avatarR);
+  // Handle
+  ctx.font='500 30px Inter,-apple-system,sans-serif';
+  ctx.fillStyle='#ffffff';ctx.textBaseline='middle';
+  var hx=ax+avatarR+gap;
+  ctx.fillText(d.handle,hx,ay+1);
   // Verified badge
   if(d.verified){
-    var tw=ctx.measureText(d.handle).width;
-    var bx=x+avatarR*2+14+tw+10,by=y+avatarR;
-    ctx.beginPath();ctx.arc(bx+12,by,14,0,Math.PI*2);ctx.fillStyle='#1877f2';ctx.fill();
-    ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.beginPath();
-    ctx.moveTo(bx+5,by);ctx.lineTo(bx+10,by+5);ctx.lineTo(bx+20,by-6);
-    ctx.stroke();
+    var bx=hx+handleW+16, by=ay;
+    ctx.beginPath();ctx.arc(bx,by,13,0,Math.PI*2);ctx.fillStyle='#1d9bf0';ctx.fill();
+    ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
+    ctx.moveTo(bx-6,by);ctx.lineTo(bx-1.5,by+5);ctx.lineTo(bx+7,by-5.5);ctx.stroke();
+    ctx.lineCap='butt';
   }
   ctx.textBaseline='alphabetic';
+  return pillY+pillH; // return bottom
 }
 
 function _carDrawFooterBar(ctx,isLast,isCover){
   var d=_carState.design;
-  var fH=90,fY=_carH-fH;
-  // footer background
-  ctx.fillStyle='rgba(10,10,12,0.95)';
-  ctx.fillRect(0,fY,_carW,fH);
-  // top separator line
-  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(40,fY);ctx.lineTo(_carW-40,fY);ctx.stroke();
-  // Globe icon placeholder
-  ctx.fillStyle='rgba(255,255,255,0.35)';
-  ctx.beginPath();ctx.arc(58,fY+fH/2,14,0,Math.PI*2);ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.moveTo(58,fY+fH/2-14);ctx.lineTo(58,fY+fH/2+14);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(44,fY+fH/2);ctx.lineTo(72,fY+fH/2);ctx.stroke();
-  // Brand text
-  ctx.font='500 22px Inter,sans-serif';
-  ctx.fillStyle='rgba(255,255,255,0.5)';
+  var fH=100, marginX=48, fY=_carH-fH-40, fW=_carW-marginX*2;
+  // Pill background
+  _carPill(ctx,marginX,fY,fW,fH,fH/2);
+  ctx.fillStyle='rgba(255,255,255,0.045)';ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=1;ctx.stroke();
   ctx.textBaseline='middle';
-  ctx.fillText(d.brand,80,fY+fH/2-9);
-  ctx.font='400 19px Inter,sans-serif';
-  ctx.fillStyle='rgba(255,255,255,0.3)';
-  ctx.fillText(d.category,80,fY+fH/2+13);
+  var cy=fY+fH/2;
+  // Globe icon in circle
+  var gx=marginX+38;
+  ctx.beginPath();ctx.arc(gx,cy,26,0,Math.PI*2);
+  var gring=ctx.createLinearGradient(gx-26,cy-26,gx+26,cy+26);
+  gring.addColorStop(0,'#f09433');gring.addColorStop(1,'#bc1888');
+  ctx.strokeStyle=gring;ctx.lineWidth=2;ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(gx,cy,14,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(gx,cy-14);ctx.lineTo(gx,cy+14);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(gx,cy,6,14,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(gx-14,cy);ctx.lineTo(gx+14,cy);ctx.stroke();
+  // Name block
+  var tx=gx+42;
+  ctx.font='600 23px Inter,-apple-system,sans-serif';ctx.fillStyle='rgba(255,255,255,0.92)';
+  ctx.fillText(d.name||'Lucas Siqueira',tx,cy-13);
+  ctx.font='400 19px Inter,-apple-system,sans-serif';ctx.fillStyle='rgba(255,255,255,0.4)';
+  ctx.fillText(d.handle,tx,cy+13);
+  // Vertical divider
+  var brandBlock=(d.brand||'').split('|');
+  var line1=brandBlock[0]?brandBlock[0].trim():'';
+  var dx=tx+Math.max(ctx.measureText(d.name||'Lucas Siqueira').width, 200)+40;
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(dx,cy-22);ctx.lineTo(dx,cy+22);ctx.stroke();
+  // Category block
+  var cx2=dx+24;
+  ctx.font='600 22px Inter,-apple-system,sans-serif';ctx.fillStyle='rgba(255,255,255,0.85)';
+  ctx.fillText(d.category||'Marketing',cx2,cy-13);
+  ctx.font='400 18px Inter,-apple-system,sans-serif';ctx.fillStyle='rgba(255,255,255,0.35)';
+  ctx.fillText('Food Service',cx2,cy+13);
   // Right text
   ctx.textAlign='right';
-  ctx.font='500 22px Inter,sans-serif';
-  ctx.fillStyle='rgba(255,255,255,0.4)';
-  if(isCover){
-    ctx.fillText(_carGetMonth(),_carW-44,fY+fH/2);
-  }else if(isLast){
-    ctx.fillText('',_carW-44,fY+fH/2);
-  }else{
-    ctx.fillText('Arrasta para o lado  ›',_carW-44,fY+fH/2);
-  }
-  ctx.textAlign='left';
-  ctx.textBaseline='alphabetic';
+  ctx.font='500 22px Inter,-apple-system,sans-serif';ctx.fillStyle='rgba(255,255,255,0.55)';
+  var rightTxt=isCover?_carGetMonth():(isLast?'':'Arrasta para o lado  ›');
+  ctx.fillText(rightTxt,marginX+fW-36,cy);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
 }
 
 function _carDrawCover(ctx,slide){
   var W=_carW,H=_carH;
-  // Background
-  ctx.fillStyle='#000000';ctx.fillRect(0,0,W,H);
-  // Image if exists
+  ctx.fillStyle='#0c0c0e';ctx.fillRect(0,0,W,H);
   if(slide.img){
     _carCF(ctx,slide.img,0,0,W,H,slide.imgOffX||0,slide.imgOffY||0,slide.imgZoom||1);
-    // Gradient overlay bottom 60%
-    var gr=ctx.createLinearGradient(0,H*0.3,0,H);
-    gr.addColorStop(0,'rgba(0,0,0,0)');
-    gr.addColorStop(0.5,'rgba(0,0,0,0.7)');
-    gr.addColorStop(1,'rgba(0,0,0,0.95)');
+    var gr=ctx.createLinearGradient(0,0,0,H);
+    gr.addColorStop(0,'rgba(12,12,14,0.4)');gr.addColorStop(0.45,'rgba(12,12,14,0.75)');gr.addColorStop(1,'rgba(12,12,14,0.97)');
     ctx.fillStyle=gr;ctx.fillRect(0,0,W,H);
   }
-  // Profile pill top-left
-  _carDrawProfilePill(ctx,46,64);
-  // Title text — bottom area
+  var pillBottom=_carDrawProfilePill(ctx,56,120);
+  // Title — starts below pill, upper-middle
   var text=slide.text||'';
-  var lines=[];
-  text.split('\n').forEach(function(l){
-    if(l.trim()){
-      ctx.font='800 78px Inter,sans-serif';
-      var wl=_carWL(ctx,l.trim(),960);
-      wl.forEach(function(wll){lines.push({t:wll,bold:true});});
-    }else if(lines.length){lines.push({t:'',bold:false});}
+  var fontSize=76,lineH=94;
+  var allLines=[];
+  text.split('\n').forEach(function(para){
+    if(!para.trim()){if(allLines.length)allLines.push({t:'',gap:true});return;}
+    ctx.font='600 '+fontSize+'px Inter,-apple-system,sans-serif';
+    _carWL(ctx,para.trim(),W-110).forEach(function(l){allLines.push({t:l,gap:false});});
   });
-  var lineH=96,gap=20;
-  var totalH=lines.length*lineH;
-  var startY=Math.max(H*0.45, H-_carH*0.1-90-totalH-gap);
-  ctx.shadowColor='rgba(0,0,0,0.9)';ctx.shadowBlur=20;
-  lines.forEach(function(ln,i){
-    if(!ln.t)return;
-    ctx.font='800 78px Inter,sans-serif';
+  while(allLines.length&&!allLines[0].t)allLines.shift();
+  while(allLines.length&&!allLines[allLines.length-1].t)allLines.pop();
+  var cy=pillBottom+90;
+  ctx.textBaseline='alphabetic';
+  allLines.forEach(function(ln){
+    if(!ln.t){cy+=44;return;}
+    ctx.font='600 '+fontSize+'px Inter,-apple-system,sans-serif';
     ctx.fillStyle='#ffffff';
-    ctx.fillText(ln.t,50,startY+i*lineH);
+    ctx.fillText(ln.t,56,cy+fontSize*0.8);
+    cy+=lineH;
   });
-  ctx.shadowBlur=0;
-  // Footer
   _carDrawFooterBar(ctx,false,true);
 }
 
 function _carDrawBody(ctx,slide,idx,total){
   var W=_carW,H=_carH,isLast=(idx===total-1);
-  // Background
-  ctx.fillStyle='#000000';ctx.fillRect(0,0,W,H);
-  // Optional image (inner slides)
+  ctx.fillStyle='#0c0c0e';ctx.fillRect(0,0,W,H);
+  var textTop;
   if(slide.img){
-    var imgH=Math.round(H*0.42);
+    var imgH=Math.round(H*0.40);
     _carCF(ctx,slide.img,0,0,W,imgH,slide.imgOffX||0,slide.imgOffY||0,slide.imgZoom||1);
-    var gr=ctx.createLinearGradient(0,imgH*0.5,0,imgH);
-    gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,1)');
+    var gr=ctx.createLinearGradient(0,imgH*0.45,0,imgH);
+    gr.addColorStop(0,'rgba(12,12,14,0)');gr.addColorStop(1,'rgba(12,12,14,1)');
     ctx.fillStyle=gr;ctx.fillRect(0,0,W,imgH);
   }
-  // Profile pill
-  _carDrawProfilePill(ctx,46,72);
-  // Body text
+  var pillBottom=_carDrawProfilePill(ctx,56,120);
+  // Body text — regular weight, starts below pill
   var text=slide.text||'';
-  var fontSize=68,lineH=88;
-  ctx.font='700 '+fontSize+'px Inter,sans-serif';
+  var fontSize=62,lineH=78;
   var allLines=[];
-  var paras=text.split('\n');
-  paras.forEach(function(para,pi){
-    if(!para.trim()){
-      if(allLines.length)allLines.push({t:'',gap:true});
-    }else{
-      var wl=_carWL(ctx,para.trim(),980);
-      wl.forEach(function(wll){allLines.push({t:wll,gap:false});});
-    }
+  text.split('\n').forEach(function(para){
+    if(!para.trim()){if(allLines.length)allLines.push({t:'',gap:true});return;}
+    ctx.font='400 '+fontSize+'px Inter,-apple-system,sans-serif';
+    _carWL(ctx,para.trim(),W-110).forEach(function(l){allLines.push({t:l,gap:false});});
   });
-  // Remove leading/trailing empty
   while(allLines.length&&!allLines[0].t)allLines.shift();
   while(allLines.length&&!allLines[allLines.length-1].t)allLines.pop();
-  // Compute total height and center vertically (between pill bottom and footer)
-  var topY=180,botY=H-110;
-  var availH=botY-topY;
-  var totalTextH=allLines.reduce(function(s,l){return s+(l.gap?40:lineH);},0);
-  var startY=topY+Math.max(0,(availH-totalTextH)/2);
-  var cy=startY;
+  // Start below pill with breathing room
+  var cy=pillBottom+80;
+  ctx.textBaseline='alphabetic';
   allLines.forEach(function(ln){
     if(!ln.t){cy+=40;return;}
-    ctx.font='700 '+fontSize+'px Inter,sans-serif';
+    ctx.font='400 '+fontSize+'px Inter,-apple-system,sans-serif';
     ctx.fillStyle='#ffffff';
-    ctx.fillText(ln.t,50,cy+lineH*0.8);
+    ctx.fillText(ln.t,56,cy+fontSize*0.8);
     cy+=lineH;
   });
-  // Footer
   _carDrawFooterBar(ctx,isLast,false);
 }
 
@@ -27526,10 +27530,10 @@ function _carSelectSlide(idx){
   if(prev&&s._canvas){
     prev.innerHTML='';
     var sc=document.createElement('canvas');
-    sc.width=270;sc.height=338;
-    sc.style.cssText='width:270px;height:338px;display:block;';
+    sc.width=340;sc.height=425;
+    sc.style.cssText='width:340px;height:425px;display:block;';
     prev.appendChild(sc);
-    sc.getContext('2d').drawImage(s._canvas,0,0,_carW,_carH,0,0,270,338);
+    sc.getContext('2d').drawImage(s._canvas,0,0,_carW,_carH,0,0,340,425);
   }
   // Update slide counter
   var ctr=document.getElementById('car-slide-counter');
@@ -27852,13 +27856,13 @@ function renderCarrossel(){
   // ── COL 2: Preview + Timeline (flex:1) ──
   // Preview: use a fixed-size canvas display (324×405 = 1080/3.33 × 1350/3.33)
   H+='<div style="flex:1;display:flex;flex-direction:column;background:#0a0a0d;overflow:hidden;">'
-    // Preview centered
-    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:16px;">'
-    +'<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">'
-    +'<div id="car-main-preview" style="width:270px;height:338px;background:#111;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.7);overflow:hidden;position:relative;">'
+    // Preview top-aligned
+    +'<div style="flex:1;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 16px;">'
+    +'<div style="display:flex;flex-direction:column;align-items:center;gap:12px;">'
+    +'<div id="car-main-preview" style="width:340px;height:425px;background:#0c0c0e;border-radius:12px;box-shadow:0 6px 30px rgba(0,0,0,0.7);overflow:hidden;position:relative;">'
     +'<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">'
-    +'<div style="font-size:28px;">🎞</div>'
-    +'<div style="font-size:11px;color:rgba(255,255,255,0.25);text-align:center;padding:0 20px;line-height:1.5;">Clique em um título<br>para criar o carrossel</div>'
+    +'<div style="font-size:30px;">🎞</div>'
+    +'<div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;padding:0 24px;line-height:1.5;">Clique em um título<br>para criar o carrossel</div>'
     +'</div></div>'
     // Nav buttons below preview
     +'<div style="display:flex;gap:6px;align-items:center;">'
