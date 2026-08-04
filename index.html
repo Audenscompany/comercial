@@ -27813,8 +27813,9 @@ async function carInitPage(){
 // ===== RENDER =====
 function renderCarrossel(){
   if(!_carState.design.month){var mn=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];var now=new Date();_carState.design.month=mn[now.getMonth()]+', @'+now.getFullYear();}
-  // Load saved API key
+  // Load saved API key (also use _jarvisKey as fallback)
   try{var sk=localStorage.getItem('car_api_key');if(sk)window._carApiKey=sk;}catch(e){}
+  if(!window._carApiKey&&typeof _jarvisKey!=='undefined'&&_jarvisKey)window._carApiKey=_jarvisKey;
 
   var bsBtn='padding:4px 9px;border-radius:6px;border:1px solid;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.3px;';
   var pilarBtns='<button class="car-pilar-btn" data-pid="all" data-cor="#7c3aed" onclick="_carFilterBanco(\'all\')" style="'+bsBtn+'background:rgba(124,58,237,0.25);border-color:#7c3aed;color:#a78bfa;margin:0 3px 5px 0;">TODOS</button>'
@@ -27934,6 +27935,16 @@ function renderCarrossel(){
   H+='</div>';
   H+='<div id="car-toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#7c3aed;color:#fff;padding:9px 18px;border-radius:18px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;white-space:nowrap;"></div>';
   return H;
+}
+
+function _carSaveApiKey(){
+  var inp=document.getElementById('car-api-key-input');
+  if(!inp)return;
+  var v=inp.value.trim();
+  if(!v){carToast('Cole a API key primeiro.');return;}
+  window._carApiKey=v;
+  try{localStorage.setItem('car_api_key',v);}catch(e){}
+  carToast('✅ API key salva!');
 }
 
 function carRSwitchTab(tab){
