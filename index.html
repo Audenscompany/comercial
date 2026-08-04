@@ -27521,23 +27521,26 @@ function _carDeleteSlide(idx){
 function _carSelectSlide(idx){
   _carCurIdx=idx;
   var s=_carState.slides[idx];if(!s)return;
-  // Update preview
+  // Update preview (fixed 270x338 display canvas)
   var prev=document.getElementById('car-main-preview');
   if(prev&&s._canvas){
     prev.innerHTML='';
     var sc=document.createElement('canvas');
-    sc.width=_carW;sc.height=_carH;
-    sc.style.cssText='width:100%;height:100%;display:block;border-radius:10px;';
+    sc.width=270;sc.height=338;
+    sc.style.cssText='width:270px;height:338px;display:block;';
     prev.appendChild(sc);
-    var sCtx=sc.getContext('2d');
-    sCtx.drawImage(s._canvas,0,0);
+    sc.getContext('2d').drawImage(s._canvas,0,0,_carW,_carH,0,0,270,338);
   }
+  // Update slide counter
+  var ctr=document.getElementById('car-slide-counter');
+  if(ctr)ctr.textContent='Slide '+(idx+1)+' / '+_carState.slides.length;
   // Update editor
   var txt=document.getElementById('car-editor-text');if(txt)txt.value=s.text||'';
   var typeInfo=document.getElementById('car-slide-typeinfo');
   if(typeInfo){
     var tp=_carSlideTypes.find(function(t){return t.id===s.type;})||_carSlideTypes[2];
-    typeInfo.innerHTML='<span style="background:'+tp.cor+'22;color:'+tp.cor+';border:1px solid '+tp.cor+'44;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;">'+tp.emoji+' '+tp.label+'</span><span style="font-size:11px;color:rgba(255,255,255,0.35);margin-left:8px;">'+tp.hint+'</span>';
+    typeInfo.textContent=tp.emoji+' '+tp.label+' — '+tp.hint;
+    typeInfo.style.color=tp.cor;
   }
   // Highlight thumbnail
   document.querySelectorAll('.car-thumb').forEach(function(el,i){
@@ -27550,15 +27553,7 @@ function _carSaveFromEditor(){
   var txt=document.getElementById('car-editor-text');
   if(txt)s.text=txt.value;
   carDrawSlide(_carCurIdx);
-  // Re-render preview
-  var prev=document.getElementById('car-main-preview');
-  if(prev&&s._canvas){
-    prev.innerHTML='';
-    var sc=document.createElement('canvas');sc.width=_carW;sc.height=_carH;
-    sc.style.cssText='width:100%;height:100%;display:block;border-radius:10px;';
-    prev.appendChild(sc);
-    sc.getContext('2d').drawImage(s._canvas,0,0);
-  }
+  _carSelectSlide(_carCurIdx);
   _carRebuildTimeline();
   carToast('Slide atualizado');
   carScheduleSave();
@@ -27580,8 +27575,9 @@ function _carUploadSlideImg(){
 }
 
 function _carRebuildTimeline(){
+  var ctr=document.getElementById('car-slide-counter');if(ctr)ctr.textContent=_carState.slides.length?'Slide '+(_carCurIdx+1)+' / '+_carState.slides.length:'0 slides';
   var strip=document.getElementById('car-timeline');if(!strip)return;
-  if(!_carState.slides.length){strip.innerHTML='<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.25);font-size:12px;">Nenhum slide ainda</div>';return;}
+  if(!_carState.slides.length){strip.innerHTML='<div style="padding:30px 16px;color:rgba(255,255,255,0.15);font-size:11px;">Nenhum slide</div>';return;}
   strip.innerHTML=_carState.slides.map(function(s,i){
     var tp=_carSlideTypes.find(function(t){return t.id===s.type;})||_carSlideTypes[2];
     return '<div class="car-thumb" onclick="_carSelectSlide('+i+')" style="flex:0 0 100px;width:100px;height:126px;border-radius:8px;border:2px solid '+(i===_carCurIdx?'#7c3aed':'rgba(255,255,255,0.08)')+';cursor:pointer;position:relative;overflow:hidden;background:#111;transition:border-color .15s;">'
@@ -27719,8 +27715,8 @@ async function carGerarRoteiro(){
   if(!tema||!tema.value.trim()){carToast('Digite o tema.');return;}
   var btn=document.getElementById('car-ia-btn');if(btn){btn.disabled=true;btn.textContent='Gerando...';}
   try{
-    var apiKey=typeof _jarvisKey!=='undefined'?_jarvisKey:(typeof window._anthropicKey!=='undefined'?window._anthropicKey:'');
-    if(!apiKey){carToast('Configure a API key nas Configurações.');return;}
+    var apiKey=window._carApiKey||(typeof _jarvisKey!=='undefined'?_jarvisKey:'');
+    if(!apiKey){carToast('Configure a API key na aba IA.');return;}
     var prompt='Crie um roteiro completo para um carrossel de Instagram com o tema: "'+tema.value+'".\n\nFormate EXATAMENTE assim (um bloco por slide):\n\n[CAPA]\nTítulo impactante aqui\n\n[INVERSÃO]\nQuebre a crença comum em 2 frases\n\n[CONTEÚDO]\nPrimeiro ponto\n\n[CONTEÚDO]\nSegundo ponto\n\n[CONTEÚDO]\nTerceiro ponto\n\n[PROVA]\nCase ou dado real\n\n[RECAP]\nEm resumo:\n→ ponto 1\n→ ponto 2\n→ ponto 3\n\n[CTA]\nChame para comentar ou compartilhar\n\nMáximo 3 linhas por slide. Use números e dados reais quando possível.';
     var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1500,system:_carAISys,messages:[{role:'user',content:prompt}]})});
     if(!resp.ok)throw new Error('API error '+resp.status);
@@ -27751,8 +27747,8 @@ async function carGerarLegenda(){
   var slides=_carState.slides.map(function(s){return s.text;}).join('\n---\n');
   var btn=document.getElementById('car-leg-btn');if(btn){btn.disabled=true;btn.textContent='Gerando...';}
   try{
-    var apiKey=typeof _jarvisKey!=='undefined'?_jarvisKey:(typeof window._anthropicKey!=='undefined'?window._anthropicKey:'');
-    if(!apiKey){carToast('Configure a API key nas Configurações.');return;}
+    var apiKey=window._carApiKey||(typeof _jarvisKey!=='undefined'?_jarvisKey:'');
+    if(!apiKey){carToast('Configure a API key na aba IA.');return;}
     var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,system:_carAISys,messages:[{role:'user',content:'Escreva uma legenda para Instagram com base nesse carrossel. Máx 220 palavras. Inclua gancho, desenvolvimento e CTA. Adicione 5 hashtags relevantes ao final.\n\nConteúdo dos slides:\n'+slides}]})});
     if(!resp.ok)throw new Error('API '+resp.status);
     var data=await resp.json();
@@ -27794,109 +27790,127 @@ async function carInitPage(){
 
 // ===== RENDER =====
 function renderCarrossel(){
-  // Month default
   if(!_carState.design.month){var mn=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];var now=new Date();_carState.design.month=mn[now.getMonth()]+', @'+now.getFullYear();}
+  // Load saved API key
+  try{var sk=localStorage.getItem('car_api_key');if(sk)window._carApiKey=sk;}catch(e){}
 
-  var bsBtn='padding:5px 10px;border-radius:6px;border:1px solid;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px;transition:all .15s;';
-  var pilarBtns='<button class="car-pilar-btn" data-pid="all" data-cor="#7c3aed" onclick="_carFilterBanco(\'all\')" style="'+bsBtn+'background:rgba(124,58,237,0.2);border-color:#7c3aed;color:#a78bfa;margin:0 4px 6px 0;">TODOS</button>'
-    +_carBanco.map(function(p){return'<button class="car-pilar-btn" data-pid="'+p.id+'" data-cor="'+p.cor+'" onclick="_carFilterBanco(\''+p.id+'\')" style="'+bsBtn+'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);margin:0 4px 6px 0;">'+p.label.toUpperCase()+'</button>';}).join('');
+  var bsBtn='padding:4px 9px;border-radius:6px;border:1px solid;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.3px;';
+  var pilarBtns='<button class="car-pilar-btn" data-pid="all" data-cor="#7c3aed" onclick="_carFilterBanco(\'all\')" style="'+bsBtn+'background:rgba(124,58,237,0.25);border-color:#7c3aed;color:#a78bfa;margin:0 3px 5px 0;">TODOS</button>'
+    +_carBanco.map(function(p){return'<button class="car-pilar-btn" data-pid="'+p.id+'" data-cor="'+p.cor+'" onclick="_carFilterBanco(\''+p.id+'\')" style="'+bsBtn+'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08);color:rgba(255,255,255,0.45);margin:0 3px 5px 0;">'+p.label.toUpperCase()+'</button>';}).join('');
 
   var addBtns=_carSlideTypes.map(function(tp){
-    return'<button onclick="_carAddSlide(\''+tp.id+'\')" title="'+tp.hint+'" style="flex:1;min-width:0;padding:8px 4px;border-radius:8px;border:1px solid '+tp.cor+'44;background:'+tp.cor+'11;color:'+tp.cor+';font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.3px;text-align:center;transition:background .1s;" onmouseover="this.style.background=\''+tp.cor+'22\'" onmouseout="this.style.background=\''+tp.cor+'11\'">'+tp.emoji+'<br>'+tp.label+'</button>';
+    return'<button onclick="_carAddSlide(\''+tp.id+'\')" title="'+tp.hint+'" style="flex:1;min-width:0;padding:6px 3px;border-radius:7px;border:1px solid '+tp.cor+'44;background:'+tp.cor+'11;color:'+tp.cor+';font-size:9px;font-weight:700;cursor:pointer;text-align:center;" onmouseover="this.style.background=\''+tp.cor+'22\'" onmouseout="this.style.background=\''+tp.cor+'11\'">'+tp.emoji+'<br>'+tp.label+'</button>';
   }).join('');
 
-  var H='<div class="page active" id="pg-carrossel" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">';
+  var H='<div style="display:flex;flex-direction:column;height:100%;overflow:hidden;font-family:Inter,sans-serif;">';
 
-  // Header
-  H+='<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;">'
-    +'<div><div style="font-size:20px;font-weight:900;color:#fff;letter-spacing:-.3px;">Gerador de Carrossel</div>'
-    +'<div style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:2px;">Estilo @leobrf_ · Canvas 1080×1350px</div></div>'
+  // ── Header ──
+  H+='<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;">'
+    +'<div><div style="font-size:17px;font-weight:900;color:#fff;letter-spacing:-.3px;">🎞 Gerador de Carrossel</div>'
+    +'<div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:1px;">Estilo @leobrf_ · Canvas 1080×1350px</div></div>'
     +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="carClearSession()" style="padding:8px 14px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">Limpar</button>'
-    +'<button onclick="carEnviarCalendario()" style="padding:8px 14px;border-radius:8px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;">📅 Agendar</button>'
-    +'<button onclick="carDownloadZip()" style="padding:8px 14px;border-radius:8px;background:#7c3aed;border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">↓ Exportar ZIP</button>'
+    +'<button onclick="carClearSession()" style="padding:7px 13px;border-radius:7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.45);font-size:12px;cursor:pointer;">Limpar</button>'
+    +'<button onclick="carEnviarCalendario()" style="padding:7px 13px;border-radius:7px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;">📅 Agendar</button>'
+    +'<button onclick="carDownloadZip()" style="padding:7px 13px;border-radius:7px;background:#7c3aed;border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">↓ Exportar ZIP</button>'
     +'</div></div>';
 
-  // 3-column body
-  H+='<div style="display:flex;flex:1;overflow:hidden;">';
+  // ── Body: 3 colunas ──
+  H+='<div style="flex:1;display:flex;overflow:hidden;">';
 
-  // LEFT: Banco
-  H+='<div style="width:300px;min-width:300px;border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;overflow:hidden;">'
-    +'<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;">'
-    +'<div style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.35);letter-spacing:1.5px;margin-bottom:10px;">BANCO DE TÍTULOS</div>'
+  // ── COL 1: Banco (240px) ──
+  H+='<div style="width:240px;min-width:240px;border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;overflow:hidden;">'
+    +'<div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;">'
+    +'<div style="font-size:9px;font-weight:800;color:rgba(255,255,255,0.3);letter-spacing:1.5px;margin-bottom:8px;">BANCO DE TÍTULOS</div>'
     +'<div style="display:flex;flex-wrap:wrap;">'+pilarBtns+'</div>'
     +'</div>'
-    +'<div id="car-banco-list" style="flex:1;overflow-y:auto;padding:12px 14px;scrollbar-width:thin;">'+_carBancoRows('all')+'</div>'
+    +'<div id="car-banco-list" style="flex:1;overflow-y:auto;padding:8px 10px;scrollbar-width:thin;">'+_carBancoRows('all')+'</div>'
     +'</div>';
 
-  // CENTER: Preview + Timeline
-  H+='<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">'
-    // Preview area
-    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;background:#0a0a0d;overflow:hidden;padding:20px;">'
-    +'<div id="car-main-preview" style="aspect-ratio:1080/1350;height:100%;max-height:calc(100vh - 260px);max-width:100%;overflow:hidden;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,0.6);">'
-    +'<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.15);font-size:13px;background:#111;border-radius:10px;">← Selecione um título ou clique em + para começar</div>'
+  // ── COL 2: Preview + Timeline (flex:1) ──
+  // Preview: use a fixed-size canvas display (324×405 = 1080/3.33 × 1350/3.33)
+  H+='<div style="flex:1;display:flex;flex-direction:column;background:#0a0a0d;overflow:hidden;">'
+    // Preview centered
+    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:16px;">'
+    +'<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">'
+    +'<div id="car-main-preview" style="width:270px;height:338px;background:#111;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.7);overflow:hidden;position:relative;">'
+    +'<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">'
+    +'<div style="font-size:28px;">🎞</div>'
+    +'<div style="font-size:11px;color:rgba(255,255,255,0.25);text-align:center;padding:0 20px;line-height:1.5;">Clique em um título<br>para criar o carrossel</div>'
+    +'</div></div>'
+    // Nav buttons below preview
+    +'<div style="display:flex;gap:6px;align-items:center;">'
+    +'<button onclick="if(_carCurIdx>0)_carSelectSlide(_carCurIdx-1)" style="padding:5px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;cursor:pointer;font-size:13px;">‹</button>'
+    +'<span id="car-slide-counter" style="font-size:11px;color:rgba(255,255,255,0.3);min-width:60px;text-align:center;">0 slides</span>'
+    +'<button onclick="if(_carCurIdx<_carState.slides.length-1)_carSelectSlide(_carCurIdx+1)" style="padding:5px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;cursor:pointer;font-size:13px;">›</button>'
+    +'</div>'
     +'</div></div>'
     // Timeline strip
-    +'<div style="flex-shrink:0;border-top:1px solid rgba(255,255,255,0.06);padding:14px 16px;background:#0d0d11;">'
-    +'<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:10px;">SLIDES DO CARROSSEL</div>'
-    +'<div id="car-timeline" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;min-height:130px;align-items:flex-start;">'
-    +'<div style="color:rgba(255,255,255,0.2);font-size:12px;padding:50px 20px;">Nenhum slide ainda</div>'
+    +'<div style="flex-shrink:0;border-top:1px solid rgba(255,255,255,0.06);padding:10px 14px;background:#0d0d11;">'
+    +'<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);letter-spacing:1px;margin-bottom:8px;">SLIDES</div>'
+    +'<div id="car-timeline" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;min-height:110px;align-items:flex-start;">'
+    +'<div style="color:rgba(255,255,255,0.15);font-size:11px;padding:40px 16px;">Nenhum slide</div>'
     +'</div></div>'
     +'</div>';
 
-  // RIGHT: Editor + Design + IA
-  H+='<div style="width:300px;min-width:300px;border-left:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;overflow:hidden;">'
+  // ── COL 3: Editor (280px) ──
+  H+='<div style="width:280px;min-width:280px;border-left:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;overflow:hidden;">'
     // Tabs
     +'<div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;">'
-    +'<div class="car-rtab car-rtab-active" onclick="carRSwitchTab(\'editor\')" id="crt-editor" style="flex:1;padding:10px 0;text-align:center;font-size:11px;font-weight:700;cursor:pointer;color:#a78bfa;border-bottom:2px solid #7c3aed;letter-spacing:.5px;">EDITOR</div>'
-    +'<div class="car-rtab" onclick="carRSwitchTab(\'ia\')" id="crt-ia" style="flex:1;padding:10px 0;text-align:center;font-size:11px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">IA</div>'
-    +'<div class="car-rtab" onclick="carRSwitchTab(\'design\')" id="crt-design" style="flex:1;padding:10px 0;text-align:center;font-size:11px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">DESIGN</div>'
+    +'<div onclick="carRSwitchTab(\'editor\')" id="crt-editor" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:#a78bfa;border-bottom:2px solid #7c3aed;letter-spacing:.5px;">EDITOR</div>'
+    +'<div onclick="carRSwitchTab(\'ia\')" id="crt-ia" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">IA</div>'
+    +'<div onclick="carRSwitchTab(\'design\')" id="crt-design" style="flex:1;padding:9px 0;text-align:center;font-size:10px;font-weight:700;cursor:pointer;color:rgba(255,255,255,0.3);border-bottom:2px solid transparent;letter-spacing:.5px;">DESIGN</div>'
     +'</div>'
-    // Editor pane
-    +'<div id="car-pane-editor" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">'
-    +'<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;">ADICIONAR SLIDE</div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+addBtns+'</div>'
-    +'<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'
-    +'<div id="car-slide-typeinfo" style="margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:24px;"></div>'
-    +'<textarea id="car-editor-text" placeholder="Texto do slide..." rows="8" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:#fff;font-size:13.5px;line-height:1.6;resize:vertical;font-family:inherit;"></textarea>'
-    +'<div style="display:flex;gap:8px;margin-top:10px;">'
-    +'<button onclick="_carSaveFromEditor()" style="flex:2;padding:9px;background:#7c3aed;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Atualizar Preview</button>'
-    +'<button onclick="_carUploadSlideImg()" style="flex:1;padding:9px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;">📷 Foto</button>'
+    // ── EDITOR PANE ──
+    +'<div id="car-pane-editor" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;">'
+    +'<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);letter-spacing:1px;">ADICIONAR SLIDE</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px;">'+addBtns+'</div>'
+    +'<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;">'
+    +'<div id="car-slide-typeinfo" style="margin-bottom:8px;min-height:20px;font-size:10px;color:rgba(255,255,255,0.35);"></div>'
+    +'<textarea id="car-editor-text" placeholder="Texto do slide selecionado..." rows="7" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:9px 11px;color:#fff;font-size:13px;line-height:1.55;resize:vertical;font-family:inherit;box-sizing:border-box;"></textarea>'
+    +'<div style="display:flex;gap:7px;margin-top:9px;">'
+    +'<button onclick="_carSaveFromEditor()" style="flex:2;padding:9px;background:#7c3aed;border:none;border-radius:7px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">↺ Atualizar</button>'
+    +'<button onclick="_carUploadSlideImg()" style="flex:1;padding:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:rgba(255,255,255,0.55);font-size:11px;cursor:pointer;">📷</button>'
     +'</div>'
-    +'<button onclick="carDownloadSlide(_carCurIdx)" style="width:100%;padding:9px;margin-top:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">↓ Download este slide</button>'
+    +'<button onclick="carDownloadSlide(_carCurIdx)" style="width:100%;padding:8px;margin-top:6px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;color:rgba(255,255,255,0.4);font-size:10px;cursor:pointer;">↓ Download slide atual</button>'
+    +'</div></div>'
+    // ── IA PANE ──
+    +'<div id="car-pane-ia" style="flex:1;overflow-y:auto;padding:14px;display:none;flex-direction:column;gap:11px;">'
+    // API Key
+    +'<div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px;padding:10px;">'
+    +'<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:6px;">API KEY ANTHROPIC</div>'
+    +'<div style="display:flex;gap:6px;">'
+    +'<input type="password" id="car-api-key-input" placeholder="sk-ant-..." value="'+(typeof window._carApiKey!=='undefined'?window._carApiKey||'':'')+'" style="flex:1;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#fff;font-size:11px;">'
+    +'<button onclick="_carSaveApiKey()" style="padding:7px 10px;background:#7c3aed;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;">OK</button>'
     +'</div>'
+    +'<div style="font-size:9px;color:rgba(255,255,255,0.2);margin-top:5px;">Salvo localmente no navegador</div>'
     +'</div>'
-    // IA pane
-    +'<div id="car-pane-ia" style="flex:1;overflow-y:auto;padding:16px;display:none;flex-direction:column;gap:14px;">'
-    +'<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;">GERAR COM IA</div>'
-    +'<input id="car-ia-tema" placeholder="Ex: Como sair do iFood em 90 dias" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:#fff;font-size:13px;">'
-    +'<button id="car-ia-btn" onclick="carGerarRoteiro()" style="width:100%;padding:10px;background:linear-gradient(135deg,#7c3aed,#3b82f6);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">🤖 Gerar roteiro completo</button>'
-    +'<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'
-    +'<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:8px;">LEGENDA</div>'
-    +'<textarea id="car-leg-txt" rows="6" placeholder="Legenda para o post..." style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:#fff;font-size:12px;line-height:1.5;resize:vertical;font-family:inherit;"></textarea>'
-    +'<button id="car-leg-btn" onclick="carGerarLegenda()" style="width:100%;padding:9px;margin-top:8px;background:rgba(124,58,237,0.2);border:1px solid rgba(124,58,237,0.35);border-radius:8px;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;">✨ Gerar legenda com IA</button>'
+    // Tema + gerar roteiro
+    +'<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);letter-spacing:1px;">GERAR ROTEIRO</div>'
+    +'<input id="car-ia-tema" placeholder="Ex: Como sair do iFood em 90 dias" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:9px 11px;color:#fff;font-size:12px;box-sizing:border-box;">'
+    +'<button id="car-ia-btn" onclick="carGerarRoteiro()" style="width:100%;padding:10px;background:linear-gradient(135deg,#7c3aed,#3b82f6);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🤖 Gerar roteiro completo</button>'
+    // Legenda
+    +'<div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;">'
+    +'<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);letter-spacing:1px;margin-bottom:7px;">LEGENDA DO POST</div>'
+    +'<textarea id="car-leg-txt" rows="5" placeholder="Legenda para o post..." style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:9px 11px;color:#fff;font-size:11px;line-height:1.5;resize:vertical;font-family:inherit;box-sizing:border-box;"></textarea>'
+    +'<button id="car-leg-btn" onclick="carGerarLegenda()" style="width:100%;padding:8px;margin-top:7px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;font-size:11px;font-weight:600;cursor:pointer;">✨ Gerar legenda</button>'
+    +'</div></div>'
+    // ── DESIGN PANE ──
+    +'<div id="car-pane-design" style="flex:1;overflow-y:auto;padding:14px;display:none;flex-direction:column;gap:9px;">'
+    +'<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);letter-spacing:1px;">PERFIL</div>'
+    +'<div style="display:flex;align-items:center;gap:10px;">'
+    +'<div onclick="_carUploadAvatar()" id="car-av-circle" style="width:48px;height:48px;border-radius:50%;border:2px dashed rgba(255,255,255,0.2);cursor:pointer;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,#7c3aed,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;">foto</div>'
+    +'<div style="font-size:10px;color:rgba(255,255,255,0.3);">Clique para<br>adicionar avatar</div>'
     +'</div>'
-    +'</div>'
-    // Design pane
-    +'<div id="car-pane-design" style="flex:1;overflow-y:auto;padding:16px;display:none;flex-direction:column;gap:10px;">'
-    +'<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:2px;">PERFIL & BRANDING</div>'
-    +'<div onclick="_carUploadAvatar()" style="width:56px;height:56px;border-radius:50%;border:2px dashed rgba(255,255,255,0.2);cursor:pointer;overflow:hidden;" id="car-av-prev">'
-    +'<div id="car-av-prev" style="width:100%;height:100%;background:linear-gradient(135deg,#7c3aed,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;">+ foto</div>'
-    +'</div>'
-    +['handle:@lucasramong_:Handle (ex: @lucasramong_)','name:Lucas Siqueira:Nome exibido','brand:Lucas Siqueira | Audens Company:Texto esquerdo footer','category:Marketing · Food Service:Texto secundário footer','month::Mês/período (vazio = automático)'].map(function(cfg){
-      var parts=cfg.split(':');var id=parts[0],def=parts[1],lbl=parts[2];
-      return'<div><div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:4px;">'+lbl+'</div>'
-        +'<input id="car-des-'+id+'" value="'+(_carState.design[id]||def||'')+'" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 10px;color:#fff;font-size:12px;"></div>';
+    +[['handle','@lucasramong_','Handle'],['name','Lucas Siqueira','Nome'],['brand','Lucas Siqueira | Audens Company','Footer esquerdo'],['category','Marketing · Food Service','Footer secundário'],['month','','Mês (vazio = auto)']].map(function(cfg){
+      return'<div><div style="font-size:9px;color:rgba(255,255,255,0.3);margin-bottom:3px;">'+cfg[2]+'</div>'
+        +'<input id="car-des-'+cfg[0]+'" value="'+(_carState.design[cfg[0]]||cfg[1])+'" style="width:100%;background:#0d0d11;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#fff;font-size:11px;box-sizing:border-box;"></div>';
     }).join('')
-    +'<button onclick="_carApplyDesign()" style="width:100%;padding:9px;background:#7c3aed;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-top:4px;">Aplicar design</button>'
+    +'<button onclick="_carApplyDesign()" style="width:100%;padding:9px;background:#7c3aed;border:none;border-radius:7px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-top:2px;">Aplicar design</button>'
     +'</div>'
     +'</div>';
 
-  H+='</div></div>';
-
-  // Toast
-  H+='<div id="car-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#7c3aed;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;white-space:nowrap;"></div>';
-
+  H+='</div>';
+  H+='<div id="car-toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#7c3aed;color:#fff;padding:9px 18px;border-radius:18px;font-size:12px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;white-space:nowrap;"></div>';
   return H;
 }
 
