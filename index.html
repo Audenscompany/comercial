@@ -4208,6 +4208,7 @@ function buildNav(){
 
   // Definições de navs com suporte a grupos
   var gestorDef=[
+    {id:'prospeccao',icon:'ti-target-arrow',label:'Prospecção'},
     {id:'visao-geral',icon:'ti-layout-dashboard',label:'Visão Geral'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
@@ -4256,6 +4257,7 @@ function buildNav(){
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var closerDef=[
+    {id:'prospeccao',icon:'ti-target-arrow',label:'Prospecção'},
     {id:'ligar',icon:'ti-phone',label:'Leads de Hoje'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
@@ -4271,6 +4273,7 @@ function buildNav(){
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var sdrDef=[
+    {id:'prospeccao',icon:'ti-target-arrow',label:'Prospecção'},
     {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
@@ -4425,7 +4428,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'dicas-rapidas':renderDicas,'instagram':renderInstagram,'stories-lab':renderStories,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -4451,6 +4454,7 @@ function showPage(id){
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
     if(id==='dicas-rapidas') setTimeout(dicaInitPage,50);
+    if(id==='prospeccao') setTimeout(prospInitPage,50);
     if(id==='instagram') setTimeout(igInitPage,50);
     if(id==='stories-lab') setTimeout(storiesInitPage,50);
     if(id==='vendas'){setTimeout(loadVendasSheets,50);setTimeout(autoSyncAssinaturas,200);}
@@ -27956,6 +27960,365 @@ function renderCarrossel(){
     '<div id="car-toast" style="position:fixed;bottom:22px;right:22px;background:#1c1c22;border:1px solid var(--border);padding:12px 18px;border-radius:10px;font-size:12.5px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;"></div>'+
   '</div>';
   return H;
+}
+
+
+
+// ==================== PROSPECÇÃO (Social Selling + BDR) ====================
+var PROSP_META_REUNIOES=80;
+var PROSP_PONTOS={abordagem:2,resposta:5,agendada:30,realizada:50,venda:100};
+var PROSP_ETAPAS=[
+  {id:'abordado',label:'Abordado',cor:'#6b7280',pts:2,proximo:'respondeu'},
+  {id:'respondeu',label:'Respondeu',cor:'#3b82f6',pts:5,proximo:'agendada'},
+  {id:'agendada',label:'Reunião agendada',cor:'#f59e0b',pts:30,proximo:'realizada'},
+  {id:'realizada',label:'Reunião realizada',cor:'#10b981',pts:50,proximo:'venda'},
+  {id:'venda',label:'Venda',cor:'#7c3aed',pts:100,proximo:null}
+];
+var PROSP_CADENCIA_DIAS=5;
+var _prospLeads={};      // {id:{...}}
+var _prospTab='meu';     // meu | ranking | gestor
+var _prospCanalFiltro='todos';
+
+function _prospEtapa(id){return PROSP_ETAPAS.find(function(e){return e.id===id;});}
+function _prospHoje(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function _prospMesAtual(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function _prospDiasEntre(iso1,iso2){var a=new Date(iso1+'T12:00:00'),b=new Date(iso2+'T12:00:00');return Math.round((b-a)/86400000);}
+function prospToast(m){var t=document.getElementById('prosp-toast');if(!t)return;t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2600);}
+
+function _prospSave(id){
+  try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('prospeccao/leads/'+id).set(_prospLeads[id]);}catch(e){}
+}
+function _prospSaveAll(){try{localStorage.setItem('prosp_leads',JSON.stringify(_prospLeads));}catch(e){}}
+
+// Quem sou eu / canal
+function _prospMeuCanal(){
+  if(typeof CU==='undefined'||!CU)return 'ss';
+  if(CU.funcao==='sdr')return 'ss';
+  if(CU.funcao==='closer')return 'bdr';
+  return 'ambos'; // gestor
+}
+function _prospMeuNome(){return (typeof CU!=='undefined'&&CU)?(CU.closer||CU.name):'';}
+
+// ===== ADICIONAR LEAD =====
+function prospAddLead(canal){
+  var handleEl=document.getElementById('prosp-novo-handle');
+  var negEl=document.getElementById('prosp-novo-negocio');
+  var handle=(handleEl&&handleEl.value||'').trim().replace(/^@/,'');
+  var negocio=(negEl&&negEl.value||'').trim();
+  if(!handle&&!negocio){prospToast('Informe o @ ou o nome do negócio.');return;}
+  var id='pl_'+Date.now()+'_'+Math.floor(Math.random()*999);
+  _prospLeads[id]={
+    id:id,handle:handle,negocio:negocio,canal:canal||_prospMeuCanal(),
+    responsavel:_prospMeuNome(),etapa:'abordado',
+    dataCriacao:_prospHoje(),ultimoToque:_prospHoje(),toques:1,
+    historico:[{etapa:'abordado',ts:Date.now()}],ativo:true
+  };
+  _prospSave(id);_prospSaveAll();
+  if(handleEl)handleEl.value='';if(negEl)negEl.value='';
+  prospRender();
+  prospToast('Lead adicionado (+'+PROSP_PONTOS.abordagem+' pts)');
+}
+
+// ===== AVANÇAR ETAPA =====
+function prospAvancar(id){
+  var l=_prospLeads[id];if(!l)return;
+  var et=_prospEtapa(l.etapa);
+  if(!et||!et.proximo){prospToast('Lead já no fim do funil.');return;}
+  l.etapa=et.proximo;
+  l.historico=l.historico||[];l.historico.push({etapa:l.etapa,ts:Date.now()});
+  if(l.etapa==='agendada'||l.etapa==='realizada'||l.etapa==='venda')l.ativo=false; // sai da cadência
+  _prospSave(id);_prospSaveAll();prospRender();
+  var novo=_prospEtapa(l.etapa);
+  prospToast(novo.label+' (+'+novo.pts+' pts)');
+}
+function prospRegistrarToque(id){
+  var l=_prospLeads[id];if(!l)return;
+  l.toques=(l.toques||1)+1;l.ultimoToque=_prospHoje();
+  if(l.toques>=PROSP_CADENCIA_DIAS&&l.etapa==='abordado'){l.ativo=false;l.etapa='perdido';l.historico.push({etapa:'perdido',ts:Date.now()});prospToast('Cadência encerrada — lead aposentado');}
+  else prospToast('Follow-up registrado (dia '+l.toques+'/'+PROSP_CADENCIA_DIAS+')');
+  _prospSave(id);_prospSaveAll();prospRender();
+}
+function prospPerder(id){
+  var l=_prospLeads[id];if(!l)return;
+  if(!confirm('Marcar este lead como perdido?'))return;
+  l.etapa='perdido';l.ativo=false;l.historico.push({etapa:'perdido',ts:Date.now()});
+  _prospSave(id);_prospSaveAll();prospRender();
+}
+
+// ===== PONTOS =====
+function _prospPontosPessoa(nome,periodo){
+  // periodo: 'hoje' | 'mes' | 'sempre'
+  var total=0;var hoje=_prospHoje(),mes=_prospMesAtual();
+  Object.keys(_prospLeads).forEach(function(k){
+    var l=_prospLeads[k];if(l.responsavel!==nome)return;
+    (l.historico||[]).forEach(function(h){
+      var et=_prospEtapa(h.etapa);if(!et)return;
+      var d=new Date(h.ts);var diso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      if(periodo==='hoje'&&diso!==hoje)return;
+      if(periodo==='mes'&&diso.slice(0,7)!==mes)return;
+      total+=et.pts;
+    });
+  });
+  // pontos do closer via reuniões do CRM (realizada 50 / venda 100)
+  try{
+    if(typeof followups!=='undefined'&&followups){
+      Object.keys(followups).forEach(function(fid){
+        var fu=followups[fid];if(!fu)return;var quem=fu.closer||(typeof meetings!=='undefined'&&meetings[fu.meetingId]?meetings[fu.meetingId].responsavel:'');
+        if(quem!==nome)return;
+        var dt=fu.dt||fu.dataInicio||'';
+        if(periodo==='hoje'&&dt!==hoje)return;
+        if(periodo==='mes'&&(dt||'').slice(0,7)!==mes)return;
+        if(fu.comparecimento==='sim')total+=PROSP_PONTOS.realizada;
+        if(fu.resultado==='venda')total+=PROSP_PONTOS.venda;
+      });
+    }
+  }catch(e){}
+  return total;
+}
+
+// ===== META: reuniões realizadas no mês =====
+function _prospReunioesRealizadasMes(){
+  var mes=_prospMesAtual(),n=0;
+  // tráfego/existentes
+  try{
+    if(typeof followups!=='undefined'&&followups){
+      Object.keys(followups).forEach(function(fid){var fu=followups[fid];if(fu&&fu.comparecimento==='sim'){var dt=(fu.dt||fu.dataInicio||'');if(dt.slice(0,7)===mes)n++;}});
+    }
+  }catch(e){}
+  // outbound prospeccao (realizada/venda) que ainda não viraram meeting
+  Object.keys(_prospLeads).forEach(function(k){var l=_prospLeads[k];if(l.etapa==='realizada'||l.etapa==='venda'){var h=(l.historico||[]).find(function(x){return x.etapa==='realizada';});if(h){var d=new Date(h.ts);var m=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');if(m===mes)n++;}}});
+  return n;
+}
+
+// ===== % DIÁRIO =====
+var PROSP_MINIMOS={
+  'João':[{cat:'ss',label:'Abordagens',meta:10}],
+  'Gustavo':[{cat:'bdr',label:'Raio-X enviados',meta:5}],
+  'Lucas':[{cat:'conteudo',label:'Conteúdos',meta:2},{cat:'stories',label:'Stories',meta:5}]
+};
+function _prospFeitoHoje(nome,cat){
+  var hoje=_prospHoje(),n=0;
+  Object.keys(_prospLeads).forEach(function(k){var l=_prospLeads[k];if(l.responsavel!==nome)return;if(l.dataCriacao!==hoje)return;
+    if(cat==='ss'&&l.canal==='ss')n++;if(cat==='bdr'&&l.canal==='bdr')n++;});
+  // conteúdo/stories marcados manualmente
+  if(cat==='conteudo'||cat==='stories'){try{var v=JSON.parse(localStorage.getItem('prosp_conteudo_'+hoje)||'{}');n=v[nome+'_'+cat]||0;}catch(e){}}
+  return n;
+}
+function prospMarcarConteudo(cat,delta){
+  var hoje=_prospHoje();var nome=_prospMeuNome();
+  var v={};try{v=JSON.parse(localStorage.getItem('prosp_conteudo_'+hoje)||'{}');}catch(e){}
+  var key=nome+'_'+cat;v[key]=Math.max(0,(v[key]||0)+delta);
+  localStorage.setItem('prosp_conteudo_'+hoje,JSON.stringify(v));
+  try{if(fbDb)fbDb.ref('prospeccao/conteudo/'+hoje+'/'+key).set(v[key]);}catch(e){}
+  prospRender();
+}
+function _prospPctDia(nome){
+  var mins=PROSP_MINIMOS[nome];if(!mins)return null;
+  var feito=0,meta=0,detalhe=[];
+  mins.forEach(function(m){var f=_prospFeitoHoje(nome,m.cat);feito+=Math.min(f,m.meta);meta+=m.meta;detalhe.push({label:m.label,f:f,meta:m.meta});});
+  return {pct:meta?Math.round(feito/meta*100):0,detalhe:detalhe};
+}
+
+// ===== RENDER PRINCIPAL =====
+function renderProspeccao(){
+  var H='<div class="page active" style="padding:0;display:flex;flex-direction:column;height:100%;overflow:hidden;">';
+  // Header
+  H+='<div style="padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
+      '<div><div style="font-size:20px;font-weight:900;color:var(--white);">🎯 Prospecção</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-top:2px;">Social Selling + BDR · marque o avanço de cada lead no funil</div></div>'+
+      '<div id="prosp-meta-box" style="min-width:280px;"></div>'+
+    '</div>'+
+  '</div>';
+  // Tabs
+  var tabs=[['meu','Meu Dia']];
+  tabs.push(['ranking','Ranking']);
+  if(typeof CU!=='undefined'&&CU&&CU.role==='gestor')tabs.push(['gestor','Painel do Gestor']);
+  H+='<div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0;padding:0 24px;">'+
+    tabs.map(function(t){return '<div id="prosp-tab-'+t[0]+'" onclick="prospSwitchTab(\''+t[0]+'\')" style="padding:12px 18px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.5px;color:'+(t[0]===_prospTab?'#a78bfa':'var(--muted)')+';border-bottom:2px solid '+(t[0]===_prospTab?'#7c3aed':'transparent')+';">'+t[1].toUpperCase()+'</div>';}).join('')+
+  '</div>';
+  H+='<div style="flex:1;overflow-y:auto;padding:20px 24px;" id="prosp-body"></div>';
+  H+='<div id="prosp-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#7c3aed;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;white-space:nowrap;"></div>';
+  H+='</div>';
+  return H;
+}
+function prospSwitchTab(t){_prospTab=t;prospRender();}
+
+function prospRender(){
+  // meta box
+  var mb=document.getElementById('prosp-meta-box');
+  if(mb){
+    var real=_prospReunioesRealizadasMes();var pct=Math.min(100,Math.round(real/PROSP_META_REUNIOES*100));
+    mb.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;">'+
+      '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px;"><span style="color:var(--muted);font-weight:700;letter-spacing:.5px;">🎯 META DO MÊS</span><span style="color:#10b981;font-weight:800;">'+real+'/'+PROSP_META_REUNIOES+' reuniões</span></div>'+
+      '<div style="height:10px;background:rgba(255,255,255,0.06);border-radius:6px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,#7c3aed,#10b981);border-radius:6px;"></div></div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:right;">'+pct+'% da meta</div>'+
+    '</div>';
+  }
+  // tabs highlight
+  ['meu','ranking','gestor'].forEach(function(t){var el=document.getElementById('prosp-tab-'+t);if(el){el.style.color=t===_prospTab?'#a78bfa':'var(--muted)';el.style.borderBottomColor=t===_prospTab?'#7c3aed':'transparent';}});
+  var body=document.getElementById('prosp-body');if(!body)return;
+  if(_prospTab==='ranking')body.innerHTML=_prospRenderRanking();
+  else if(_prospTab==='gestor')body.innerHTML=_prospRenderGestor();
+  else body.innerHTML=_prospRenderMeuDia();
+}
+
+function _prospRenderMeuDia(){
+  var nome=_prospMeuNome();var canal=_prospMeuCanal();
+  var H='';
+  // resumo do topo: pontos + % dia
+  var ptsHoje=_prospPontosPessoa(nome,'hoje'),ptsMes=_prospPontosPessoa(nome,'mes');
+  var pct=_prospPctDia(nome);
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
+    '<div style="flex:1;min-width:130px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:12px 16px;"><div style="font-size:24px;font-weight:800;color:#a78bfa;">'+ptsHoje+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Pontos hoje</div></div>'+
+    '<div style="flex:1;min-width:130px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;"><div style="font-size:24px;font-weight:800;color:var(--white);">'+ptsMes+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Pontos no mês</div></div>';
+  if(pct){
+    H+='<div style="flex:2;min-width:220px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;">'+
+      '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px;"><span style="color:var(--muted);font-weight:700;letter-spacing:.5px;">MEU DIA</span><span style="color:'+(pct.pct>=100?'#10b981':'#f59e0b')+';font-weight:800;">'+pct.pct+'%</span></div>'+
+      '<div style="height:8px;background:rgba(255,255,255,0.06);border-radius:5px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:'+pct.pct+'%;background:'+(pct.pct>=100?'#10b981':'#f59e0b')+';"></div></div>'+
+      pct.detalhe.map(function(d){return '<span style="font-size:10.5px;color:var(--muted);margin-right:12px;">'+d.label+': <b style="color:var(--white);">'+d.f+'/'+d.meta+'</b></span>';}).join('')+
+    '</div>';
+  }
+  H+='</div>';
+  // marcação de conteúdo (Lucas/gestor)
+  if(PROSP_MINIMOS[nome]&&PROSP_MINIMOS[nome].some(function(m){return m.cat==='conteudo'||m.cat==='stories';})){
+    H+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:18px;">'+
+      '<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;margin-bottom:10px;">CONTEÚDO DE HOJE</div>'+
+      '<div style="display:flex;gap:20px;flex-wrap:wrap;">'+
+      PROSP_MINIMOS[nome].filter(function(m){return m.cat==='conteudo'||m.cat==='stories';}).map(function(m){var f=_prospFeitoHoje(nome,m.cat);
+        return '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;color:var(--white);">'+m.label+' '+f+'/'+m.meta+'</span>'+
+          '<button onclick="prospMarcarConteudo(\''+m.cat+'\',-1)" style="width:26px;height:26px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--white);cursor:pointer;">−</button>'+
+          '<button onclick="prospMarcarConteudo(\''+m.cat+'\',1)" style="width:26px;height:26px;border-radius:6px;background:#7c3aed;border:none;color:#fff;cursor:pointer;">+</button></div>';
+      }).join('')+'</div></div>';
+  }
+  // adicionar lead
+  var canalAdd=canal==='ambos'?'ss':canal;
+  H+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:18px;">'+
+    '<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;margin-bottom:10px;">NOVO LEAD</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">'+
+      '<div style="flex:1;min-width:140px;"><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px;">@ do Instagram</label><input id="prosp-novo-handle" placeholder="@perfil" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 11px;box-sizing:border-box;"></div>'+
+      '<div style="flex:1;min-width:140px;"><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px;">Nome do negócio</label><input id="prosp-novo-negocio" placeholder="Ex: Burger do Zé" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 11px;box-sizing:border-box;"></div>'+
+      (canal==='ambos'
+        ?'<button onclick="prospAddLead(\'ss\')" style="padding:10px 14px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">+ Social Selling</button><button onclick="prospAddLead(\'bdr\')" style="padding:10px 14px;background:#ef4444;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">+ BDR</button>'
+        :'<button onclick="prospAddLead(\''+canalAdd+'\')" style="padding:10px 16px;background:#7c3aed;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">+ Adicionar (+2 pts)</button>')+
+    '</div></div>';
+  // listas: ativos (cadência) e avançados
+  var meus=Object.keys(_prospLeads).map(function(k){return _prospLeads[k];}).filter(function(l){return l.responsavel===nome;});
+  var ativos=meus.filter(function(l){return l.ativo&&l.etapa!=='perdido';}).sort(function(a,b){return (b.dataCriacao||'').localeCompare(a.dataCriacao||'');});
+  var avancados=meus.filter(function(l){return !l.ativo&&l.etapa!=='perdido';}).sort(function(a,b){return (b.historico[b.historico.length-1].ts)-(a.historico[a.historico.length-1].ts);});
+  H+='<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;margin:6px 0 10px;">EM CADÊNCIA ('+ativos.length+')</div>';
+  H+=ativos.length?ativos.map(_prospCard).join(''):'<div style="color:var(--muted);font-size:12px;padding:14px;">Nenhum lead em cadência. Adicione acima.</div>';
+  if(avancados.length){
+    H+='<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;margin:18px 0 10px;">AVANÇADOS ('+avancados.length+')</div>';
+    H+=avancados.map(_prospCard).join('');
+  }
+  return H;
+}
+
+function _prospCard(l){
+  var et=_prospEtapa(l.etapa)||PROSP_ETAPAS[0];
+  var canalBadge=l.canal==='bdr'?'<span style="background:rgba(239,68,68,0.15);color:#f87171;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;">BDR</span>':'<span style="background:rgba(59,130,246,0.15);color:#60a5fa;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;">SS</span>';
+  var dias=l.ultimoToque?_prospDiasEntre(l.dataCriacao,_prospHoje()):0;
+  var nome=l.handle?'@'+l.handle:(l.negocio||'—');
+  var H='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'+
+    '<div style="flex:1;min-width:160px;">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">'+canalBadge+'<span style="font-size:13px;font-weight:700;color:var(--white);">'+nome+'</span></div>'+
+      '<div style="font-size:11px;color:var(--muted);">'+(l.negocio&&l.handle?l.negocio+' · ':'')+'toque '+(l.toques||1)+'/'+PROSP_CADENCIA_DIAS+'</div>'+
+    '</div>'+
+    '<span style="background:'+et.cor+'22;color:'+et.cor+';border:1px solid '+et.cor+'44;font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px;white-space:nowrap;">'+et.label+'</span>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+  if(et.proximo){
+    var prox=_prospEtapa(et.proximo);
+    H+='<button onclick="prospAvancar(\''+l.id+'\')" style="padding:7px 12px;background:'+prox.cor+';border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">→ '+prox.label+' (+'+prox.pts+')</button>';
+  }
+  if(l.ativo&&l.etapa==='abordado'){
+    H+='<button onclick="prospRegistrarToque(\''+l.id+'\')" title="Registrar follow-up de hoje" style="padding:7px 10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:11px;cursor:pointer;">↻ Follow-up</button>';
+  }
+  if(l.etapa!=='venda'&&l.etapa!=='perdido'){
+    H+='<button onclick="prospPerder(\''+l.id+'\')" title="Marcar perdido" style="padding:7px 9px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:7px;color:#f87171;font-size:11px;cursor:pointer;">✕</button>';
+  }
+  H+='</div></div>';
+  return H;
+}
+
+function _prospRenderRanking(){
+  var nomes=['Lucas','João','Gustavo'];
+  var arr=nomes.map(function(n){return {nome:n,hoje:_prospPontosPessoa(n,'hoje'),mes:_prospPontosPessoa(n,'mes')};});
+  arr.sort(function(a,b){return b.mes-a.mes;});
+  var medal=['🥇','🥈','🥉'];
+  var H='<div style="max-width:640px;margin:0 auto;">';
+  H+='<div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1px;margin-bottom:14px;">RANKING DO MÊS</div>';
+  arr.forEach(function(r,i){
+    H+='<div style="display:flex;align-items:center;gap:14px;background:var(--bg2);border:1px solid '+(i===0?'rgba(124,58,237,0.4)':'var(--border)')+';border-radius:12px;padding:14px 18px;margin-bottom:8px;">'+
+      '<div style="font-size:22px;width:32px;">'+(medal[i]||(i+1))+'</div>'+
+      '<div style="flex:1;"><div style="font-size:15px;font-weight:700;color:var(--white);">'+r.nome+'</div><div style="font-size:11px;color:var(--muted);">Hoje: '+r.hoje+' pts</div></div>'+
+      '<div style="font-size:24px;font-weight:800;color:#a78bfa;">'+r.mes+'</div>'+
+    '</div>';
+  });
+  // frase motivacional
+  if(arr.length>=2){
+    var diff=arr[0].mes-arr[1].mes;
+    H+='<div style="text-align:center;color:var(--muted);font-size:12px;margin-top:12px;">'+(diff===0?'Empate na liderança!':arr[1].nome+' está a '+diff+' pts de '+arr[0].nome)+'</div>';
+  }
+  H+='</div>';
+  return H;
+}
+
+function _prospRenderGestor(){
+  // funil por canal
+  function funil(canal){
+    var et={abordado:0,respondeu:0,agendada:0,realizada:0,venda:0,perdido:0};
+    Object.keys(_prospLeads).forEach(function(k){var l=_prospLeads[k];if(canal!=='todos'&&l.canal!==canal)return;
+      // conta pelo ponto mais avançado atingido
+      (l.historico||[]).forEach(function(h){if(et[h.etapa]!==undefined)et[h.etapa]++;});
+    });
+    return et;
+  }
+  function funilBox(titulo,canal,cor){
+    var f=funil(canal);
+    var etapas=[['abordado','Abordados'],['respondeu','Responderam'],['agendada','Agendadas'],['realizada','Realizadas'],['venda','Vendas']];
+    var max=f.abordado||1;
+    var H='<div style="flex:1;min-width:280px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;">'+
+      '<div style="font-size:13px;font-weight:800;color:'+cor+';margin-bottom:12px;">'+titulo+'</div>';
+    etapas.forEach(function(e){var v=f[e[0]];var w=Math.round(v/max*100);
+      H+='<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="color:var(--muted);">'+e[1]+'</span><span style="color:var(--white);font-weight:700;">'+v+'</span></div>'+
+      '<div style="height:7px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+w+'%;background:'+cor+';"></div></div></div>';
+    });
+    // conversões
+    var cRes=f.abordado?Math.round(f.respondeu/f.abordado*100):0;
+    var cReu=f.abordado?Math.round(f.agendada/f.abordado*100):0;
+    H+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);">Abordagem→resposta: <b style="color:var(--white);">'+cRes+'%</b> · Abordagem→reunião: <b style="color:var(--white);">'+cReu+'%</b></div>';
+    return H+'</div>';
+  }
+  var H='<div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1px;margin-bottom:14px;">FUNIL POR CANAL (métrica que faltava)</div>';
+  H+='<div style="display:flex;gap:16px;flex-wrap:wrap;">'+funilBox('📱 Social Selling','ss','#3b82f6')+funilBox('🎯 BDR (Raio-X)','bdr','#ef4444')+'</div>';
+  // % diário do time
+  H+='<div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1px;margin:20px 0 12px;">CONCLUSÃO DIÁRIA DO TIME</div>';
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+  ['João','Gustavo','Lucas'].forEach(function(n){var p=_prospPctDia(n);if(!p)return;
+    H+='<div style="flex:1;min-width:180px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;">'+
+      '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:13px;font-weight:700;color:var(--white);">'+n+'</span><span style="font-size:13px;font-weight:800;color:'+(p.pct>=100?'#10b981':'#f59e0b')+';">'+p.pct+'%</span></div>'+
+      '<div style="height:7px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:'+p.pct+'%;background:'+(p.pct>=100?'#10b981':'#f59e0b')+';"></div></div>'+
+      p.detalhe.map(function(d){return '<div style="font-size:10.5px;color:var(--muted);">'+d.label+': '+d.f+'/'+d.meta+'</div>';}).join('')+
+    '</div>';
+  });
+  H+='</div>';
+  return H;
+}
+
+// ===== INIT =====
+async function prospInitPage(){
+  try{_prospLeads=JSON.parse(localStorage.getItem('prosp_leads')||'{}');}catch(e){_prospLeads={};}
+  try{
+    if(typeof fbDb!=='undefined'&&fbDb){
+      var snap=await fbDb.ref('prospeccao/leads').once('value');var v=snap.val();
+      if(v)_prospLeads=v;
+      // conteúdo de hoje
+      var hoje=_prospHoje();var cs=await fbDb.ref('prospeccao/conteudo/'+hoje).once('value');var cv=cs.val();
+      if(cv)localStorage.setItem('prosp_conteudo_'+hoje,JSON.stringify(cv));
+    }
+  }catch(e){}
+  prospRender();
 }
 
 
