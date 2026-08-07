@@ -831,7 +831,7 @@ function startRealtimeSync(){
       _navPermissions={};
       Object.keys(raw).forEach(function(k){ _navPermissions[k.replace(/\|/g,'.').replace(/~/g,'@')]=raw[k]; });
       // Garante que páginas padrão do role estão sempre presentes (evita sumir após load Firebase)
-      var _sdrRequired=['followup'];
+      var _sdrRequired=['followup','prospeccao'];
       Object.keys(_navPermissions).forEach(function(em){
         var u=USERS[em];
         if(u&&(u.funcao==='sdr'||u.funcao==='closer')){
@@ -14344,7 +14344,7 @@ function renderNavPermissionsPanel(){
           // Se não tem permissão customizada, considera que tem tudo (padrão do role)
           var defaultPages=u.funcao==='sdr'
             ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
-            :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
+            :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr','prospeccao'];
           // Usa estado temporário se houver alterações não salvas
           var currentAllowed=(_navPermTemp[email]!==undefined?_navPermTemp[email]:(allowed||defaultPages));
 
@@ -14396,7 +14396,7 @@ function navPermToggle(email, pageId, labelEl){
     var allowed=_navPermissions[email];
     var defaultPages=USERS[email]&&USERS[email].funcao==='sdr'
       ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
-      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr'];
+      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr','prospeccao'];
     _navPermTemp[email]=(allowed||defaultPages).slice();
   }
   var idx=_navPermTemp[email].indexOf(pageId);
@@ -14431,8 +14431,8 @@ function saveNavPermissions(email){
   var toSave=_navPermTemp[email];
   if(!toSave){
     var def=_navPermissions[email]||(USERS[email]&&USERS[email].funcao==='sdr'
-      ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira']
-      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr']);
+      ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira','prospeccao']
+      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr','prospeccao']);
     toSave=def;
   }
   _navPermissions[email]=toSave;
