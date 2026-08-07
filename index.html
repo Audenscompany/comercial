@@ -18893,9 +18893,9 @@ async function calcCloserFromSheets(nivelIdx, month){
       var _saleDt = (typeof _vendaDate==='function' ? _vendaDate(fu,m2) : null) || new Date(0);
       var clienteC=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
       if(isColdCallFU){
-        // Cold call NÃO conta para a meta; comissão 25% sobre o MRR normalizado (sempre)
+        // Cold call: 25% sobre o MRR (comissão de quem AGENDOU/prospectou) — sempre, independe da meta
         _coldCallItems.push({cliente:clienteC,mrr:_normMRR,plano:planoFU||'Mensal',date:_saleDt});
-        return;
+        // NÃO retorna: se o Gustavo também é o closer, a venda CONTA na meta e ganha os 12% também
       }
       result.contratos++;
       if(planoFU.includes('TRIMESTRAL')) result.tipoContrato='Trimestral';
