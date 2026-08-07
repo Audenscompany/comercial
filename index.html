@@ -19762,9 +19762,9 @@ function buildCloserTable(){
     {name:"Pleno - acima de R$30k faturamento", col:"linear-gradient(135deg,#0B6E56,#1A8A68)", rows:[3,4,5]},
     {name:"Senior - High Ticket", col:"linear-gradient(135deg,#2D1160,#4A1C7A)", rows:[6,7,8]}
   ];
-  var thead = "<table><thead><tr><th>Nivel</th><th>Meta/mes</th><th>Base</th><th>Min. Garantido</th><th>Bonus Meta</th><th>Comm. Mensal</th><th>Comm. Trim.</th><th>Comm. Sem.</th><th>Ativa na</th><th>Progressão →</th></tr></thead><tbody>";
+  var thead = "<table><thead><tr><th>Nivel</th><th>Meta/mes</th><th>Base</th><th>Min. Garantido</th><th>Bonus Meta</th><th>Comissão (% do MRR · 1º mês)</th><th>Ativa na</th><th>Progressão →</th></tr></thead><tbody>";
   tiers.forEach(function(t){
-    rows += "<tr><td colspan='10' style='background:"+t.col+";color:white;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;'>"+t.name+"</td></tr>";
+    rows += "<tr><td colspan='8' style='background:"+t.col+";color:white;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;'>"+t.name+"</td></tr>";
     t.rows.forEach(function(ri){
       var l = CLOSER_LEVELS[ri];
       var promoHtml = l.promoMeses===0
@@ -19775,9 +19775,7 @@ function buildCloserTable(){
         "<td>R$"+l.base.toLocaleString("pt-BR")+"</td>"+
         "<td style='color:var(--muted);'>R$"+l.minG.toLocaleString("pt-BR")+"</td>"+
         "<td style='color:#fde047;'>R$"+l.bonusMeta.toLocaleString("pt-BR")+"</td>"+
-        "<td style='color:var(--purple3);'>R$"+l.commMens.toLocaleString("pt-BR")+"</td>"+
-        "<td style='color:var(--cyan);'>R$"+l.commTrim.toLocaleString("pt-BR")+"</td>"+
-        "<td style='color:var(--green);'>R$"+l.commSem.toLocaleString("pt-BR")+"</td>"+
+        "<td style='color:var(--purple3);font-weight:700;'>"+Math.round((l.commPct||0.12)*100)+"%</td>"+
         "<td style='color:var(--muted);font-size:12px;'>"+l.ativa+"o contrato</td>"+
         "<td style='font-size:11px;'>"+promoHtml+"</td></tr>";
     });
