@@ -13850,7 +13850,7 @@ function buildCCCloser(r, mesLabel, lvNome){
   var rowsPad = '';
   rowsPad += '<tr><td><div class="td-label">Salário Base <span class="td-badge" style="background:#6B2FA022;color:#9B5FD0;border-color:#6B2FA0;">CLO</span></div></td><td><div class="td-detail">'+lvNome+' — fixo mensal</div></td><td>—</td><td>—</td><td>'+fmt(base)+'</td></tr>';
   rowsPad += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+meta+' contratos '+(bonusMeta>0?'≥ meta ✅':'— meta não atingida')+'</div></td><td>—</td><td>—</td>'+(bonusMeta>0?'<td>'+fmt(bonusMeta)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
-  rowsPad += '<tr><td><div class="td-label">Comissão por Contratos</div></td><td><div class="td-detail">'+acima+' contrato(s) acima da meta × 12% do MRR</div></td><td>'+acima+'</td><td>12%</td>'+(comissaoContratos>0?'<td>'+fmt(comissaoContratos)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  rowsPad += '<tr><td><div class="td-label">Comissão por Contratos</div></td><td><div class="td-detail">'+acima+' contrato(s) acima da meta × '+Math.round((r.commPct||0.12)*100)+'% do MRR</div></td><td>'+acima+'</td><td>'+Math.round((r.commPct||0.12)*100)+'%</td>'+(comissaoContratos>0?'<td>'+fmt(comissaoContratos)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
   rowsPad += '<tr><td><div class="td-label">Reuniões Realizadas</div></td><td><div class="td-detail">'+(r.reunioes||0)+' reuniões comparecidas — sem threshold</div></td><td>'+(r.reunioes||0)+'</td><td>R$ 30,00</td>'+(incentivReun>0?'<td>'+fmt(incentivReun)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
   // Per-contract breakdown (non-cold-call)
   var _contratoVD = (r.vendaDetalhes||[]).filter(function(d){return d.tipo!=='Cold Call 25%';});
@@ -17857,23 +17857,23 @@ function salvarWebhookConfig(){
 
 // ---- CLOSER LEVELS DATA ----
 var CLOSER_LEVELS = [
-  {tier:'Junior',tiercol:'#A05218',n:'N1',base:2014,minG:2400,meta:4,bonusMeta:200,commMens:250,commTrim:300,commSem:432,ativa:5,
+  {tier:'Junior',tiercol:'#A05218',n:'N1',base:2014,minG:2400,meta:4,bonusMeta:200,commMens:250,commTrim:300,commSem:432,ativa:5,commPct:0.10,
    promo:'1 mês batendo 4 contratos',promoMeses:1,promoJanela:1},
-  {tier:'Junior',tiercol:'#A05218',n:'N2',base:2014,minG:2400,meta:6,bonusMeta:800,commMens:262,commTrim:330,commSem:486,ativa:7,
+  {tier:'Junior',tiercol:'#A05218',n:'N2',base:2014,minG:2400,meta:6,bonusMeta:800,commMens:262,commTrim:330,commSem:486,ativa:7,commPct:0.11,
    promo:'Meta em 2 dos últimos 3 meses',promoMeses:2,promoJanela:3},
-  {tier:'Junior',tiercol:'#A05218',n:'N3',base:2014,minG:2400,meta:8,bonusMeta:1400,commMens:275,commTrim:360,commSem:540,ativa:9,
+  {tier:'Junior',tiercol:'#A05218',n:'N3',base:2014,minG:2400,meta:8,bonusMeta:1400,commMens:275,commTrim:360,commSem:540,ativa:9,commPct:0.12,
    promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N1',base:2316,minG:3200,meta:10,bonusMeta:2000,commMens:287,commTrim:360,commSem:540,ativa:11,
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N1',base:2316,minG:3200,meta:10,bonusMeta:2000,commMens:287,commTrim:360,commSem:540,ativa:11,commPct:0.13,
    promo:'Meta em 3 dos últimos 4 meses',promoMeses:3,promoJanela:4},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N2',base:2316,minG:3400,meta:12,bonusMeta:2600,commMens:300,commTrim:390,commSem:594,ativa:13,
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N2',base:2316,minG:3400,meta:12,bonusMeta:2600,commMens:300,commTrim:390,commSem:594,ativa:13,commPct:0.14,
    promo:'Meta em 3 dos últimos 5 meses',promoMeses:3,promoJanela:5},
-  {tier:'Pleno',tiercol:'#1A8A68',n:'N3',base:2316,minG:3600,meta:14,bonusMeta:3200,commMens:312,commTrim:420,commSem:648,ativa:15,
+  {tier:'Pleno',tiercol:'#1A8A68',n:'N3',base:2316,minG:3600,meta:14,bonusMeta:3200,commMens:312,commTrim:420,commSem:648,ativa:15,commPct:0.15,
    promo:'Meta em 4 dos últimos 6 meses',promoMeses:4,promoJanela:6},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N1',base:2664,minG:4000,meta:16,bonusMeta:3800,commMens:325,commTrim:420,commSem:648,ativa:17,
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N1',base:2664,minG:4000,meta:16,bonusMeta:3800,commMens:325,commTrim:420,commSem:648,ativa:17,commPct:0.16,
    promo:'Meta em 3 dos últimos 5 meses',promoMeses:3,promoJanela:5},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N2',base:2664,minG:4400,meta:18,bonusMeta:4400,commMens:337,commTrim:450,commSem:702,ativa:19,
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N2',base:2664,minG:4400,meta:18,bonusMeta:4400,commMens:337,commTrim:450,commSem:702,ativa:19,commPct:0.17,
    promo:'Meta em 4 dos últimos 6 meses',promoMeses:4,promoJanela:6},
-  {tier:'Senior',tiercol:'#6B2FA0',n:'N3',base:2664,minG:4800,meta:20,bonusMeta:5000,commMens:350,commTrim:480,commSem:756,ativa:21,
+  {tier:'Senior',tiercol:'#6B2FA0',n:'N3',base:2664,minG:4800,meta:20,bonusMeta:5000,commMens:350,commTrim:480,commSem:756,ativa:21,commPct:0.18,
    promo:'Topo da carreira',promoMeses:0,promoJanela:0}
 ];
 
@@ -18943,14 +18943,15 @@ async function calcCloserFromSheets(nivelIdx, month){
     var meta = lv.meta;
     result.bonusMeta = result.contratos >= meta ? lv.bonusMeta : 0;
     var acima = Math.max(0, result.contratos - meta);
-    result.comissaoUnit = '12%';
+    result.comissaoUnit = Math.round((lv.commPct||0.12)*100)+'%';
+    result.commPct = lv.commPct||0.12;
     // Ordena por data de fechamento (cronológico): os primeiros `meta` contratos preenchem a meta
     // e NÃO comissionam; a partir do (meta+1)º, cada um paga 12% do MRR do 1º mês.
     _contratoItems.sort(function(a,b){return (a.date-b.date);});
     var _comContr=0;
     _contratoItems.forEach(function(item,i){
       var eAcimaReal = (i>=meta); // índices 0..meta-1 preenchem a meta
-      var comm2 = eAcimaReal ? Math.round(item.mrr*0.12) : 0;
+      var comm2 = eAcimaReal ? Math.round(item.mrr*(lv.commPct||0.12)) : 0;
       _comContr += comm2;
       result.vendaDetalhes.push({cliente:item.cliente,mrr:Math.round(item.mrr),tipo:item.plano||result.tipoContrato,comm:comm2,acima:eAcimaReal});
     });
