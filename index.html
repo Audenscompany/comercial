@@ -4216,10 +4216,12 @@ function buildNav(){
     {id:'analise-ads',icon:'ti-ad-2',label:'Analise de Ads'},
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'criativos',icon:'ti-movie',label:'Criativos de Ads'},
-    {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
-    {id:'dicas-rapidas',icon:'ti-bulb',label:'Dicas Rápidas'},
-    {id:'instagram',icon:'ti-brand-instagram',label:'Instagram'},
-    {id:'stories-lab',icon:'ti-brand-instagram',label:'Stories Lab'},
+    {group:'Instagram',icon:'ti-brand-instagram',items:[
+      {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
+      {id:'instagram',icon:'ti-chart-bar',label:'Instagram'},
+      {id:'stories-lab',icon:'ti-player-play',label:'Stories Lab'},
+      {id:'dicas-rapidas',icon:'ti-bulb',label:'Reels 10S'}
+    ]},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
@@ -4328,10 +4330,15 @@ function buildNav(){
       'historico':{id:'historico',icon:'ti-history',label:'Historico Geral'},
       'dashboard':{id:'dashboard',icon:'ti-phone',label:'Dashboard Cold Call'},
       'avaliacoes':{id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
-      'vendas':{id:'vendas',icon:'ti-cash-register',label:'Vendas'}
+      'vendas':{id:'vendas',icon:'ti-cash-register',label:'Vendas'},
+      'carrossel':{id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
+      'instagram':{id:'instagram',icon:'ti-chart-bar',label:'Instagram'},
+      'stories-lab':{id:'stories-lab',icon:'ti-player-play',label:'Stories Lab'},
+      'dicas-rapidas':{id:'dicas-rapidas',icon:'ti-bulb',label:'Reels 10S'}
     };
     // Grupos para organizar na sidebar quando há permissões customizadas
     var _navGroups=[
+      {group:'Instagram',icon:'ti-brand-instagram',items:['carrossel','instagram','stories-lab','dicas-rapidas']},
       {group:'SDR',icon:'ti-report-analytics',items:['minhas-tarefas','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','desempenho-sdr']},
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
       {group:'Cold Call',icon:'ti-phone-call',items:['ligar','leads','historico','dashboard']}
@@ -28146,6 +28153,7 @@ var _dicaUsados=[];        // títulos já usados
 var _dicaBancoFiltro='all';
 var _dicaTab='banco';
 var _dicaTituloAtual='';
+var _dicaCustom=[];   // titulos criados pelo usuario: [{t,cat}]
 
 function _dicaSalvaUsados(){
   try{localStorage.setItem('dica_titulos_usados',JSON.stringify(_dicaUsados));}catch(e){}
@@ -28154,6 +28162,38 @@ function _dicaSalvaUsados(){
 function _dicaSalvaProg(){
   try{localStorage.setItem('dica_programacao',JSON.stringify(_dicaProg));}catch(e){}
   try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('dicas_rapidas/programacao').set(_dicaProg);}catch(e){}
+}
+function _dicaSalvaCustom(){
+  try{localStorage.setItem('dica_titulos_custom',JSON.stringify(_dicaCustom));}catch(e){}
+  try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('dicas_rapidas/titulos_custom').set(_dicaCustom);}catch(e){}
+}
+function dicaToggleNovoForm(){
+  var f=document.getElementById('dica-novo-form');if(!f)return;
+  var op=(f.style.display==='none'||!f.style.display);
+  f.style.display=op?'block':'none';
+  if(op){var i=document.getElementById('dica-novo-txt');if(i)i.focus();}
+}
+function dicaSalvarNovo(){
+  var txt=((document.getElementById('dica-novo-txt')||{}).value||'').trim();
+  var cat=(document.getElementById('dica-novo-cat')||{}).value||'d1';
+  if(txt.length<8){dicaToast('Escreva um titulo com pelo menos 8 caracteres.');return;}
+  var dup=_dicaCustom.some(function(o){return o.t===txt;})||_dicaBanco.some(function(p){return p.titulos.indexOf(txt)>=0;});
+  if(dup){dicaToast('Esse titulo ja existe no banco.');return;}
+  _dicaCustom.push({t:txt,cat:cat});
+  _dicaSalvaCustom();
+  var i=document.getElementById('dica-novo-txt');if(i)i.value='';
+  dicaToggleNovoForm();
+  _dicaBancoFiltro=cat;
+  dicaRenderBanco();
+  dicaToast('Titulo salvo no banco \u2714');
+}
+function dicaDelCustom(t,ev){
+  if(ev)ev.stopPropagation();
+  if(!confirm('Remover este titulo do banco?'))return;
+  _dicaCustom=_dicaCustom.filter(function(o){return o.t!==t;});
+  _dicaSalvaCustom();
+  dicaRenderBanco();
+  dicaToast('Titulo removido');
 }
 function dicaUsado(t){return _dicaUsados.indexOf(t)>=0;}
 function dicaToggleUsado(t,ev){if(ev)ev.stopPropagation();var i=_dicaUsados.indexOf(t);if(i>=0)_dicaUsados.splice(i,1);else _dicaUsados.push(t);_dicaSalvaUsados();dicaRenderBanco();}
@@ -28211,24 +28251,31 @@ function dicaRenderBanco(){
   var box=document.getElementById('dica-banco-list');if(!box)return;
   var q=((document.getElementById('dica-banco-busca')||{}).value||'').toLowerCase().trim();
   var esconder=(document.getElementById('dica-banco-filtro')||{}).checked;
+  var custByCat=function(cid){return _dicaCustom.filter(function(o){return o.cat===cid;}).map(function(o){return o.t;});};
   var total=0,usados=0;
-  _dicaBanco.forEach(function(p){p.titulos.forEach(function(t){total++;if(dicaUsado(t))usados++;});});
+  _dicaBanco.forEach(function(p){
+    p.titulos.forEach(function(t){total++;if(dicaUsado(t))usados++;});
+    custByCat(p.id).forEach(function(t){total++;if(dicaUsado(t))usados++;});
+  });
   var cnt=document.getElementById('dica-banco-cont');if(cnt)cnt.textContent=usados+'/'+total+' usados';
+  var renderRow=function(t,cor,isCust){
+    var used=dicaUsado(t);var e=t.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:8px;margin-bottom:4px;background:'+(used?'rgba(255,255,255,0.02)':'rgba(255,255,255,0.04)')+';border:1px solid '+(isCust?'rgba(225,48,108,0.4)':(used?'transparent':'var(--border)'))+';">'+
+      '<div onclick="dicaToggleUsado(\''+e+'\',event)" title="'+(used?'Desmarcar':'Marcar como usado')+'" style="flex-shrink:0;width:18px;height:18px;border-radius:5px;border:1.5px solid '+(used?'#39d98a':'var(--border2,#555)')+';background:'+(used?'#39d98a':'transparent')+';cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;">'+(used?'<i class="ti ti-check" style="font-size:12px;color:#0a0a0a;"></i>':'')+'</div>'+
+      '<div onclick="dicaUsarTitulo(\''+e+'\')" style="flex:1;font-size:12px;line-height:1.4;cursor:pointer;color:'+(used?'var(--muted)':'var(--white)')+';text-decoration:'+(used?'line-through':'none')+';">'+(isCust?'<span style="font-size:8px;font-weight:800;color:#e1306c;background:rgba(225,48,108,0.15);padding:1px 5px;border-radius:4px;margin-right:5px;vertical-align:middle;">MEU</span>':'')+t+'</div>'+
+      (isCust?'<div onclick="dicaDelCustom(\''+e+'\',event)" title="Remover do banco" style="flex-shrink:0;cursor:pointer;color:var(--muted);margin-top:1px;"><i class="ti ti-trash" style="font-size:13px;"></i></div>':'')+
+    '</div>';
+  };
   var html='';
   _dicaBanco.forEach(function(p){
     if(_dicaBancoFiltro!=='all'&&p.id!==_dicaBancoFiltro)return;
-    var rows=p.titulos.filter(function(t){if(q&&t.toLowerCase().indexOf(q)<0)return false;if(esconder&&dicaUsado(t))return false;return true;});
+    var all=custByCat(p.id).map(function(t){return {t:t,c:true};}).concat(p.titulos.map(function(t){return {t:t,c:false};}));
+    var rows=all.filter(function(o){if(q&&o.t.toLowerCase().indexOf(q)<0)return false;if(esconder&&dicaUsado(o.t))return false;return true;});
     if(!rows.length)return;
     html+='<div style="font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+p.cor+';margin:12px 0 6px;">'+p.label+'</div>';
-    rows.forEach(function(t){
-      var used=dicaUsado(t);var e=t.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-      html+='<div style="display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:8px;margin-bottom:4px;background:'+(used?'rgba(255,255,255,0.02)':'rgba(255,255,255,0.04)')+';border:1px solid '+(used?'transparent':'var(--border)')+';">'+
-        '<div onclick="dicaToggleUsado(\''+e+'\',event)" title="'+(used?'Desmarcar':'Marcar como usado')+'" style="flex-shrink:0;width:18px;height:18px;border-radius:5px;border:1.5px solid '+(used?'#39d98a':'var(--border2,#555)')+';background:'+(used?'#39d98a':'transparent')+';cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;">'+(used?'<i class="ti ti-check" style="font-size:12px;color:#0a0a0a;"></i>':'')+'</div>'+
-        '<div onclick="dicaUsarTitulo(\''+e+'\')" style="flex:1;font-size:12px;line-height:1.4;cursor:pointer;color:'+(used?'var(--muted)':'var(--white)')+';text-decoration:'+(used?'line-through':'none')+';">'+t+'</div>'+
-        '</div>';
-    });
+    rows.forEach(function(o){html+=renderRow(o.t,p.cor,o.c);});
   });
-  if(!html)html='<div style="color:var(--muted);font-size:11px;padding:16px;text-align:center;">Nenhum título encontrado.</div>';
+  if(!html)html='<div style="color:var(--muted);font-size:11px;padding:16px;text-align:center;">Nenhum titulo encontrado.</div>';
   box.innerHTML=html;
 }
 
@@ -28309,11 +28356,13 @@ async function dicaInitPage(){
   // Carrega usados
   try{_dicaUsados=JSON.parse(localStorage.getItem('dica_titulos_usados')||'[]');}catch(e){_dicaUsados=[];}
   try{_dicaProg=JSON.parse(localStorage.getItem('dica_programacao')||'[]');}catch(e){_dicaProg=[];}
+  try{_dicaCustom=JSON.parse(localStorage.getItem('dica_titulos_custom')||'[]');}catch(e){_dicaCustom=[];}
   // Firebase override
   try{
     if(typeof fbDb!=='undefined'&&fbDb){
       var s1=await fbDb.ref('dicas_rapidas/titulos_usados').once('value');var v1=s1.val();if(Array.isArray(v1))_dicaUsados=v1;
       var s2=await fbDb.ref('dicas_rapidas/programacao').once('value');var v2=s2.val();if(Array.isArray(v2)&&v2.length)_dicaProg=v2;
+      var s3=await fbDb.ref('dicas_rapidas/titulos_custom').once('value');var v3=s3.val();if(Array.isArray(v3))_dicaCustom=v3;
     }
   }catch(e){}
   if(!_dicaProg.length)_dicaProg=_dicaGerarProgramacaoBase();
@@ -28329,7 +28378,7 @@ function renderDicas(){
   var H='<div class="page active" style="padding:0;display:flex;flex-direction:column;height:100%;overflow:hidden;">';
   // Header
   H+='<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0;">'+
-    '<div><div style="font-size:20px;font-weight:900;color:var(--white);">💡 Dicas Rápidas — Reels</div>'+
+    '<div><div style="font-size:20px;font-weight:900;color:var(--white);">🎬 Reels 10S</div>'+
     '<div style="font-size:12px;color:var(--muted);margin-top:2px;">Título no vídeo (10-15s) · legenda ensina o tema · 2×/semana (ter/sex)</div></div>'+
     '<div style="display:flex;gap:8px;">'+
       '<button onclick="dicaResetProgramacao()" style="padding:8px 14px;border-radius:8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-calendar-plus"></i> Recriar 90 dias</button>'+
@@ -28351,6 +28400,13 @@ function renderDicas(){
         '<div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">'+pilarBtns+'</div>'+
         '<input id="dica-banco-busca" oninput="dicaRenderBanco()" placeholder="Buscar..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:12px;padding:8px 10px;outline:none;box-sizing:border-box;margin-bottom:6px;">'+
         '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px;color:var(--muted);"><input type="checkbox" id="dica-banco-filtro" onchange="dicaRenderBanco()" style="accent-color:var(--purple3);width:14px;height:14px;"> Esconder usados</label>'+
+        '<button onclick="dicaToggleNovoForm()" style="margin-top:10px;width:100%;padding:8px;border-radius:8px;background:rgba(225,48,108,0.14);border:1px solid rgba(225,48,108,0.35);color:#e1306c;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-plus"></i> Criar meu titulo</button>'+
+        '<div id="dica-novo-form" style="display:none;margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;">'+
+          '<textarea id="dica-novo-txt" rows="2" placeholder="Escreva seu titulo de Reel..." style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:12px;padding:8px;outline:none;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>'+
+          '<select id="dica-novo-cat" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:11px;padding:7px;outline:none;box-sizing:border-box;margin-bottom:8px;">'+_dicaBanco.map(function(p){return '<option value="'+p.id+'">'+p.label+'</option>';}).join('')+'</select>'+
+          '<div style="display:flex;gap:6px;"><button onclick="dicaSalvarNovo()" style="flex:1;padding:7px;border-radius:6px;background:#7c3aed;border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">Salvar no banco</button>'+
+          '<button onclick="dicaToggleNovoForm()" style="padding:7px 12px;border-radius:6px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11px;cursor:pointer;">Cancelar</button></div>'+
+        '</div>'+
       '</div>'+
       '<div id="dica-banco-list" style="flex:1;overflow-y:auto;padding:10px 14px;"></div>'+
     '</div>'+
