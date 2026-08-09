@@ -26996,6 +26996,17 @@ async function igDownloadCarZip(eventId){
 
 // ==================== CALENDÁRIO DE CONTEÚDO (Reels + Carrossel) ====================
 var _ccItems=[];   // cache para copiar (título/legenda) por índice
+// ---- Plano 90 dias @lucasramong_ (04/08 -> 01/11/2026) ----
+var _planFases=[
+  {ini:'2026-08-04',fim:'2026-09-02',n:1,nome:'Reconstrução',meta:'Alcance diário 20–25 mil · story ≥600 contas (2%)'},
+  {ini:'2026-09-03',fim:'2026-10-02',n:2,nome:'Escala',meta:'50–70 seguidores/dia · story ≥1.000 (3,5%)'},
+  {ini:'2026-10-03',fim:'2026-11-01',n:3,nome:'Conversão',meta:'Story ≥1.450 (5%) · 80–100 seg/dia · pipeline Audens'}
+];
+// dia da semana -> pilar do carrossel (0=Dom ... 6=Sáb). Domingo = Opinião quente (maior alcance)
+var _planPilarDia={0:'p6',1:'p1',2:'p2',3:'p3',4:'p1',5:'p4',6:'p5'};
+var _planPilarNome={p1:'Como eu faria do zero',p2:'Erros e verdades',p3:'Números e margem',p4:'Case de cliente',p5:'Gestão e rotina',p6:'Opinião quente'};
+function _planFaseDe(iso){for(var i=0;i<_planFases.length;i++){if(iso>=_planFases[i].ini&&iso<=_planFases[i].fim)return _planFases[i];}return null;}
+function _planPickUnused(titulos,used){used=used||[];for(var i=0;i<titulos.length;i++){if(used.indexOf(titulos[i])<0)return titulos[i];}return titulos[0]||'';}
 function ccWeekStartISO(iso){var d=new Date((''+iso).slice(0,10)+'T12:00:00');d.setDate(d.getDate()-d.getDay());return d.toISOString().slice(0,10);}
 function ccFmtDate(iso){var p=(''+iso).slice(0,10).split('-');return (p[2]||'')+'/'+(p[1]||'');}
 function ccWeekday(iso){var d=new Date((''+iso).slice(0,10)+'T12:00:00');return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()];}
@@ -27089,6 +27100,67 @@ function ccCarCard(it,idx){
     '</div>'+
   '</div>';
 }
+function ccHojeCard(){
+  var t=new Date();
+  var todayISO=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+  var wd=t.getDay();
+  var wdNome=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][wd];
+  var fase=_planFaseDe(todayISO);
+  // pilar do carrossel de hoje
+  var pid=_planPilarDia[wd]||'p1';
+  var pil=(typeof _carBanco!=='undefined'?_carBanco.find(function(p){return p.id===pid;}):null);
+  var carTit=pil?_planPickUnused(pil.titulos,(typeof _carUsados!=='undefined'?_carUsados:[])):'';
+  var pilNome=_planPilarNome[pid]||'';
+  // sugestão de reel (banco Reels 10S)
+  var reelTit='';
+  if(typeof _dicaBanco!=='undefined'){var flat=[];_dicaBanco.forEach(function(p){p.titulos.forEach(function(x){flat.push(x);});});reelTit=_planPickUnused(flat,(typeof _dicaUsados!=='undefined'?_dicaUsados:[]));}
+  // já agendado para hoje?
+  var reelsHoje=(_dicaProg||[]).filter(function(s){return (''+s.data).slice(0,10)===todayISO&&s.status&&s.status!=='vazio';});
+  var carsHoje=[];Object.keys(_igCalendario||{}).forEach(function(id){var ev=_igCalendario[id];if(ev&&ev.dataHora&&(''+ev.dataHora).slice(0,10)===todayISO)carsHoje.push(ev);});
+  var jaTxt='';
+  if(reelsHoje.length||carsHoje.length){
+    jaTxt='<div style="margin-top:14px;padding:10px 12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;font-size:12px;color:#34d399;">'+
+      '<b>✓ Já agendado p/ hoje:</b> '+
+      (carsHoje.length?carsHoje.length+' carrossel'+(carsHoje.length>1?'s':''):'')+
+      (carsHoje.length&&reelsHoje.length?' · ':'')+
+      (reelsHoje.length?reelsHoje.length+' reel'+(reelsHoje.length>1?'s':''):'')+
+      '</div>';
+  }
+  // registrar sugestões p/ copiar
+  var ci=_ccItems.push({titulo:carTit,legenda:''})-1;
+  var ri=_ccItems.push({titulo:reelTit,legenda:''})-1;
+  var faseBadge=fase?'<span style="background:rgba(225,48,108,0.15);color:#e1306c;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;letter-spacing:.5px;">FASE '+fase.n+' · '+fase.nome.toUpperCase()+'</span>':'<span style="color:var(--muted);font-size:11px;">Fora do período do plano</span>';
+  var faseMeta=fase?'<div style="font-size:11px;color:var(--muted);margin-top:6px;">🎯 '+fase.meta+'</div>':'';
+  var blocoCar='<div style="flex:1;min-width:220px;background:var(--bg2);border:1px solid rgba(225,48,108,0.25);border-radius:12px;padding:14px;">'+
+    '<div style="font-size:9px;font-weight:800;color:#e1306c;letter-spacing:.5px;">CARROSSEL DE HOJE · '+pilNome.toUpperCase()+'</div>'+
+    '<div style="font-size:13px;color:var(--white);font-weight:600;margin:8px 0 10px;line-height:1.4;">'+(carTit||'—')+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
+      '<button onclick="ccCopy('+ci+',\'titulo\')" style="padding:6px 10px;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Copiar</button>'+
+      '<button onclick="showPage(\'carrossel\')" style="padding:6px 10px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-layout-grid"></i> Criar carrossel</button>'+
+    '</div>'+
+  '</div>';
+  var blocoReel='<div style="flex:1;min-width:220px;background:var(--bg2);border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:14px;">'+
+    '<div style="font-size:9px;font-weight:800;color:#a78bfa;letter-spacing:.5px;">REEL 10S DE HOJE</div>'+
+    '<div style="font-size:13px;color:var(--white);font-weight:600;margin:8px 0 10px;line-height:1.4;">'+(reelTit||'—')+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
+      '<button onclick="ccCopy('+ri+',\'titulo\')" style="padding:6px 10px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Copiar</button>'+
+      '<button onclick="showPage(\'dicas-rapidas\')" style="padding:6px 10px;background:#7c3aed;border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-bulb"></i> Criar reel</button>'+
+    '</div>'+
+  '</div>';
+  var blocoStories='<div style="flex:1;min-width:220px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;">'+
+    '<div style="font-size:9px;font-weight:800;color:var(--muted);letter-spacing:.5px;">STORIES DE HOJE</div>'+
+    '<div style="font-size:12px;color:var(--white);margin:8px 0 10px;line-height:1.45;">4–6 cards · 1º card com gancho numérico. '+(wd===0?'Domingo: carrossel mais forte da semana (18h–20h).':'')+'</div>'+
+    '<button onclick="showPage(\'stories-lab\')" style="padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-player-play"></i> Abrir Stories Lab</button>'+
+  '</div>';
+  return '<div style="background:linear-gradient(135deg,#1a0a2e,#2d0a1e);border:1px solid rgba(225,48,108,0.35);border-radius:16px;padding:20px 22px;margin-bottom:22px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px;">'+
+      '<div><div style="font-size:11px;font-weight:800;color:#e1306c;letter-spacing:1px;text-transform:uppercase;">Para postar hoje · '+wdNome+' '+ccFmtDate(todayISO)+'</div>'+
+      '<div style="margin-top:6px;">'+faseBadge+'</div>'+faseMeta+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;">'+blocoCar+blocoReel+blocoStories+'</div>'+
+    jaTxt+
+  '</div>';
+}
 function renderContentCalendarBody(){
   var box=document.getElementById('cc-body');if(!box)return;
   var reels=(_dicaProg||[]).map(function(s){return {kind:'reel',data:(''+s.data).slice(0,10),titulo:s.titulo||'',legenda:s.legenda||'',status:s.status||'vazio'};});
@@ -27106,7 +27178,8 @@ function renderContentCalendarBody(){
   cars.forEach(function(c){bucket(c.data).items.push(c);});
   weeks.sort(function(a,b){return a.key<b.key?-1:1;});
   _ccItems=[];
-  var html='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;">'+
+  var html=ccHojeCard();
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;">'+
     ccKpi(totReel+' · '+totCar,'Reels · Carrosséis','#a78bfa')+
     ccKpi(planj,'Planejados','#f59e0b')+
     ccKpi(post,'Postados','#10b981')+
