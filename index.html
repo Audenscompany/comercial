@@ -4220,7 +4220,8 @@ function buildNav(){
       {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
       {id:'instagram',icon:'ti-chart-bar',label:'Instagram'},
       {id:'stories-lab',icon:'ti-player-play',label:'Stories Lab'},
-      {id:'dicas-rapidas',icon:'ti-bulb',label:'Reels 10S'}
+      {id:'dicas-rapidas',icon:'ti-bulb',label:'Reels 10S'},
+      {id:'cal-conteudo',icon:'ti-calendar-event',label:'Calendário'}
     ]},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
@@ -4334,11 +4335,12 @@ function buildNav(){
       'carrossel':{id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
       'instagram':{id:'instagram',icon:'ti-chart-bar',label:'Instagram'},
       'stories-lab':{id:'stories-lab',icon:'ti-player-play',label:'Stories Lab'},
-      'dicas-rapidas':{id:'dicas-rapidas',icon:'ti-bulb',label:'Reels 10S'}
+      'dicas-rapidas':{id:'dicas-rapidas',icon:'ti-bulb',label:'Reels 10S'},
+      'cal-conteudo':{id:'cal-conteudo',icon:'ti-calendar-event',label:'Calendário'}
     };
     // Grupos para organizar na sidebar quando há permissões customizadas
     var _navGroups=[
-      {group:'Instagram',icon:'ti-brand-instagram',items:['carrossel','instagram','stories-lab','dicas-rapidas']},
+      {group:'Instagram',icon:'ti-brand-instagram',items:['carrossel','instagram','stories-lab','dicas-rapidas','cal-conteudo']},
       {group:'SDR',icon:'ti-report-analytics',items:['minhas-tarefas','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','desempenho-sdr']},
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
       {group:'Cold Call',icon:'ti-phone-call',items:['ligar','leads','historico','dashboard']}
@@ -4435,7 +4437,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,'cal-conteudo':renderContentCalendar,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -26955,7 +26957,7 @@ async function _carConfirmarCalendario(){
     var m=document.getElementById('_carCalModal');if(m)m.remove();
     var dtFmt=new Date(dt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     carToast('✅ Salvo para '+dtFmt+'! Abrindo calendário...');
-    setTimeout(function(){_igCurTab='calendario';showPage('instagram');},1200);
+    setTimeout(function(){showPage('cal-conteudo');},1200);
   }catch(e){
     carToast('Erro: '+e.message);
     if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Salvar no Calendário';}
@@ -26991,6 +26993,138 @@ async function igDownloadCarZip(eventId){
   }catch(e){showSheetToast('Erro: '+e.message,true);}
 }
 
+
+// ==================== CALENDÁRIO DE CONTEÚDO (Reels + Carrossel) ====================
+var _ccItems=[];   // cache para copiar (título/legenda) por índice
+function ccWeekStartISO(iso){var d=new Date((''+iso).slice(0,10)+'T12:00:00');d.setDate(d.getDate()-d.getDay());return d.toISOString().slice(0,10);}
+function ccFmtDate(iso){var p=(''+iso).slice(0,10).split('-');return (p[2]||'')+'/'+(p[1]||'');}
+function ccWeekday(iso){var d=new Date((''+iso).slice(0,10)+'T12:00:00');return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()];}
+function ccKpi(val,label,cor){
+  return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;">'+
+    '<div style="font-size:26px;font-weight:900;color:'+(cor||'var(--white)')+';line-height:1;">'+val+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:6px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;">'+label+'</div>'+
+  '</div>';
+}
+function ccCopy(idx,field){
+  var o=_ccItems[idx]||{};var t=(o[field]||'').trim();
+  if(!t){if(typeof showSheetToast==='function')showSheetToast('Nada para copiar aqui.',true);return;}
+  var done=function(){if(typeof showSheetToast==='function')showSheetToast((field==='titulo'?'Título':'Legenda')+' copiado!',false);};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,function(){_ccCopyFallback(t);done();});}
+  else{_ccCopyFallback(t);done();}
+}
+function _ccCopyFallback(t){try{var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}catch(e){}}
+function ccSetReelStatus(dataISO,val){
+  var s=(_dicaProg||[]).find(function(x){return (''+x.data).slice(0,10)===dataISO;});
+  if(s){s.status=val;if(typeof _dicaSalvaProg==='function')_dicaSalvaProg();}
+  renderContentCalendarBody();
+}
+function ccSetCarStatus(id,val){
+  try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/calendario/'+id+'/status').set(val);}catch(e){}
+  if(_igCalendario&&_igCalendario[id])_igCalendario[id].status=val;
+  renderContentCalendarBody();
+}
+function ccDelCar(id){
+  if(!confirm('Remover este carrossel do calendário?'))return;
+  try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/calendario/'+id).remove();}catch(e){}
+  if(_igCalendario&&_igCalendario[id])delete _igCalendario[id];
+  renderContentCalendarBody();
+}
+async function ccEnsureData(rerender){
+  if(!_dicaProg||!_dicaProg.length){
+    try{if(typeof fbDb!=='undefined'&&fbDb){var s=await fbDb.ref('dicas_rapidas/programacao').once('value');var v=s.val();if(Array.isArray(v)&&v.length)_dicaProg=v;}}catch(e){}
+    if((!_dicaProg||!_dicaProg.length)&&typeof _dicaGerarProgramacaoBase==='function')_dicaProg=_dicaGerarProgramacaoBase();
+  }
+  if(rerender)renderContentCalendarBody();
+}
+function renderContentCalendar(){
+  setTimeout(function(){ccEnsureData(true);},40);
+  return '<div class="page active">'+
+    '<div class="page-header"><div>'+
+      '<div class="page-title">📅 Calendário de Conteúdo</div>'+
+      '<div class="page-sub">Reels 10S + Carrossel · programação de 90 dias</div>'+
+    '</div></div>'+
+    '<div id="cc-body"><div style="color:var(--muted);padding:40px;text-align:center;font-size:13px;">Carregando programação...</div></div>'+
+  '</div>';
+}
+function _ccStatusPill(txt,cor){return '<span style="font-size:9px;font-weight:800;letter-spacing:.5px;color:'+cor+';">'+txt.toUpperCase()+'</span>';}
+function ccReelCard(it,idx){
+  var isLivre=(it.status==='vazio'||!it.titulo);
+  var stCor={vazio:'var(--muted)',rascunho:'#f59e0b',gravado:'#3b82f6',postado:'#10b981'}[it.status]||'var(--muted)';
+  var sel='<select onchange="ccSetReelStatus(\''+it.data+'\',this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:11px;padding:5px 8px;outline:none;cursor:pointer;">'+
+    ['vazio','rascunho','gravado','postado'].map(function(s){return '<option value="'+s+'"'+(it.status===s?' selected':'')+'>'+({vazio:'Vazio',rascunho:'Rascunho',gravado:'Gravado',postado:'Postado'}[s])+'</option>';}).join('')+'</select>';
+  var actions=isLivre?'':(
+    '<button onclick="ccCopy('+idx+',\'titulo\')" title="Copiar título" style="padding:6px 9px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Título</button>'+
+    '<button onclick="ccCopy('+idx+',\'legenda\')" title="Copiar legenda" style="padding:6px 9px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Legenda</button>'
+  );
+  return '<div style="display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;">'+
+    '<div style="min-width:78px;flex-shrink:0;">'+
+      '<div style="font-size:13px;font-weight:800;color:var(--white);">'+ccWeekday(it.data)+' '+ccFmtDate(it.data)+'</div>'+
+      _ccStatusPill(isLivre?'reel · vazio':('reel · '+it.status),stCor)+
+    '</div>'+
+    '<div style="flex:1;min-width:0;font-size:13px;color:'+(isLivre?'var(--muted)':'var(--white)')+';overflow:hidden;">'+
+      '<span style="font-size:9px;font-weight:800;color:#7c3aed;background:rgba(124,58,237,0.15);padding:2px 6px;border-radius:5px;margin-right:8px;">REEL</span>'+
+      (isLivre?'— slot livre —':it.titulo)+
+    '</div>'+
+    '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+actions+sel+'</div>'+
+  '</div>';
+}
+function ccCarCard(it,idx){
+  var stCor={rascunho:'#f59e0b',pronto:'#06b6d4',publicando:'#f59e0b',publicado:'#10b981',erro:'#ef4444'}[it.status]||'var(--muted)';
+  var titulo=it.titulo||(it.legenda?it.legenda.replace(/\s+/g,' ').slice(0,60):'(sem legenda)');
+  var sel='<select onchange="ccSetCarStatus(\''+it.id+'\',this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:11px;padding:5px 8px;outline:none;cursor:pointer;">'+
+    ['rascunho','pronto','publicado'].map(function(s){return '<option value="'+s+'"'+(it.status===s?' selected':'')+'>'+({rascunho:'Rascunho',pronto:'Pronto',publicado:'Postado'}[s])+'</option>';}).join('')+'</select>';
+  return '<div style="display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid rgba(225,48,108,0.25);border-radius:12px;padding:12px 16px;margin-bottom:8px;">'+
+    '<div style="min-width:78px;flex-shrink:0;">'+
+      '<div style="font-size:13px;font-weight:800;color:var(--white);">'+ccWeekday(it.data)+' '+ccFmtDate(it.data)+'</div>'+
+      _ccStatusPill('carrossel · '+it.status,stCor)+
+    '</div>'+
+    '<div style="flex:1;min-width:0;font-size:13px;color:var(--white);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+
+      '<span style="font-size:9px;font-weight:800;color:#e1306c;background:rgba(225,48,108,0.15);padding:2px 6px;border-radius:5px;margin-right:8px;">CARROSSEL</span>'+titulo+
+    '</div>'+
+    '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+
+      '<button onclick="igDownloadCarZip(\''+(it.localKey||it.id)+'\')" title="Baixar ZIP dos slides" style="padding:6px 9px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-download"></i> ZIP</button>'+
+      '<button onclick="ccCopy('+idx+',\'legenda\')" title="Copiar legenda" style="padding:6px 9px;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Legenda</button>'+
+      sel+
+      '<button onclick="ccDelCar(\''+it.id+'\')" title="Remover" style="padding:6px 8px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-size:11px;"><i class="ti ti-trash"></i></button>'+
+    '</div>'+
+  '</div>';
+}
+function renderContentCalendarBody(){
+  var box=document.getElementById('cc-body');if(!box)return;
+  var reels=(_dicaProg||[]).map(function(s){return {kind:'reel',data:(''+s.data).slice(0,10),titulo:s.titulo||'',legenda:s.legenda||'',status:s.status||'vazio'};});
+  var cars=[];
+  Object.keys(_igCalendario||{}).forEach(function(id){var ev=_igCalendario[id];if(!ev||!ev.dataHora)return;cars.push({kind:'carrossel',id:id,data:(''+ev.dataHora).slice(0,10),titulo:(ev.slideTitles&&ev.slideTitles[0])||'',legenda:ev.legenda||'',status:ev.status||'rascunho',localKey:ev.localKey||id});});
+  // KPIs
+  var totReel=reels.filter(function(r){return r.status!=='vazio';}).length;
+  var totCar=cars.length;
+  var planj=reels.filter(function(r){return r.status==='rascunho'||r.status==='gravado';}).length+cars.filter(function(c){return c.status!=='publicado';}).length;
+  var post=reels.filter(function(r){return r.status==='postado';}).length+cars.filter(function(c){return c.status==='publicado';}).length;
+  // agrupar por semana
+  var wmap={},weeks=[];
+  var bucket=function(iso){var k=ccWeekStartISO(iso);if(!wmap[k]){wmap[k]={key:k,items:[]};weeks.push(wmap[k]);}return wmap[k];};
+  reels.forEach(function(r){bucket(r.data).items.push(r);});
+  cars.forEach(function(c){bucket(c.data).items.push(c);});
+  weeks.sort(function(a,b){return a.key<b.key?-1:1;});
+  _ccItems=[];
+  var html='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;">'+
+    ccKpi(totReel+' · '+totCar,'Reels · Carrosséis','#a78bfa')+
+    ccKpi(planj,'Planejados','#f59e0b')+
+    ccKpi(post,'Postados','#10b981')+
+  '</div>';
+  if(!weeks.length){
+    html+='<div style="color:var(--muted);padding:30px;text-align:center;font-size:13px;">Nada agendado ainda. Agende Reels no <b>Reels 10S</b> ou Carrosséis no <b>Carrossel</b>.</div>';
+    box.innerHTML=html;return;
+  }
+  weeks.forEach(function(w,wi){
+    var items=w.items.slice().sort(function(a,b){if(a.data!==b.data)return a.data<b.data?-1:1;return a.kind==='reel'?-1:1;});
+    html+='<div style="font-size:11px;font-weight:800;letter-spacing:1.2px;color:var(--muted);margin:18px 0 10px;">SEMANA '+(wi+1)+'</div>';
+    items.forEach(function(it){
+      var idx=_ccItems.push({titulo:it.titulo,legenda:it.legenda})-1;
+      html+=(it.kind==='reel')?ccReelCard(it,idx):ccCarCard(it,idx);
+    });
+  });
+  box.innerHTML=html;
+}
 
 // ==================== GERADOR DE CARROSSEL ====================
 var _carBanco=[
@@ -27721,7 +27855,7 @@ function renderCarrossel(){
             '<textarea id="car-legenda" rows="4" oninput="carScheduleSave()" placeholder="Escreva ou gere com IA a legenda do post..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:vertical;box-sizing:border-box;line-height:1.5;"></textarea>'+
             '<div id="car-leg-status" style="font-size:10.5px;color:var(--muted);margin-top:4px;min-height:14px;"></div>'+
           '</div>'+
-          '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:linear-gradient(135deg,rgba(131,58,180,0.2),rgba(225,48,108,0.2));border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Salvar no Calendário com Data</button>'+
+          '<button onclick="carEnviarCalendario()" style="display:block;width:100%;margin-top:8px;padding:12px 0;background:linear-gradient(135deg,rgba(131,58,180,0.2),rgba(225,48,108,0.2));border:1px solid rgba(225,48,108,0.35);border-radius:10px;color:#e1306c;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Agendar post</button>'+
         '</div>'+
       '</div>'+
       '<div style="flex:1;">'+
