@@ -27003,7 +27003,10 @@ var _planFases=[
   {ini:'2026-10-03',fim:'2026-11-01',n:3,nome:'Conversão',meta:'Story ≥1.450 (5%) · 80–100 seg/dia · pipeline Audens'}
 ];
 // dia da semana -> pilar do carrossel (0=Dom ... 6=Sáb). Domingo = Opinião quente (maior alcance)
-var _planPilarDia={0:'p6',1:'p1',2:'p2',3:'p3',4:'p1',5:'p4',6:'p5'};
+var _planPilarDia={0:'p6',1:'p1',2:'p3',3:'p2',4:'p5',5:'p1',6:'p4'};
+var _planReelDia={0:'📈 Resultado de cliente',1:'🎬 Rotina: planejamento/reunião',2:'💡 Dica rápida',3:'📈 Resultado de cliente',4:'🎬 Rotina: operação real',5:'💡 Dica rápida',6:'🎬 Rotina: sábado de pico'};
+var _planStoryDia={0:'"Fechamento da semana" + enquete',1:'Meta da semana + enquete',2:'Quiz numérico + bastidor',3:'Antes/depois do case',4:'Caixinha temática',5:'Responde-caixinha + prep do pico',6:'Cobertura do pico com números ao vivo'};
+var _ccView='agenda';
 var _planPilarNome={p1:'Como eu faria do zero',p2:'Erros e verdades',p3:'Números e margem',p4:'Case de cliente',p5:'Gestão e rotina',p6:'Opinião quente'};
 function _planFaseDe(iso){for(var i=0;i<_planFases.length;i++){if(iso>=_planFases[i].ini&&iso<=_planFases[i].fim)return _planFases[i];}return null;}
 function _planPickUnused(titulos,used){used=used||[];for(var i=0;i<titulos.length;i++){if(used.indexOf(titulos[i])<0)return titulos[i];}return titulos[0]||'';}
@@ -27047,6 +27050,120 @@ async function ccEnsureData(rerender){
   }
   if(rerender)renderContentCalendarBody();
 }
+function renderPlano90(){
+  var t=new Date();
+  var todayISO=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+  var wdHoje=t.getDay();
+  var pad=function(n){return String(n).padStart(2,'0');};
+  var isoOf=function(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+  var brOf=function(d){return pad(d.getDate())+'/'+pad(d.getMonth()+1);};
+
+  // ---- Fases ----
+  var faseCor={1:'#e1306c',2:'#7c3aed',3:'#10b981'};
+  var fasesHtml=_planFases.map(function(f){
+    var ativa=(todayISO>=f.ini&&todayISO<=f.fim);
+    var c=faseCor[f.n];
+    return '<div style="flex:1;min-width:210px;background:var(--card);border:1px solid '+(ativa?c:'var(--border)')+';border-radius:14px;padding:16px;position:relative;">'+
+      (ativa?'<div style="position:absolute;top:12px;right:12px;font-size:9px;font-weight:800;color:'+c+';background:'+c+'22;padding:2px 8px;border-radius:20px;">AGORA</div>':'')+
+      '<div style="font-size:10px;font-weight:800;color:'+c+';letter-spacing:.5px;">FASE '+f.n+' · '+f.nome.toUpperCase()+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin:6px 0 8px;">'+f.ini.split('-').reverse().slice(0,2).join('/')+' → '+f.fim.split('-').reverse().slice(0,2).join('/')+'</div>'+
+      '<div style="font-size:12px;color:var(--white);line-height:1.5;">🎯 '+f.meta+'</div>'+
+    '</div>';
+  }).join('');
+
+  // ---- Grade semanal padrão ----
+  var grade=[
+    {d:'Seg',w:1,car:'Como eu faria do zero',reel:'🎬 Rotina: planejamento/reunião',story:'Meta da semana + enquete'},
+    {d:'Ter',w:2,car:'Números e margem',reel:'💡 Dica rápida',story:'Quiz numérico + bastidor'},
+    {d:'Qua',w:3,car:'Erros e verdades',reel:'📈 Resultado de cliente',story:'Antes/depois do case do reel'},
+    {d:'Qui',w:4,car:'Gestão e rotina',reel:'🎬 Rotina: operação real',story:'Caixinha temática'},
+    {d:'Sex',w:5,car:'Como eu faria do zero',reel:'💡 Dica rápida',story:'Responde-caixinha + prep do pico'},
+    {d:'Sáb',w:6,car:'Case de cliente',reel:'🎬 Rotina: sábado de pico',story:'Cobertura do pico com números ao vivo'},
+    {d:'Dom',w:0,car:'⭐ Opinião quente (18–20h)',reel:'📈 Resultado de cliente',story:'"Fechamento da semana" + enquete'}
+  ];
+  var gradeRows=grade.map(function(g){
+    var hoje=(g.w===wdHoje);
+    return '<tr style="border-top:1px solid var(--border);'+(hoje?'background:rgba(225,48,108,0.08);':'')+'">'+
+      '<td style="padding:9px 10px;font-weight:800;color:'+(hoje?'#e1306c':'var(--white)')+';white-space:nowrap;">'+g.d+(hoje?' · hoje':'')+'</td>'+
+      '<td style="padding:9px 10px;color:var(--white);">'+g.car+'</td>'+
+      '<td style="padding:9px 10px;color:var(--muted);">'+g.reel+'</td>'+
+      '<td style="padding:9px 10px;color:var(--muted);">'+g.story+'</td>'+
+    '</tr>';
+  }).join('');
+  var gradeHtml='<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--muted);margin:24px 0 10px;">GRADE SEMANAL PADRÃO <span style="font-weight:400;text-transform:none;">(repete nas 13 semanas)</span></div>'+
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+
+    '<thead><tr>'+['Dia','Carrossel (pilar)','Reel','Story (destaque)'].map(function(h){return '<th style="text-align:left;padding:9px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">'+h+'</th>';}).join('')+'</tr></thead>'+
+    '<tbody>'+gradeRows+'</tbody></table></div>';
+
+  // ---- Cronograma 13 semanas ----
+  var start=new Date('2026-08-04T12:00:00');
+  var checks={ '2026-09-02':30, '2026-10-02':60, '2026-11-01':90 };
+  var weeksHtml='';
+  for(var i=0;i<13;i++){
+    var ws=new Date(start);ws.setDate(start.getDate()+i*7);
+    var we=new Date(ws);we.setDate(ws.getDate()+6);
+    var wsISO=isoOf(ws),weISO=isoOf(we);
+    var atual=(todayISO>=wsISO&&todayISO<=weISO);
+    var fase=_planFaseDe(wsISO)||_planFaseDe(weISO);
+    var c=fase?faseCor[fase.n]:'var(--muted)';
+    // checkpoint dentro da semana?
+    var chk=null;Object.keys(checks).forEach(function(k){if(k>=wsISO&&k<=weISO)chk=checks[k];});
+    weeksHtml+='<div style="display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid '+(atual?'#e1306c':'var(--border)')+';border-radius:11px;padding:11px 14px;margin-bottom:7px;">'+
+      '<div style="width:34px;height:34px;border-radius:9px;background:'+c+'22;color:'+c+';display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">'+(i+1)+'</div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--white);">Semana '+(i+1)+' · '+brOf(ws)+' – '+brOf(we)+(atual?' <span style="font-size:10px;color:#e1306c;font-weight:800;">(semana atual)</span>':'')+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);">'+(fase?'Fase '+fase.n+' · '+fase.nome:'')+'</div>'+
+      '</div>'+
+      (chk?'<div style="font-size:10px;font-weight:800;color:#f59e0b;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);padding:4px 10px;border-radius:20px;white-space:nowrap;">⚑ CHECKPOINT DIA '+chk+'</div>':'')+
+    '</div>';
+  }
+  var cronoHtml='<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--muted);margin:24px 0 10px;">CRONOGRAMA · 13 SEMANAS</div>'+weeksHtml;
+
+  // ---- Checkpoints ----
+  var checkpoints=[
+    {dia:30,data:'02/09',aval:'Alcance diário ≥20 mil · story ≥600 · 30 carrosséis no ar · +1.200 seguidores',dec:'Carrossel <2.000 de alcance médio: revisar CAPAS (problema nº1). Story <600: dobrar enquetes binárias, cortar cards de texto.'},
+    {dia:60,data:'02/10',aval:'Story ≥1.000 · 50–70 seg/dia · 2+ carrosséis acima de 8 mil de alcance',dec:'Repostar os 5 campeões de março com capa nova. Analisar os 10 piores posts e matar o padrão comum.'},
+    {dia:90,data:'01/11',aval:'Story ≥1.450 (5%) · 80–100 seg/dia · ~34.500 seguidores · pipeline de leads ativo',dec:'Plano do trimestre 2: escalar o que os dados mostrarem + estratégia de conversão para a Audens.'}
+  ];
+  var chkHtml='<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--muted);margin:24px 0 10px;">CHECKPOINTS</div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;">'+checkpoints.map(function(cp){
+      return '<div style="flex:1;min-width:230px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;">'+
+        '<div style="font-size:14px;font-weight:900;color:#f59e0b;">Dia '+cp.dia+' <span style="font-size:11px;color:var(--muted);font-weight:600;">'+cp.data+'</span></div>'+
+        '<div style="font-size:12px;color:var(--white);margin:8px 0;line-height:1.5;"><b>Avaliar:</b> '+cp.aval+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);line-height:1.5;"><b style="color:var(--white);">Se não vier:</b> '+cp.dec+'</div>'+
+      '</div>';
+    }).join('')+'</div>';
+
+  // ---- Rotina de produção ----
+  var rotina=[
+    {q:'Segunda 7h–10h',dur:'3h',o:'Batch da semana: 5 carrosséis no template Canva (40 min cada) + agendar no Meta Business Suite.'},
+    {q:'Segunda 10h–11h',dur:'1h',o:'Grava 5–6 reels de dica em sequência (mesmo setup, troca de camisa). Edição no CapCut com preset.'},
+    {q:'Quarta',dur:'30 min',o:'Monta os 2 reels de resultado da semana (prints do cliente + narração).'},
+    {q:'Seg/Qui/Sáb (na operação)',dur:'10 min/dia',o:'Reels de rotina: filma cortes ao longo do dia, monta à noite em 15 min. O valor é ser real.'},
+    {q:'Todo dia · 8h / 15h / 21h',dur:'3× 10 min',o:'Stories dos 3 blocos, direto do celular.'},
+    {q:'Sexta',dur:'15 min',o:'Métricas: alcance dos posts + os 4 números de story. Decide o que repete e o que morre.'},
+    {q:'Domingo à noite',dur:'30 min',o:'Escolhe os 7 títulos de carrossel da próxima semana + define os 3 temas de rotina.'}
+  ];
+  var rotRows=rotina.map(function(r){
+    return '<tr style="border-top:1px solid var(--border);">'+
+      '<td style="padding:9px 10px;font-weight:700;color:var(--white);white-space:nowrap;">'+r.q+'</td>'+
+      '<td style="padding:9px 10px;color:#a78bfa;font-weight:700;white-space:nowrap;">'+r.dur+'</td>'+
+      '<td style="padding:9px 10px;color:var(--muted);">'+r.o+'</td>'+
+    '</tr>';
+  }).join('');
+  var rotHtml='<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--muted);margin:24px 0 10px;">ROTINA SOLO DE PRODUÇÃO <span style="font-weight:400;text-transform:none;">(~6h/semana + 30 min/dia)</span></div>'+
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+
+    '<thead><tr>'+['Quando','Duração','O que produzir'].map(function(h){return '<th style="text-align:left;padding:9px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">'+h+'</th>';}).join('')+'</tr></thead>'+
+    '<tbody>'+rotRows+'</tbody></table></div>';
+
+  return '<div style="background:linear-gradient(135deg,#1a0a2e,#2d0a1e);border:1px solid rgba(225,48,108,0.3);border-radius:16px;padding:18px 22px;margin-bottom:20px;">'+
+      '<div style="font-size:11px;font-weight:800;color:#e1306c;letter-spacing:1px;text-transform:uppercase;">Plano de execução · 04/08 → 01/11/2026</div>'+
+      '<div style="font-size:13px;color:var(--white);margin-top:6px;line-height:1.5;">1 carrossel/dia + 1 reel/dia + stories · produção solo com batching · construído sobre os dados reais do perfil.</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px;">'+fasesHtml+'</div>'+
+    gradeHtml+cronoHtml+chkHtml+rotHtml;
+}
+
 function renderContentCalendar(){
   setTimeout(function(){ccEnsureData(true);},40);
   return '<div class="page active">'+
@@ -27054,8 +27171,19 @@ function renderContentCalendar(){
       '<div class="page-title">📅 Calendário de Conteúdo</div>'+
       '<div class="page-sub">Reels 10S + Carrossel · programação de 90 dias</div>'+
     '</div></div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--border);">'+
+      '<div id="cc-tab-agenda" onclick="ccSwitchView(\'agenda\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='agenda'?'#e1306c':'transparent')+';color:'+(_ccView==='agenda'?'#fff':'var(--muted)')+';"><i class="ti ti-calendar-event" style="margin-right:5px;"></i>Agenda</div>'+
+      '<div id="cc-tab-plano" onclick="ccSwitchView(\'plano\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='plano'?'#e1306c':'transparent')+';color:'+(_ccView==='plano'?'#fff':'var(--muted)')+';"><i class="ti ti-map-2" style="margin-right:5px;"></i>Plano 90 Dias</div>'+
+    '</div>'+
     '<div id="cc-body"><div style="color:var(--muted);padding:40px;text-align:center;font-size:13px;">Carregando programação...</div></div>'+
   '</div>';
+}
+function ccSwitchView(v){
+  _ccView=v;
+  var a=document.getElementById('cc-tab-agenda'),pl=document.getElementById('cc-tab-plano');
+  if(a){a.style.color=v==='agenda'?'#fff':'var(--muted)';a.style.borderBottom='2px solid '+(v==='agenda'?'#e1306c':'transparent');}
+  if(pl){pl.style.color=v==='plano'?'#fff':'var(--muted)';pl.style.borderBottom='2px solid '+(v==='plano'?'#e1306c':'transparent');}
+  renderContentCalendarBody();
 }
 function _ccStatusPill(txt,cor){return '<span style="font-size:9px;font-weight:800;letter-spacing:.5px;color:'+cor+';">'+txt.toUpperCase()+'</span>';}
 function ccReelCard(it,idx){
@@ -27139,13 +27267,19 @@ function ccHojeCard(){
       '<button onclick="showPage(\'carrossel\')" style="padding:6px 10px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-layout-grid"></i> Criar carrossel</button>'+
     '</div>'+
   '</div>';
+  var reelFmt=_planReelDia[wd]||'💡 Dica rápida';
+  var isDica=(wd===2||wd===5);
+  var reelInner=isDica?
+    ('<div style="font-size:13px;color:var(--white);font-weight:600;margin:8px 0 10px;line-height:1.4;">'+(reelTit||'—')+'</div>'+
+     '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
+       '<button onclick="ccCopy('+ri+',\'titulo\')" style="padding:6px 10px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Copiar</button>'+
+       '<button onclick="showPage(\'dicas-rapidas\')" style="padding:6px 10px;background:#7c3aed;border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-bulb"></i> Criar reel</button>'+
+     '</div>')
+    :('<div style="font-size:12px;color:var(--white);margin:8px 0 10px;line-height:1.45;">Filme durante a operação e monte à noite (~15 min). O valor é ser real.</div>'+
+     '<button onclick="showPage(\'dicas-rapidas\')" style="padding:6px 10px;background:transparent;border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-bulb"></i> Abrir Reels 10S</button>');
   var blocoReel='<div style="flex:1;min-width:220px;background:var(--bg2);border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:14px;">'+
-    '<div style="font-size:9px;font-weight:800;color:#a78bfa;letter-spacing:.5px;">REEL 10S DE HOJE</div>'+
-    '<div style="font-size:13px;color:var(--white);font-weight:600;margin:8px 0 10px;line-height:1.4;">'+(reelTit||'—')+'</div>'+
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+
-      '<button onclick="ccCopy('+ri+',\'titulo\')" style="padding:6px 10px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Copiar</button>'+
-      '<button onclick="showPage(\'dicas-rapidas\')" style="padding:6px 10px;background:#7c3aed;border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-bulb"></i> Criar reel</button>'+
-    '</div>'+
+    '<div style="font-size:9px;font-weight:800;color:#a78bfa;letter-spacing:.5px;">REEL DE HOJE · '+reelFmt+'</div>'+
+    reelInner+
   '</div>';
   var blocoStories='<div style="flex:1;min-width:220px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;">'+
     '<div style="font-size:9px;font-weight:800;color:var(--muted);letter-spacing:.5px;">STORIES DE HOJE</div>'+
@@ -27163,6 +27297,7 @@ function ccHojeCard(){
 }
 function renderContentCalendarBody(){
   var box=document.getElementById('cc-body');if(!box)return;
+  if(_ccView==='plano'){box.innerHTML=renderPlano90();return;}
   var reels=(_dicaProg||[]).map(function(s){return {kind:'reel',data:(''+s.data).slice(0,10),titulo:s.titulo||'',legenda:s.legenda||'',status:s.status||'vazio'};});
   var cars=[];
   Object.keys(_igCalendario||{}).forEach(function(id){var ev=_igCalendario[id];if(!ev||!ev.dataHora)return;cars.push({kind:'carrossel',id:id,data:(''+ev.dataHora).slice(0,10),titulo:(ev.slideTitles&&ev.slideTitles[0])||'',legenda:ev.legenda||'',status:ev.status||'rascunho',localKey:ev.localKey||id});});
