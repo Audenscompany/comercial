@@ -11447,85 +11447,98 @@ function renderDashComercial(){
 }
 // ==================== ANÁLISE DE LP (funil do Meta Pixel) ====================
 var _lpPeriodDays=30;
-var _lpOnlyLP=true;
-var _LP_OBJ_INCLUDE={OUTCOME_TRAFFIC:1,OUTCOME_SALES:1,OUTCOME_LEADS:1,LINK_CLICKS:1,CONVERSIONS:1,WEBSITE_CONVERSIONS:1,PRODUCT_CATALOG_SALES:1};
-function _lpObjLabel(o){return ({OUTCOME_TRAFFIC:'Tráfego',OUTCOME_SALES:'Vendas',OUTCOME_LEADS:'Leads (site)',LINK_CLICKS:'Cliques no link',CONVERSIONS:'Conversões',WEBSITE_CONVERSIONS:'Conversões site',PRODUCT_CATALOG_SALES:'Catálogo',OUTCOME_ENGAGEMENT:'Engajamento',OUTCOME_AWARENESS:'Reconhecimento',OUTCOME_APP_PROMOTION:'App',POST_ENGAGEMENT:'Engajamento',PAGE_LIKES:'Curtidas de página',MESSAGES:'Mensagens',EVENT_RESPONSES:'Eventos',VIDEO_VIEWS:'Vídeo',REACH:'Alcance',BRAND_AWARENESS:'Marca',LEAD_GENERATION:'Formulário instantâneo',APP_INSTALLS:'App',STORE_VISITS:'Visitas à loja'}[o]||o||'Sem objetivo');}
+var _lpOnlyLP=true;                 // PADRÃO: só campanhas de LP
+var _lpLPAccount='506760095105257'; // Audens - Conta Secundária (campanhas de LP)
 var _lpCache=null,_lpCacheTs=0;
 function _lpN(n){n=Number(n)||0;return Math.round(n).toLocaleString('pt-BR');}
 function _lpPct(n){if(n==null||isNaN(n))return '—';return n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';}
 function _lpMoney(n){return 'R$ '+(Number(n)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function _lpNorm(s){return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();}
+// Classificação: campanha aponta para a LP (audenscompany.com.br) ?
+function _lpIsLPCampaign(objective,name){
+  var o=(objective||'').toUpperCase();var n=_lpNorm(name);
+  // 1) EXCLUSÕES (nunca entram no funil de LP)
+  if(o==='LINK_CLICKS'||o==='OUTCOME_ENGAGEMENT'||o==='OUTCOME_AWARENESS'||o==='OUTCOME_TRAFFIC'||o==='POST_ENGAGEMENT'||o==='VIDEO_VIEWS'||o==='REACH'||o==='BRAND_AWARENESS')return false;
+  if(n.indexOf('[TRAFEGO]')>=0||n.indexOf('DISTRIBUICAO DE CONTEUDO')>=0||n.indexOf('[ENGAJAMENTO]')>=0)return false;
+  // 2) INCLUSÕES (campanha de LP)
+  if(o==='OUTCOME_LEADS'||o==='OUTCOME_SALES')return true;
+  if(n.indexOf('[CAPTACAO]')>=0||n.indexOf('[CADASTRO]')>=0||n.indexOf('ASSESSORIA')>=0)return true;
+  return false;
+}
 
 async function fetchLPFunnel(){
-  if(!isMetaConnected()||!metaAccountId)return{error:'not_connected'};
+  if(!isMetaConnected())return{error:'not_connected'};
   var until=new Date(),since=new Date();since.setDate(until.getDate()-(_lpPeriodDays-1));
   var iso=function(d){return d.toISOString().slice(0,10);};
   var tr=encodeURIComponent(JSON.stringify({since:iso(since),until:iso(until)}));
-  var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
-  var A={impressions:0,reach:0,clicks:0,inline:0,spend:0,linkClicks:0,lpv:0,purchases:0,contacts:0};
-  var leadMap={};
-  var flt={included:0,excluded:0,exSpend:0,exClicks:0,exObj:{}};
+  // contas: as configuradas + a conta de LP (secundária), sem duplicar
+  var ids=(metaAccountId||'').split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
+  if(_lpLPAccount&&ids.indexOf(_lpLPAccount)<0)ids.push(_lpLPAccount);
+  if(!ids.length)return{error:'not_connected'};
+  var A={impressions:0,spend:0,linkClicks:0,lpv:0,leads:0,purchases:0};
+  var flt={included:0,excluded:0,exSpend:0,exClicks:0,exObj:{},campsLP:[]};
   for(var i=0;i<ids.length;i++){
     try{
-      var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights?fields=campaign_id,campaign_name,objective,impressions,reach,clicks,inline_link_clicks,spend,actions&time_range='+tr+'&level=campaign&limit=500&access_token='+metaToken.access_token;
+      var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights?fields=campaign_id,campaign_name,objective,impressions,spend,actions&time_range='+tr+'&level=campaign&limit=500&access_token='+metaToken.access_token;
       var r=await fetch(url);var d=await r.json();
       if(d.error){if(d.error.code===190)return{error:'token_expired',msg:d.error.message};continue;}
       (d.data||[]).forEach(function(row){
-        var obj=row.objective||'';
-        var isLP=!!_LP_OBJ_INCLUDE[obj];
-        var rowLink=0,rowLpv=0,rowPurch=0,rowLeads={};
+        var obj=row.objective||'';var name=row.campaign_name||'';
+        var isLP=_lpIsLPCampaign(obj,name);
+        // métricas OFICIAIS (sem aproximação)
+        var rowLink=0,rowLpv=0,rowLead=0,rowLeadPix=0,rowPurch=0;
         (row.actions||[]).forEach(function(a){
           var v=parseFloat(a.value)||0,t=a.action_type;
           if(t==='link_click')rowLink+=v;
           else if(t==='landing_page_view')rowLpv+=v;
-          else if(t==='lead'||t==='offsite_conversion.fb_pixel_lead'||t==='onsite_conversion.lead_grouped'||t==='onsite_conversion.lead')rowLeads[t]=(rowLeads[t]||0)+v;
+          else if(t==='lead')rowLead+=v;
+          else if(t==='offsite_conversion.fb_pixel_lead')rowLeadPix+=v;
           else if(t==='purchase'||t==='offsite_conversion.fb_pixel_purchase'||t==='omni_purchase')rowPurch+=v;
-          else if(t==='onsite_conversion.messaging_conversation_started_7d')A.contacts+=v;
         });
-        var effLink=rowLink||(parseFloat(row.inline_link_clicks)||0)||0;
+        var rowLeads=rowLead||rowLeadPix;
         var sp=parseFloat(row.spend)||0;
         if(_lpOnlyLP&&!isLP){
-          flt.excluded++;flt.exSpend+=sp;flt.exClicks+=effLink;
-          var lbl=_lpObjLabel(obj);flt.exObj[lbl]=(flt.exObj[lbl]||0)+1;
+          flt.excluded++;flt.exSpend+=sp;flt.exClicks+=rowLink;
+          var lbl=obj||'(sem objetivo)';flt.exObj[lbl]=(flt.exObj[lbl]||0)+1;
           return;
         }
         flt.included++;
         A.impressions+=parseFloat(row.impressions)||0;
-        A.reach+=parseFloat(row.reach)||0;
-        A.clicks+=parseFloat(row.clicks)||0;
-        A.inline+=parseFloat(row.inline_link_clicks)||0;
-        A.spend+=sp;
-        A.linkClicks+=effLink;
-        A.lpv+=rowLpv;
-        A.purchases+=rowPurch;
-        Object.keys(rowLeads).forEach(function(t){leadMap[t]=(leadMap[t]||0)+rowLeads[t];});
+        A.spend+=sp;A.linkClicks+=rowLink;A.lpv+=rowLpv;A.leads+=rowLeads;A.purchases+=rowPurch;
+        if(isLP)flt.campsLP.push({name:name,obj:obj,link:rowLink,lpv:rowLpv,lead:rowLeads,spend:sp});
       });
-    }catch(e){/* ignora conta */}
+    }catch(e){/* ignora conta sem acesso */}
   }
-  A.leads=leadMap['lead']||leadMap['offsite_conversion.fb_pixel_lead']||leadMap['onsite_conversion.lead_grouped']||leadMap['onsite_conversion.lead']||0;
-  if(!A.linkClicks)A.linkClicks=A.inline||A.clicks;
-  A.filtro={onlyLP:_lpOnlyLP,included:flt.included,excluded:flt.excluded,exSpend:flt.exSpend,exClicks:flt.exClicks,exObj:flt.exObj};
+  A.filtro=flt;
   A.periodo={since:iso(since),until:iso(until),days:_lpPeriodDays};
   return A;
 }
 
 function renderAnaliseLP(){
   setTimeout(function(){lpLoad(true);},40);
-  var pbtn=function(d,lbl){return '<button onclick="_lpPeriodDays='+d+';lpLoad(true);" style="padding:6px 12px;border-radius:8px;border:1px solid '+(_lpPeriodDays===d?'var(--purple3)':'var(--border2)')+';background:'+(_lpPeriodDays===d?'rgba(147,51,234,0.15)':'transparent')+';color:'+(_lpPeriodDays===d?'var(--purple3)':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;">'+lbl+'</button>';};
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
       '<div class="page-title">Análise de LP</div>'+
-      '<div class="page-sub">Funil do Meta Pixel · onde o visitante cai antes de converter</div>'+
+      '<div class="page-sub">Funil do Meta Pixel · audenscompany.com.br · onde o visitante cai antes de converter</div>'+
     '</div></div>'+
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap;">'+
-      pbtn(7,'7 dias')+pbtn(30,'30 dias')+pbtn(90,'90 dias')+
-      '<button onclick="_lpOnlyLP=!_lpOnlyLP;lpLoad(true);" style="padding:6px 12px;border-radius:8px;border:1px solid '+(_lpOnlyLP?'#22c55e':'var(--border2)')+';background:'+(_lpOnlyLP?'rgba(34,197,94,0.12)':'transparent')+';color:'+(_lpOnlyLP?'#22c55e':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;margin-left:14px;"><i class="ti ti-filter"></i> '+(_lpOnlyLP?'Só campanhas de LP':'Todas as campanhas')+'</button>'+
-      '<button onclick="lpLoad(true)" class="btn btn-outline" style="font-size:12px;margin-left:auto;"><i class="ti ti-refresh" style="color:var(--purple3);"></i> Atualizar</button>'+
-    '</div>'+
+    '<div id="lp-ctrls" style="margin-bottom:18px;"></div>'+
     '<div id="lp-body"><div style="color:var(--muted);padding:40px;text-align:center;font-size:13px;">Carregando funil do Pixel...</div></div>'+
+  '</div>';
+}
+function lpRenderControls(){
+  var el=document.getElementById('lp-ctrls');if(!el)return;
+  var pbtn=function(d,lbl){return '<button onclick="_lpPeriodDays='+d+';lpLoad(true);" style="padding:6px 12px;border-radius:8px;border:1px solid '+(_lpPeriodDays===d?'var(--purple3)':'var(--border2)')+';background:'+(_lpPeriodDays===d?'rgba(147,51,234,0.15)':'transparent')+';color:'+(_lpPeriodDays===d?'var(--purple3)':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;">'+lbl+'</button>';};
+  var modeBtn=function(on,lbl){var active=(_lpOnlyLP===on);return '<button onclick="_lpOnlyLP='+on+';lpLoad(true);" style="padding:6px 12px;border-radius:8px;border:1px solid '+(active?(on?'#22c55e':'#f59e0b'):'var(--border2)')+';background:'+(active?(on?'rgba(34,197,94,0.14)':'rgba(245,158,11,0.14)'):'transparent')+';color:'+(active?(on?'#22c55e':'#f59e0b'):'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;">'+lbl+'</button>';};
+  el.innerHTML='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'+
+    pbtn(7,'7 dias')+pbtn(30,'30 dias')+pbtn(90,'90 dias')+
+    '<span style="width:1px;height:22px;background:var(--border2);margin:0 4px;"></span>'+
+    modeBtn(true,'Só campanhas de LP')+modeBtn(false,'Todas as campanhas')+
+    '<button onclick="lpLoad(true)" class="btn btn-outline" style="font-size:12px;margin-left:auto;"><i class="ti ti-refresh" style="color:var(--purple3);"></i> Atualizar</button>'+
   '</div>';
 }
 
 async function lpLoad(force){
+  lpRenderControls();
   var box=document.getElementById('lp-body');if(!box)return;
   box.innerHTML='<div style="color:var(--muted);padding:40px;text-align:center;font-size:13px;"><i class="ti ti-loader"></i> Buscando dados do Meta Pixel...</div>';
   var A=await fetchLPFunnel();
@@ -11541,77 +11554,75 @@ async function lpLoad(force){
 
 function lpRenderBody(A){
   var imp=A.impressions,clk=A.linkClicks,lpv=A.lpv,lead=A.leads,spend=A.spend;
-  var ctr=imp?clk/imp*100:0;
-  var connect=clk?lpv/clk*100:0;      // clique -> chegou na LP
-  var lpConv=lpv?lead/lpv*100:0;      // LP -> conversão
-  var cpl=lead?spend/lead:0;
-  // ---- KPIs ----
+  var ctr=imp?clk/imp*100:0;              // link_click ÷ impressions
+  var connect=clk?lpv/clk*100:0;          // landing_page_view ÷ link_click
+  var lpConv=lpv?lead/lpv*100:0;          // lead ÷ landing_page_view
+  var cpl=lead?spend/lead:0;              // amount_spent ÷ lead
+  var flt=A.filtro||{};
   var kc=function(v,l,sub,cor){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;">'+
     '<div style="font-size:24px;font-weight:900;color:'+(cor||'var(--white)')+';line-height:1;">'+v+'</div>'+
     '<div style="font-size:11px;color:var(--muted);margin-top:6px;font-weight:600;">'+l+'</div>'+
     (sub?'<div style="font-size:10px;color:var(--muted);margin-top:3px;">'+sub+'</div>':'')+'</div>';};
   var kpis='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;">'+
-    kc(_lpN(lpv),'Visitantes na LP','LandingPageView')+
-    kc(_lpN(lead),'Conversões','evento Lead do Pixel')+
-    kc(_lpPct(lpConv),'Conversão da LP','conversões ÷ visitantes',(lpConv>=8?'#22c55e':(lpConv>=4?'#f59e0b':'#ef4444')))+
-    kc(lead?_lpMoney(cpl):'—','Custo por conversão','investimento ÷ conversões')+
-    kc(_lpMoney(spend),'Investimento','no período')+
+    kc(_lpN(lpv),'Visitantes na LP','landing_page_view')+
+    kc(_lpN(lead),'Conversões','lead')+
+    kc(_lpPct(lpConv),'Conversão da LP','lead ÷ visitantes',(lpConv>=8?'#22c55e':(lpConv>=4?'#f59e0b':'#ef4444')))+
+    kc(lead?_lpMoney(cpl):'—','Custo por lead','amount_spent ÷ lead')+
+    kc(_lpMoney(spend),'Investimento','amount_spent')+
   '</div>';
-  // ---- Funil ----
-  var steps=[
-    {l:'Impressões',v:imp,cor:'#7c3aed'},
-    {l:'Cliques no link',v:clk,cor:'#3b82f6'},
-    {l:'Visitas na LP',v:lpv,cor:'#06b6d4'},
-    {l:'Conversões',v:lead,cor:'#22c55e'}
-  ];
+  // Funil
+  var steps=[{l:'Impressões',v:imp,cor:'#7c3aed'},{l:'Cliques no link',v:clk,cor:'#3b82f6'},{l:'Visitas na LP',v:lpv,cor:'#06b6d4'},{l:'Conversões',v:lead,cor:'#22c55e'}];
   var maxV=Math.max(imp,1);
   var funil='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:22px;">'+
     '<div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:14px;">Funil · anúncio → LP → conversão</div>';
   steps.forEach(function(s,i){
-    var prev=i>0?steps[i-1].v:null;
-    var ret=(prev&&prev>0)?(s.v/prev*100):null;   // retenção do passo anterior
-    var drop=(ret!=null)?(100-ret):null;
+    var prev=i>0?steps[i-1].v:null;var ret=(prev&&prev>0)?(s.v/prev*100):null;var drop=(ret!=null)?(100-ret):null;
     var w=Math.max(2,Math.round(s.v/maxV*100));
     funil+='<div style="margin-bottom:14px;">'+
       '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">'+
         '<span style="font-size:12px;font-weight:700;color:var(--white);">'+s.l+'</span>'+
         '<span style="font-size:13px;font-weight:800;color:var(--white);">'+_lpN(s.v)+(ret!=null?' <span style="font-size:11px;color:var(--muted);font-weight:600;">('+_lpPct(ret)+' do passo anterior)</span>':'')+'</span>'+
       '</div>'+
-      '<div style="height:12px;background:var(--bg2);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+w+'%;background:'+s.cor+';border-radius:7px;transition:width .5s;"></div></div>'+
+      '<div style="height:12px;background:var(--bg2);border-radius:7px;overflow:hidden;"><div style="height:100%;width:'+w+'%;background:'+s.cor+';border-radius:7px;"></div></div>'+
       (drop!=null&&drop>0?'<div style="font-size:10px;color:#ef4444;margin-top:3px;">↓ perdeu '+_lpPct(drop)+' de quem estava no passo anterior</div>':'')+
     '</div>';
   });
   funil+='</div>';
-  // ---- Diagnóstico ----
+  // Filtro / modo
+  var filtroTxt;
+  if(flt.onlyLP!==false&&_lpOnlyLP){
+    var exArr=Object.keys(flt.exObj||{}).map(function(k){return k+' ('+flt.exObj[k]+')';});
+    filtroTxt='<div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:var(--white);line-height:1.55;">'+
+      '<i class="ti ti-filter" style="color:#22c55e;margin-right:5px;"></i><b>Só campanhas de LP</b> — '+(flt.included||0)+' campanha(s) de captação/assessoria contadas.'+
+      (flt.excluded?' <span style="color:var(--muted);">Excluídas '+flt.excluded+' de tráfego/engajamento ('+(exArr.join(', ')||'—')+') — '+_lpMoney(flt.exSpend||0)+' e '+_lpN(flt.exClicks||0)+' cliques que não vão pra LP.</span>':'')+
+    '</div>';
+  } else {
+    filtroTxt='<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:var(--white);"><i class="ti ti-alert-triangle" style="color:#f59e0b;margin-right:5px;"></i><b>Todas as campanhas</b> — inclui tráfego/engajamento que NÃO vão pra LP. O funil fica distorcido (cliques inflados, clique→visita falso). Use <b>"Só campanhas de LP"</b> para o diagnóstico real.</div>';
+  }
+  // Validação: no modo LP, clique→visita < 50% = campanha de tráfego provavelmente entrou
+  var valida='';
+  if(_lpOnlyLP&&clk>0&&connect<50){
+    valida='<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.35);border-radius:12px;padding:12px 15px;margin-bottom:14px;font-size:12.5px;color:#fca5a5;line-height:1.55;">'+
+      '<i class="ti ti-alert-octagon" style="margin-right:5px;"></i><b>Atenção:</b> clique→visita em '+_lpPct(connect)+' (esperado 70–90% em campanhas de LP). Provável que uma campanha de tráfego/conteúdo tenha escapado pro filtro — revise os nomes/objetivos das campanhas de captação.</div>';
+  }
+  // Diagnóstico
   var verdict,vcolor,vicon;
-  if(imp===0){verdict='Sem dados de anúncio no período. Verifique se há campanhas ativas e se a conta do Meta está certa.';vcolor='#f59e0b';vicon='ti-alert-triangle';}
-  else if(lpv===0&&clk>0){verdict='O Pixel NÃO está registrando visitas na LP (LandingPageView = 0), mesmo com '+_lpN(clk)+' cliques. Provável Pixel mal instalado no WordPress ou evento PageView faltando. Corrija a instalação do Pixel antes de julgar a LP.';vcolor='#ef4444';vicon='ti-plug-off';}
-  else if(lead===0&&lpv>0){verdict='Chegam '+_lpN(lpv)+' visitantes, mas 0 conversões registradas. Ou falta configurar o evento Lead no Pixel, ou a LP não está convertendo ninguém. Configure o evento Lead e reavalie — se continuar 0, o problema é a LP.';vcolor='#ef4444';vicon='ti-target-off';}
-  else if(clk>50&&connect<70){verdict='Gargalo no CARREGAMENTO: só '+_lpPct(connect)+' de quem clica chega a ver a LP. Isso é velocidade/redirect/erro de página — o problema ainda NÃO é o conteúdo da LP. Otimize o tempo de carregamento no WordPress.';vcolor='#f59e0b';vicon='ti-bolt';}
-  else if(lpv>50&&lpConv<5){verdict='Gargalo na LP: os visitantes chegam mas quase ninguém converte ('+_lpPct(lpConv)+'). O problema ESTÁ na sua LP — headline/oferta fracas, falta de prova, CTA escondido ou formulário longo. É aqui que você deve atacar.';vcolor='#ef4444';vicon='ti-click';}
-  else if(ctr<0.5){verdict='Gargalo no ANÚNCIO: CTR baixo ('+_lpPct(ctr)+'). Pouca gente clica — o problema está no criativo/segmentação, não na LP. Melhore o anúncio primeiro.';vcolor='#f59e0b';vicon='ti-ad-2';}
-  else{verdict='Funil saudável — sem gargalo evidente. Conversão da LP em '+_lpPct(lpConv)+' e '+_lpPct(connect)+' de quem clica chega na página. Continue testando ofertas para escalar.';vcolor='#22c55e';vicon='ti-circle-check';}
+  if(imp===0){verdict='Sem dados de campanha de LP no período. Verifique se há campanhas de captação ([CAPTAÇÃO]/[CADASTRO]/ASSESSORIA, objetivo Leads/Vendas) ativas na conta.';vcolor='#f59e0b';vicon='ti-alert-triangle';}
+  else if(lpv===0&&clk>0){verdict='O Pixel não registrou visitas na LP (landing_page_view = 0) mesmo com '+_lpN(clk)+' cliques. Verifique a instalação do Pixel (dataset 288150133971064) no WordPress.';vcolor='#ef4444';vicon='ti-plug-off';}
+  else if(lead===0&&lpv>0){verdict='Chegam '+_lpN(lpv)+' visitantes mas 0 conversões (evento lead). Configure o evento Lead no Pixel — se continuar 0 com o evento ativo, o problema é a LP.';vcolor='#ef4444';vicon='ti-target-off';}
+  else if(clk>50&&connect<70){verdict='Gargalo no CARREGAMENTO: só '+_lpPct(connect)+' de quem clica chega a ver a LP. É velocidade/redirect/erro — ainda não é o conteúdo da LP. Otimize o carregamento no WordPress.';vcolor='#f59e0b';vicon='ti-bolt';}
+  else if(lpv>30&&lpConv<5){verdict='Gargalo na LP: os visitantes chegam mas quase ninguém converte ('+_lpPct(lpConv)+'). O problema ESTÁ na LP — oferta, headline, prova, CTA ou formulário. É aqui que você ataca.';vcolor='#ef4444';vicon='ti-click';}
+  else if(ctr<0.5){verdict='Gargalo no ANÚNCIO: CTR baixo ('+_lpPct(ctr)+'). Poucos clicam — trabalhe criativo/segmentação antes da LP.';vcolor='#f59e0b';vicon='ti-ad-2';}
+  else{verdict='Funil saudável — conversão da LP em '+_lpPct(lpConv)+', '+_lpPct(connect)+' de quem clica chega na página e CPL de '+(lead?_lpMoney(cpl):'—')+'. Continue testando ofertas para escalar.';vcolor='#22c55e';vicon='ti-circle-check';}
   var diag='<div style="background:linear-gradient(135deg,rgba(147,51,234,0.08),transparent);border:1px solid '+vcolor+'55;border-left:4px solid '+vcolor+';border-radius:14px;padding:18px 20px;margin-bottom:18px;">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti '+vicon+'" style="color:'+vcolor+';font-size:18px;"></i><span style="font-size:12px;font-weight:800;color:'+vcolor+';letter-spacing:.5px;text-transform:uppercase;">Diagnóstico · o problema está na LP?</span></div>'+
     '<div style="font-size:14px;color:var(--white);line-height:1.6;">'+verdict+'</div>'+
   '</div>';
-  // ---- Nota Clarity ----
   var nota='<div style="background:var(--bg2);border:1px dashed var(--border2);border-radius:12px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.6;">'+
-    '<b style="color:var(--white);">Para ver EXATAMENTE onde na página o visitante rola e desiste</b> (mapa de calor, profundidade de rolagem, cliques de raiva e gravações de sessão), o Pixel não basta — isso vem do <b>Microsoft Clarity</b> (gratuito). Posso te dar o passo a passo pra instalar no WordPress e trazer esses dados aqui também. É só pedir.'+
+    '<b style="color:var(--white);">Onde na página o visitante rola e desiste</b> (mapa de calor, profundidade de rolagem, gravações) o Pixel não mostra — isso vem do <b>Microsoft Clarity</b> (gratuito). É só pedir que eu te passo o setup no WordPress.'+
   '</div>';
-  var flt=A.filtro||{};
-  var filtroTxt='';
-  if(flt.onlyLP){
-    var exObjArr=Object.keys(flt.exObj||{}).map(function(k){return k+' ('+flt.exObj[k]+')';});
-    filtroTxt='<div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:var(--white);line-height:1.55;">'+
-      '<i class="ti ti-filter" style="color:#22c55e;margin-right:5px;"></i><b>Só campanhas que levam pra LP</b> — contando '+(flt.included||0)+' campanha(s) de tráfego/conversão.'+
-      (flt.excluded?' <span style="color:var(--muted);">Excluídas '+flt.excluded+' campanha(s) que não vão pra LP ('+(exObjArr.join(', ')||'—')+') — '+_lpMoney(flt.exSpend||0)+' e '+_lpN(flt.exClicks||0)+' cliques que não deveriam entrar no funil.</span>':' <span style="color:var(--muted);">Nenhuma campanha de fora do funil no período.</span>')+
-    '</div>';
-  } else {
-    filtroTxt='<div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:var(--white);"><i class="ti ti-alert-triangle" style="color:#f59e0b;margin-right:5px;"></i><b>Todas as campanhas</b> — inclui engajamento, mensagem, alcance etc. O funil fica distorcido; use "Só campanhas de LP" para o diagnóstico real.</div>';
-  }
   var periodoTxt=A.periodo?('<div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Período: '+A.periodo.since.split('-').reverse().slice(0,2).join('/')+' a '+A.periodo.until.split('-').reverse().slice(0,2).join('/')+' · '+A.periodo.days+' dias</div>'):'';
-  return periodoTxt+filtroTxt+kpis+funil+diag+nota;
+  return periodoTxt+filtroTxt+valida+kpis+funil+diag+nota;
 }
 
 function renderAnaliseAds(){
