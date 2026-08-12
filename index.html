@@ -26341,6 +26341,21 @@ function igRenderOverview(){
   var ndays=s7.length||1;
   var erWeek=T.reach?(T.inter/T.reach*100):0;
 
+  // ===== Período ANTERIOR (7 dias antes) p/ comparativo =====
+  var s7p=closed.slice(-14,-7);
+  var P={reach:sumK(s7p,'reach'),views:sumK(s7p,'views'),saves:sumK(s7p,'saves'),shares:sumK(s7p,'shares'),comments:sumK(s7p,'comments'),newf:sumK(s7p,'value')};
+  P.inter=s7p.reduce(function(a,b){return a+interOf(b);},0);
+  var erPrev=P.reach?(P.inter/P.reach*100):0;
+  var _hasPrev=s7p.length>0;
+  var deltaBadge=function(cur,prev){
+    if(!_hasPrev){return '<span style="font-size:10px;color:var(--muted);">sem periodo anterior</span>';}
+    if(prev===0&&cur===0){return '<span style="font-size:10px;color:var(--muted);">= vs 7d ant.</span>';}
+    var d=(prev===0)?100:((cur-prev)/Math.abs(prev)*100);
+    var up=d>=0,col=up?'#22c55e':'#ef4444',arw=up?'\u25B2':'\u25BC';
+    var val=(Math.abs(d)>=1000)?'+999%':((up?'+':'\u2212')+Math.round(Math.abs(d))+'%');
+    return '<span style="font-size:10px;font-weight:800;color:'+col+';">'+arw+' '+val+'</span> <span style="font-size:10px;color:var(--muted);">vs 7d ant.</span>';
+  };
+
   // melhor dia por taxa de engajamento
   var bestDay=null,bestER=-1;
   s7.forEach(function(d){var er=d.reach?interOf(d)/d.reach:0;if(er>bestER){bestER=er;bestDay=d;}});
@@ -26421,20 +26436,21 @@ function igRenderOverview(){
   '</div>';
 
   // ===== KPI cards (semana) =====
-  var kc=function(val,label,sub,color){
+  var kc=function(val,label,sub,color,badge){
     return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;">'+
       '<div style="font-size:24px;font-weight:900;color:var(--white);line-height:1;letter-spacing:-.02em;">'+val+'</div>'+
       '<div style="font-size:11px;color:var(--muted);margin-top:6px;font-weight:600;">'+label+'</div>'+
       (sub?'<div style="font-size:10px;color:'+(color||'var(--muted)')+';margin-top:3px;">'+sub+'</div>':'')+
+      (badge?'<div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--border);">'+badge+'</div>':'')+
     '</div>';
   };
   var kpiRow='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;">'+
-    kc(fmtN(T.reach),'Alcance total','média '+fmtN(T.reach/ndays)+'/dia')+
-    kc(fmtN(T.views),'Visualizações','média '+fmtN(T.views/ndays)+'/dia')+
-    kc(fmtN(T.inter),'Interações','média '+fmtN(T.inter/ndays)+'/dia')+
-    kc(pctN(erWeek),'Taxa engajamento','interações ÷ alcance','#22c55e')+
-    kc('+'+fmtN(T.newf),'Novos seguidores','no período','#22c55e')+
-    kc(fmtN(T.saves)+' · '+fmtN(T.shares),'Salvam. · Compart.',fmtN(T.comments)+' comentários')+
+    kc(fmtN(T.reach),'Alcance total','média '+fmtN(T.reach/ndays)+'/dia',null,deltaBadge(T.reach,P.reach))+
+    kc(fmtN(T.views),'Visualizações','média '+fmtN(T.views/ndays)+'/dia',null,deltaBadge(T.views,P.views))+
+    kc(fmtN(T.inter),'Interações','média '+fmtN(T.inter/ndays)+'/dia',null,deltaBadge(T.inter,P.inter))+
+    kc(pctN(erWeek),'Taxa engajamento','interações ÷ alcance','#22c55e',deltaBadge(erWeek,erPrev))+
+    kc('+'+fmtN(T.newf),'Novos seguidores','no período','#22c55e',deltaBadge(T.newf,P.newf))+
+    kc(fmtN(T.saves)+' · '+fmtN(T.shares),'Salvam. · Compart.',fmtN(T.comments)+' comentários',null,deltaBadge(T.saves+T.shares,P.saves+P.shares))+
   '</div>';
 
   // ===== Gráfico diário =====
