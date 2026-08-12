@@ -11447,6 +11447,9 @@ function renderDashComercial(){
 }
 // ==================== ANÁLISE DE LP (funil do Meta Pixel) ====================
 var _lpPeriodDays=30;
+var _lpOnlyLP=true;
+var _LP_OBJ_INCLUDE={OUTCOME_TRAFFIC:1,OUTCOME_SALES:1,OUTCOME_LEADS:1,LINK_CLICKS:1,CONVERSIONS:1,WEBSITE_CONVERSIONS:1,PRODUCT_CATALOG_SALES:1};
+function _lpObjLabel(o){return ({OUTCOME_TRAFFIC:'Tráfego',OUTCOME_SALES:'Vendas',OUTCOME_LEADS:'Leads (site)',LINK_CLICKS:'Cliques no link',CONVERSIONS:'Conversões',WEBSITE_CONVERSIONS:'Conversões site',PRODUCT_CATALOG_SALES:'Catálogo',OUTCOME_ENGAGEMENT:'Engajamento',OUTCOME_AWARENESS:'Reconhecimento',OUTCOME_APP_PROMOTION:'App',POST_ENGAGEMENT:'Engajamento',PAGE_LIKES:'Curtidas de página',MESSAGES:'Mensagens',EVENT_RESPONSES:'Eventos',VIDEO_VIEWS:'Vídeo',REACH:'Alcance',BRAND_AWARENESS:'Marca',LEAD_GENERATION:'Formulário instantâneo',APP_INSTALLS:'App',STORE_VISITS:'Visitas à loja'}[o]||o||'Sem objetivo');}
 var _lpCache=null,_lpCacheTs=0;
 function _lpN(n){n=Number(n)||0;return Math.round(n).toLocaleString('pt-BR');}
 function _lpPct(n){if(n==null||isNaN(n))return '—';return n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';}
@@ -11460,30 +11463,47 @@ async function fetchLPFunnel(){
   var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
   var A={impressions:0,reach:0,clicks:0,inline:0,spend:0,linkClicks:0,lpv:0,purchases:0,contacts:0};
   var leadMap={};
+  var flt={included:0,excluded:0,exSpend:0,exClicks:0,exObj:{}};
   for(var i=0;i<ids.length;i++){
     try{
-      var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights?fields=impressions,reach,clicks,inline_link_clicks,spend,actions&time_range='+tr+'&level=account&access_token='+metaToken.access_token;
+      var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights?fields=campaign_id,campaign_name,objective,impressions,reach,clicks,inline_link_clicks,spend,actions&time_range='+tr+'&level=campaign&limit=500&access_token='+metaToken.access_token;
       var r=await fetch(url);var d=await r.json();
       if(d.error){if(d.error.code===190)return{error:'token_expired',msg:d.error.message};continue;}
-      var row=(d.data&&d.data[0])||{};
-      A.impressions+=parseFloat(row.impressions)||0;
-      A.reach+=parseFloat(row.reach)||0;
-      A.clicks+=parseFloat(row.clicks)||0;
-      A.inline+=parseFloat(row.inline_link_clicks)||0;
-      A.spend+=parseFloat(row.spend)||0;
-      (row.actions||[]).forEach(function(a){
-        var v=parseFloat(a.value)||0,t=a.action_type;
-        if(t==='link_click')A.linkClicks+=v;
-        else if(t==='landing_page_view')A.lpv+=v;
-        else if(t==='lead'||t==='offsite_conversion.fb_pixel_lead'||t==='onsite_conversion.lead_grouped'||t==='onsite_conversion.lead')leadMap[t]=(leadMap[t]||0)+v;
-        else if(t==='purchase'||t==='offsite_conversion.fb_pixel_purchase'||t==='omni_purchase')A.purchases+=v;
-        else if(t==='onsite_conversion.messaging_conversation_started_7d')A.contacts+=v;
+      (d.data||[]).forEach(function(row){
+        var obj=row.objective||'';
+        var isLP=!!_LP_OBJ_INCLUDE[obj];
+        var rowLink=0,rowLpv=0,rowPurch=0,rowLeads={};
+        (row.actions||[]).forEach(function(a){
+          var v=parseFloat(a.value)||0,t=a.action_type;
+          if(t==='link_click')rowLink+=v;
+          else if(t==='landing_page_view')rowLpv+=v;
+          else if(t==='lead'||t==='offsite_conversion.fb_pixel_lead'||t==='onsite_conversion.lead_grouped'||t==='onsite_conversion.lead')rowLeads[t]=(rowLeads[t]||0)+v;
+          else if(t==='purchase'||t==='offsite_conversion.fb_pixel_purchase'||t==='omni_purchase')rowPurch+=v;
+          else if(t==='onsite_conversion.messaging_conversation_started_7d')A.contacts+=v;
+        });
+        var effLink=rowLink||(parseFloat(row.inline_link_clicks)||0)||0;
+        var sp=parseFloat(row.spend)||0;
+        if(_lpOnlyLP&&!isLP){
+          flt.excluded++;flt.exSpend+=sp;flt.exClicks+=effLink;
+          var lbl=_lpObjLabel(obj);flt.exObj[lbl]=(flt.exObj[lbl]||0)+1;
+          return;
+        }
+        flt.included++;
+        A.impressions+=parseFloat(row.impressions)||0;
+        A.reach+=parseFloat(row.reach)||0;
+        A.clicks+=parseFloat(row.clicks)||0;
+        A.inline+=parseFloat(row.inline_link_clicks)||0;
+        A.spend+=sp;
+        A.linkClicks+=effLink;
+        A.lpv+=rowLpv;
+        A.purchases+=rowPurch;
+        Object.keys(rowLeads).forEach(function(t){leadMap[t]=(leadMap[t]||0)+rowLeads[t];});
       });
     }catch(e){/* ignora conta */}
   }
-  // leads: prioriza 'lead' (unificado) para não duplicar
   A.leads=leadMap['lead']||leadMap['offsite_conversion.fb_pixel_lead']||leadMap['onsite_conversion.lead_grouped']||leadMap['onsite_conversion.lead']||0;
   if(!A.linkClicks)A.linkClicks=A.inline||A.clicks;
+  A.filtro={onlyLP:_lpOnlyLP,included:flt.included,excluded:flt.excluded,exSpend:flt.exSpend,exClicks:flt.exClicks,exObj:flt.exObj};
   A.periodo={since:iso(since),until:iso(until),days:_lpPeriodDays};
   return A;
 }
@@ -11498,6 +11518,7 @@ function renderAnaliseLP(){
     '</div></div>'+
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap;">'+
       pbtn(7,'7 dias')+pbtn(30,'30 dias')+pbtn(90,'90 dias')+
+      '<button onclick="_lpOnlyLP=!_lpOnlyLP;lpLoad(true);" style="padding:6px 12px;border-radius:8px;border:1px solid '+(_lpOnlyLP?'#22c55e':'var(--border2)')+';background:'+(_lpOnlyLP?'rgba(34,197,94,0.12)':'transparent')+';color:'+(_lpOnlyLP?'#22c55e':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;margin-left:14px;"><i class="ti ti-filter"></i> '+(_lpOnlyLP?'Só campanhas de LP':'Todas as campanhas')+'</button>'+
       '<button onclick="lpLoad(true)" class="btn btn-outline" style="font-size:12px;margin-left:auto;"><i class="ti ti-refresh" style="color:var(--purple3);"></i> Atualizar</button>'+
     '</div>'+
     '<div id="lp-body"><div style="color:var(--muted);padding:40px;text-align:center;font-size:13px;">Carregando funil do Pixel...</div></div>'+
@@ -11578,8 +11599,19 @@ function lpRenderBody(A){
   var nota='<div style="background:var(--bg2);border:1px dashed var(--border2);border-radius:12px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.6;">'+
     '<b style="color:var(--white);">Para ver EXATAMENTE onde na página o visitante rola e desiste</b> (mapa de calor, profundidade de rolagem, cliques de raiva e gravações de sessão), o Pixel não basta — isso vem do <b>Microsoft Clarity</b> (gratuito). Posso te dar o passo a passo pra instalar no WordPress e trazer esses dados aqui também. É só pedir.'+
   '</div>';
+  var flt=A.filtro||{};
+  var filtroTxt='';
+  if(flt.onlyLP){
+    var exObjArr=Object.keys(flt.exObj||{}).map(function(k){return k+' ('+flt.exObj[k]+')';});
+    filtroTxt='<div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:var(--white);line-height:1.55;">'+
+      '<i class="ti ti-filter" style="color:#22c55e;margin-right:5px;"></i><b>Só campanhas que levam pra LP</b> — contando '+(flt.included||0)+' campanha(s) de tráfego/conversão.'+
+      (flt.excluded?' <span style="color:var(--muted);">Excluídas '+flt.excluded+' campanha(s) que não vão pra LP ('+(exObjArr.join(', ')||'—')+') — '+_lpMoney(flt.exSpend||0)+' e '+_lpN(flt.exClicks||0)+' cliques que não deveriam entrar no funil.</span>':' <span style="color:var(--muted);">Nenhuma campanha de fora do funil no período.</span>')+
+    '</div>';
+  } else {
+    filtroTxt='<div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:var(--white);"><i class="ti ti-alert-triangle" style="color:#f59e0b;margin-right:5px;"></i><b>Todas as campanhas</b> — inclui engajamento, mensagem, alcance etc. O funil fica distorcido; use "Só campanhas de LP" para o diagnóstico real.</div>';
+  }
   var periodoTxt=A.periodo?('<div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Período: '+A.periodo.since.split('-').reverse().slice(0,2).join('/')+' a '+A.periodo.until.split('-').reverse().slice(0,2).join('/')+' · '+A.periodo.days+' dias</div>'):'';
-  return periodoTxt+kpis+funil+diag+nota;
+  return periodoTxt+filtroTxt+kpis+funil+diag+nota;
 }
 
 function renderAnaliseAds(){
