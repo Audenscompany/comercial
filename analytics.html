@@ -80,6 +80,10 @@
   <div class="top">
     <h1>Audens Growth Central <span>· Análise da LP</span></h1>
     <div class="right">
+      <div class="seg" id="lpmode">
+        <button data-m="nova" class="on">LP nova</button>
+        <button data-m="antiga">LP antiga</button>
+      </div>
       <div class="seg" id="range">
         <button data-d="0">Hoje</button>
         <button data-d="7" class="on">7 dias</button>
@@ -140,7 +144,9 @@ var firebaseConfig = {
 };
 var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
 
-var fbDb=null, RANGE=7, cache={sessions:null, leads:null};
+var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null};
+/* LP antiga = Elementor (só gerava leads, sem tracking próprio). LP nova = 'lp-audens' (tracking completo). */
+var OLD_SOURCES = {'lp-elementor':1,'elementor':1,'lp-antiga':1};
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(m){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[m];});}
 function fmt(n){return (n||0).toLocaleString('pt-BR');}
@@ -186,82 +192,129 @@ Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b)
     b.classList.add('on'); RANGE = +b.dataset.d; render();
   });
 });
+Array.prototype.forEach.call(el('lpmode').querySelectorAll('button'), function(b){
+  b.addEventListener('click', function(){
+    el('lpmode').querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); MODE = b.dataset.m; render();
+  });
+});
 
 /* ===== Render ===== */
+var MANUAL = {'whatsapp':1,'extrato_pdf':1,'extrato_manual':1,'manual':1,'':1};
+function isNova(src){ return src==='lp-audens'; }
+function isAntiga(src){ return src!=='lp-audens' && !MANUAL[src]; }
+
 function render(){
+  var antiga = (MODE==='antiga');
   var now = Date.now();
   var cut = RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000);
 
-  /* sessões no período */
+  /* sessões no período — só existem para a LP nova (a LP antiga nunca teve o tracking próprio) */
   var sess = [];
-  var S = cache.sessions||{};
-  for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t>=cut) sess.push(v); }
-
+  if(!antiga){
+    var S = cache.sessions||{};
+    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t>=cut) sess.push(v); }
+  }
   var total = sess.length;
   var reachedForm = sess.filter(function(s){return s.reachedForm;}).length;
   var converted = sess.filter(function(s){return s.converted;}).length;
   var mobile = sess.filter(function(s){return s.device==='mobile';}).length;
   var desktop = sess.filter(function(s){return s.device==='desktop';}).length;
 
-  /* leads no período — SÓ da LP nova (origem 'lp-audens'); o nó leads/ é compartilhado com a LP antiga */
+  /* leads no período — filtrados pela LP escolhida */
   var leads = [];
   var L = cache.leads||{};
-  for(var lk in L){ var lv=L[lk]||{}; if(lv._source!=='lp-audens') continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||''; var ok = antiga?isAntiga(src):isNova(src); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
   var nLeads = leads.length;
 
   /* KPIs */
-  el('kpis').innerHTML =
-    kpi(fmt(total),'Visitantes (sessões)') +
-    kpi(fmt(reachedForm),'Chegaram ao formulário') +
-    kpi(fmt(nLeads||converted),'Leads') +
-    kpi(pct((nLeads||converted),total),'Conversão','p') +
-    kpi(pct(mobile,total),'Mobile') +
-    kpi(pct(desktop,total),'Desktop');
+  if(antiga){
+    /* origem dos leads (a LP antiga só tem dados de lead, sem sessões) */
+    var lsrc = {};
+    leads.forEach(function(l){ var s=(l.utm_source||l._source||'direto'); lsrc[s]=(lsrc[s]||0)+1; });
+    var topSrc = Object.keys(lsrc).sort(function(a,b){return lsrc[b]-lsrc[a];})[0]||'—';
+    var withCamp = leads.filter(function(l){return l.campanha;}).length;
+    el('kpis').innerHTML =
+      kpi(fmt(nLeads),'Leads (LP antiga)','p') +
+      kpi(esc(topSrc),'Origem principal') +
+      kpi(fmt(withCamp),'Com campanha atribuída') +
+      kpi(fmt(Object.keys(lsrc).length),'Fontes distintas');
+  } else {
+    el('kpis').innerHTML =
+      kpi(fmt(total),'Visitantes (sessões)') +
+      kpi(fmt(reachedForm),'Chegaram ao formulário') +
+      kpi(fmt(nLeads||converted),'Leads') +
+      kpi(pct((nLeads||converted),total),'Conversão','p') +
+      kpi(pct(mobile,total),'Mobile') +
+      kpi(pct(desktop,total),'Desktop');
+  }
 
   /* Funil */
-  var steps = [
-    {n:'Visitantes', v:total},
-    {n:'Chegaram ao formulário', v:reachedForm},
-    {n:'Leads', v:(nLeads||converted)}
-  ];
-  var max = total||1;
-  el('funnel').innerHTML = steps.map(function(s,i){
-    var prev = i>0?steps[i-1].v:s.v;
-    var drop = i>0 && prev>0 ? Math.round((1-s.v/prev)*100) : 0;
-    return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,total):'')+'</span></div>'+
-      '<div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+
-      (i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
-  }).join('');
+  if(antiga){
+    el('funnel').innerHTML = '<div class="empty">A LP antiga (Elementor) nunca teve o tracking próprio da Audens — o funil de visitantes → formulário só existe para a LP nova. Aqui vemos apenas os <b>leads</b> que ela gerou e a atribuição deles.</div>';
+  } else {
+    var steps = [
+      {n:'Visitantes', v:total},
+      {n:'Chegaram ao formulário', v:reachedForm},
+      {n:'Leads', v:(nLeads||converted)}
+    ];
+    var max = total||1;
+    el('funnel').innerHTML = steps.map(function(s,i){
+      var prev = i>0?steps[i-1].v:s.v;
+      var drop = i>0 && prev>0 ? Math.round((1-s.v/prev)*100) : 0;
+      return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,total):'')+'</span></div>'+
+        '<div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+
+        (i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
+    }).join('');
+  }
 
-  /* Origem (utm_source; fallback ref/direto) */
-  var srcMap = {};
-  sess.forEach(function(s){
-    var src = (s.utm_source||'').trim();
-    if(!src){ src = s.ref ? dominio(s.ref) : 'direto'; }
-    src = src||'direto';
-    if(!srcMap[src]) srcMap[src]={sess:0,leads:0};
-    srcMap[src].sess++;
-    if(s.converted) srcMap[src].leads++;
-  });
-  el('sources').innerHTML = barsFrom(srcMap, 'sess', total) || '<div class="empty">Sem dados de origem ainda.</div>';
+  /* Origem do tráfego / dos leads */
+  if(antiga){
+    var srcMapA = {};
+    leads.forEach(function(l){
+      var src=(l.utm_source||'').trim() || (l.ref?dominio(l.ref):'') || 'direto';
+      if(!srcMapA[src]) srcMapA[src]={sess:0,leads:0};
+      srcMapA[src].sess++; srcMapA[src].leads++;
+    });
+    el('sources').innerHTML = barsFrom(srcMapA, 'sess', nLeads) || '<div class="empty">Sem leads da LP antiga no período.</div>';
+  } else {
+    var srcMap = {};
+    sess.forEach(function(s){
+      var src = (s.utm_source||'').trim();
+      if(!src){ src = s.ref ? dominio(s.ref) : 'direto'; }
+      src = src||'direto';
+      if(!srcMap[src]) srcMap[src]={sess:0,leads:0};
+      srcMap[src].sess++;
+      if(s.converted) srcMap[src].leads++;
+    });
+    el('sources').innerHTML = barsFrom(srcMap, 'sess', total) || '<div class="empty">Sem dados de origem ainda.</div>';
+  }
 
   /* Device conversão */
-  var dv = [
-    {name:'Desktop', total:desktop, conv:sess.filter(function(s){return s.device==='desktop'&&s.converted;}).length},
-    {name:'Mobile', total:mobile, conv:sess.filter(function(s){return s.device==='mobile'&&s.converted;}).length}
-  ];
-  el('devices').innerHTML = dv.map(function(d){
-    var rate = d.total>0?(d.conv/d.total*100):0;
-    return '<div class="row"><div class="name">'+d.name+'</div><div class="bar"><span class="g" style="width:'+Math.min(100,rate*4)+'%"></span></div><div class="val">'+rate.toFixed(1)+'%</div></div>';
-  }).join('') + '<div class="empty" style="margin-top:6px">Taxa = leads ÷ sessões do dispositivo.</div>';
+  if(antiga){
+    el('devices').innerHTML = '<div class="empty">Sem dado de dispositivo para a LP antiga (não tinha o tracking próprio).</div>';
+  } else {
+    var dv = [
+      {name:'Desktop', total:desktop, conv:sess.filter(function(s){return s.device==='desktop'&&s.converted;}).length},
+      {name:'Mobile', total:mobile, conv:sess.filter(function(s){return s.device==='mobile'&&s.converted;}).length}
+    ];
+    el('devices').innerHTML = dv.map(function(d){
+      var rate = d.total>0?(d.conv/d.total*100):0;
+      return '<div class="row"><div class="name">'+d.name+'</div><div class="bar"><span class="g" style="width:'+Math.min(100,rate*4)+'%"></span></div><div class="val">'+rate.toFixed(1)+'%</div></div>';
+    }).join('') + '<div class="empty" style="margin-top:6px">Taxa = leads ÷ sessões do dispositivo.</div>';
+  }
 
   /* Abandono por seção (não converteram) */
-  var abMap = {};
-  sess.filter(function(s){return !s.converted && s.lastSection;}).forEach(function(s){
-    var sec = s.lastSection; abMap[sec]=(abMap[sec]||0)+1;
-  });
-  var abTotal = Object.keys(abMap).reduce(function(a,k){return a+abMap[k];},0);
-  el('abandono').innerHTML = barsSimple(abMap, abTotal, 'a') || '<div class="empty">Sem dados suficientes ainda.</div>';
+  if(antiga){
+    el('abandono').innerHTML = '<div class="empty">Só disponível na LP nova (depende do tracking de seções por sessão).</div>';
+  } else {
+    var abMap = {};
+    sess.filter(function(s){return !s.converted && s.lastSection;}).forEach(function(s){
+      var sec = s.lastSection; abMap[sec]=(abMap[sec]||0)+1;
+    });
+    var abTotal = Object.keys(abMap).reduce(function(a,k){return a+abMap[k];},0);
+    el('abandono').innerHTML = barsSimple(abMap, abTotal, 'a') || '<div class="empty">Sem dados suficientes ainda.</div>';
+  }
 
   /* Leads recentes */
   leads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
@@ -275,9 +328,11 @@ function render(){
     el('leads').innerHTML = '<div class="empty">Nenhum lead no período selecionado.</div>';
   }
 
-  el('status').textContent = total===0 && nLeads===0
-    ? 'Ainda não há dados neste período. Assim que o tráfego chegar na LP (ou você navegar nela), os números aparecem aqui.'
-    : 'Atualizado agora · período: '+(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  var lpLabel = antiga ? 'LP antiga (Elementor)' : 'LP nova (audens-lp)';
+  var per = (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
+    ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
+    : 'Atualizado agora · '+lpLabel+' · período: '+per);
 }
 
 function kpi(v,l,cls){ return '<div class="kpi"><div class="v '+(cls||'')+'">'+v+'</div><div class="l">'+l+'</div></div>'; }
