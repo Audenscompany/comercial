@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Audens Growth Central · Análise da LP</title>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-database-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-auth-compat.min.js"></script>
+<style>
+  :root{
+    --bg:#07060B;--bg2:#0E0A16;--surface:#14101F;--card:#17122a;--line:rgba(255,255,255,.10);
+    --purple:#7C34F0;--purple2:#A66BFF;--silver:#C7C2D6;--white:#F5F2FA;--muted:#B7AFC9;--muted2:#8B82A0;
+    --green:#3AD07E;--amber:#F5B851;--red:#FF6B85;--blue:#5AA9FF;
+    --ff:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--white);font-family:var(--ff);line-height:1.5;font-size:14.5px}
+  a{color:var(--purple2)}
+  .top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 22px;background:linear-gradient(180deg,var(--bg2),var(--bg));border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .top h1{font-size:16px;margin:0;letter-spacing:.01em}
+  .top h1 span{color:var(--muted2);font-weight:500}
+  .top .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{background:transparent;border:0;color:var(--muted);font-family:var(--ff);font-size:12.5px;font-weight:600;padding:8px 12px;cursor:pointer}
+  .seg button.on{background:var(--purple);color:#fff}
+  .btn{background:transparent;border:1px solid var(--line);color:var(--white);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .btn:hover{border-color:var(--purple2)}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px}
+  .status{color:var(--muted2);font-size:12.5px;margin:0 0 14px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:8px}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:520px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px}
+  .kpi .v{font-size:24px;font-weight:800;letter-spacing:-.02em}
+  .kpi .l{font-size:11.5px;color:var(--muted2);margin-top:2px}
+  .kpi .v.g{color:var(--green)} .kpi .v.p{color:var(--purple2)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--silver);margin:0 0 14px;font-weight:600}
+  /* funil */
+  .funnel .step{margin-bottom:10px}
+  .funnel .lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+  .funnel .lbl b{color:#fff} .funnel .lbl .n{color:var(--muted)}
+  .funnel .track{height:24px;background:#0c0916;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .funnel .fill{height:100%;background:linear-gradient(90deg,var(--purple),var(--purple2));border-radius:8px 0 0 8px;min-width:2px;transition:width .5s}
+  .funnel .drop{font-size:11px;color:var(--red);margin-top:2px}
+  /* barras */
+  .bars .row{display:grid;grid-template-columns:120px 1fr 52px;gap:10px;align-items:center;margin-bottom:9px;font-size:13px}
+  .bars .row .name{color:var(--silver);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bars .row .bar{height:16px;background:#0c0916;border-radius:6px;overflow:hidden}
+  .bars .row .bar span{display:block;height:100%;background:var(--purple2);border-radius:6px}
+  .bars .row .val{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .bars .row .bar span.g{background:var(--green)} .bars .row .bar span.a{background:var(--amber)} .bars .row .bar span.b{background:var(--blue)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted2);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;background:rgba(124,52,240,.16);color:var(--purple2)}
+  .empty{color:var(--muted2);font-size:13px;padding:8px 0}
+  /* gate */
+  #gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:20}
+  #gate .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;width:min(360px,90vw);text-align:center}
+  #gate h3{margin:0 0 6px} #gate p{color:var(--muted2);font-size:13px;margin:0 0 16px}
+  #gate input{width:100%;background:#0c0916;border:1px solid var(--line);border-radius:10px;color:#fff;padding:11px 13px;font-size:14px;margin-bottom:10px}
+  #gate button{width:100%;background:linear-gradient(180deg,var(--purple2),var(--purple));border:0;color:#fff;font-weight:700;border-radius:10px;padding:11px;cursor:pointer}
+  .foot{color:var(--muted2);font-size:11.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+  <div id="gate"><div class="box">
+    <h3>Growth Central</h3>
+    <p>Acesso restrito — Audens Company</p>
+    <input id="gpass" type="password" placeholder="Senha" autocomplete="off">
+    <button id="gbtn">Entrar</button>
+  </div></div>
+
+  <div class="top">
+    <h1>Audens Growth Central <span>· Análise da LP</span></h1>
+    <div class="right">
+      <div class="seg" id="range">
+        <button data-d="0">Hoje</button>
+        <button data-d="7" class="on">7 dias</button>
+        <button data-d="30">30 dias</button>
+        <button data-d="99999">Tudo</button>
+      </div>
+      <button class="btn" id="reload">↻ Atualizar</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <p class="status" id="status">Carregando…</p>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Funil da LP</h2>
+        <div class="funnel" id="funnel"></div>
+      </div>
+      <div class="card">
+        <h2>Origem do tráfego</h2>
+        <div class="bars" id="sources"></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Conversão por dispositivo</h2>
+        <div class="bars" id="devices"></div>
+      </div>
+      <div class="card">
+        <h2>Abandono por seção (onde pararam)</h2>
+        <div class="bars" id="abandono"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Leads recentes (com atribuição)</h2>
+      <div id="leads"></div>
+    </div>
+
+    <div class="foot">
+      Dados do seu Firebase (nós <code>analytics/sessions</code> e <code>leads/</code>). A camada comercial (reunião → proposta → cliente → receita) entra na próxima fase, conectando com o pipeline do CRM. Nenhuma plataforma externa: tudo interno.
+    </div>
+  </div>
+
+<script>
+/* ===== Firebase (mesmo projeto do CRM) ===== */
+var firebaseConfig = {
+  apiKey: "AIzaSyD2CC8Sr5ifpJsy6pW0_o7blFshTCdhf8s",
+  authDomain: "audens-crm.firebaseapp.com",
+  databaseURL: "https://audens-crm-default-rtdb.firebaseio.com",
+  projectId: "audens-crm",
+  storageBucket: "audens-crm.firebasestorage.app",
+  messagingSenderId: "471063273836",
+  appId: "1:471063273836:web:fcf4ee7aeaead3a2d95349"
+};
+var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
+
+var fbDb=null, RANGE=7, cache={sessions:null, leads:null};
+function el(id){return document.getElementById(id);}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(m){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[m];});}
+function fmt(n){return (n||0).toLocaleString('pt-BR');}
+function pct(a,b){return b>0?((a/b*100).toFixed(1)+"%"):"0%";}
+
+/* ===== Gate ===== */
+function tryGate(){
+  var ok = sessionStorage.getItem('gc_ok')==='1';
+  if(ok){ el('gate').style.display='none'; boot(); return; }
+}
+el('gbtn').addEventListener('click', function(){
+  if(el('gpass').value===GATE_PASS){ sessionStorage.setItem('gc_ok','1'); el('gate').style.display='none'; boot(); }
+  else { el('gpass').value=''; el('gpass').placeholder='Senha incorreta'; }
+});
+el('gpass').addEventListener('keydown', function(e){ if(e.key==='Enter') el('gbtn').click(); });
+
+/* ===== Boot / Firebase ===== */
+var booted=false;
+function boot(){
+  if(booted) return; booted=true;
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    fbDb = firebase.database();
+    firebase.auth().signInAnonymously().catch(function(e){ console.warn('auth anon:', e.message); });
+    firebase.auth().onAuthStateChanged(function(){ load(); });
+    setTimeout(load, 1500); // fallback caso o auth demore
+  }catch(e){ el('status').textContent = 'Erro ao conectar ao Firebase: '+e.message; }
+}
+
+/* ===== Carregar dados ===== */
+function load(){
+  if(!fbDb) return;
+  el('status').textContent = 'Carregando dados…';
+  var p1 = fbDb.ref('analytics/sessions').once('value').then(function(s){ cache.sessions = s.val()||{}; }).catch(function(e){ cache.sessions={}; console.warn('sessions:',e.message); });
+  var p2 = fbDb.ref('leads').once('value').then(function(s){ cache.leads = s.val()||{}; }).catch(function(e){ cache.leads={}; console.warn('leads:',e.message); });
+  Promise.all([p1,p2]).then(render);
+}
+el('reload').addEventListener('click', load);
+Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b){
+  b.addEventListener('click', function(){
+    el('range').querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); RANGE = +b.dataset.d; render();
+  });
+});
+
+/* ===== Render ===== */
+function render(){
+  var now = Date.now();
+  var cut = RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000);
+
+  /* sessões no período */
+  var sess = [];
+  var S = cache.sessions||{};
+  for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t>=cut) sess.push(v); }
+
+  var total = sess.length;
+  var reachedForm = sess.filter(function(s){return s.reachedForm;}).length;
+  var converted = sess.filter(function(s){return s.converted;}).length;
+  var mobile = sess.filter(function(s){return s.device==='mobile';}).length;
+  var desktop = sess.filter(function(s){return s.device==='desktop';}).length;
+
+  /* leads no período */
+  var leads = [];
+  var L = cache.leads||{};
+  for(var lk in L){ var lv=L[lk]||{}; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  var nLeads = leads.length;
+
+  /* KPIs */
+  el('kpis').innerHTML =
+    kpi(fmt(total),'Visitantes (sessões)') +
+    kpi(fmt(reachedForm),'Chegaram ao formulário') +
+    kpi(fmt(nLeads||converted),'Leads') +
+    kpi(pct((nLeads||converted),total),'Conversão','p') +
+    kpi(pct(mobile,total),'Mobile') +
+    kpi(pct(desktop,total),'Desktop');
+
+  /* Funil */
+  var steps = [
+    {n:'Visitantes', v:total},
+    {n:'Chegaram ao formulário', v:reachedForm},
+    {n:'Leads', v:(nLeads||converted)}
+  ];
+  var max = total||1;
+  el('funnel').innerHTML = steps.map(function(s,i){
+    var prev = i>0?steps[i-1].v:s.v;
+    var drop = i>0 && prev>0 ? Math.round((1-s.v/prev)*100) : 0;
+    return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,total):'')+'</span></div>'+
+      '<div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+
+      (i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
+  }).join('');
+
+  /* Origem (utm_source; fallback ref/direto) */
+  var srcMap = {};
+  sess.forEach(function(s){
+    var src = (s.utm_source||'').trim();
+    if(!src){ src = s.ref ? dominio(s.ref) : 'direto'; }
+    src = src||'direto';
+    if(!srcMap[src]) srcMap[src]={sess:0,leads:0};
+    srcMap[src].sess++;
+    if(s.converted) srcMap[src].leads++;
+  });
+  el('sources').innerHTML = barsFrom(srcMap, 'sess', total) || '<div class="empty">Sem dados de origem ainda.</div>';
+
+  /* Device conversão */
+  var dv = [
+    {name:'Desktop', total:desktop, conv:sess.filter(function(s){return s.device==='desktop'&&s.converted;}).length},
+    {name:'Mobile', total:mobile, conv:sess.filter(function(s){return s.device==='mobile'&&s.converted;}).length}
+  ];
+  el('devices').innerHTML = dv.map(function(d){
+    var rate = d.total>0?(d.conv/d.total*100):0;
+    return '<div class="row"><div class="name">'+d.name+'</div><div class="bar"><span class="g" style="width:'+Math.min(100,rate*4)+'%"></span></div><div class="val">'+rate.toFixed(1)+'%</div></div>';
+  }).join('') + '<div class="empty" style="margin-top:6px">Taxa = leads ÷ sessões do dispositivo.</div>';
+
+  /* Abandono por seção (não converteram) */
+  var abMap = {};
+  sess.filter(function(s){return !s.converted && s.lastSection;}).forEach(function(s){
+    var sec = s.lastSection; abMap[sec]=(abMap[sec]||0)+1;
+  });
+  var abTotal = Object.keys(abMap).reduce(function(a,k){return a+abMap[k];},0);
+  el('abandono').innerHTML = barsSimple(abMap, abTotal, 'a') || '<div class="empty">Sem dados suficientes ainda.</div>';
+
+  /* Leads recentes */
+  leads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  if(leads.length){
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>Origem</th><th>Campanha</th><th>Faturamento</th><th class="num">Quando</th></tr></thead><tbody>'+
+      leads.slice(0,25).map(function(l){
+        var src = l.utm_source || l._source || (l.ref?dominio(l.ref):'') || 'direto';
+        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td><td class="num">'+quando(l._createdAt)+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  } else {
+    el('leads').innerHTML = '<div class="empty">Nenhum lead no período selecionado.</div>';
+  }
+
+  el('status').textContent = total===0 && nLeads===0
+    ? 'Ainda não há dados neste período. Assim que o tráfego chegar na LP (ou você navegar nela), os números aparecem aqui.'
+    : 'Atualizado agora · período: '+(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+}
+
+function kpi(v,l,cls){ return '<div class="kpi"><div class="v '+(cls||'')+'">'+v+'</div><div class="l">'+l+'</div></div>'; }
+function dominio(u){ try{ return new URL(u).hostname.replace('www.',''); }catch(e){ return 'ref'; } }
+function quando(t){ if(!t) return '—'; var d=new Date(t); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function barsFrom(map, field, tot){
+  var arr = Object.keys(map).map(function(k){return {name:k, v:map[k][field], leads:map[k].leads};}).sort(function(a,b){return b.v-a.v;}).slice(0,8);
+  if(!arr.length) return '';
+  var max = arr[0].v||1;
+  return arr.map(function(r){
+    return '<div class="row"><div class="name">'+esc(r.name)+'</div><div class="bar"><span style="width:'+(r.v/max*100)+'%"></span></div><div class="val">'+fmt(r.v)+(r.leads?' · '+r.leads+'L':'')+'</div></div>';
+  }).join('');
+}
+function barsSimple(map, tot, cls){
+  var arr = Object.keys(map).map(function(k){return {name:k, v:map[k]};}).sort(function(a,b){return b.v-a.v;}).slice(0,8);
+  if(!arr.length) return '';
+  var max = arr[0].v||1;
+  return arr.map(function(r){
+    return '<div class="row"><div class="name">'+esc(r.name)+'</div><div class="bar"><span class="'+(cls||'')+'" style="width:'+(r.v/max*100)+'%"></span></div><div class="val">'+pct(r.v,tot)+'</div></div>';
+  }).join('');
+}
+
+tryGate();
+</script>
+</body>
+</html>
