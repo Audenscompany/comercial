@@ -203,10 +203,10 @@ function render(){
   var mobile = sess.filter(function(s){return s.device==='mobile';}).length;
   var desktop = sess.filter(function(s){return s.device==='desktop';}).length;
 
-  /* leads no período */
+  /* leads no período — SÓ da LP nova (origem 'lp-audens'); o nó leads/ é compartilhado com a LP antiga */
   var leads = [];
   var L = cache.leads||{};
-  for(var lk in L){ var lv=L[lk]||{}; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  for(var lk in L){ var lv=L[lk]||{}; if(lv._source!=='lp-audens') continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
   var nLeads = leads.length;
 
   /* KPIs */
