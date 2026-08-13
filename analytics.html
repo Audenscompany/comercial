@@ -148,6 +148,7 @@ function pct(a,b){return b>0?((a/b*100).toFixed(1)+"%"):"0%";}
 
 /* ===== Gate ===== */
 function tryGate(){
+  if(window.self !== window.top){ el('gate').style.display='none'; boot(); return; } /* embutido no CRM (já autenticado) */
   var ok = sessionStorage.getItem('gc_ok')==='1';
   if(ok){ el('gate').style.display='none'; boot(); return; }
 }
