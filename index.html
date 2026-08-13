@@ -849,6 +849,7 @@ function startRealtimeSync(){
   fbDb.ref('instagram/analises').on('value',function(s){_igAnalises=s.val()||{};});
   fbDb.ref('instagram/calendario').on('value',function(s){_igCalendario=s.val()||{};});
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
+  fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
 
   // ===== STORIES LAB: listeners + coletor automático (boot) =====
   try{ storiesStartListeners(); }catch(e){ console.error('storiesStartListeners',e); }
@@ -4453,6 +4454,10 @@ function showPage(id){
     'followup':renderFollowup
   };
   var area=document.getElementById('content');
+  if(typeof FIN_PAGES!=='undefined'&&FIN_PAGES.indexOf(id)>=0&&!_finUnlocked){
+    if(area){area.innerHTML=finLockScreen(id);area.setAttribute('data-page',id);setTimeout(function(){var _e=document.getElementById('fin-pass-inp');if(_e)_e.focus();},60);}
+    return;
+  }
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
@@ -6024,7 +6029,12 @@ function _finToolbar(activeId,period){
     return '<button onclick="showPage(\''+t.id+'\')" style="padding:6px 14px;border-radius:8px;border:1px solid '+(active?'var(--purple3)':'var(--border)')+';background:'+(active?'rgba(123,47,255,0.15)':'transparent')+';color:'+(active?'var(--purple3)':'var(--muted)')+';font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:all .2s;">'+
       '<i class="ti '+t.icon+'" style="font-size:14px;"></i>'+t.label+'</button>';
   }).join('');
-  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+tabsHtml+'</div>';
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+tabsHtml+
+    '<div style="margin-left:auto;display:flex;gap:8px;">'+
+      '<button onclick="finChangePassModal()" title="Alterar senha do Financeiro" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;"><i class="ti ti-key"></i></button>'+
+      '<button onclick="finLock()" title="Bloquear Financeiro" style="padding:6px 12px;border-radius:8px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.08);color:var(--red);font-size:12px;font-weight:700;cursor:pointer;"><i class="ti ti-lock"></i> Bloquear</button>'+
+    '</div>'+
+  '</div>';
 }
 
 function _finPeriodSel(period,onChange){
@@ -6330,6 +6340,64 @@ async function finRenderReceitas(){
 // ============================================================
 // RENDER: Despesas
 // ============================================================
+// ===== SENHA DO FINANCEIRO (gate client-side) =====
+var _finUnlocked=false;
+var _finPassHash='';
+var FIN_PAGES=['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'];
+async function _finSha(txt){
+  try{var b=new TextEncoder().encode(txt);var h=await crypto.subtle.digest('SHA-256',b);return Array.from(new Uint8Array(h)).map(function(x){return x.toString(16).padStart(2,'0');}).join('');}
+  catch(e){return 'plain:'+txt;}
+}
+function finLockScreen(pageId){
+  var first=!_finPassHash;
+  return '<div class="page active"><div style="max-width:420px;margin:56px auto;background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:34px;text-align:center;">'+
+    '<div style="width:60px;height:60px;border-radius:16px;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;"><i class="ti ti-lock" style="font-size:30px;color:var(--red);"></i></div>'+
+    '<div style="font-size:18px;font-weight:800;color:var(--white);margin-bottom:6px;">'+(first?'Proteger o Financeiro':'Área protegida')+'</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5;">'+(first?'Crie uma senha para o Financeiro. Ela será pedida sempre, mesmo com o login já feito.':'Digite a senha para acessar o Financeiro.')+'</div>'+
+    '<input id="fin-pass-inp" type="password" placeholder="'+(first?'Nova senha (mín. 4 caracteres)':'Senha')+'" onkeydown="if(event.key===\'Enter\')finTryUnlock(\''+pageId+'\')" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-size:15px;padding:12px 14px;outline:none;box-sizing:border-box;text-align:center;letter-spacing:2px;margin-bottom:10px;">'+
+    '<div id="fin-pass-msg" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:12px;"></div>'+
+    '<button class="btn btn-primary" onclick="finTryUnlock(\''+pageId+'\')" style="width:100%;justify-content:center;">'+(first?'Criar senha e entrar':'Entrar')+'</button>'+
+  '</div></div>';
+}
+async function finTryUnlock(pageId){
+  var inp=document.getElementById('fin-pass-inp');var v=inp?inp.value:'';
+  var msg=document.getElementById('fin-pass-msg');
+  if(!v){if(msg)msg.textContent='Digite a senha.';return;}
+  if(!_finPassHash){
+    if(v.length<4){if(msg)msg.textContent='Mínimo 4 caracteres.';return;}
+    var nh=await _finSha(v);
+    try{await fbDb.ref('audens/config/finPassHash').set(nh);}catch(e){}
+    _finPassHash=nh;_finUnlocked=true;showSheetToast('Senha do Financeiro criada!');showPage(pageId);return;
+  }
+  var hh=await _finSha(v);
+  if(hh===_finPassHash){_finUnlocked=true;showPage(pageId);}
+  else{if(msg)msg.textContent='Senha incorreta.';if(inp){inp.value='';inp.focus();}}
+}
+function finLock(){_finUnlocked=false;showPage(window._currentPage||'fin-dashboard');}
+function finChangePassModal(){
+  var html='<div class="modal-ov" id="fin-cp-modal" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'fin-cp-modal\')">'+
+    '<div class="modal-box" style="max-width:380px;width:100%;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;"><span class="modal-title" style="margin:0;"><i class="ti ti-key" style="margin-right:8px;color:var(--red);"></i>Alterar senha do Financeiro</span>'+
+      '<button onclick="closeModal(\'fin-cp-modal\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button></div>'+
+      (_finPassHash?'<label class="f-label">Senha atual</label><input class="f-input" id="fin-cp-old" type="password" style="margin-bottom:12px;">':'')+
+      '<label class="f-label">Nova senha</label><input class="f-input" id="fin-cp-new" type="password" style="margin-bottom:8px;">'+
+      '<div id="fin-cp-msg" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:8px;"></div>'+
+      '<div style="display:flex;gap:10px;"><button class="btn" style="flex:1;" onclick="closeModal(\'fin-cp-modal\')">Cancelar</button><button class="btn btn-primary" style="flex:2;" onclick="finDoChangePass()">Salvar</button></div>'+
+    '</div></div>';
+  var ex=document.getElementById('fin-cp-modal');if(ex)ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function finDoChangePass(){
+  var oldv=(document.getElementById('fin-cp-old')||{}).value||'';
+  var nv=(document.getElementById('fin-cp-new')||{}).value||'';
+  var msg=document.getElementById('fin-cp-msg');
+  if(_finPassHash){var oh=await _finSha(oldv);if(oh!==_finPassHash){if(msg)msg.textContent='Senha atual incorreta.';return;}}
+  if(nv.length<4){if(msg)msg.textContent='Nova senha: mínimo 4 caracteres.';return;}
+  var nh=await _finSha(nv);
+  try{await fbDb.ref('audens/config/finPassHash').set(nh);}catch(e){}
+  _finPassHash=nh;
+  closeModal('fin-cp-modal');showSheetToast('Senha atualizada!');
+}
 function renderFinDespesas(){
   if(!_finPeriod) _finPeriod=getCurrentPeriod();
   return '<div class="page active">'+
