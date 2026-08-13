@@ -6384,10 +6384,11 @@ async function finRenderDespesas(){
     var isPend=t.status==='pendente';
     var overdue=isPend&&t.dueDate&&t.dueDate<today;
     var actions='';
-    if(t._src==='saidas'&&t.id){
-      if(isPend) actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finConfirmarSaida(\''+t.id+'\',this)" title="Confirmar"><i class="ti ti-check"></i></button>';
-      actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finEditarLancamento(\'saidas\',\''+t.id+'\')"><i class="ti ti-pencil"></i></button>';
-      actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);" onclick="finDeletarLancamento(\'saidas\',\''+t.id+'\')"><i class="ti ti-trash"></i></button>';
+    var _es=t._src;
+    if((_es==='saidas'||_es==='transacoes')&&t.id){
+      if(isPend&&_es==='saidas') actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finConfirmarSaida(\''+t.id+'\',this)" title="Confirmar"><i class="ti ti-check"></i></button>';
+      actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;margin-right:4px;" onclick="finEditarLancamento(\''+_es+'\',\''+t.id+'\')"><i class="ti ti-pencil"></i></button>';
+      actions+='<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);" onclick="finDeletarLancamento(\''+_es+'\',\''+t.id+'\')"><i class="ti ti-trash"></i></button>';
     }
     return '<tr>'+
       '<td style="color:var(--muted);font-size:12px;">'+(t.date?t.date.split('-').reverse().join('/'):'')+'</td>'+
@@ -6395,7 +6396,7 @@ async function finRenderDespesas(){
       '<td><span style="font-size:11px;color:var(--muted);">'+esc(t.category)+'</span></td>'+
       '<td><span class="fin-val-neg">− R$ '+fmtMoeda(t.amount)+'</span></td>'+
       '<td>'+(isConf?'<span class="fin-status-confirmed">Pago</span>':overdue?'<span class="fin-status-cancelled">Vencida</span>':'<span class="fin-status-pending">A Pagar</span>')+'</td>'+
-      '<td style="text-align:right;">'+actions+'</td>'+
+      '<td style="text-align:right;white-space:nowrap;">'+actions+'</td>'+
     '</tr>';
   }).join('');
 
@@ -7104,7 +7105,7 @@ async function loadFinanceiroData(){
 }
 function openModalLancamento(tipo){
   var isEntrada=tipo==='entrada';
-  var cats=['Infraestrutura','Marketing','Equipe','Impostos','Comissoes','Outros'];
+  var cats=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros'];
   var today=new Date().toISOString().split('T')[0];
   var taxaBlock=isEntrada
     ?'<div style="margin-bottom:14px;">'+
@@ -7137,14 +7138,18 @@ function openModalLancamento(tipo){
           '<input class="f-input" id="lanc-data" type="date" value="'+today+'" style="margin-bottom:0;">'+
         '</div>'+
       '</div>'+
-      (!isEntrada
-        ?'<div style="margin-bottom:14px;"><label class="f-label">Categoria</label>'+
-          '<select class="f-input" id="lanc-categoria" style="margin-bottom:0;">'+cats.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('')+'</select></div>'
-        :'')+
       '<div style="margin-bottom:14px;">'+
         '<label class="f-label">Descrição</label>'+
         '<input class="f-input" id="lanc-descricao" placeholder="'+(isEntrada?'Ex: Império Burguer — InfinitePay':'Ex: Servidor VPS — DigitalOcean')+'" style="margin-bottom:0;">'+
       '</div>'+
+      (!isEntrada
+        ?'<div class="modal-grid2" style="margin-bottom:14px;">'+
+          '<div><label class="f-label">Categoria</label>'+
+          '<select class="f-input" id="lanc-categoria" style="margin-bottom:0;">'+cats.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('')+'</select></div>'+
+          '<div><label class="f-label">Status</label>'+
+          '<select class="f-input" id="lanc-status" style="margin-bottom:0;"><option value="confirmado">Pago</option><option value="pendente">A pagar</option></select></div>'+
+          '</div>'
+        :'')+
       taxaBlock+
       '<input type="hidden" id="lanc-tipo" value="'+tipo+'">'+
       '<div style="display:flex;gap:10px;">'+
@@ -7185,7 +7190,7 @@ async function finSalvarLancamento(){
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
   var path=tipo==='saida'?'financeiro/saidas':'financeiro/entradas_manuais';
   var obj={data:data,valor:valor,descricao:descricao||'Entrada manual',categoria:categoria,criadoPor:(CU&&CU.name)||'gestor',createdAt:Date.now()};
-  if(tipo==='saida') obj.status='confirmado';
+  if(tipo==='saida'){var _stEl=document.getElementById('lanc-status');obj.status=_stEl?_stEl.value:'confirmado';}
   await fbPush(path,obj);
   // Se entrada com taxa, cria saída automática em Taxas Bancárias
   if(tipo==='entrada'&&taxaPct>0){
