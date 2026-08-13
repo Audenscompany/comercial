@@ -4259,6 +4259,7 @@ function buildNav(){
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
     {id:'intel',icon:'ti-sparkles',label:'Inteligência Comercial'},
+    {id:'busca-ia',icon:'ti-radar',label:'Busca Inteligente'},
     {id:'bdr',icon:'ti-building-store',label:'BDR'},
     {id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
@@ -4449,7 +4450,7 @@ function showPage(id){
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinDashboard,'fin-dashboard':renderFinDashboard,'fin-receitas':renderFinReceitas,'fin-despesas':renderFinDespesas,'fin-lancamentos':renderFinLancamentos,'fin-contas':renderFinContas,
     'contratos':renderContratos,'audens-day':renderAudensDay,
-    'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,
+    'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,
     'followup':renderFollowup
   };
@@ -24439,6 +24440,319 @@ function bdrStatusLabel(s){
 }
 function bdrStatusColor(s){
   return {novo:'var(--muted)',tentando:'var(--amber)',em_contato:'var(--cyan)',reuniao:'var(--purple3)',convertido:'var(--green)',descartado:'var(--red)'}[s]||'var(--muted)';
+}
+
+// ==================== BUSCA INTELIGENTE DE PROSPECÇÃO ====================
+// Reaproveita a Google Places API (mesma chave do BDR) + OSM + BrasilAPI (CNPJ/sócios).
+var _piState={running:false,leads:[]};
+var PI_SEG={
+  hamburgueria:['hamburgueria','hamburgueria artesanal','smash burger','hambúrguer artesanal','burger'],
+  pizzaria:['pizzaria','pizza delivery','pizzaria artesanal','rodízio de pizza','pizza']
+};
+var PI_CHAINS=['mcdonald','burger king',"bob's",'bobs','habib','habibs','subway','giraffas','pizza hut','domino','china in box','patroni','spoleto','madero','outback','divino fogão','ragazzo'];
+function _piNorm(s){return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function _piN(n){return (Number(n)||0).toLocaleString('pt-BR');}
+function _piLog(msg){var el=document.getElementById('pi-log');if(el)el.innerHTML='<i class="ti ti-loader" style="animation:spin 1s linear infinite;margin-right:6px;"></i>'+msg;}
+
+// ---- Google Places: text search com paginação ----
+async function _piSearch(query,key,pages){
+  var out=[],token=null;
+  for(var p=0;p<(pages||3);p++){
+    var body={textQuery:query,languageCode:'pt-BR',maxResultCount:20,regionCode:'BR'};
+    if(token)body.pageToken=token;
+    var r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':'places.id,places.displayName,places.formattedAddress,places.location,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.types,places.primaryTypeDisplayName,places.businessStatus,places.googleMapsUri,nextPageToken'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error)throw new Error(d.error.message||'Places error');
+    (d.places||[]).forEach(function(x){out.push(x);});
+    token=d.nextPageToken;
+    if(!token)break;
+    await new Promise(function(res){setTimeout(res,1700);});
+  }
+  return out;
+}
+
+// ---- OSM Overpass: score residencial ----
+async function _piResidencial(loc){
+  if(!loc||!loc.latitude)return null;
+  var lat=loc.latitude,lng=loc.longitude,r=350;
+  var q='[out:json][timeout:15];('
+    +'way(around:'+r+','+lat+','+lng+')[landuse=residential];'
+    +'node(around:'+r+','+lat+','+lng+')[amenity~"^(school|kindergarten)$"];'
+    +'node(around:'+r+','+lat+','+lng+')[shop~"^(supermarket|convenience)$"];'
+    +'node(around:'+r+','+lat+','+lng+')[amenity~"^(bar|pub|nightclub)$"];'
+    +'node(around:'+r+','+lat+','+lng+')[amenity=restaurant];);out tags 300;';
+  try{
+    var r2=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:'data='+encodeURIComponent(q)});
+    var d=await r2.json();var els=d.elements||[];
+    var resi=els.filter(function(e){return e.tags&&e.tags.landuse==='residential';}).length;
+    var schools=els.filter(function(e){return e.tags&&(e.tags.amenity==='school'||e.tags.amenity==='kindergarten');}).length;
+    var markets=els.filter(function(e){return e.tags&&(e.tags.shop==='supermarket'||e.tags.shop==='convenience');}).length;
+    var bars=els.filter(function(e){return e.tags&&['bar','pub','nightclub'].indexOf(e.tags.amenity)>=0;}).length;
+    var rests=els.filter(function(e){return e.tags&&e.tags.amenity==='restaurant';}).length;
+    var score=Math.max(0,Math.min(100,40+resi*12+schools*6+markets*5-bars*8-Math.max(0,rests-6)*2));
+    var perfil=score>=80?'fortemente residencial':score>=60?'residencial/mista':score>=40?'mista':'comercial/turística';
+    return {score:score,perfil:perfil,resi:resi,schools:schools,markets:markets,bars:bars,rests:rests};
+  }catch(e){return null;}
+}
+
+// ---- CNPJ: adapter de busca por nome (configurável) + BrasilAPI ----
+async function _piCnpjInfo(cnpj){
+  var c=(''+cnpj).replace(/\D/g,'');if(c.length!==14)return null;
+  try{var r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+c);var d=await r.json();if(d.message)return null;return d;}catch(e){return null;}
+}
+async function _piBuscarCnpj(nome,uf,cidade){
+  var url=localStorage.getItem('audens_cnpj_search_url')||'';
+  if(!url)return null; // sem endpoint configurado
+  try{
+    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome,uf:uf,municipio:cidade})});
+    var d=await r.json();
+    var cnpj=d&&(d.cnpj||(d.results&&d.results[0]&&d.results[0].cnpj));
+    return cnpj?(''+cnpj).replace(/\D/g,''):null;
+  }catch(e){return null;}
+}
+
+// ---- Score comercial (pesos da spec) ----
+function _piScore(L){
+  var s=0,parts={};
+  // Tempo recente (25)
+  var t=0;
+  if(L.idade_estimada_meses!=null){ if(L.idade_estimada_meses<=24)t=25; else if(L.idade_estimada_meses<=48)t=14; else t=5; }
+  else t=12; // sem dado: neutro parcial
+  parts.tempo=t;s+=t;
+  // Avaliações na faixa boa (15): 150-450 ótimo, 51-150/451-600 bom, 0-50 baixo, >600 penaliza
+  var av=L.numero_avaliacoes||0,a=0;
+  if(av>600)a=0; else if(av>=150&&av<=450)a=15; else if(av>=451&&av<=600)a=12; else if(av>=51)a=9; else a=4;
+  parts.aval=a;s+=a;
+  // Região residencial (15)
+  var reg=L.score_residencial!=null?Math.round(L.score_residencial/100*15):8;parts.regiao=reg;s+=reg;
+  // Independente/local (10)
+  var ind=L.tipo_negocio==='rede'?0:(L.tipo_negocio==='pequena rede'?6:10);parts.indep=ind;s+=ind;
+  // Marketing com espaço (15): sem site ou sinais fracos = mais espaço = mais pontos p/ nós
+  var mk=15-Math.round((L.score_maturidade_marketing||40)/100*15);mk=Math.max(3,Math.min(15,mk+3));parts.mkt=mk;s+=mk;
+  // Percepção positiva (10): nota alta com volume
+  var nota=L.nota_google||0,perc=0;
+  if(nota>=4.6)perc=10; else if(nota>=4.2)perc=7; else if(nota>=3.8)perc=4; else perc=1;
+  parts.perc=perc;s+=perc;
+  // Dono identificável (5)
+  parts.dono=L.nome_socio_1&&L.nome_socio_1!=='não encontrado'?5:0;s+=parts.dono;
+  // Contato (5)
+  parts.contato=(L.telefone||L.site)?5:0;s+=parts.contato;
+  L._parts=parts;
+  return Math.max(0,Math.min(100,Math.round(s)));
+}
+function _piMaturidade(L){
+  // 0=nenhum marketing, 100=profissional. Sinais disponíveis: site, fotos(n/d), volume avaliações, responde(n/d)
+  var m=30;
+  if(L.site)m+=25; // tem site
+  if((L.numero_avaliacoes||0)>300)m+=15; // mais avaliações = mais presença
+  if((L.numero_avaliacoes||0)<50)m-=10;
+  if(L.instagram_empresa)m+=10;
+  return Math.max(0,Math.min(100,m));
+}
+function _piMotivo(L){
+  var p=[];
+  p.push(L.segmento+(L.idade_estimada_meses!=null?' com ~'+L.idade_estimada_meses+' meses de CNPJ':'')+', nota '+(L.nota_google||'?')+' e '+_piN(L.numero_avaliacoes)+' avaliações');
+  if(L.perfil_regiao)p.push('região '+L.perfil_regiao);
+  if(L.tipo_negocio==='independente')p.push('negócio independente');
+  p.push(L.site?'tem site':'sem site (marketing com espaço)');
+  return p.join('. ')+'.';
+}
+function _piGancho(L){
+  if((L.numero_avaliacoes||0)<150&&(L.nota_google||0)>=4.5)return 'Vi que vocês já têm nota '+L.nota_google+' com só '+_piN(L.numero_avaliacoes)+' avaliações — dá pra escalar isso rápido.';
+  if(!L.site)return 'Vi que vocês vendem bem no Google mas ainda não têm um site/página própria pra captar pedido direto.';
+  if(L.idade_estimada_meses!=null&&L.idade_estimada_meses<=24)return 'Vi que a operação começou faz pouco e já está bem avaliada — é a hora certa de acelerar movimento e recorrência.';
+  return 'A operação parece boa no bairro; dá pra aumentar pedido próprio e reduzir dependência de marketplace.';
+}
+
+// ---- Pipeline principal ----
+async function piRun(){
+  if(_piState.running)return;
+  var key=localStorage.getItem('audens_maps_key')||'';
+  if(!key){showSheetToast('Configure a Google Maps API Key (aba BDR).',true);return;}
+  var cidade=(document.getElementById('pi-cidade')||{}).value||'';
+  var uf=(document.getElementById('pi-uf')||{}).value||'';
+  if(!cidade.trim()){showSheetToast('Informe a cidade.',true);return;}
+  var maxAval=parseInt((document.getElementById('pi-maxaval')||{}).value)||600;
+  var idadeMax=parseInt((document.getElementById('pi-idade')||{}).value)||24;
+  var qtd=parseInt((document.getElementById('pi-qtd')||{}).value)||100;
+  var segs=[];
+  if((document.getElementById('pi-seg-hamb')||{}).checked)segs.push('hamburgueria');
+  if((document.getElementById('pi-seg-pizza')||{}).checked)segs.push('pizzaria');
+  if(!segs.length){showSheetToast('Selecione pelo menos um segmento.',true);return;}
+  var local=cidade+(uf?', '+uf:'');
+  _piState.running=true;
+  var btn=document.getElementById('pi-run-btn');if(btn){btn.disabled=true;btn.innerHTML='Buscando...';}
+  var box=document.getElementById('pi-results');if(box)box.innerHTML='';
+  try{
+    // 1) Coleta (multi-keyword + paginação) + dedup por place.id
+    var byId={};
+    for(var si=0;si<segs.length;si++){
+      var kws=PI_SEG[segs[si]];
+      for(var ki=0;ki<kws.length;ki++){
+        _piLog('Buscando "'+kws[ki]+'" em '+local+'... ('+Object.keys(byId).length+' encontrados)');
+        var rows=await _piSearch(kws[ki]+' em '+local,key,3);
+        rows.forEach(function(p){if(p.id&&!byId[p.id]){p._seg=segs[si];byId[p.id]=p;}});
+      }
+    }
+    var cand=Object.values(byId);
+    _piLog('Filtrando '+cand.length+' estabelecimentos...');
+    // 2) Filtros baratos
+    var nameCount={};
+    cand.forEach(function(p){var n=_piNorm((p.displayName&&p.displayName.text)||'');nameCount[n]=(nameCount[n]||0)+1;});
+    var filtered=cand.filter(function(p){
+      var nome=_piNorm((p.displayName&&p.displayName.text)||'');
+      var types=(p.types||[]).join(' ');
+      var isSeg=/hamburg|burger|pizza/.test(nome)||/hamburg|burger|pizza|meal_takeaway|meal_delivery|restaurant/.test(types);
+      if(!isSeg)return false;
+      if(p.businessStatus&&p.businessStatus!=='OPERATIONAL')return false;
+      if((p.userRatingCount||0)>maxAval)return false;
+      if(PI_CHAINS.some(function(c){return nome.indexOf(c)>=0;}))return false;
+      return true;
+    });
+    _piLog(filtered.length+' passaram nos filtros. Enriquecendo (região + CNPJ)...');
+    // 3) Enriquecimento (limita p/ custo/tempo: top por avaliação primeiro)
+    filtered.sort(function(a,b){return (b.userRatingCount||0)-(a.userRatingCount||0);});
+    var enr=filtered.slice(0,Math.min(filtered.length,Math.max(qtd*1.6,120)));
+    var leads=[];
+    for(var i=0;i<enr.length;i++){
+      var p=enr[i];
+      _piLog('Enriquecendo '+(i+1)+'/'+enr.length+': '+((p.displayName&&p.displayName.text)||''));
+      var nome=(p.displayName&&p.displayName.text)||'';
+      var normNome=_piNorm(nome);
+      var L={
+        placeId:p.id,nome_estabelecimento:nome,segmento:p._seg,
+        endereco:p.formattedAddress||'',cidade:cidade,estado:uf,
+        google_maps_url:p.googleMapsUri||('https://www.google.com/maps/place/?q=place_id:'+p.id),
+        nota_google:p.rating||0,numero_avaliacoes:p.userRatingCount||0,
+        telefone:p.nationalPhoneNumber||'',site:p.websiteUri||'',
+        tipo_negocio:(nameCount[normNome]>=4?'rede':(nameCount[normNome]>=2?'pequena rede':'independente')),
+        numero_estimado_unidades:nameCount[normNome]||1,
+        instagram_empresa:'não encontrado',
+        cnpj:'não configurado',razao_social:'não encontrado',data_abertura_cnpj:'não confirmada',
+        situacao_cadastral:'não encontrado',confianca_cnpj:'Baixa',
+        nome_socio_1:'não encontrado',nome_socio_2:'não encontrado',
+        idade_estimada_meses:null,fonte_data_abertura:'—',confianca_data_abertura:'—'
+      };
+      // IG a partir do site (só a URL — sem seguidores/posts, que a API não fornece)
+      if(L.site&&/instagram\.com/i.test(L.site))L.instagram_empresa=L.site;
+      // Região (OSM) — sequencial p/ respeitar rate limit
+      var reg=await _piResidencial(p.location);
+      if(reg){L.score_residencial=reg.score;L.perfil_regiao=reg.perfil;L.justificativa_regiao=reg.resi+' áreas residenciais, '+reg.schools+' escolas, '+reg.markets+' mercados, '+reg.bars+' bares por perto';}
+      else{L.score_residencial=null;L.perfil_regiao='não avaliado';}
+      // CNPJ (adapter + BrasilAPI)
+      var cnpj=await _piBuscarCnpj(nome,uf,cidade);
+      if(cnpj){
+        var info=await _piCnpjInfo(cnpj);
+        if(info){
+          L.cnpj=cnpj;L.razao_social=info.razao_social||'não encontrado';
+          L.data_abertura_cnpj=info.data_inicio_atividade||'não confirmada';
+          L.situacao_cadastral=info.descricao_situacao_cadastral||info.situacao_cadastral||'';
+          L.confianca_cnpj='Média';
+          if(info.data_inicio_atividade){var dd=new Date(info.data_inicio_atividade);if(!isNaN(dd)){L.idade_estimada_meses=Math.round((Date.now()-dd.getTime())/2629800000);L.fonte_data_abertura='CNPJ';L.confianca_data_abertura='Alta';}}
+          var qsa=info.qsa||[];if(qsa[0])L.nome_socio_1=qsa[0].nome_socio||qsa[0].nome||'não encontrado';if(qsa[1])L.nome_socio_2=qsa[1].nome_socio||qsa[1].nome||'não encontrado';
+        }
+      }
+      L.score_maturidade_marketing=_piMaturidade(L);
+      L.score_lead=_piScore(L);
+      L.motivo_prospeccao=_piMotivo(L);
+      L.gancho_abordagem=_piGancho(L);
+      L.ultima_verificacao=new Date().toISOString().slice(0,10);
+      // filtro idade (se confirmada e acima do limite, penaliza mas não descarta — CNPJ pode enganar)
+      if(L.idade_estimada_meses!=null&&L.idade_estimada_meses>idadeMax)L.score_lead=Math.max(0,L.score_lead-10);
+      leads.push(L);
+    }
+    // 4) Ordena e corta top N
+    leads.sort(function(a,b){return b.score_lead-a.score_lead;});
+    leads=leads.slice(0,qtd);
+    leads.forEach(function(L,i){L.ranking=i+1;});
+    _piState.leads=leads;
+    // salva no Firebase
+    try{if(fbDb||initFirebase()){var payload={};leads.forEach(function(L){payload[L.placeId]=L;});fbDb.ref('prospeccao/leads_ia').set({jobEm:Date.now(),local:local,total:leads.length,leads:payload});}}catch(e){}
+    piRenderResults();
+    showSheetToast(leads.length+' leads qualificados!',false);
+  }catch(e){
+    var box2=document.getElementById('pi-results');if(box2)box2.innerHTML='<div style="color:var(--red);padding:14px;">Erro: '+e.message+'</div>';
+  }
+  _piState.running=false;
+  var b2=document.getElementById('pi-run-btn');if(b2){b2.disabled=false;b2.innerHTML='<i class="ti ti-radar"></i> Buscar 100 leads';}
+  var lg=document.getElementById('pi-log');if(lg)lg.innerHTML='';
+}
+
+function _piClass(s){return s>=90?['Excepcional','#22c55e']:s>=80?['Muito forte','#22c55e']:s>=70?['Forte','#84cc16']:s>=60?['Interessante','#f59e0b']:s>=50?['Secundário','#f59e0b']:['Baixo','#ef4444'];}
+function piRenderResults(){
+  var box=document.getElementById('pi-results');if(!box)return;
+  var leads=_piState.leads||[];
+  if(!leads.length){box.innerHTML='<div style="color:var(--muted);padding:20px;text-align:center;">Nenhum lead.</div>';return;}
+  box.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+leads.length+' leads · ordenados do melhor para o pior</div>'+
+    leads.map(function(L){
+      var cl=_piClass(L.score_lead);
+      var wa=(L.telefone||'').replace(/\D/g,'');
+      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;">'+
+        '<div style="display:flex;align-items:flex-start;gap:12px;">'+
+          '<div style="width:44px;text-align:center;flex-shrink:0;"><div style="font-size:20px;font-weight:900;color:'+cl[1]+';">'+L.score_lead+'</div><div style="font-size:8px;color:var(--muted);">#'+L.ranking+'</div></div>'+
+          '<div style="flex:1;min-width:0;">'+
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-weight:700;font-size:14px;color:var(--white);">'+L.nome_estabelecimento+'</span>'+
+              '<span style="font-size:9px;font-weight:800;color:'+cl[1]+';background:'+cl[1]+'22;padding:2px 7px;border-radius:5px;">'+cl[0]+'</span>'+
+              '<span style="font-size:9px;color:var(--muted);text-transform:uppercase;">'+L.segmento+'</span>'+
+              (L.tipo_negocio==='independente'?'<span style="font-size:9px;color:#22c55e;">independente</span>':'<span style="font-size:9px;color:var(--amber);">'+L.tipo_negocio+' ('+L.numero_estimado_unidades+')</span>')+
+            '</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:3px;">⭐ '+L.nota_google+' · '+_piN(L.numero_avaliacoes)+' aval. · '+(L.perfil_regiao||'—')+(L.score_residencial!=null?' ('+L.score_residencial+'/100)':'')+(L.idade_estimada_meses!=null?' · '+L.idade_estimada_meses+' meses':'')+'</div>'+
+            '<div style="font-size:11px;color:var(--white);margin-top:6px;line-height:1.5;">'+L.motivo_prospeccao+'</div>'+
+            '<div style="font-size:11px;color:#a78bfa;margin-top:5px;font-style:italic;">💬 '+L.gancho_abordagem+'</div>'+
+            (L.razao_social&&L.razao_social!=='não encontrado'?'<div style="font-size:10px;color:var(--muted);margin-top:5px;">CNPJ: '+L.cnpj+' · '+L.razao_social+(L.nome_socio_1!=='não encontrado'?' · sócio: '+L.nome_socio_1:'')+'</div>':'')+
+            '<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;">'+
+              '<a href="'+L.google_maps_url+'" target="_blank" style="font-size:11px;color:var(--cyan);text-decoration:none;"><i class="ti ti-map-pin"></i> Maps</a>'+
+              (L.telefone?'<span style="font-size:11px;color:var(--white);">'+L.telefone+'</span>':'')+
+              (wa?'<a href="https://wa.me/55'+wa+'" target="_blank" style="font-size:11px;color:#25d366;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
+              (L.site?'<a href="'+L.site+'" target="_blank" style="font-size:11px;color:var(--purple3);text-decoration:none;">site</a>':'')+
+              '<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ BDR</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+}
+function piEnviarBDR(placeId){
+  var L=(_piState.leads||[]).find(function(x){return x.placeId===placeId;});if(!L)return;
+  if(typeof bdrLeads==='undefined')return;
+  var id='bdr_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  bdrLeads[id]={id:id,placeId:L.placeId,nome:L.nome_estabelecimento,telefone:L.telefone,endereco:L.endereco,website:L.site,segmento:L.segmento,cidade:L.cidade,status:'novo',obs:'Busca IA · score '+L.score_lead+' · '+L.gancho_abordagem,historico:[],addedAt:Date.now(),addedBy:(CU&&CU.name)||'IA'};
+  if(fbDb||initFirebase())fbDb.ref(_bdrFbPath(id)).set(bdrLeads[id]);
+  try{localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));}catch(e){}
+  showSheetToast(L.nome_estabelecimento+' enviado pro BDR!',false);
+}
+
+function renderBuscaIA(){
+  var mapsKey=localStorage.getItem('audens_maps_key')||'';
+  var cnpjUrl=localStorage.getItem('audens_cnpj_search_url')||'';
+  return '<div class="page active">'+
+    '<div class="page-header"><div><div class="page-title"><i class="ti ti-radar" style="color:var(--cyan);margin-right:8px;"></i>Busca Inteligente</div>'+
+    '<div class="page-sub">Encontra, filtra, enriquece e rankeia os melhores leads de hamburgueria/pizzaria</div></div></div>'+
+    (!mapsKey?'<div class="warn-note" style="margin-bottom:14px;"><i class="ti ti-key"></i> Configure a Google Maps API Key na aba <b>BDR</b> primeiro.</div>':'')+
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">'+
+      '<div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">'+
+        '<div><label class="f-label">Cidade</label><input class="f-input" id="pi-cidade" placeholder="ex: Campinas" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">UF</label><input class="f-input" id="pi-uf" placeholder="SP" maxlength="2" style="margin-bottom:0;text-transform:uppercase;"></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">'+
+        '<div><label class="f-label">Máx. avaliações</label><input class="f-input" id="pi-maxaval" type="number" value="600" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Idade máx. (meses)</label><input class="f-input" id="pi-idade" type="number" value="24" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Quantidade</label><input class="f-input" id="pi-qtd" type="number" value="100" style="margin-bottom:0;"></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:16px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">'+
+        '<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--white);cursor:pointer;"><input type="checkbox" id="pi-seg-hamb" checked style="accent-color:var(--cyan);width:15px;height:15px;"> Hamburgueria</label>'+
+        '<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--white);cursor:pointer;"><input type="checkbox" id="pi-seg-pizza" checked style="accent-color:var(--cyan);width:15px;height:15px;"> Pizzaria</label>'+
+        '<button class="btn btn-primary" id="pi-run-btn" onclick="piRun()" style="margin-left:auto;background:linear-gradient(135deg,var(--cyan),#0097b2);color:#000;font-weight:700;"><i class="ti ti-radar"></i> Buscar 100 leads</button>'+
+      '</div>'+
+      '<div id="pi-log" style="font-size:12px;color:var(--cyan);min-height:18px;"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;background:var(--bg2);border:1px dashed var(--border2);border-radius:10px;padding:12px 14px;">'+
+      '<b style="color:var(--white);">Como funciona:</b> busca por vários termos + paginação, remove duplicados, filtra por segmento, ≤ máx. avaliações, negócio ativo e exclui grandes redes; calcula região residencial (OpenStreetMap), pontua e rankeia. '+
+      '<b style="color:var(--white);">CNPJ e sócios:</b> '+(cnpjUrl?'endpoint configurado ✓':'precisam de um endpoint de busca por nome (não há API gratuita client-side). Enquanto não configurado, aparecem como "não configurado" — o resto funciona.')+' '+
+      '<b style="color:var(--white);">Instagram:</b> só a URL (seguidores/posts não são fornecidos por API).'+
+    '</div>'+
+    '<div id="pi-results"></div>'+
+  '</div>';
 }
 
 function renderBDR(){
