@@ -1,11 +1,18 @@
 import { http } from '@google-cloud/functions-framework';
 import admin from 'firebase-admin';
+import crypto from 'crypto';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const PDFDocument = require('pdfkit');
 
 admin.initializeApp({ databaseURL: "https://audens-crm-default-rtdb.firebaseio.com" });
 const db = admin.database();
+
+// ===== Meta Conversions API (CAPI) — envio server-side do evento Lead =====
+const META_PIXEL_ID = "288150133971064";
+const META_CAPI_TOKEN = process.env.META_CAPI_TOKEN || "";           // gerar no Events Manager > Conversions API
+const META_TEST_EVENT_CODE = process.env.META_TEST_EVENT_CODE || ""; // opcional: cod. de Testar Eventos
+
 
 const REDIRECT_OK = "https://audenscompany.com.br/obrigado-assessoria-audens-company";
 const REDIRECT_ERR = "https://audenscompany.com.br/assessoria-audens-company/";
@@ -363,6 +370,37 @@ async function notifyMake(payload) {
   }
 }
 
+// Hash SHA-256 exigido pelo Meta para dados pessoais
+function capiHash(v){ return crypto.createHash("sha256").update(String(v||"").trim().toLowerCase()).digest("hex"); }
+function capiDigits(v){ return String(v||"").replace(/\D/g,""); }
+
+// Envia o evento "Lead" ao Meta pelo servidor (recupera conversoes que o Pixel do navegador perde)
+async function enviarMetaCAPI(lead, req){
+  if(!META_CAPI_TOKEN) return; // sem token configurado, nao dispara
+  try{
+    const ud = {};
+    if(lead.email) ud.em = [capiHash(lead.email)];
+    if(lead.telefone){ let ph = capiDigits(lead.telefone); if(ph && ph.indexOf("55")!==0) ph = "55"+ph; if(ph) ud.ph = [capiHash(ph)]; }
+    if(lead.nome){ const parts = String(lead.nome).trim().split(/\s+/); ud.fn = [capiHash(parts[0])]; if(parts.length>1) ud.ln = [capiHash(parts[parts.length-1])]; }
+    const ip = String(req.headers["x-forwarded-for"]||"").split(",")[0].trim(); if(ip) ud.client_ip_address = ip;
+    const ua = req.headers["user-agent"]; if(ua) ud.client_user_agent = ua;
+    const fbc = (req.body && (req.body.fbc || req.body._fbc)) || ""; if(fbc) ud.fbc = fbc;
+    const fbp = (req.body && (req.body.fbp || req.body._fbp)) || ""; if(fbp) ud.fbp = fbp;
+    const payload = { data: [ {
+      event_name: "Lead",
+      event_time: Math.floor(Date.now()/1000),
+      action_source: "website",
+      event_source_url: "https://audenscompany.github.io/audens-lp/",
+      user_data: ud,
+      custom_data: { faturamento: lead.faturamento||"", campanha: lead.campanha||"", conjunto: lead.conjunto||"", anuncio: lead.ad||"" }
+    } ] };
+    if(META_TEST_EVENT_CODE) payload.test_event_code = META_TEST_EVENT_CODE;
+    const url = "https://graph.facebook.com/v21.0/"+META_PIXEL_ID+"/events?access_token="+encodeURIComponent(META_CAPI_TOKEN);
+    const r = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+    console.log("Meta CAPI status:", r.status);
+  }catch(err){ console.error("enviarMetaCAPI error:", err); }
+}
+
 // Confere o secret enviado via header X-Webhook-Secret ou query ?secret=
 function checaSecret(req) {
   const secret = req.headers["x-webhook-secret"] || req.query.secret;
@@ -425,6 +463,9 @@ async function handleReceberLead(req, res) {
 
   await db.ref("leads/" + key).set(leadData);
 
+  // Evento Lead server-side para o Meta (CAPI) — nao bloqueia o fluxo
+  try { await enviarMetaCAPI(leadData, req); } catch (e) { console.error("CAPI call error:", e); }
+
   // Dispara o webhook do Make para salvar o lead na planilha
   await notifyMake({ ...body, ...leadData });
 
@@ -435,6 +476,47 @@ async function handleReceberLead(req, res) {
     return res.redirect(302, REDIRECT_OK);
   }
   return res.status(200).json({ ok: true, key });
+}
+
+// ===== Rota /track: coleta de eventos da LP (analytics proprio, sem plataforma externa) =====
+async function handleTrack(req, res) {
+  try {
+    let body = req.body;
+    if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+    body = body || {};
+    const sid = String(body.sid || "anon").replace(/[.#$\[\]\/]/g, "_").slice(0, 64);
+    const events = Array.isArray(body.events) ? body.events : [];
+    const now = Date.now();
+    const updates = {};
+    let lastSection = "", maxScroll = 0, converted = false, reachedForm = false;
+    events.forEach((ev) => {
+      const name = String((ev && ev.e) || "").slice(0, 48);
+      if (!name) return;
+      const k = now + "_" + Math.random().toString(36).slice(2, 10);
+      updates["analytics/events/" + sid + "/" + k] = { e: name, p: (ev && ev.p) || {}, t: (ev && ev.t) || now };
+      if (name === "section_view" && ev.p && ev.p.secao) lastSection = ev.p.secao;
+      if (name === "scroll_depth" && ev.p && ev.p.percent) maxScroll = Math.max(maxScroll, Number(ev.p.percent) || 0);
+      if (name === "form_start") reachedForm = true;
+      if (name === "lead_submit") converted = true;
+    });
+    const sessRef = db.ref("analytics/sessions/" + sid);
+    await sessRef.update({
+      page: body.page || "", device: body.device || "", ref: body.ref || "",
+      utm_source: (body.utms && body.utms.source) || "", utm_medium: (body.utms && body.utms.medium) || "",
+      utm_campaign: (body.utms && body.utms.campaign) || "", utm_content: (body.utms && body.utms.content) || "",
+      lastSeen: now,
+    });
+    await sessRef.child("firstSeen").transaction((v) => v || now);
+    if (lastSection) await sessRef.child("lastSection").set(lastSection);
+    if (reachedForm) await sessRef.child("reachedForm").set(true);
+    if (maxScroll) await sessRef.child("maxScroll").transaction((v) => Math.max(Number(v) || 0, maxScroll));
+    if (converted) await sessRef.child("converted").set(true);
+    if (Object.keys(updates).length) await db.ref().update(updates);
+    return res.status(204).send("");
+  } catch (err) {
+    console.error("handleTrack error:", err);
+    return res.status(204).send(""); // coleta e best-effort: nunca falha alto
+  }
 }
 
 // Mensagem de escassez de agenda (enviada logo após a confirmação de reunião)
@@ -1562,6 +1644,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/financeiro-wpp") {
       return await handleFinanceiroWpp(req, res);
+    }
+    if (path === "/track") {
+      return await handleTrack(req, res);
     }
     return await handleReceberLead(req, res);
   } catch (err) {
