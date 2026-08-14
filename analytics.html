@@ -82,6 +82,7 @@
     <div class="right">
       <div class="seg" id="lpmode">
         <button data-m="nova" class="on">LP nova</button>
+        <button data-m="quiz">Quiz FV1</button>
         <button data-m="antiga">LP antiga</button>
       </div>
       <div class="seg" id="range">
@@ -144,7 +145,7 @@ var firebaseConfig = {
 };
 var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
 
-var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null};
+var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null, events:null};
 /* LP antiga = Elementor (só gerava leads, sem tracking próprio). LP nova = 'lp-audens' (tracking completo). */
 var OLD_SOURCES = {'lp-elementor':1,'elementor':1,'lp-antiga':1};
 function el(id){return document.getElementById(id);}
@@ -183,7 +184,8 @@ function load(){
   el('status').textContent = 'Carregando dados…';
   var p1 = fbDb.ref('analytics/sessions').once('value').then(function(s){ cache.sessions = s.val()||{}; }).catch(function(e){ cache.sessions={}; console.warn('sessions:',e.message); });
   var p2 = fbDb.ref('leads').once('value').then(function(s){ cache.leads = s.val()||{}; }).catch(function(e){ cache.leads={}; console.warn('leads:',e.message); });
-  Promise.all([p1,p2]).then(render);
+  var p3 = fbDb.ref('analytics/events').once('value').then(function(s){ cache.events = s.val()||{}; }).catch(function(e){ cache.events={}; console.warn('events:',e.message); });
+  Promise.all([p1,p2,p3]).then(render);
 }
 el('reload').addEventListener('click', load);
 Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b){
@@ -204,7 +206,12 @@ var MANUAL = {'whatsapp':1,'extrato_pdf':1,'extrato_manual':1,'manual':1,'':1};
 function isNova(src){ return src==='lp-audens'; }
 function isAntiga(src){ return src!=='lp-audens' && !MANUAL[src]; }
 
+function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.card'); if(card){ var h=card.querySelector('h2'); if(h) h.textContent=text; } } }
+
 function render(){
+  if(MODE==='quiz'){ return renderQuiz(); }
+  setH2('funnel','Funil da LP');
+  setH2('abandono','Abandono por seção (onde pararam)');
   var antiga = (MODE==='antiga');
   var now = Date.now();
   var cut = RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000);
@@ -333,6 +340,74 @@ function render(){
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
     ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
     : 'Atualizado agora · '+lpLabel+' · período: '+per);
+}
+
+/* ===== Funil do QUIZ FV1 (lê analytics/events) ===== */
+function renderQuiz(){
+  setH2('funnel','Funil do quiz');
+  setH2('abandono','Onde pararam (por pergunta)');
+  var now=Date.now();
+  var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
+  function evOf(sid){ var o={n:{},p:{}}; var ev=E[sid]; if(ev){ for(var kk in ev){ var e=ev[kk]||{}; if(e.e) o.n[e.e]=1; if(e.e==='quiz_answer'&&e.p&&e.p.pergunta) o.p[e.p.pergunta]=1; } } return o; }
+  /* sessões do quiz no período */
+  var qsids=[];
+  for(var sid in S){ var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<cut) continue;
+    var isQuiz = String(sv.page||'').indexOf('fv1qualificacao')>=0;
+    if(!isQuiz){ var ev=E[sid]; if(ev){ for(var kk in ev){ var nm=(ev[kk]||{}).e; var pv=(ev[kk]||{}).p; if(nm==='quiz_start'||nm==='quiz_answer'){isQuiz=true;break;} if(nm==='lp_view'&&pv&&pv.variante==='quiz-fv1'){isQuiz=true;break;} } } }
+    if(isQuiz) qsids.push(sid);
+  }
+  var vis=qsids.length, comecaram=0, respFat=0, qualif=0, leadsN=0, agendaram=0, youtube=0;
+  var perg={segmento:0,faturamento:0,canal:0,desafio:0,investimento:0};
+  var dev={desktop:{t:0,c:0},mobile:{t:0,c:0}};
+  var srcMap={};
+  qsids.forEach(function(sid){ var sv=S[sid]||{}; var x=evOf(sid);
+    if(x.n['quiz_start']) comecaram++;
+    if(x.p['faturamento']) respFat++;
+    if(x.n['qualified_lead']) qualif++;
+    var isLead = x.n['lead_submit']||sv.converted;
+    if(isLead) leadsN++;
+    if(x.n['meeting_booked']) agendaram++;
+    if(x.n['youtube_redirect']) youtube++;
+    ['segmento','faturamento','canal','desafio','investimento'].forEach(function(q){ if(x.p[q]) perg[q]++; });
+    var d = sv.device==='mobile'?'mobile':(sv.device==='desktop'?'desktop':null);
+    if(d){ dev[d].t++; if(isLead) dev[d].c++; }
+    var src=(sv.utm_source||'').trim()||(sv.ref?dominio(sv.ref):'')||'direto'; src=src||'direto';
+    if(!srcMap[src]) srcMap[src]={sess:0,leads:0}; srcMap[src].sess++; if(isLead) srcMap[src].leads++;
+  });
+  /* KPIs */
+  el('kpis').innerHTML =
+    kpi(fmt(vis),'Visitantes (quiz)') +
+    kpi(fmt(comecaram),'Começaram o quiz') +
+    kpi(fmt(qualif),'Qualificados','p') +
+    kpi(fmt(leadsN),'Leads (dados)') +
+    kpi(fmt(agendaram),'Agendaram','g') +
+    kpi(pct(leadsN,vis),'Conversão','p');
+  /* Funil */
+  var steps=[{n:'Visitantes',v:vis},{n:'Começaram o quiz',v:comecaram},{n:'Responderam faturamento',v:respFat},{n:'Qualificaram (acima de R$20 mil)',v:qualif},{n:'Mandaram os dados',v:leadsN},{n:'Agendaram reunião',v:agendaram}];
+  var max=vis||1;
+  el('funnel').innerHTML = steps.map(function(s,i){ var prev=i>0?steps[i-1].v:s.v; var drop=i>0&&prev>0?Math.round((1-s.v/prev)*100):0;
+    return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,vis):'')+'</span></div><div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+(i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
+  }).join('');
+  /* Origem */
+  el('sources').innerHTML = barsFrom(srcMap,'sess',vis) || '<div class="empty">Sem dados de origem ainda.</div>';
+  /* Device */
+  el('devices').innerHTML = ['desktop','mobile'].map(function(k){ var r=dev[k].t>0?(dev[k].c/dev[k].t*100):0; return '<div class="row"><div class="name">'+(k==='desktop'?'Desktop':'Mobile')+'</div><div class="bar"><span class="g" style="width:'+Math.min(100,r*4)+'%"></span></div><div class="val">'+r.toFixed(1)+'%</div></div>'; }).join('') + '<div class="empty" style="margin-top:6px">Taxa = leads ÷ sessões do dispositivo.</div>';
+  /* Onde pararam (por pergunta) */
+  var qLabels={segmento:'1 · Segmento',faturamento:'2 · Faturamento',canal:'3 · Canal',desafio:'4 · Gargalo',investimento:'5 · Investir 10%'};
+  var order=['segmento','faturamento','canal','desafio','investimento'];
+  var qmax=Math.max(comecaram, perg.segmento, 1);
+  var pbars = order.map(function(q){ var v=perg[q]; return '<div class="row"><div class="name">'+qLabels[q]+'</div><div class="bar"><span class="b" style="width:'+(v/qmax*100)+'%"></span></div><div class="val">'+fmt(v)+'</div></div>'; }).join('');
+  el('abandono').innerHTML = pbars + '<div class="empty" style="margin-top:8px">Quantos responderam cada pergunta — mostra onde caem. '+(youtube?('<b style="color:var(--amber)">'+youtube+'</b> foram pro YouTube (não-qualificados).'):'')+'</div>';
+  /* Leads recentes (quiz) */
+  var qleads=[]; for(var lk in L){ var lv=L[lk]||{}; if(String(lv._source||'').indexOf('quiz')<0) continue; var lt=lv._createdAt||0; if(lt>=cut) qleads.push(lv); }
+  qleads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  if(qleads.length){
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th class="num">Quando</th></tr></thead><tbody>'+
+      qleads.slice(0,25).map(function(l){ var src=l.utm_source||l._source||'quiz'; return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td><td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>';
+  } else { el('leads').innerHTML = '<div class="empty">Nenhum lead do quiz no período.</div>'; }
+  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  el('status').textContent = vis===0 ? 'Ainda não há dados do quiz neste período.' : ('Atualizado agora · Quiz FV1 (fv1qualificacao) · período: '+per);
 }
 
 function kpi(v,l,cls){ return '<div class="kpi"><div class="v '+(cls||'')+'">'+v+'</div><div class="l">'+l+'</div></div>'; }
