@@ -56,6 +56,15 @@ function mensagemPrimeiroContato(nomeCompleto) {
     "Me passa o @ da sua restaurante/delivery pra dar uma olhada pfv";
 }
 
+// Mensagem para leads QUALIFICADOS vindos do quiz (LP fv1). Eles já passaram pela
+// qualificação e estão prestes a agendar — mensagem diferente do primeiro contato frio.
+function mensagemQuizQualificado(nomeCompleto) {
+  var primeiroNome = primeiroNomeDe(nomeCompleto);
+  return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
+    "Vi que você fez o Raio-X do seu delivery e tem perfil pra uma Análise Estratégica com a gente.\n" +
+    "Você já conseguiu escolher um horário ou ficou com alguma dúvida pra agendar?";
+}
+
 // Primeira parte da confirmacao de reuniao (texto antes das imagens)
 function mensagemConfirmacaoParte1(nomeCompleto) {
   var primeiroNome = primeiroNomeDe(nomeCompleto);
@@ -461,6 +470,10 @@ async function handleReceberLead(req, res) {
     _createdAt: Date.now(),
   };
 
+  // Leads vindos do quiz de qualificação (LP fv1): recebem mensagem própria (abaixo)
+  // e o board os coloca direto na coluna "Lead Qualificado" pela origem (_source).
+  const isQuizQualificado = /quiz/i.test(String(origem));
+
   await db.ref("leads/" + key).set(leadData);
 
   // Evento Lead server-side para o Meta (CAPI) — nao bloqueia o fluxo
@@ -469,8 +482,9 @@ async function handleReceberLead(req, res) {
   // Dispara o webhook do Make para salvar o lead na planilha
   await notifyMake({ ...body, ...leadData });
 
-  // Dispara a mensagem de primeiro contato do Joao via WhatsApp (Z-API)
-  await enviarMensagemWhatsapp(tel, mensagemPrimeiroContato(nome));
+  // Dispara a mensagem inicial via WhatsApp (Z-API).
+  // Quiz qualificado recebe a mensagem própria; demais leads, o primeiro contato do João.
+  await enviarMensagemWhatsapp(tel, isQuizQualificado ? mensagemQuizQualificado(nome) : mensagemPrimeiroContato(nome));
 
   if (isBrowser) {
     return res.redirect(302, REDIRECT_OK);
@@ -568,6 +582,47 @@ async function handleAgendar(req, res) {
   await enviarMensagemWhatsapp(telefone, mensagemEscassez(nome, responsavel));
 
   return res.status(200).json({ ok: true });
+}
+
+// ===== Rota /quiz-agendou: chamada pela LP quiz quando o lead marca no Calendly =====
+// Move o card para "Reunião Agendada", atribui o closer pelo faturamento e dispara
+// a confirmação de reunião no WhatsApp (voz Audens). NÃO cria evento no Google Agenda
+// (o Calendly já cria, conectado à agenda) para evitar duplicidade.
+function closerPorFaixa(faixa) {
+  // Acima de R$ 50 mil -> Lucas | Abaixo de R$ 50 mil (20-50) -> Gustavo
+  return (faixa === "50-100" || faixa === "100-300" || faixa === "300+") ? "Lucas" : "Gustavo";
+}
+async function handleQuizAgendou(req, res) {
+  if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).send("Method Not Allowed"); }
+  if (!checaSecret(req)) { return res.status(401).send("Unauthorized"); }
+  const body = req.body || {};
+  const nome = pick(body, ["nome", "name"]);
+  const telRaw = pick(body, ["telefone", "phone", "whatsapp", "tel"]);
+  const faixa = pick(body, ["faixa", "faturamento_faixa"]) || "";
+  if (!telRaw) { return res.status(400).json({ ok: false, error: "telefone é obrigatório" }); }
+  const tel = String(telRaw).replace(/\D/g, "");
+  const key = (tel || "lead_" + Date.now()).replace(/[.#$\[\]]/g, "_");
+  const responsavel = closerPorFaixa(faixa);
+  // 1. Move o card para "Reunião Agendada" + atribui o closer
+  try { await db.ref("kanban/" + key).update({ status: "reuniao", statusAt: Date.now(), responsavel: responsavel }); } catch (e) { console.error("quiz-agendou kanban:", e); }
+  // 2. Registra a reunião (sem dtISO — o horário fica no Google Agenda via Calendly)
+  const mid = "km_" + key + "_" + Date.now();
+  try {
+    await db.ref("meetings/" + mid).set({
+      id: mid, tel: tel, nome: String(nome || ""), responsavel: responsavel,
+      status: "pending", kanbanKey: key, origem: "Tráfego",
+      scheduledAt: Date.now(), _viaCalendly: true, semDataConfirmada: true
+    });
+    await db.ref("kanban/" + key).update({ meetingId: mid });
+  } catch (e) { console.error("quiz-agendou meeting:", e); }
+  // 3. Dispara a confirmação de reunião no WhatsApp (mesma sequência da rota /agendar)
+  try {
+    await enviarMensagemWhatsapp(tel, mensagemConfirmacaoParte1(nome));
+    await enviarImagemWhatsapp(tel, IMG_FATURAMENTO_ANTERIOR, "");
+    await enviarImagemWhatsapp(tel, IMG_FATURAMENTO_ATUAL, legendaFaturamentoAtual());
+    await enviarMensagemWhatsapp(tel, mensagemEscassez(nome, responsavel));
+  } catch (e) { console.error("quiz-agendou WA:", e); }
+  return res.status(200).json({ ok: true, responsavel: responsavel, mid: mid });
 }
 
 // ===== Rota /reagendar: avisa o cliente que a data/hora foi alterada e reseta flags de lembretes =====
@@ -1617,6 +1672,9 @@ http('receberLead', async (req, res) => {
 
     if (path === "/agendar") {
       return await handleAgendar(req, res);
+    }
+    if (path === "/quiz-agendou") {
+      return await handleQuizAgendou(req, res);
     }
     if (path === "/reagendar") {
       return await handleReagendar(req, res);
