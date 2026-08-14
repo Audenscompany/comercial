@@ -612,6 +612,40 @@ async function handleQuizAgendou(req, res) {
   return res.status(200).json({ ok: true, responsavel: responsavel });
 }
 
+// ===== Rota /setup-calendly-webhook: registra a assinatura do webhook no Calendly (one-time) =====
+// Uso: abrir no navegador
+//   https://<cloud-run>/setup-calendly-webhook?secret=<WEBHOOK_SECRET>&token=<PAT_DO_CALENDLY>
+// A função (que roda no Cloud Run e alcança o Calendly) cria a assinatura apontando p/ /calendly-webhook.
+async function handleSetupCalendlyWebhook(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  const token = (req.query && req.query.token) || (req.body && req.body.token) || "";
+  if (!token) return res.status(400).json({ ok: false, error: "token do Calendly é obrigatório (?token=...)" });
+  try {
+    const meR = await fetch("https://api.calendly.com/users/me", { headers: { Authorization: "Bearer " + token } });
+    const me = await meR.json();
+    const org = me && me.resource && me.resource.current_organization;
+    if (!org) return res.status(400).json({ ok: false, error: "não consegui obter a organização do Calendly", detalhe: me });
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "receberlead-471063273836.us-central1.run.app";
+    const callbackUrl = "https://" + host + "/calendly-webhook";
+    // Evita duplicar: lista assinaturas existentes p/ essa organização
+    try {
+      const listR = await fetch("https://api.calendly.com/webhook_subscriptions?organization=" + encodeURIComponent(org) + "&scope=organization", { headers: { Authorization: "Bearer " + token } });
+      const list = await listR.json();
+      const jaExiste = (list && list.collection || []).find(function (w) { return w && w.callback_url === callbackUrl; });
+      if (jaExiste) return res.status(200).json({ ok: true, jaRegistrado: true, webhook: jaExiste, callback_url: callbackUrl });
+    } catch (e) {}
+    const subR = await fetch("https://api.calendly.com/webhook_subscriptions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ url: callbackUrl, events: ["invitee.created", "invitee.canceled"], organization: org, scope: "organization" })
+    });
+    const sub = await subR.json();
+    return res.status(subR.ok ? 200 : 400).json({ ok: subR.ok, http: subR.status, callback_url: callbackUrl, webhook: sub });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+}
+
 // ===== Rota /calendly-webhook: recebe o evento invitee.created/canceled do Calendly =====
 // Traz o horário REAL do agendamento → preenche meetingISO, move o card, atribui closer,
 // registra a reunião (com lembretes) e dispara a confirmação no WhatsApp com o horário.
@@ -1779,6 +1813,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/calendly-webhook") {
       return await handleCalendlyWebhook(req, res);
+    }
+    if (path === "/setup-calendly-webhook") {
+      return await handleSetupCalendlyWebhook(req, res);
     }
     if (path === "/reagendar") {
       return await handleReagendar(req, res);
