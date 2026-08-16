@@ -13127,6 +13127,7 @@ function buildAnaliseAdsHTML(data){
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Taxa</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Gasto</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">CPL Qual.</th>'+
+          '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--green);">CAC</th>'+
           '<th style="padding:10px 8px;text-align:center;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Decisao</th>'+
         '</tr>'+
       '</thead>'+
@@ -13159,8 +13160,12 @@ function buildAnaliseAdsHTML(data){
         var _spFmt=_sp>0?'R$'+(_sp>=1000?(_sp/1000).toFixed(1)+'k':Math.round(_sp)):'—';
         var _cplFmt=_cplQ>0?'R$'+Math.round(_cplQ):'—';
         var _cplCol=_cplQ<=0?'var(--muted)':_cplQ<=150?'#4ade80':_cplQ<=300?'#fbbf24':'#f87171';
+        var _cac=(_sp>0&&a.fechamentos>0)?(_sp/a.fechamentos):0;
+        var _cacFmt=_cac>0?'R$'+(_cac>=1000?(_cac/1000).toFixed(1)+'k':Math.round(_cac)):'—';
+        var _cacCol=_cac<=0?'var(--muted)':_cac<=500?'#4ade80':_cac<=1000?'#fbbf24':'#f87171';
         return '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+(_sp>0?'var(--white)':'var(--muted)')+';">'+_spFmt+'</td>'+
-               '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+_cplCol+';">'+_cplFmt+'</td>';
+               '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+_cplCol+';">'+_cplFmt+'</td>'+
+               '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+_cacCol+';">'+_cacFmt+'</td>';
       })()+
       '<td style="padding:10px 8px;text-align:center;">'+
         '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:'+decBg+';font-size:10px;font-weight:700;letter-spacing:1px;color:'+decCl+';">'+
@@ -13170,7 +13175,7 @@ function buildAnaliseAdsHTML(data){
     '</tr>';
   });
   if(adsSorted.length===0){
-    html+='<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anuncio com dados no periodo.</td></tr>';
+    html+='<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anuncio com dados no periodo.</td></tr>';
   }
   html+='</tbody></table></div></div>';
 
