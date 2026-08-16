@@ -29142,22 +29142,41 @@ function dicaToast(msg){var t=document.getElementById('dica-toast');if(!t)return
 function _dicaGerarProgramacaoBase(){
   var slots=[];
   var d=new Date();d.setHours(0,0,0,0);
-  var count=0;
-  while(count<26){
-    var dow=d.getDay(); // 2=terça, 5=sexta
-    if(dow===2||dow===5){
-      var iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-      slots.push({data:iso,dow:dow,titulo:'',legenda:'',status:'vazio'});
-      count++;
-    }
+  for(var i=0;i<30;i++){ // 1 Reels por dia, 30 dias
+    var iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    slots.push({data:iso,dow:d.getDay(),titulo:'',legenda:'',status:'vazio'});
     d.setDate(d.getDate()+1);
   }
   return slots;
 }
-function dicaResetProgramacao(){
-  if(_dicaProg.length&&!confirm('Recriar a programação de 90 dias a partir de hoje? Os títulos já agendados serão perdidos.'))return;
+var _DICA_SUG10=[
+  'O CMV ideal de hamburgueria é 30-35%. Acima disso você trabalha de graça.',
+  'Os 3 números que eu olho todo dia às 23h antes de dormir.',
+  'Taxa do iFood pesa? Aprenda a calcular o preço certo pra ela caber.',
+  'Aumentar R$3 no ticket médio pode dobrar seu lucro no fim do mês.',
+  'Reduza seu cardápio pela metade e veja o ticket médio subir.',
+  'Preço do concorrente não é referência. Sua ficha técnica é.',
+  'O iFood não é vilão. Depender só dele é o problema.',
+  'Desconto de 20% exige 60% mais pedidos pra empatar. Cuidado com promoção.',
+  'Combo não é juntar itens. É engenharia de margem pra subir o ticket.',
+  'A rotina de 1h por semana que troca "apagar incêndio" por gestão.'
+];
+function dicaProgramar10(){
+  if(_dicaProg.length&&!confirm('Recriar a programação como 1 Reels por dia e agendar os 10 títulos sugeridos a partir de hoje? Os agendamentos atuais serão substituídos.'))return;
   _dicaProg=_dicaGerarProgramacaoBase();
-  _dicaSalvaProg();dicaRenderProg();dicaToast('Programação de 90 dias criada');
+  for(var i=0;i<_DICA_SUG10.length&&i<_dicaProg.length;i++){
+    _dicaProg[i].titulo=_DICA_SUG10[i];
+    _dicaProg[i].status='rascunho';
+    if(_dicaUsados.indexOf(_DICA_SUG10[i])<0)_dicaUsados.push(_DICA_SUG10[i]);
+  }
+  _dicaSalvaProg();_dicaSalvaUsados();
+  dicaRenderBanco();dicaSwitchTab('prog');
+  dicaToast('10 Reels programados · 1 por dia ✔');
+}
+function dicaResetProgramacao(){
+  if(_dicaProg.length&&!confirm('Recriar a programação como 1 Reels por dia a partir de hoje? Os títulos já agendados serão perdidos.'))return;
+  _dicaProg=_dicaGerarProgramacaoBase();
+  _dicaSalvaProg();dicaRenderProg();dicaToast('Programação diária criada');
 }
 
 // Usa um título — coloca no editor e no próximo slot vazio da programação
@@ -29250,7 +29269,7 @@ function dicaLimparSlot(i){if(!_dicaProg[i])return;if(!confirm('Limpar este slot
 function dicaVerLegenda(i){var s=_dicaProg[i];if(!s)return;if(s.titulo){_dicaTituloAtual=s.titulo;var el=document.getElementById('dica-titulo-atual');if(el)el.textContent=s.titulo;var leg=document.getElementById('dica-legenda');if(leg)leg.value=s.legenda||'';}dicaSwitchTab('banco');}
 function dicaRenderProg(){
   var box=document.getElementById('dica-prog-list');if(!box)return;
-  if(!_dicaProg.length){box.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px;">Nenhuma programação criada.<br><button onclick="dicaResetProgramacao()" style="margin-top:12px;padding:9px 16px;background:#7c3aed;border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;">Criar 90 dias (ter/sex)</button></div>';return;}
+  if(!_dicaProg.length){box.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px;">Nenhuma programação criada.<br><button onclick="dicaResetProgramacao()" style="margin-top:12px;padding:9px 16px;background:#7c3aed;border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;">Criar programação (1/dia)</button></div>';return;}
   var preench=_dicaProg.filter(function(s){return s.status!=='vazio';}).length;
   var postados=_dicaProg.filter(function(s){return s.status==='postado';}).length;
   var semana=null,html='';
@@ -29318,9 +29337,10 @@ function renderDicas(){
   // Header
   H+='<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0;">'+
     '<div><div style="font-size:20px;font-weight:900;color:var(--white);">🎬 Reels 10S</div>'+
-    '<div style="font-size:12px;color:var(--muted);margin-top:2px;">Título no vídeo (10-15s) · legenda ensina o tema · 2×/semana (ter/sex)</div></div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:2px;">Título no vídeo (10-15s) · legenda ensina o tema · 1 Reels por dia</div></div>'+
     '<div style="display:flex;gap:8px;">'+
-      '<button onclick="dicaResetProgramacao()" style="padding:8px 14px;border-radius:8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-calendar-plus"></i> Recriar 90 dias</button>'+
+      '<button onclick="dicaProgramar10()" style="padding:8px 14px;border-radius:8px;background:linear-gradient(135deg,#e1306c,#7c3aed);border:none;color:#fff;font-size:12px;cursor:pointer;font-weight:700;"><i class="ti ti-sparkles"></i> Programar 10 sugeridos</button>'+
+      '<button onclick="dicaResetProgramacao()" style="padding:8px 14px;border-radius:8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-calendar-plus"></i> Recriar (1/dia)</button>'+
     '</div>'+
   '</div>';
   // Tabs
