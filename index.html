@@ -13123,6 +13123,7 @@ function buildAnaliseAdsHTML(data){
           '<th style="padding:10px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Anuncio</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Leads</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Qualif.</th>'+
+          '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);">Reun.</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--green);">Vendas</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Taxa</th>'+
           '<th style="padding:10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Gasto</th>'+
@@ -13152,6 +13153,7 @@ function buildAnaliseAdsHTML(data){
       '</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:var(--white);">'+a.leads+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;color:var(--cyan);">'+a.qualif+'</td>'+
+      '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:'+((a.realizadas||0)>0?'var(--amber)':'var(--muted)')+';">'+(a.realizadas||0)+'</td>'+
       '<td data-adkey="'+a.ad.replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey)_showAdVendasModal(this.dataset.adkey)" style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;cursor:'+(a.fechamentos>0?'pointer':'default')+';color:'+(a.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(a.fechamentos>0?'<span title=\"Ver vendas deste ad\">'+a.fechamentos+'</span>':'—')+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+qCol+';">'+q+'%</td>'+
       (function(){
@@ -13180,7 +13182,7 @@ function buildAnaliseAdsHTML(data){
     '</tr>';
   });
   if(adsSorted.length===0){
-    html+='<tr><td colspan="10" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anuncio com dados no periodo.</td></tr>';
+    html+='<tr><td colspan="11" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anuncio com dados no periodo.</td></tr>';
   }
   html+='</tbody></table></div></div>';
 
