@@ -3363,16 +3363,19 @@ async function fetchMetaAdSpendMap(period){
   for(var i=0;i<ids.length;i++){
     try{
       var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights'
-        +'?fields=ad_name,spend'
+        +'?fields=ad_id,ad_name,spend'
         +'&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')
         +'&level=ad&limit=500'
         +'&access_token='+metaToken.access_token;
       var resp=await fetch(url);var data=await resp.json();
       if(data.error){console.error('fetchMetaAdSpendMap',data.error);continue;}
+      window._metaAdNameById=window._metaAdNameById||{};
       (data.data||[]).forEach(function(row){
         var n=(row.ad_name||'').trim();
         var sp=parseFloat(row.spend)||0;
         map[n]=(map[n]||0)+sp;
+        // permite achar o gasto tambem quando o lead guardou o ID do ad (nao o nome)
+        if(row.ad_id){var idk=String(row.ad_id);map[idk]=sp;if(n)window._metaAdNameById[idk]=n;}
       });
     }catch(e){console.error('fetchMetaAdSpendMap acc '+ids[i],e);}
   }
@@ -12643,6 +12646,16 @@ function clearAdsDateRange(){
   refreshAnaliseAds();
 }
 
+// Traduz um valor de "ad" que veio como ID numerico do Meta para o nome real do anuncio.
+function _adDisplayName(v){
+  var s=(''+(v||'')).trim();
+  if(/^\d{6,}$/.test(s)){
+    var m=window._metaAdNameById||{};
+    if(m[s])return m[s];
+    return 'Ad #'+s.slice(-6); // fallback amigavel quando o Meta nao resolve o nome
+  }
+  return s;
+}
 async function refreshAnaliseAds(){
   var loading=document.getElementById('ads-loading');
   var cont=document.getElementById('ads-content');
@@ -12685,7 +12698,7 @@ function _showAdVendasModal(adKey){
       '<div style="padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:space-between;">'+
         '<div>'+
           '<div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--purple3);margin-bottom:4px;">Vendas atribuídas</div>'+
-          '<div style="font-size:16px;font-weight:700;color:var(--white);">'+adKey+'</div>'+
+          '<div style="font-size:16px;font-weight:700;color:var(--white);">'+(typeof _adDisplayName==='function'?_adDisplayName(adKey):adKey)+'</div>'+
         '</div>'+
         '<button onclick="document.getElementById(\'_adVendasModal\').remove()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--muted);font-size:18px;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&times;</button>'+
       '</div>'+
@@ -13154,8 +13167,8 @@ function buildAnaliseAdsHTML(data){
       return {ic:'ti-filter-off',bg:'rgba(245,158,11,0.12)',cl:'var(--amber)',tit:'Qualificacao baixa',desc:Math.round(_txQ2*100)+'% dos leads qualificam (meta 15%+). Revisar copy e publico-alvo dos anuncios.'};
     })(),
     (function(){
-      if(_topAd&&_topAd.txQ>=0.25&&_topAd.leads>=5)return {ic:'ti-rocket',bg:'rgba(123,47,255,0.12)',cl:'var(--purple3)',tit:'Escalar vencedores',desc:'Anuncio "'+_topAd.ad+'" com '+Math.round(_topAd.txQ*100)+'% de qualificacao. Aumentar budget neste criativo.'};
-      if(_topAd&&_topAd.leads>=5)return {ic:'ti-check',bg:'rgba(123,47,255,0.12)',cl:'var(--purple3)',tit:'Lider: '+_topAd.ad,desc:_topAd.leads+' leads com '+Math.round(_topAd.txQ*100)+'% qualificacao. Mantenha ativo e monitore.'};
+      if(_topAd&&_topAd.txQ>=0.25&&_topAd.leads>=5)return {ic:'ti-rocket',bg:'rgba(123,47,255,0.12)',cl:'var(--purple3)',tit:'Escalar vencedores',desc:'Anuncio "'+_adDisplayName(_topAd.ad)+'" com '+Math.round(_topAd.txQ*100)+'% de qualificacao. Aumentar budget neste criativo.'};
+      if(_topAd&&_topAd.leads>=5)return {ic:'ti-check',bg:'rgba(123,47,255,0.12)',cl:'var(--purple3)',tit:'Lider: '+_adDisplayName(_topAd.ad),desc:_topAd.leads+' leads com '+Math.round(_topAd.txQ*100)+'% qualificacao. Mantenha ativo e monitore.'};
       return {ic:'ti-search',bg:'rgba(245,158,11,0.12)',cl:'var(--amber)',tit:'Nenhum destaque',desc:'Sem anuncios com volume e qualidade suficientes. Testar novos criativos e prioritario.'};
     })(),
     (function(){
@@ -13219,7 +13232,7 @@ function buildAnaliseAdsHTML(data){
     var qCol=q>=20?'var(--green)':q>=10?'var(--amber)':'#f87171';
     html+='<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
       '<td style="padding:10px 14px;">'+
-        '<div style="font-size:12px;font-weight:700;color:var(--white);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.ad+'</div>'+
+        '<div title="'+_adDisplayName(a.ad).replace(/"/g,'&quot;')+'" style="font-size:12px;font-weight:700;color:var(--white);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_adDisplayName(a.ad)+'</div>'+
         '<div style="height:3px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:4px;"><div style="height:3px;width:'+pct+'%;background:var(--purple3);border-radius:2px;"></div></div>'+
       '</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:var(--white);">'+a.leads+'</td>'+
