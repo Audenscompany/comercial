@@ -860,6 +860,7 @@ function startRealtimeSync(){
   fbDb.ref('instagram/calendario').on('value',function(s){_igCalendario=s.val()||{};});
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
+  fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
 
   // ===== STORIES LAB: listeners + coletor automático (boot) =====
   try{ storiesStartListeners(); }catch(e){ console.error('storiesStartListeners',e); }
@@ -18809,6 +18810,7 @@ var _contratosCache = null;
 // Set de chaves "tel_dataInicio" de contratos cancelados (ativo===false)
 // Populado sempre que _contratosCache é atualizado
 var _cancelledContratoKeys = new Set();
+var _vendasExcluidas = {}; // fids removidos manualmente na tela de Vendas
 function _rebuildCancelledSet(contratos){
   _cancelledContratoKeys.clear();
   (contratos||[]).forEach(function(c){
@@ -26023,6 +26025,10 @@ function renderVendas(){
     });
   }
 
+  // Exclusão manual: vendas removidas pelo usuário (por fid, estável em qualquer fonte)
+  if(_vendasExcluidas&&Object.keys(_vendasExcluidas).length){
+    todasVendas=todasVendas.filter(function(v){return !_vendasExcluidas[v.fid];});
+  }
   // Dedup por telefone — preferir followup real sobre sintético (_assinaturaSync/_contratoSync)
   var _telDedup={};
   var _todasDedup=[];
@@ -26740,12 +26746,19 @@ async function salvarEdicaoVenda(){
   }catch(e){alert('Erro ao salvar: '+e.message);}
 }
 async function removerVenda(fid){
-  if(!confirm('Remover esta venda? A reunião voltará para "Realizada" sem resultado.'))return;
+  if(!confirm('Remover esta venda da lista? Ela deixa de aparecer em Vendas (o contrato/assinatura em Financeiro não é apagado).'))return;
   try{
-    if(fbDb||initFirebase())await fbDb.ref('followups/'+fid).remove();
+    if(!fbDb)initFirebase();
+    // Exclusão por fid — cobre followup real, assin_<id> e contrato_<id> (todos estáveis)
+    _vendasExcluidas[fid]=true;
+    if(fbDb)await fbDb.ref('vendas_excluidas/'+fid).set(true);
+    // Limpeza da fonte quando é followup real (some também dos demais contadores)
+    if(fid.indexOf('assin_')!==0&&fid.indexOf('contrato_')!==0){
+      if(fbDb)await fbDb.ref('followups/'+fid).remove();
+      var m=meetings[fid];
+      if(m){m.status='done';m.followupRemovido=true;saveMeetingFB(fid,m);}
+    }
     delete followups[fid];
-    var m=meetings[fid];
-    if(m){m.status='done';m.followupRemovido=true;saveMeetingFB(fid,m);}
     saveAll();
     showSheetToast('Venda removida.',false);
     showPage('vendas');
