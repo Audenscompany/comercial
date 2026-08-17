@@ -690,6 +690,69 @@ async function acharKeyPorEmail(email) {
     return found;
   } catch (e) { return ""; }
 }
+// Gera variações do telefone p/ casar com a chave do lead (com/sem 55, 9º dígito).
+function _telVariants(telRaw) {
+  var d = String(telRaw || "").replace(/\D/g, "");
+  var set = {};
+  function add(x) { if (x && x.length >= 8) set[x] = true; }
+  if (!d) return [];
+  add(d);
+  if (d.indexOf("55") === 0) add(d.slice(2)); else add("55" + d);
+  var local = d.indexOf("55") === 0 ? d.slice(2) : d;
+  if (local.length === 11 && local[2] === "9") {
+    var without9 = local.slice(0, 2) + local.slice(3);
+    add(without9); add("55" + without9);
+  } else if (local.length === 10) {
+    var with9 = local.slice(0, 2) + "9" + local.slice(2);
+    add(with9); add("55" + with9);
+  }
+  return Object.keys(set);
+}
+
+// Resolve a chave do lead a partir de telefone -> email -> nome (nesta ordem de confiança).
+async function acharKeyLead(tel, email, nome) {
+  // 1) telefone (variações)
+  var vars = _telVariants(tel);
+  for (var i = 0; i < vars.length; i++) {
+    var k = vars[i].replace(/[.#$\[\]]/g, "_");
+    try {
+      var l = (await db.ref("leads/" + k).once("value")).val();
+      if (l) return { key: k, by: "telefone", conf: "alta" };
+      var kb = (await db.ref("kanban/" + k).once("value")).val();
+      if (kb) return { key: k, by: "kanban", conf: "alta" };
+    } catch (e) {}
+  }
+  // 2) email
+  if (email) {
+    try { var ke = await acharKeyPorEmail(email); if (ke) return { key: ke, by: "email", conf: "alta" }; } catch (e) {}
+  }
+  // 3) nome (baixa confiança) — só leads que ainda não avançaram (novo/qualificado)
+  if (nome) {
+    var alvo = String(nome).trim().toLowerCase();
+    var alvo1 = alvo.split(" ")[0] || "";
+    try {
+      var leadsAll = (await db.ref("leads").once("value")).val() || {};
+      var kbAll = (await db.ref("kanban").once("value")).val() || {};
+      var best = "", bestAt = -1;
+      Object.keys(leadsAll).forEach(function (k) {
+        var l = leadsAll[k] || {};
+        var n = String(l.nome || "").trim().toLowerCase();
+        if (!n) return;
+        var kb = kbAll[k] || {};
+        var st = kb.status || "";
+        var okStatus = (st === "" || st === "novo" || st === "qualificado");
+        var hit = (n === alvo) || (alvo1.length >= 3 && (n.split(" ")[0] || "") === alvo1);
+        if (hit && okStatus) {
+          var at = l._createdAt || kb.statusAt || 0;
+          if (at >= bestAt) { bestAt = at; best = k; }
+        }
+      });
+      if (best) return { key: best, by: "nome", conf: "baixa" };
+    } catch (e) {}
+  }
+  return null;
+}
+
 async function handleCalendlyWebhook(req, res) {
   try {
     var body = req.body || {};
@@ -697,9 +760,14 @@ async function handleCalendlyWebhook(req, res) {
     var evt = String(body.event || "");
     var p = body.payload || {};
     var tel = extrairTelefoneCalendly(p);
-    var key = tel ? tel.replace(/[.#$\[\]]/g, "_") : "";
-    if (!key && p.email) key = await acharKeyPorEmail(p.email);
-    if (!key) { console.warn("calendly-webhook: sem match (tel/email)", p.email || ""); return res.status(200).json({ ok: true, matched: false }); }
+    var nomeInv = p.name || "";
+    var m = await acharKeyLead(tel, p.email, nomeInv);
+    if (!m) {
+      console.warn("calendly-webhook: SEM MATCH -> tel:" + (tel || "-") + " email:" + (p.email || "-") + " nome:" + nomeInv);
+      return res.status(200).json({ ok: true, matched: false, tel: tel || "", email: p.email || "", nome: nomeInv });
+    }
+    var key = m.key;
+    console.log("calendly-webhook: match por " + m.by + " (" + m.conf + ") -> key " + key);
 
     if (evt === "invitee.canceled") {
       try { await db.ref("kanban/" + key).update({ status: "qualificado", statusAt: Date.now(), meetingCanceladaAt: Date.now() }); } catch (e) {}
