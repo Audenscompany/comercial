@@ -646,6 +646,113 @@ async function handleSetupCalendlyWebhook(req, res) {
   }
 }
 
+// ===== Rota /backfill-calendly: importa agendamentos JA existentes do Calendly p/ o CRM =====
+// Uso (uma vez, no navegador):
+//   /backfill-calendly?secret=<WEBHOOK_SECRET>&token=<PAT_CALENDLY>[&days_back=30&days_ahead=120&notify=0]
+// Lista os scheduled_events ativos da organizacao, casa cada convidado com o lead
+// (telefone -> email -> nome, mesma logica do webhook) e cria meetings/ + move o card.
+// notify=0 (padrao) NAO reenvia WhatsApp, pra nao spammar quem ja foi contatado.
+async function handleBackfillCalendly(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  const token = (req.query && req.query.token) || (req.body && req.body.token) || "";
+  if (!token) return res.status(400).json({ ok: false, error: "token do Calendly e obrigatorio (?token=...)" });
+  const daysBack = parseInt(req.query.days_back || "30", 10);
+  const daysAhead = parseInt(req.query.days_ahead || "120", 10);
+  const notify = String((req.query && req.query.notify) || "0") === "1";
+  try {
+    const meR = await fetch("https://api.calendly.com/users/me", { headers: { Authorization: "Bearer " + token } });
+    const me = await meR.json();
+    const org = me && me.resource && me.resource.current_organization;
+    if (!org) return res.status(400).json({ ok: false, error: "nao consegui obter a organizacao do Calendly", detalhe: me });
+
+    const now = Date.now();
+    const minT = new Date(now - daysBack * 86400000).toISOString();
+    const maxT = new Date(now + daysAhead * 86400000).toISOString();
+
+    let url = "https://api.calendly.com/scheduled_events?organization=" + encodeURIComponent(org) +
+      "&status=active&min_start_time=" + encodeURIComponent(minT) +
+      "&max_start_time=" + encodeURIComponent(maxT) + "&count=100";
+    const eventos = [];
+    let guard = 0;
+    while (url && guard < 20) {
+      guard++;
+      const evR = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+      const evJ = await evR.json();
+      if (!evR.ok) return res.status(400).json({ ok: false, step: "scheduled_events", http: evR.status, detalhe: evJ });
+      (evJ.collection || []).forEach(function (e) { eventos.push(e); });
+      url = (evJ.pagination && evJ.pagination.next_page) || "";
+    }
+
+    const out = { total_eventos: eventos.length, criados: 0, ja_existiam: 0, sem_match: 0, ignorados: 0, itens: [] };
+    for (let i = 0; i < eventos.length; i++) {
+      const se = eventos[i];
+      const seUri = se.uri || "";
+      let invitees = [];
+      try {
+        const invR = await fetch(seUri + "/invitees?count=20", { headers: { Authorization: "Bearer " + token } });
+        const invJ = await invR.json();
+        invitees = (invJ && invJ.collection) || [];
+      } catch (e) { invitees = []; }
+      for (let j = 0; j < invitees.length; j++) {
+        const inv = invitees[j] || {};
+        if (inv.status && inv.status !== "active") { out.ignorados++; continue; }
+        const pp = {
+          name: inv.name || "",
+          email: inv.email || "",
+          questions_and_answers: inv.questions_and_answers || [],
+          text_reminder_number: inv.text_reminder_number || "",
+          scheduled_event: { start_time: se.start_time, location: se.location }
+        };
+        const tel = extrairTelefoneCalendly(pp);
+        const m = await acharKeyLead(tel, pp.email, pp.name);
+        if (!m) { out.sem_match++; out.itens.push({ start: se.start_time, nome: pp.name, email: pp.email, tel: tel, status: "sem_match" }); continue; }
+        const key = m.key;
+        const startISO = se.start_time || "";
+        let kb = {};
+        try { kb = (await db.ref("kanban/" + key).once("value")).val() || {}; } catch (e) {}
+        if (kb.meetingISO && kb.meetingISO === startISO) { out.ja_existiam++; out.itens.push({ start: startISO, nome: pp.name, key: key, status: "ja_existia" }); continue; }
+        let lead = {};
+        try { lead = (await db.ref("leads/" + key).once("value")).val() || {}; } catch (e) {}
+        const nome = pp.name || lead.nome || kb.nome || "";
+        const telFinal = String(tel || lead.telefone || kb.telefone || "").replace(/\D/g, "");
+        const faixa = lead.faixa || kb.faixa || "";
+        const responsavel = kb.responsavel || closerPorFaixa(faixa);
+        const meetLink = (se.location && (se.location.join_url || se.location.location)) || "";
+        const meetingDisplay = startISO ? formatBRT(startISO) : "";
+        const mid = "km_" + key + "_bf_" + now + "_" + i + "_" + j;
+        try {
+          await db.ref("kanban/" + key).update({
+            status: "reuniao", statusAt: Date.now(),
+            meetingISO: startISO, meetingDisplay: meetingDisplay,
+            responsavel: responsavel, meetLink: meetLink, meetingId: mid,
+            lembretes: { h2: false, h1: false, m10: false }, _aguardandoWebhook: null
+          });
+          await db.ref("meetings/" + mid).set({
+            id: mid, tel: telFinal, nome: String(nome), dtISO: startISO, dtDisplay: meetingDisplay,
+            status: "pending", responsavel: responsavel, guestEmail: pp.email || "",
+            faturamentoLead: lead.faturamento || kb.faturamento || "", origem: "Trafego",
+            kanbanKey: key, sdrName: "JOAO", meetLink: meetLink, scheduledAt: Date.now(), _viaCalendly: true, _backfill: true
+          });
+          out.criados++;
+          out.itens.push({ start: startISO, nome: nome, key: key, responsavel: responsavel, by: m.by, status: "criado" });
+          if (notify && telFinal) {
+            try {
+              await enviarMensagemWhatsapp(telFinal, mensagemConfirmacaoParte1(nome));
+              if (meetingDisplay) await enviarMensagemWhatsapp(telFinal, mensagemConfirmacaoParte2(meetingDisplay));
+              if (meetLink) await enviarMensagemWhatsapp(telFinal, "Link da videochamada:\n" + meetLink);
+            } catch (e) {}
+          }
+        } catch (e) {
+          out.itens.push({ start: startISO, nome: nome, key: key, status: "erro", erro: String(e) });
+        }
+      }
+    }
+    return res.status(200).json({ ok: true, resultado: out });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+}
+
 // ===== Rota /calendly-webhook: recebe o evento invitee.created/canceled do Calendly =====
 // Traz o horário REAL do agendamento → preenche meetingISO, move o card, atribui closer,
 // registra a reunião (com lembretes) e dispara a confirmação no WhatsApp com o horário.
@@ -1884,6 +1991,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/setup-calendly-webhook") {
       return await handleSetupCalendlyWebhook(req, res);
+    }
+    if (path === "/backfill-calendly") {
+      return await handleBackfillCalendly(req, res);
     }
     if (path === "/reagendar") {
       return await handleReagendar(req, res);
