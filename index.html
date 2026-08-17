@@ -5,6 +5,7 @@
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-database-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-auth-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-check-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-storage-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.2.0/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
@@ -475,6 +476,15 @@ function initFirebase(){
       return false;
     }
     if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    // App Check - protege o banco contra acesso fora deste app
+    try{
+      firebase.appCheck().activate(
+        new firebase.appCheck.ReCaptchaV3Provider('6Lfcz4ktAAAALWDmSD44Uf_UrcRD0xgBc2zb8X4'),
+        true
+      );
+    }catch(e){
+      console.warn('[AppCheck] nao ativou:', e && e.message);
+    }
     fbDb = firebase.database();
     // Sign in anonimamente para que as regras do Firebase que exigem auth != null funcionem
     if(firebase.auth && firebase.auth().currentUser === null){
