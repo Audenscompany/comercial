@@ -7881,6 +7881,10 @@ async function loadAssinaturas(){
       var marcarVendaBtn=(r.status==='assinado'&&!jaTemVenda)
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarContratoComoVenda(\''+id+'\')" title="Registrar venda no CRM"><i class="ti ti-trophy"></i> Marcar venda</button>'
         : (jaTemVenda?'<span style="font-size:11px;color:#10b981;font-weight:700;"><i class="ti ti-check"></i> Venda ✓</span>':'');
+      // Assinou fora do sistema (ex.: gov.br) — permite marcar assinado + venda de contratos Pendentes
+      var marcarAssinadoBtn=(r.status!=='assinado'&&!jaTemVenda)
+        ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarAssinadoManual(\''+id+'\')" title="Assinou fora do sistema (gov.br) \u2014 marcar como assinado e registrar venda"><i class="ti ti-writing-sign"></i> Assinou fora / Marcar venda</button>'
+        : '';
       // Botão "Enviar p/ sistema" — webhook manual; aparece só após venda registrada
       var jaDisparou=r._webhookDisparado===true;
       var webhookBtn=jaTemVenda
@@ -7904,7 +7908,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+pdfAssinadoBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -8027,6 +8031,48 @@ async function autoSyncAssinaturas(){
   }
 }
 
+async function marcarAssinadoManual(id){
+  var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro ao buscar contrato: '+e.message); return; }
+  if(!r){ alert('Contrato nao encontrado.'); return; }
+  var vd=r.vendaData||{};
+  var today=new Date().toISOString().split('T')[0];
+  var mensPre=parseFloat(vd.mensalidade||vd.valorParcela)||'';
+  var durPre=parseInt(vd.duracaoMeses||vd.duracao)||'';
+  var html='<div class="modal-ov" id="massin-modal" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'massin-modal\')">'+
+    '<div class="modal-box" style="max-width:440px;width:100%;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span class="modal-title" style="margin:0;"><i class="ti ti-writing-sign" style="margin-right:8px;color:#10b981;"></i>Marcar como assinado</span>'+
+      '<button onclick="closeModal(\'massin-modal\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button></div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;">Assinou fora do sistema (ex.: gov.br). Confirme os dados da venda de <b>'+esc(r.cliente||'')+'</b>.</div>'+
+      '<label class="f-label">Plano</label>'+
+      '<select class="f-input" id="massin-plano" style="margin-bottom:12px;">'+
+        ['starter','premium','elite'].map(function(p){var lbl=p.charAt(0).toUpperCase()+p.slice(1);return '<option value="'+p+'"'+(((vd.plano||'').toLowerCase()===p)?' selected':'')+'>'+lbl+'</option>';}).join('')+
+      '</select>'+
+      '<div class="modal-grid2" style="margin-bottom:12px;">'+
+        '<div><label class="f-label">Mensalidade (R$)</label><input class="f-input" id="massin-mens" type="number" step="0.01" value="'+mensPre+'" placeholder="0,00" style="margin-bottom:0;"></div>'+
+        '<div><label class="f-label">Duracao (meses)</label><input class="f-input" id="massin-dur" type="number" value="'+durPre+'" placeholder="ex: 6" style="margin-bottom:0;"></div>'+
+      '</div>'+
+      '<label class="f-label">Data de inicio</label>'+
+      '<input class="f-input" id="massin-dtini" type="date" value="'+(vd.dataInicio||today)+'" style="margin-bottom:16px;">'+
+      '<div style="display:flex;gap:10px;"><button class="btn" style="flex:1;" onclick="closeModal(\'massin-modal\')">Cancelar</button><button class="btn btn-primary" style="flex:2;justify-content:center;" onclick="confirmarAssinadoManual(\''+id+'\')"><i class="ti ti-trophy"></i> Assinar e marcar venda</button></div>'+
+    '</div></div>';
+  var ex=document.getElementById('massin-modal');if(ex)ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function confirmarAssinadoManual(id){
+  var plano=(document.getElementById('massin-plano')||{}).value||'';
+  var mens=parseFloat((document.getElementById('massin-mens')||{}).value)||0;
+  var dur=parseInt((document.getElementById('massin-dur')||{}).value)||1;
+  var dtini=(document.getElementById('massin-dtini')||{}).value||new Date().toISOString().split('T')[0];
+  if(mens<=0){ alert('Informe a mensalidade da venda.'); return; }
+  try{
+    if(!fbDb)initFirebase();
+    var r=await fbGet('assinaturas/'+id)||{};
+    var vd=Object.assign({},r.vendaData||{},{plano:plano,mensalidade:mens,duracaoMeses:dur,duracao:dur,dataInicio:dtini,tipoValor:(r.vendaData&&r.vendaData.tipoValor)||'mensalidade'});
+    await fbDb.ref('assinaturas/'+id).update({status:'assinado',signedAt:new Date().toISOString(),_assinadoManual:true,vendaData:vd});
+    closeModal('massin-modal');
+    await marcarContratoComoVenda(id);
+  }catch(e){ alert('Erro: '+e.message); }
+}
 async function marcarContratoComoVenda(id){
   if(!confirm('Registrar esta venda no CRM? Isso vai contar a venda para o closer da reunião mais recente deste lead.')) return;
   var r;
