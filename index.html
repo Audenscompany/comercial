@@ -29166,7 +29166,7 @@ function dicaToast(msg){var t=document.getElementById('dica-toast');if(!t)return
 function _dicaGerarProgramacaoBase(){
   var slots=[];
   var d=new Date();d.setHours(0,0,0,0);
-  for(var i=0;i<30;i++){ // 1 Reels por dia, 30 dias
+  for(var i=0;i<90;i++){ // 1 Reels por dia, 90 dias (seg-dom)
     var iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     slots.push({data:iso,dow:d.getDay(),titulo:'',legenda:'',status:'vazio'});
     d.setDate(d.getDate()+1);
@@ -29198,9 +29198,21 @@ function dicaProgramar10(){
   dicaToast('10 Reels programados · 1 por dia ✔');
 }
 function dicaResetProgramacao(){
-  if(_dicaProg.length&&!confirm('Recriar a programação como 1 Reels por dia a partir de hoje? Os títulos já agendados serão perdidos.'))return;
-  _dicaProg=_dicaGerarProgramacaoBase();
-  _dicaSalvaProg();dicaRenderProg();dicaToast('Programação diária criada');
+  // Torna a programação diária (seg-dom) por 90 dias, PRESERVANDO o que já está agendado/postado.
+  var byDate={};
+  (_dicaProg||[]).forEach(function(s){ if(s&&s.data) byDate[(''+s.data).slice(0,10)]=s; });
+  var novo=[];
+  var d=new Date();d.setHours(0,0,0,0);
+  for(var i=0;i<90;i++){
+    var iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(byDate[iso]){ novo.push(byDate[iso]); delete byDate[iso]; }
+    else novo.push({data:iso,dow:d.getDay(),titulo:'',legenda:'',status:'vazio'});
+    d.setDate(d.getDate()+1);
+  }
+  // mantém dias passados que já têm conteúdo (histórico), no início
+  var passados=Object.keys(byDate).filter(function(k){var s=byDate[k];return s&&(s.titulo||(s.status&&s.status!=='vazio'));}).sort();
+  _dicaProg=passados.map(function(k){return byDate[k];}).concat(novo);
+  _dicaSalvaProg();dicaRenderProg();dicaToast('1 Reels por dia (seg-dom) — histórico preservado ✔');
 }
 
 // Usa um título — coloca no editor e no próximo slot vazio da programação
@@ -29364,7 +29376,7 @@ function renderDicas(){
     '<div style="font-size:12px;color:var(--muted);margin-top:2px;">Título no vídeo (10-15s) · legenda ensina o tema · 1 Reels por dia</div></div>'+
     '<div style="display:flex;gap:8px;">'+
       '<button onclick="dicaProgramar10()" style="padding:8px 14px;border-radius:8px;background:linear-gradient(135deg,#e1306c,#7c3aed);border:none;color:#fff;font-size:12px;cursor:pointer;font-weight:700;"><i class="ti ti-sparkles"></i> Programar 10 sugeridos</button>'+
-      '<button onclick="dicaResetProgramacao()" style="padding:8px 14px;border-radius:8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-calendar-plus"></i> Recriar (1/dia)</button>'+
+      '<button onclick="dicaResetProgramacao()" style="padding:8px 14px;border-radius:8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-calendar-plus"></i> 1 Reels/dia (seg-dom)</button>'+
     '</div>'+
   '</div>';
   // Tabs
