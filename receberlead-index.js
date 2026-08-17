@@ -439,6 +439,12 @@ async function handleReceberLead(req, res) {
   const ad = pick(body, ["ad", "Ad", "AD", "utm_content", "ad_name", "adName", "anuncio"]);
   const campanha = pick(body, ["campanha", "campaign", "utm_campaign", "Campaign"]);
   const conjunto = pick(body, ["conjunto", "adset", "ad_set", "utm_medium", "Conjunto", "posicionamento"]);
+  const segmento = pick(body, ["segmento", "segment"]);
+  const canal = pick(body, ["canal", "channel"]);
+  const desafio = pick(body, ["desafio", "dor", "gargalo", "challenge"]);
+  const investimento = pick(body, ["investimento", "disposto_investir"]);
+  const jaInvestiu = pick(body, ["ja_investiu", "investiu", "ja_investiu_trafego"]);
+  const instagram = pick(body, ["instagram", "insta", "instagram_handle"]);
 
   const isBrowser = (req.headers.accept || "").includes("text/html");
 
@@ -468,6 +474,12 @@ async function handleReceberLead(req, res) {
     ad: String(ad || ""),
     campanha: String(campanha || ""),
     conjunto: String(conjunto || ""),
+    segmento: String(segmento || ""),
+    canal: String(canal || ""),
+    desafio: String(desafio || ""),
+    investimento: String(investimento || ""),
+    ja_investiu: String(jaInvestiu || ""),
+    instagram: String(instagram || ""),
     _source: String(origem),
     _createdAt: Date.now(),
   };

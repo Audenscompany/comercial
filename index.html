@@ -1073,6 +1073,12 @@ function ensureKanbanEntry(lead){
         ad:lead.ad||'',
         campanha:lead.campanha||'',
         conjunto:lead.conjunto||'',
+        segmento:lead.segmento||'',
+        canal:lead.canal||'',
+        desafio:lead.desafio||'',
+        investimento:lead.investimento||'',
+        ja_investiu:lead.ja_investiu||'',
+        instagram:lead.instagram||'',
         _source:lead._source||'',
         _createdAt:lead._createdAt||Date.now(),
         status:(/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo'),
@@ -1495,6 +1501,8 @@ function copiarTelefoneKanban(ev,tel){
 function abrirDetalheKanban(key){
   var e=kanbanData[key];
   if(!e) return;
+  var _qlead=(allLeads||[]).find(function(l){return (l.telefone||'').replace(/\D/g,'')===String(key);})||{};
+  function qf(n){ return (e[n]!=null&&e[n]!=='')?e[n]:(_qlead[n]||''); }
 
   // Resolve followup data for this meeting (if any)
   var fuData=null;
@@ -1571,6 +1579,12 @@ function abrirDetalheKanban(key){
           ' <a href="'+waLink(e.telefone)+'" target="_blank" style="color:var(--green);font-size:12px;text-decoration:none;" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i> WA</a>':null
       )+
       row('currency-dollar','Faturamento',e.faturamento)+
+      (function(){var d=qf('desafio');return d?'<div style="margin:8px 0;padding:11px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:10px;"><div style="font-size:10px;font-weight:700;letter-spacing:.8px;color:#f59e0b;margin-bottom:3px;"><i class="ti ti-flame"></i> DOR / GARGALO PRINCIPAL</div><div style="font-size:14px;color:var(--white);font-weight:600;">'+d+'</div></div>':'';})()+
+      row('building-store','Segmento',qf('segmento'))+
+      row('shopping-cart','Como vende hoje',qf('canal'))+
+      row('trending-up','Disposto a investir',(function(){var v=String(qf('investimento')||'');if(v==='sim')return'Sim';if(v==='nao'||v==='não')return'Não';return v;})())+
+      row('robot','Já investiu em tráfego',qf('ja_investiu'))+
+      row('brand-instagram','Instagram',qf('instagram'),(function(){var ig=String(qf('instagram')||'').trim();if(!ig)return null;var hh=ig.replace(/^@/,'');return '<a href="https://instagram.com/'+hh+'" target="_blank" style="color:var(--purple3);text-decoration:none;">@'+hh+'</a>';})())+
       row('ad-2','Anúncio (Ad)',e.ad)+
       row('speakerphone','Campanha',e.campanha)+
       row('map-pin','Cidade / Estado',e.cidade?(e.cidade+(e.estado?' – '+e.estado:'')):null)+
