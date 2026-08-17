@@ -29308,7 +29308,7 @@ function dicaRenderProg(){
   if(!_dicaProg.length){box.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px;">Nenhuma programação criada.<br><button onclick="dicaResetProgramacao()" style="margin-top:12px;padding:9px 16px;background:#7c3aed;border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;">Criar programação (1/dia)</button></div>';return;}
   var preench=_dicaProg.filter(function(s){return s.status!=='vazio';}).length;
   var postados=_dicaProg.filter(function(s){return s.status==='postado';}).length;
-  var semana=null,html='';
+  var semana=null,semNum=0,html='';
   html+='<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">'+
     '<div style="flex:1;min-width:120px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.25);border-radius:10px;padding:10px 14px;"><div style="font-size:22px;font-weight:800;color:#a78bfa;">'+_dicaProg.length+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Slots (90 dias)</div></div>'+
     '<div style="flex:1;min-width:120px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px 14px;"><div style="font-size:22px;font-weight:800;color:#f59e0b;">'+preench+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Planejados</div></div>'+
@@ -29316,8 +29316,8 @@ function dicaRenderProg(){
   '</div>';
   _dicaProg.forEach(function(s,i){
     var dt=new Date(s.data+'T12:00:00');
-    var wk=_getWeekNum(dt,i);
-    if(wk!==semana){semana=wk;html+='<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin:14px 0 6px;">Semana '+(Math.floor(i/2)+1)+'</div>';}
+    var wk=_dicaWeekKey(dt);
+    if(wk!==semana){semana=wk;semNum++;html+='<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin:14px 0 6px;">Semana '+semNum+'</div>';}
     var st=_DICA_STATUS[s.status]||_DICA_STATUS.vazio;
     var diaLbl=dt.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','')+' '+dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
     html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);margin-bottom:6px;">'+
@@ -29332,7 +29332,7 @@ function dicaRenderProg(){
   });
   box.innerHTML=html;
 }
-function _getWeekNum(dt,i){return Math.floor(i/2);}
+function _dicaWeekKey(dt){var d=new Date(dt);d.setHours(0,0,0,0);var dow=(d.getDay()+6)%7;d.setDate(d.getDate()-dow);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 
 // ===== TABS =====
 function dicaSwitchTab(t){
