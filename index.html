@@ -10192,9 +10192,9 @@ function renderReunioes(){
         // Action buttons
         H+='<div style="display:flex;gap:6px;flex-shrink:0;">';
         if(!hasResult&&isPast){
-          H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],false);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"><i class="ti ti-clipboard-check" style="font-size:12px;"></i> Registrar</button>';
+          H+='<button onclick="_openFuById(\''+m.id+'\',false);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"><i class="ti ti-clipboard-check" style="font-size:12px;"></i> Registrar</button>';
         } else if(hasResult){
-          H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;white-space:nowrap;"><i class="ti ti-pencil" style="font-size:12px;"></i> Editar resultado</button>';
+          H+='<button onclick="_openFuById(\''+m.id+'\',true);" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;white-space:nowrap;"><i class="ti ti-pencil" style="font-size:12px;"></i> Editar resultado</button>';
         }
         H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 10px;font-size:12px;cursor:pointer;" title="Editar reunião"><i class="ti ti-settings"></i></button>';
         H+='</div>';
@@ -10272,9 +10272,9 @@ function renderReunioes(){
       // Actions
       H+='<td style="padding:10px 12px;"><div style="display:flex;gap:4px;">';
       if(!hasResult){
-        H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],false);" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:5px 9px;font-size:10px;font-weight:700;cursor:pointer;" title="Registrar resultado"><i class="ti ti-clipboard-check"></i></button>';
+        H+='<button onclick="_openFuById(\''+m.id+'\',false);" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:5px 9px;font-size:10px;font-weight:700;cursor:pointer;" title="Registrar resultado"><i class="ti ti-clipboard-check"></i></button>';
       } else {
-        H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:6px;color:var(--purple3);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar resultado"><i class="ti ti-edit"></i></button>';
+        H+='<button onclick="_openFuById(\''+m.id+'\',true);" style="background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:6px;color:var(--purple3);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar resultado"><i class="ti ti-edit"></i></button>';
       }
       H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:6px;color:var(--muted);padding:5px 9px;font-size:10px;cursor:pointer;" title="Editar dados da reunião"><i class="ti ti-settings"></i></button>';
       H+='<button onclick="_deleteReuniao(\''+m.id+'\')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:6px;color:#f87171;padding:5px 9px;font-size:10px;cursor:pointer;" title="Apagar reuni\u00e3o"><i class="ti ti-trash"></i></button>';
@@ -10373,9 +10373,12 @@ function _rvFilter(){
   });
 }
 
+function _openFuById(mid,edit){var k=_resolveMeetingKey(mid);var m=meetings[k];if(!m){alert('Reunião não encontrada. Recarregue a página.');return;}openFollowup(m,!!edit);}
+function _resolveMeetingKey(mid){if(meetings[mid])return mid;var found='';Object.keys(meetings||{}).forEach(function(k){var mm=meetings[k];if(mm&&mm.id===mid)found=k;});return found||mid;}
 function _reunLocalInput(iso){var d=iso?new Date(iso):new Date();if(isNaN(d.getTime()))d=new Date();var z=function(n){return String(n).padStart(2,'0');};return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes());}
 function _openReunEdit(mid){
-  var m=meetings[mid];if(!m)return;
+  mid=_resolveMeetingKey(mid);
+  var m=meetings[mid];if(!m){alert('Reunião não encontrada (registro sem chave). Recarregue a página.');return;}
   var closer=normCloserName(m.responsavel||'')||'';
   var sdr=m.sdrName||m.sdr||'';
   var origen=m.origem||'';
@@ -17528,7 +17531,7 @@ function renderReunioesPersonal(){
         '<td style="white-space:nowrap;">'+
           '<button class="btn btn-edit" onclick="abrirEditarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;"><i class="ti ti-edit"></i></button>'+
           (!followups[m.id]?' <button class="btn btn-primary" onclick="openFollowup(meetings[\''+m.id+'\'])" style="font-size:11px;padding:4px 8px;"><i class="ti ti-flag-check"></i></button>':
-           ' <button class="btn btn-outline" onclick="openFollowup(meetings[\''+m.id+'\'],true)" style="font-size:11px;padding:4px 8px;"><i class="ti ti-edit-circle"></i></button>'+
+           ' <button class="btn btn-outline" onclick="_openFuById(\''+m.id+'\',true)" style="font-size:11px;padding:4px 8px;"><i class="ti ti-edit-circle"></i></button>'+
            ' <button class="btn btn-outline" onclick="deletarFollowup(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--amber);border-color:rgba(245,158,11,0.4);" title="Remover resultado"><i class="ti ti-eraser"></i></button>')+
           ' <button class="btn btn-outline" onclick="reenviarConfirmacaoReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--green);border-color:rgba(34,197,94,0.4);"><i class="ti ti-brand-whatsapp"></i></button>'+
           ' <button class="btn btn-outline" onclick="apagarReuniao(\''+m.id+'\')" style="font-size:11px;padding:4px 8px;color:var(--red);border-color:rgba(239,68,68,0.4);"><i class="ti ti-trash"></i></button>'+
