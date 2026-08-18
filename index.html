@@ -8293,7 +8293,7 @@ async function dispararWebhookVenda(id){
     var proxyResp=await fetch(RECEBERLEAD_URL+'/cockpit-venda?secret='+WEBHOOK_SECRET,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({url:webhookVendaUrl,secret:webhookVendaSecret,payload:payload})
+      body:JSON.stringify({url:(webhookVendaUrl||'').trim(),secret:(webhookVendaSecret||'').trim(),payload:payload})
     });
     var pj={}; try{pj=await proxyResp.json();}catch(e2){}
     if(!proxyResp.ok){throw new Error('Proxy indisponível (HTTP '+proxyResp.status+'). Verifique sua conexão.');}
@@ -8302,7 +8302,7 @@ async function dispararWebhookVenda(id){
       console.error('[Webhook] status',st,'resposta:',eb,'payload:',JSON.stringify(payload));
       if(st===0){throw new Error('Sistema inacessível ("Failed to fetch" no servidor). Confira a URL em Configurações: '+webhookVendaUrl);}
       if(st===400){throw new Error('HTTP 400 — '+eb);}
-      if(st===401){throw new Error('Cockpit recusou o token (401). Token enviado: '+((webhookVendaSecret||'').length)+' caracteres. Resposta do Cockpit: '+(eb||'(vazia)'));}
+      if(st===401){var _sl=(webhookVendaSecret||'').length,_st=(webhookVendaSecret||'').trim().length;throw new Error('Cockpit recusou o token (401). Token: '+_st+' chars'+(_sl!==_st?' (tinha '+(_sl-_st)+' invisiveis, ja limpei)':' (sem espaços extras)')+'. Resposta: '+(eb||'(vazia)'));}
       if(st===404){throw new Error('Endpoint não encontrado (HTTP 404). URL: '+webhookVendaUrl);}
       if(st===405){throw new Error('Método POST não permitido (HTTP 405). Confira a URL.');}
       if(st===503){throw new Error('Webhook ainda não configurado no sistema (HTTP 503).');}
@@ -18294,8 +18294,8 @@ function salvarWebhookUrl(){ salvarWebhookConfig(); } // alias legado
 function salvarWebhookConfig(){
   var url=(document.getElementById('cfg-webhook-url')?document.getElementById('cfg-webhook-url').value||'':'').trim();
   var secret=(document.getElementById('cfg-webhook-secret')?document.getElementById('cfg-webhook-secret').value||'':'').trim();
-  webhookVendaUrl=url;
-  webhookVendaSecret=secret;
+  webhookVendaUrl=(url||'').trim();
+  webhookVendaSecret=(secret||'').trim();
   localStorage.setItem('webhookVendaUrl',url);
   localStorage.setItem('webhookVendaSecret',secret);
   // Salva no Firebase para que a página pública de assinatura (e outros usuários) também acesse
