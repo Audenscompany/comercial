@@ -4371,7 +4371,7 @@ function buildNav(){
     {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
-    {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
+    {id:'reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
     {id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'SDR',icon:'ti-report-analytics',items:[
@@ -4532,7 +4532,7 @@ function showPage(id){
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
     bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'analise-lp':renderAnaliseLP,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'motivacional':renderMotivacional,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,'cal-conteudo':renderContentCalendar,
     calendario:renderCalendario,config:renderConfig,'plano-carreira':renderPlanoCarreira,
-    'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
+    'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinDashboard,'fin-dashboard':renderFinDashboard,'fin-receitas':renderFinReceitas,'fin-despesas':renderFinDespesas,'fin-lancamentos':renderFinLancamentos,'fin-contas':renderFinContas,
@@ -4549,8 +4549,7 @@ function showPage(id){
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
-    if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
-    if(id==='reunioes'||id==='reunioes-noshow') setTimeout(loadFunilReunioes,50);
+    if(id==='reunioes'||id==='reunioes-noshow'||id==='sdr-reunioes') setTimeout(loadFunilReunioes,50);
     if(id==='reativacao') setTimeout(loadReativacao,50);
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
@@ -9892,7 +9891,6 @@ function renderHistBase(rows,title){
 
 // ===== REUNIOES =====
 function renderReunioes(){
-  if(CU&&CU.role==='atendente')return renderReunioesPersonal();
   var now=new Date();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
   var filtY=_reunMesFiltro?_reunMesFiltro.y:now.getFullYear();
