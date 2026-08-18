@@ -1062,8 +1062,11 @@ function ensureKanbanEntry(lead){
   if(!fbDb && !initFirebase()) return;
   var tel=(lead.telefone||'').replace(/\D/g,'');
   var key=(tel||'lead_'+(lead._createdAt||Date.now())).replace(/[.#$\[\]]/g,'_');
+  var LOW_FAIXAS=['ate-15','0-15','ate-20'];
+  var isLowBand=LOW_FAIXAS.indexOf(String(lead.faixa||''))>=0;  /* <15k quiz / <20k LP -> arquiva, sem tarefas */
   var novoCard={
     nome:lead.nome||'',
+    faixa:lead.faixa||'',
     telefone:tel,
     faturamento:lead.faturamento||'',
     empresa:lead.empresa||'',
@@ -1080,7 +1083,7 @@ function ensureKanbanEntry(lead){
     instagram:lead.instagram||'',
     _source:lead._source||'',
     _createdAt:lead._createdAt||Date.now(),
-    status:(/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo'),
+    status:(isLowBand ? 'arquivado' : (/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo')),
     statusAt:Date.now(),
     origem:'Tráfego'
   };
@@ -1095,7 +1098,7 @@ function ensureKanbanEntry(lead){
     if(err){ console.error('ensureKanbanEntry tx',err); return; }
     if(!committed) return;             // card já existia -> nada a fazer
     // Card recém-criado por nós: segue com cadência de tarefas + planilha
-    generateCadenciaTasks(lead,key);
+    if(!isLowBand) generateCadenciaTasks(lead,key);
     // Salvar na planilha de leads (substitui Make.com)
     // Marca imediatamente para evitar re-sync pelo listener enquanto a chamada está em andamento
     _syncingLeads[key] = true;
