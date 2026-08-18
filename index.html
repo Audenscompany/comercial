@@ -9317,9 +9317,10 @@ async function generateContratoDocx(dados){
       if(dados.plano!=='premium') formaPagamento+=adicTxt;
     }
     // Lista dinâmica p/ a cláusula 1.2 (loop docxtemplater {#adicionaisSel}) — só os selecionados no pop-up
-    var adicionaisSel=(dados.adicionais&&dados.adicionais.length)
+    var temAdicionais=!!(dados.adicionais&&dados.adicionais.length);
+    var adicionaisSel=temAdicionais
       ? dados.adicionais.map(function(a,i){var per=(a.periodo==='ano')?'/ano':'/mês';return {linha:String.fromCharCode(97+i)+') '+a.nome+' — R$ '+fmtMoeda(a.valor)+per+(i===dados.adicionais.length-1?'.':';')};})
-      : [{linha:'Nenhum serviço adicional contratado.'}];
+      : [];
 
     doc.render({
       nome_cliente:dados.nomeCliente||'',
@@ -9330,6 +9331,8 @@ async function generateContratoDocx(dados){
       forma_pagamento:formaPagamento,
       adicionais:(adicTxt||'').trim(),
       adicionaisSel:adicionaisSel,
+      temAdicionais:temAdicionais,
+      clausulaMidia:(temAdicionais?'1.3':'1.2'),
       mmr:dados.tipoValor==='mmr'
     });
 
