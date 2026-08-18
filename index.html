@@ -1062,56 +1062,63 @@ function ensureKanbanEntry(lead){
   if(!fbDb && !initFirebase()) return;
   var tel=(lead.telefone||'').replace(/\D/g,'');
   var key=(tel||'lead_'+(lead._createdAt||Date.now())).replace(/[.#$\[\]]/g,'_');
-  fbDb.ref('kanban/'+key).once('value').then(function(snap){
-    if(!snap.exists()){
-      fbDb.ref('kanban/'+key).set({
-        nome:lead.nome||'',
-        telefone:tel,
-        faturamento:lead.faturamento||'',
-        empresa:lead.empresa||'',
-        cidade:lead.cidade||'',
-        email:lead.email||'',
-        ad:lead.ad||'',
-        campanha:lead.campanha||'',
-        conjunto:lead.conjunto||'',
-        segmento:lead.segmento||'',
-        canal:lead.canal||'',
-        desafio:lead.desafio||'',
-        investimento:lead.investimento||'',
-        ja_investiu:lead.ja_investiu||'',
-        instagram:lead.instagram||'',
-        _source:lead._source||'',
-        _createdAt:lead._createdAt||Date.now(),
-        status:(/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo'),
-        statusAt:Date.now(),
-        origem:'Tráfego'
-      });
-      // Lead qualificado (>= R$20 mil) -> gera cadencia de tarefas para o Joao
-      generateCadenciaTasks(lead,key);
-      // Salvar na planilha de leads (substitui Make.com)
-      // Marca imediatamente para evitar re-sync pelo listener enquanto a chamada está em andamento
-      _syncingLeads[key] = true;
-      appendLeadToSheets(lead, key).then(function(ok){
-        if(ok){
-          delete _syncingLeads[key];
-        } else {
-          // Retry: só se ainda não foi sincronizado por outro caminho
-          setTimeout(function(){
-            if(kanbanData[key]&&kanbanData[key]._sheetSynced){delete _syncingLeads[key];return;}
-            appendLeadToSheets(lead, key).then(function(ok2){
-              if(ok2){delete _syncingLeads[key];}
-              else{
-                setTimeout(function(){
-                  if(kanbanData[key]&&kanbanData[key]._sheetSynced){delete _syncingLeads[key];return;}
-                  appendLeadToSheets(lead, key).then(function(){delete _syncingLeads[key];});
-                }, 10000);
-              }
-            });
-          }, 4000);
-        }
-      });
-    }
-  }).catch(function(e){console.error('ensureKanbanEntry error',e);});
+  var novoCard={
+    nome:lead.nome||'',
+    telefone:tel,
+    faturamento:lead.faturamento||'',
+    empresa:lead.empresa||'',
+    cidade:lead.cidade||'',
+    email:lead.email||'',
+    ad:lead.ad||'',
+    campanha:lead.campanha||'',
+    conjunto:lead.conjunto||'',
+    segmento:lead.segmento||'',
+    canal:lead.canal||'',
+    desafio:lead.desafio||'',
+    investimento:lead.investimento||'',
+    ja_investiu:lead.ja_investiu||'',
+    instagram:lead.instagram||'',
+    _source:lead._source||'',
+    _createdAt:lead._createdAt||Date.now(),
+    status:(/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo'),
+    statusAt:Date.now(),
+    origem:'Tráfego'
+  };
+  // TRANSAÇÃO ATÔMICA: cria o card só se ele ainda NÃO existe. Se já existe — mesmo
+  // que o webhook do Calendly o tenha acabado de criar/mover pra "reunião" um instante
+  // antes — a transação aborta e NÃO sobrescreve. Elimina a corrida webhook × board
+  // que rebaixava cards já agendados de volta pra "qualificado".
+  fbDb.ref('kanban/'+key).transaction(function(cur){
+    if(cur===null) return novoCard;   // não existe -> cria
+    return;                            // já existe -> aborta (não mexe no status)
+  }, function(err, committed, snap){
+    if(err){ console.error('ensureKanbanEntry tx',err); return; }
+    if(!committed) return;             // card já existia -> nada a fazer
+    // Card recém-criado por nós: segue com cadência de tarefas + planilha
+    generateCadenciaTasks(lead,key);
+    // Salvar na planilha de leads (substitui Make.com)
+    // Marca imediatamente para evitar re-sync pelo listener enquanto a chamada está em andamento
+    _syncingLeads[key] = true;
+    appendLeadToSheets(lead, key).then(function(ok){
+      if(ok){
+        delete _syncingLeads[key];
+      } else {
+        // Retry: só se ainda não foi sincronizado por outro caminho
+        setTimeout(function(){
+          if(kanbanData[key]&&kanbanData[key]._sheetSynced){delete _syncingLeads[key];return;}
+          appendLeadToSheets(lead, key).then(function(ok2){
+            if(ok2){delete _syncingLeads[key];}
+            else{
+              setTimeout(function(){
+                if(kanbanData[key]&&kanbanData[key]._sheetSynced){delete _syncingLeads[key];return;}
+                appendLeadToSheets(lead, key).then(function(){delete _syncingLeads[key];});
+              }, 10000);
+            }
+          });
+        }, 4000);
+      }
+    });
+  }, false); // applyLocally:false -> não pisca status errado na UI durante a transação
 }
 
 // Sync Firebase → Planilha: busca telefones já presentes na sheet e só envia os que faltam
