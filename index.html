@@ -10354,6 +10354,7 @@ function _openReunEdit(mid){
     +'<select id="_rEdit_origem" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;padding:8px 10px;font-size:12px;outline:none;">'+origOpts+'</select></div>'
     +'</div>'
     +'<div style="display:flex;gap:8px;margin-top:18px;">'
+    +'<button onclick="apagarReuniao(\''+mid+'\')" title="Apagar reunião" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:8px;color:#f87171;padding:9px 12px;font-size:12px;cursor:pointer;"><i class="ti ti-trash"></i></button>'
     +'<button onclick="document.getElementById(\'_reunEditModal\').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--muted);padding:9px;font-size:12px;cursor:pointer;">Cancelar</button>'
     +'<button onclick="_saveReunEdit(\''+mid+'\')" style="flex:2;background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:9px;font-size:12px;font-weight:700;cursor:pointer;">Salvar alterações</button>'
     +'</div></div></div>';
@@ -17931,6 +17932,7 @@ function apagarReuniao(mid){
   var m = meetings[mid];
   if(!m) return;
   if(!confirm('Apagar a reunião de "'+(m.nome||'')+'"? Essa ação não pode ser desfeita.')) return;
+  var _rem=document.getElementById('_reunEditModal');if(_rem)_rem.remove();
   delete meetings[mid];
   saveAll();
   if(fbDb || initFirebase()){ fbDb.ref('meetings/'+mid).remove(); }
