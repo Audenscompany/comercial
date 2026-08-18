@@ -5845,7 +5845,8 @@ async function confirmarAssinatura(id){
       var wPayload={
         cliente:{nome:sd.cliente||'',telefone:(sd.telefone||'').replace(/\D/g,''),cnpj:sd.cnpj||vd.cnpj||''},
         contrato:{data_inicio:vd.dataInicio||'',plano:planoMapped,
-          duracao_meses:planoDur,tipo_valor:isTcv?'TCV':'MRR',mensalidade:mensalidade},
+          duracao_meses:planoDur,tipo_valor:isTcv?'TCV':'MRR',mensalidade:mensalidade,
+          entregaveis:(typeof _planoEntregaveis==='function'?_planoEntregaveis(planoRaw):[])},
         comercial:{closer:com.closer||'',sdr_nome:com.sdrNome||'',origem:com.origem||''}
       };
       var wHeaders={'Content-Type':'application/json'};
@@ -8230,7 +8231,8 @@ async function dispararWebhookVenda(id){
         plano:planoMapped,
         duracao_meses:planoDur,
         tipo_valor:isTcv?'TCV':'MRR',
-        mensalidade:mensalidade
+        mensalidade:mensalidade,
+        entregaveis:_planoEntregaveis(planoRaw)
       },
       comercial:{
         closer:match?match.responsavel||'':'',
@@ -8937,6 +8939,9 @@ var CONTRATO_TEMPLATES={
   premium:'assets/contratos/contrato-premium.docx',
   elite:'assets/contratos/contrato-elite.docx'
 };
+// Entregáveis por plano (extraídos dos contratos assinados) — enviados ao sistema/Cockpit
+var PLANO_ENTREGAVEIS={"starter": ["Gestão de Tráfego Pago Especializada (Meta Ads)", "Edição de até 3 vídeos para tráfego", "1 Otimização do Cardápio Digital", "3 Otimizações de Tráfego (dias 15, 30 e 45)", "1 Campanha de vendas com 3 anúncios", "Suporte via WhatsApp em horário comercial", "Relatório semanal de métricas"], "marketplaces": ["Gestão de iFood", "Gestão de 99Food", "Gestão de Keeta", "Otimização e organização de cardápio digital nos marketplaces"], "premium": ["Gestão de tráfego pago (Meta Ads)", "Criação, edição e otimização de anúncios", "Organização e otimização de cardápio digital", "Disparo de mensagens e ações de relacionamento", "Relatórios periódicos com métricas e análises de desempenho", "Desenvolvimento de produtos, combos e promoções", "Acesso ao curso \"Feed que dá Fome\"", "Acesso à pasta de referências estratégicas da Audens Company", "Suporte via WhatsApp em horário comercial", "Bônus (sem custo): Gestão de iFood e 99Food", "Bônus (sem custo): Criação de Cardápio Digital"], "elite": ["Criação e gestão de campanhas de tráfego pago no Meta Ads", "Criação e gestão de campanhas no Google Ads e Google Meu Negócio", "Criação, edição e otimização de até 6 criativos mensais", "Desenvolvimento de estratégias de captação de novos clientes", "Criação e otimização de cardápio digital", "Estruturação completa no CRM Repediu (até 5 campanhas ativas/mês)", "Campanhas de reativação de clientes via WhatsApp", "Fluxos de automação (aniversariantes, inativos, salão e pós-venda)", "Segmentação estratégica da base para promoções e campanhas", "Gestão e otimização de marketplaces", "Relatórios periódicos com métricas e resultados mensais", "1 acompanhamento financeiro e suporte em precificação com o CEO Lucas Siqueira", "1 acompanhamento estratégico de métricas com o CEO Arthur Menezes", "Suporte via WhatsApp em horário comercial", "Implementação de social media do setup"]};
+function _planoEntregaveis(planoRaw){var k=(planoRaw||'').toLowerCase();if(k==='marketplace')k='marketplaces';return PLANO_ENTREGAVEIS[k]||[];}
 // Catálogo de serviços adicionais (valores mensais)
 var ADICIONAIS_CATALOGO=[
   {id:'ifood',nome:'Gestão de iFood',valor:600},
