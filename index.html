@@ -9313,8 +9313,13 @@ async function generateContratoDocx(dados){
       var nomes=dados.adicionais.map(function(a){return a.nome;});
       var listaTxt=nomes.length>1?(nomes.slice(0,-1).join(', ')+' e '+nomes[nomes.length-1]):nomes[0];
       adicTxt=' Serviços adicionais contratados: '+listaTxt+(dados.adicionaisValor?', no valor combinado de R$ '+fmtMoeda(dados.adicionaisValor)+' mensais, já incluído no valor total acima':'')+'.';
-      formaPagamento+=adicTxt;
+      // No Premium os adicionais já aparecem na cláusula 1.2 (loop); nos demais planos, na cláusula de pagamento
+      if(dados.plano!=='premium') formaPagamento+=adicTxt;
     }
+    // Lista dinâmica p/ a cláusula 1.2 (loop docxtemplater {#adicionaisSel}) — só os selecionados no pop-up
+    var adicionaisSel=(dados.adicionais&&dados.adicionais.length)
+      ? dados.adicionais.map(function(a,i){var per=(a.periodo==='ano')?'/ano':'/mês';return {linha:String.fromCharCode(97+i)+') '+a.nome+' — R$ '+fmtMoeda(a.valor)+per+(i===dados.adicionais.length-1?'.':';')};})
+      : [{linha:'Nenhum serviço adicional contratado.'}];
 
     doc.render({
       nome_cliente:dados.nomeCliente||'',
@@ -9324,6 +9329,7 @@ async function generateContratoDocx(dados){
       data_fim:fmtDataBR(dataFim),
       forma_pagamento:formaPagamento,
       adicionais:(adicTxt||'').trim(),
+      adicionaisSel:adicionaisSel,
       mmr:dados.tipoValor==='mmr'
     });
 
