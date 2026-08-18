@@ -1975,6 +1975,27 @@ async function handleRetorno(req, res) {
   return res.json({ ok: true });
 }
 
+// ===== Rota /cockpit-venda: proxy server-side p/ enviar a venda ao sistema externo =====
+// O navegador (CRM) chama esta rota (mesmo CORS do /agendar) e o servidor repassa
+// o POST ao sistema, evitando erro de CORS/mixed-content ("Failed to fetch").
+async function handleCockpitProxy(req, res) {
+  if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).send("Method Not Allowed"); }
+  if (!checaSecret(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
+  var body = req.body || {};
+  if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  var url = body.url, secret = body.secret, payload = body.payload || {};
+  if (!url) return res.status(400).json({ ok: false, error: "url_obrigatoria" });
+  try {
+    var headers = { "Content-Type": "application/json" };
+    if (secret) headers["Authorization"] = "Bearer " + secret;
+    var r = await fetch(url, { method: "POST", headers: headers, body: JSON.stringify(payload) });
+    var txt = ""; try { txt = await r.text(); } catch (e) {}
+    return res.status(200).json({ ok: (r.ok || r.status === 201), status: r.status, body: txt });
+  } catch (e) {
+    return res.status(200).json({ ok: false, status: 0, error: String((e && e.message) || e) });
+  }
+}
+
 http('receberLead', async (req, res) => {
   // CORS: o CRM (index.html) chama /agendar via fetch POST com
   // Content-Type: application/json, o que faz o navegador disparar um
@@ -2036,6 +2057,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/track") {
       return await handleTrack(req, res);
+    }
+    if (path === "/cockpit-venda") {
+      return await handleCockpitProxy(req, res);
     }
     return await handleReceberLead(req, res);
   } catch (err) {

@@ -8238,25 +8238,25 @@ async function dispararWebhookVenda(id){
         origem:match?match.origem||r.origem||'':r.origem||''
       }
     };
-    var headers={'Content-Type':'application/json'};
-    if(webhookVendaSecret) headers['Authorization']='Bearer '+webhookVendaSecret;
-    var resp=await fetch(webhookVendaUrl,{
+    // Envia via proxy do Cloud Function (evita CORS/mixed-content = "Failed to fetch")
+    var proxyResp=await fetch(RECEBERLEAD_URL+'/cockpit-venda?secret='+WEBHOOK_SECRET,{
       method:'POST',
-      headers:headers,
-      body:JSON.stringify(payload)
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url:webhookVendaUrl,secret:webhookVendaSecret,payload:payload})
     });
-    if(resp.status===400){
-      var errBody='';try{var errJ=await resp.json();errBody=JSON.stringify(errJ);}catch(e2){try{errBody=await resp.text();}catch(e3){}}
-      // Log payload for debugging
-      console.error('[Webhook 400] payload enviado:',JSON.stringify(payload,null,2));
-      console.error('[Webhook 400] resposta:',errBody);
-      throw new Error('HTTP 400 — '+errBody);
+    var pj={}; try{pj=await proxyResp.json();}catch(e2){}
+    if(!proxyResp.ok){throw new Error('Proxy indisponível (HTTP '+proxyResp.status+'). Verifique sua conexão.');}
+    if(!pj.ok){
+      var st=pj.status||0, eb=pj.body||pj.error||'';
+      console.error('[Webhook] status',st,'resposta:',eb,'payload:',JSON.stringify(payload));
+      if(st===0){throw new Error('Sistema inacessível ("Failed to fetch" no servidor). Confira a URL em Configurações: '+webhookVendaUrl);}
+      if(st===400){throw new Error('HTTP 400 — '+eb);}
+      if(st===401){throw new Error('Segredo inválido ou ausente (HTTP 401). Verifique o segredo em Configurações.');}
+      if(st===404){throw new Error('Endpoint não encontrado (HTTP 404). URL: '+webhookVendaUrl);}
+      if(st===405){throw new Error('Método POST não permitido (HTTP 405). Confira a URL.');}
+      if(st===503){throw new Error('Webhook ainda não configurado no sistema (HTTP 503).');}
+      throw new Error('HTTP '+st+' — '+eb);
     }
-    else if(resp.status===401){throw new Error('Segredo inválido ou ausente (HTTP 401). Verifique o segredo em Configurações.');}
-    else if(resp.status===404){throw new Error('Endpoint não encontrado (HTTP 404). URL configurada: '+webhookVendaUrl);}
-    else if(resp.status===405){throw new Error('Método POST não permitido (HTTP 405). Verifique se a URL está correta: '+webhookVendaUrl.replace(/^https?:\/\/[^/]+/,''));}
-    else if(resp.status===503){throw new Error('Webhook ainda não configurado no Cockpit (HTTP 503).');}
-    else if(!resp.ok && resp.status!==201){throw new Error('HTTP '+resp.status+' — '+resp.statusText);}
     // Marca que o webhook foi disparado neste contrato
     fbDb.ref('assinaturas/'+id).update({_webhookDisparado:true,_webhookTs:Date.now()});
     if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Enviado ✓';btn.style.background='rgba(16,185,129,0.15)';btn.style.color='#10b981';}
