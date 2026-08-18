@@ -8253,7 +8253,7 @@ async function dispararWebhookVenda(id){
       console.error('[Webhook] status',st,'resposta:',eb,'payload:',JSON.stringify(payload));
       if(st===0){throw new Error('Sistema inacessível ("Failed to fetch" no servidor). Confira a URL em Configurações: '+webhookVendaUrl);}
       if(st===400){throw new Error('HTTP 400 — '+eb);}
-      if(st===401){throw new Error('Segredo inválido ou ausente (HTTP 401). Verifique o segredo em Configurações.');}
+      if(st===401){throw new Error('Cockpit recusou o token (401). Token enviado: '+((webhookVendaSecret||'').length)+' caracteres. Resposta do Cockpit: '+(eb||'(vazia)'));}
       if(st===404){throw new Error('Endpoint não encontrado (HTTP 404). URL: '+webhookVendaUrl);}
       if(st===405){throw new Error('Método POST não permitido (HTTP 405). Confira a URL.');}
       if(st===503){throw new Error('Webhook ainda não configurado no sistema (HTTP 503).');}
