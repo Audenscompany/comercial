@@ -1318,6 +1318,28 @@ function moveKanbanCard(key,newStatus){
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
 }
 // ===== Agendamento de reuniao (popup de data/hora ao mover para "Reuniao Agendada") =====
+function registrarVendaDireta(key){
+  var e=(typeof kanbanData!=='undefined'&&kanbanData[key])||{};
+  var telRaw=(e.telefone||'').replace(/\D/g,'');
+  // Se já existe reunião desse lead, abre o resultado dela (não duplica)
+  var match=null;
+  Object.keys(meetings||{}).forEach(function(mid){var m=meetings[mid];if(!m)return;var mt=(m.tel||'').replace(/\D/g,'');if(mt&&(mt===telRaw||mt.endsWith(telRaw)||telRaw.endsWith(mt))){if(!match||((m.dtISO||'')>(match.dtISO||'')))match=m;}});
+  if(match){
+    var jaFu=!!followups[match.id];
+    openFollowup(match,jaFu);
+    if(!jaFu){try{selectComp('sim');selectFU('sim');}catch(_){}}
+    return;
+  }
+  // Cria reunião sintética "venda direta" (sem processo de reunião) e abre o form em venda
+  var now=new Date();
+  var resp=e.responsavel||((typeof CU!=='undefined'&&CU)?(CU.closer||CU.name||''):'')||'';
+  var synId='vd_'+key+'_'+Date.now();
+  var synMeeting={id:synId,tel:telRaw,nome:e.nome||'',responsavel:resp,sdrName:e.sdr||'',sdr:e.sdr||'',origem:e.origem||'Manual',dtISO:now.toISOString(),dtDisplay:now.toLocaleDateString('pt-BR')+' '+now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),status:'done',kanbanKey:key,faturamentoLead:e.faturamento||'',_sintetico:true,_vendaDireta:true};
+  meetings[synId]=synMeeting;
+  try{saveMeetingFB(synId,synMeeting);}catch(_){}
+  openFollowup(synMeeting,false);
+  try{selectComp('sim');selectFU('sim');}catch(_){}
+}
 function abrirAgendarReuniao(key){
   var e=kanbanData[key];
   if(!e) return;
@@ -2142,6 +2164,7 @@ function kanbanCardHtml(e,idx){
       '<span style="flex:1"></span>'+
       '<button class="kbtn" title="Agendar Reuniao" onclick="abrirAgendarReuniao(\''+e._key+'\')"><i class="ti ti-calendar-event"></i></button>'+
       '<button class="kbtn" title="Editar Lead" onclick="abrirEditarLead(\''+e._key+'\')"><i class="ti ti-edit"></i></button>'+
+      '<button class="kbtn" title="Registrar venda (sem reunião)" onclick="registrarVendaDireta(\''+e._key+'\')" style="color:#22c55e;border-color:rgba(34,197,94,0.4);"><i class="ti ti-cash"></i></button>'+
       '<button class="kbtn" title="Arquivar" onclick="archiveKanbanCard(\''+e._key+'\')"><i class="ti ti-archive"></i></button>'+
       '<button class="kbtn kbtn-danger" title="Apagar" onclick="deleteKanbanCard(\''+e._key+'\')"><i class="ti ti-trash"></i></button>';
   }
