@@ -8993,21 +8993,22 @@ var PLANO_ENTREGAVEIS={"starter": ["Gestão de Tráfego Pago Especializada (Meta
 function _planoEntregaveis(planoRaw){var k=(planoRaw||'').toLowerCase();if(k==='marketplace')k='marketplaces';return PLANO_ENTREGAVEIS[k]||[];}
 // Catálogo de serviços adicionais (valores mensais)
 var ADICIONAIS_CATALOGO=[
-  {id:'ifood',nome:'Gestão de iFood',valor:600},
-  {id:'99food',nome:'Gestão de 99Food',valor:600},
-  {id:'precificacao',nome:'Planilha de Precificação',valor:97},
-  {id:'crm',nome:'Gestão de CRM – Estratégia Retenção Audens Pro + Repediu',valor:800},
-  {id:'cardapio',nome:'Criação de Cardápio Digital (até 5 campanhas/mês)',valor:300}
+  {id:'ifood',nome:'Gestão de iFood',valor:600,periodo:'mes'},
+  {id:'99food',nome:'Gestão de 99Food',valor:600,periodo:'mes'},
+  {id:'audensfinance',nome:'Audens Finance',valor:599,periodo:'ano'},
+  {id:'crm',nome:'Gestão de CRM – Retenção Audens Pro + Repediu (até 5 campanhas/mês)',valor:800,periodo:'mes'},
+  {id:'cardapio',nome:'Criação de Cardápio Digital',valor:300,periodo:'mes'},
+  {id:'promocoes',nome:'Estratégias de Promoções',valor:500,periodo:'mes'}
 ];
 function fuAdicionaisSelecionados(prefix){
   prefix=prefix||'fu';
   return ADICIONAIS_CATALOGO.filter(function(a){var el=document.getElementById(prefix+'-adic-'+a.id);return el&&el.checked;})
-    .map(function(a){return {id:a.id,nome:a.nome,valor:a.valor};});
+    .map(function(a){return {id:a.id,nome:a.nome,valor:a.valor,periodo:a.periodo||'mes'};});
 }
 function fuUpdateAdicionais(prefix){
   prefix=prefix||'fu';
   var sel=fuAdicionaisSelecionados(prefix);
-  var soma=sel.reduce(function(s,a){return s+a.valor;},0);
+  var soma=sel.filter(function(a){return (a.periodo||'mes')!=='ano';}).reduce(function(s,a){return s+a.valor;},0);
   var valEl=document.getElementById(prefix+'-adic-valor');
   if(valEl&&!valEl.dataset.userEdited)valEl.value=soma||'';
   var sugEl=document.getElementById(prefix+'-adic-sugestao');
@@ -9020,7 +9021,7 @@ function fuAdicionaisHTML(prefix){
     return '<label style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;background:rgba(123,47,255,0.05);border:1px solid rgba(123,47,255,0.15);cursor:pointer;margin-bottom:6px;">'+
       '<input type="checkbox" id="'+prefix+'-adic-'+a.id+'" onchange="fuUpdateAdicionais(\''+prefix+'\')" style="accent-color:var(--purple3);width:16px;height:16px;flex-shrink:0;">'+
       '<span style="flex:1;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:var(--white);">'+a.nome+'</span>'+
-      '<span style="font-size:12px;font-weight:700;color:var(--purple3);white-space:nowrap;">R$ '+a.valor.toLocaleString('pt-BR')+'/mês</span>'+
+      '<span style="font-size:12px;font-weight:700;color:var(--purple3);white-space:nowrap;">R$ '+a.valor.toLocaleString('pt-BR')+((a.periodo||'mes')==='ano'?'/ano':'/mês')+'</span>'+
     '</label>';
   }).join('');
   return '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
