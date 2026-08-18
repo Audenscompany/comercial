@@ -1994,6 +1994,15 @@ function renderKanban(){
       '<input type="text" id="kanban-search" placeholder="Buscar nome, empresa ou telefone…" oninput="filterKanbanSearch(this.value)" '+
         'style="background:transparent;border:none;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:13px;outline:none;width:230px;padding:0;" />'+
     '</div>'+
+    '<select id="kanban-fat" onchange="filterKanbanFat(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);font-family:var(--font-bc),sans-serif;font-size:13px;padding:7px 12px;outline:none;cursor:pointer;">'+
+      '<option value="">Todos faturamentos</option>'+
+      '<option value="lt20">Menos de R$20 mil</option>'+
+      '<option value="20-40">R$20 mil a R$40 mil</option>'+
+      '<option value="40-60">R$40 mil a R$60 mil</option>'+
+      '<option value="60-100">R$60 mil a R$100 mil</option>'+
+      '<option value="gte100">Acima de R$100 mil</option>'+
+      '<option value="gte40">Qualificado (R$40 mil+)</option>'+
+    '</select>'+
     syncBtn+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button>'+
     '<span class="badge b-purple" id="kanban-total-badge">'+entries.length+' leads</span>'+
     '</div></div>'+
@@ -2114,12 +2123,26 @@ function buildFunilMetricasHTML(){
     +'</div>';
 }
 
+var _kanbanFat='';
+function _fatInRange(v,range){
+  v=parseFloat(v)||0;
+  switch(range){
+    case 'lt20': return v<20000;
+    case '20-40': return v>=20000&&v<40000;
+    case '40-60': return v>=40000&&v<60000;
+    case '60-100': return v>=60000&&v<100000;
+    case 'gte100': return v>=100000;
+    case 'gte40': return v>=40000;
+    default: return true;
+  }
+}
+function filterKanbanFat(v){_kanbanFat=v||'';var si=document.getElementById('kanban-search');filterKanbanSearch(si?si.value:'');}
 function filterKanbanSearch(q){
   q=(q||'').trim().toLowerCase();
   var cards=document.querySelectorAll('.kanban-card');
   var colCounts={};
   cards.forEach(function(card){
-    var match=!q||(card.getAttribute('data-search')||'').indexOf(q)>=0;
+    var match=(!q||(card.getAttribute('data-search')||'').indexOf(q)>=0)&&_fatInRange(card.getAttribute('data-fat'),_kanbanFat);
     card.style.display=match?'':'none';
     var col=card.closest('[data-colid]');
     if(col){var cid=col.getAttribute('data-colid');colCounts[cid]=(colCounts[cid]||0)+(match?1:0);}
@@ -2131,8 +2154,9 @@ function filterKanbanSearch(q){
     var body=col.querySelector('.kanban-col-body');
     var emptyOrig=body?body.querySelector('.kanban-empty:not(.kanban-filter-empty)'):null;
     var emptyFilt=body?body.querySelector('.kanban-filter-empty'):null;
-    if(emptyOrig) emptyOrig.style.display=(count===0&&!q)?'':'none';
-    if(emptyFilt) emptyFilt.style.display=(count===0&&q)?'':'none';
+    var _anyFilter=!!q||!!_kanbanFat;
+    if(emptyOrig) emptyOrig.style.display=(count===0&&!_anyFilter)?'':'none';
+    if(emptyFilt) emptyFilt.style.display=(count===0&&_anyFilter)?'':'none';
     var badge=document.getElementById('kbadge-'+cid);
     if(badge) badge.textContent=count;
   });
@@ -2140,7 +2164,7 @@ function filterKanbanSearch(q){
   var totalBadge=document.getElementById('kanban-total-badge');
   if(totalBadge){
     var vis=Array.from(cards).filter(function(c){return c.style.display!=='none';}).length;
-    totalBadge.textContent=(q?vis:Object.keys(kanbanData||{}).length)+' leads';
+    totalBadge.textContent=((q||_kanbanFat)?vis:Object.keys(kanbanData||{}).length)+' leads';
   }
 }
 function kanbanCardHtml(e,idx){
@@ -2170,7 +2194,7 @@ function kanbanCardHtml(e,idx){
   }
   var leadTag=getLeadTag(e.faturamento);
   var _searchKey=((e.nome||'')+' '+(e.empresa||'')+' '+(e.telefone||'')).toLowerCase();
-  return '<div class="kanban-card" draggable="true" data-search="'+_searchKey+'" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
+  return '<div class="kanban-card" draggable="true" data-search="'+_searchKey+'" data-fat="'+(parseFaturamentoValue(e.faturamento)||0)+'" ondragstart="kanbanDragStart(event,\''+e._key+'\')" ondragend="kanbanDragEnd(event)">'+
     '<div onclick="abrirDetalheKanban(\''+e._key+'\')" style="cursor:pointer;" title="Ver detalhes do lead">'+
       '<div class="kanban-card-name" style="display:flex;align-items:center;justify-content:space-between;">'+
         '<span>'+nome+(leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;">'+leadTag.label+'</span>':'')+'</span>'+
