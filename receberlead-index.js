@@ -498,7 +498,12 @@ async function handleReceberLead(req, res) {
 
   // Dispara a mensagem inicial via WhatsApp (Z-API).
   // Quiz qualificado recebe a mensagem própria; demais leads, o primeiro contato do João.
-  await enviarMensagemWhatsapp(tel, isQuizQualificado ? mensagemQuizQualificado(nome) : mensagemPrimeiroContato(nome));
+  // EXCEÇÃO: leads de faixa baixa (<15k quiz / <20k LP) são direcionados à LP "Vivendo de Delivery"
+  // e NÃO recebem mensagem (entram arquivados no board, apenas salvos no banco).
+  const faixaBaixa = ["ate-15", "0-15", "ate-20"].includes(String(faixa || ""));
+  if (!faixaBaixa) {
+    await enviarMensagemWhatsapp(tel, isQuizQualificado ? mensagemQuizQualificado(nome) : mensagemPrimeiroContato(nome));
+  }
 
   if (isBrowser) {
     return res.redirect(302, REDIRECT_OK);
