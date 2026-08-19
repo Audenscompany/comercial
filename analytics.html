@@ -166,7 +166,10 @@ function destinoLead(l){
   if(!isQuiz) return {t:'Lead comercial', bg:'rgba(255,255,255,.06)', fg:'var(--muted)'};
   var inv=String(l.investimento||'').toLowerCase();
   var naoQuer = inv==='nao' || inv.indexOf('prioridade')>=0 || inv.indexOf('não pretendo')>=0 || inv.indexOf('nao pretendo')>=0 || inv.indexOf('não consigo')>=0 || inv.indexOf('nao consigo')>=0;
-  if(naoQuer) return {t:'▶ YouTube (não quis investir)', bg:'rgba(245,176,1,.15)', fg:'#f5b301'};
+  if(naoQuer){
+    if(['15-20','20-50','15-30','30-50'].indexOf(faixa)>=0) return {t:'🎓 Curso (não quis investir)', bg:'rgba(124,52,240,.18)', fg:'#c9a2ff'};
+    return {t:'▶ YouTube (não quis investir)', bg:'rgba(245,176,1,.15)', fg:'#f5b301'};
+  }
   return {t:'📅 Qualificado — não agendou', bg:'rgba(120,160,255,.16)', fg:'#8ab4ff'};
 }
 function destinoCell(l){ var d=destinoLead(l); return '<td><span class="pill" style="background:'+d.bg+';color:'+d.fg+'">'+esc(d.t)+'</span></td>'; }
