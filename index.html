@@ -4347,6 +4347,7 @@ function buildNav(){
     {id:'bdr',icon:'ti-building-store',label:'BDR'},
     {id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
     {id:'config-sdr',icon:'ti-robot',label:'IA | SDR'},
+    {id:'cadencia-painel',icon:'ti-activity-heartbeat',label:'Painel Cadência'},
     {id:'config',icon:'ti-settings',label:'Configuracoes'}
   ];
   var closerDef=[
@@ -4530,7 +4531,7 @@ function showPage(id){
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
     bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'analise-lp':renderAnaliseLP,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'motivacional':renderMotivacional,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,'cal-conteudo':renderContentCalendar,
-    calendario:renderCalendario,config:renderConfig,'config-sdr':renderConfigSDR,'plano-carreira':renderPlanoCarreira,
+    calendario:renderCalendario,config:renderConfig,'config-sdr':renderConfigSDR,'cadencia-painel':renderCadenciaPainel,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
@@ -4559,6 +4560,7 @@ function showPage(id){
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
     if(id==='config-sdr') setTimeout(csdrInit,60);
+    if(id==='cadencia-painel') setTimeout(cadPainelInit,60);
     if(id==='motivacional') setTimeout(motInitPage,50);
     if(id==='dicas-rapidas') setTimeout(dicaInitPage,50);
     if(id==='prospeccao') setTimeout(prospInitPage,50);
@@ -29071,6 +29073,153 @@ async function csdrTestSend(){
     else if(j.key||(j.ok&&!j.preview)){st.style.color='var(--amber)';st.textContent='⚠️ A rota /cadencia-test-send ainda NÃO está no deploy do backend. Suba o receberlead-index.js novo. (Essa chamada acabou criando um lead de teste — pode apagar no funil.)';}
     else{st.style.color='var(--red)';st.textContent='❌ '+(j.error||('HTTP '+r.status));if(j.preview&&pv){pv.style.display='block';pv.textContent=j.preview;}}
   }catch(e){st.style.color='var(--red)';st.textContent='Erro: '+e.message+' (a Cloud Function já foi deployada com a rota /cadencia-test-send?)';}
+}
+
+// ==================== PAINEL DA CADÊNCIA (Fase 3) ====================
+function _cadpHojeBRT(){return new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});}
+function _cadpDateBRT(ts){try{return new Date(ts).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});}catch(e){return '';}}
+function _cadpHora(ts){try{return new Date(ts).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+function _cadpDT(ts){try{return new Date(ts).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+function _cadpTplLabel(id){if(!id)return '—';var m=String(id).match(/^d(\d+)_(manha|tarde)$/);if(!m)return id;return 'Dia '+m[1]+' · '+(m[2]==='manha'?'manhã':'tarde');}
+function _cadpDias(iso1,iso2){try{var a=new Date(iso1+'T12:00:00'),b=new Date(iso2+'T12:00:00');return Math.round((b-a)/86400000);}catch(e){return 0;}}
+function _cadpEsc(x){return (x==null?'':String(x)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _cadpTel(t){var n=String(t||'').replace(/\D/g,'');if(!n)return '<span style="color:var(--muted);">—</span>';return '<span style="font-variant-numeric:tabular-nums;">'+_cadpEsc(t)+'</span> <button onclick="navigator.clipboard.writeText(\''+n+'\').catch(function(){})" style="background:none;border:none;color:var(--cyan);cursor:pointer;padding:0 3px;font-size:12px;" title="Copiar"><i class="ti ti-copy"></i></button>';}
+function _cadpKpi(label,val,color,sub){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;">'+'<div style="font-size:26px;font-weight:800;color:'+(color||'var(--text)')+';line-height:1;">'+val+'</div>'+'<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:6px;">'+label+'</div>'+(sub?'<div style="font-size:10.5px;color:var(--muted);margin-top:3px;">'+sub+'</div>':'')+'</div>';}
+function _cadpCard(title,inner,accent){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:16px;">'+'<div style="font-size:13px;font-weight:700;color:'+(accent||'var(--text)')+';margin-bottom:12px;">'+title+'</div>'+inner+'</div>';}
+function _cadpTh(cols){return '<thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;">'+cols.map(function(c){return '<th style="text-align:'+(c[1]||'left')+';padding:0 8px 6px;">'+c[0]+'</th>';}).join('')+'</tr></thead>';}
+
+function renderCadenciaPainel(){
+  return '<div class="page active" id="pg-cadencia-painel" style="max-width:1180px;">'+
+    '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="page-title">Painel da Cadência</div><div class="page-sub">Motor de follow-up do João · ao vivo do Firebase</div></div>'+
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;">'+
+      '<button onclick="cadPainelBuild(\'manha\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila manhã</button>'+
+      '<button onclick="cadPainelBuild(\'tarde\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila tarde</button>'+
+      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+
+      '<button onclick="cadPainelInit()" class="btn btn-primary" style="font-size:11px;padding:7px 13px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
+    '</div></div>'+
+    '<div id="cadp-status" style="font-size:12px;color:var(--muted);margin:6px 0 14px;">Carregando…</div>'+
+    '<div id="cadp-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:20px;"></div>'+
+    '<div id="cadp-body"></div>'+
+  '</div>';
+}
+
+async function cadPainelInit(){
+  var stEl=document.getElementById('cadp-status');
+  if(stEl){stEl.style.color='var(--muted)';stEl.innerHTML='<i class="ti ti-loader"></i> Carregando dados da cadência…';}
+  try{
+    var res=await Promise.all([fbGet('cadencia_ativos'),fbGet('leads'),fbGet('cadencia_fila'),fbGet('cadencia_events'),fbGet('whatsapp_optout'),fbGet('config/cadencia')]);
+    var ativos=res[0]||{},leads=res[1]||{},fila=res[2]||{},events=res[3]||{},optout=res[4]||{},cfg=res[5]||{};
+    var hoje=_cadpHojeBRT();
+    var ativoKeys=Object.keys(ativos);
+    var filaArr=Object.keys(fila).map(function(id){var it=fila[id]||{};it._id=id;return it;});
+    var queued=filaArr.filter(function(it){return it.status==='queued';});
+    var processing=filaArr.filter(function(it){return it.status==='processing';});
+    var failed=filaArr.filter(function(it){return it.status==='failed'||it.status==='blocked';});
+    var optKeys=Object.keys(optout);
+    var atencao=[],reunioes=0;
+    Object.keys(leads).forEach(function(k){var l=leads[k];if(!l)return;var c=l.cadencia||{};
+      if(l.needsHumanAttention===true&&!optout[k])atencao.push({k:k,l:l});
+      if(c.status==='stopped'&&c.stopReason==='meeting_scheduled')reunioes++;
+    });
+    var evArr=Object.keys(events).map(function(id){var e=events[id];if(e)e._id=id;return e;}).filter(Boolean);
+    var enviadasHoje=evArr.filter(function(e){return e.type==='message_sent'&&_cadpDateBRT(e.at)===hoje;}).length;
+
+    var stTxt;
+    if(cfg.enabled){stTxt='<b style="color:var(--green);">Cadência LIGADA</b> · '+(cfg.testPhone?('<b style="color:var(--amber);">MODO TESTE</b> — tudo vai só para '+_cadpEsc(cfg.testPhone)):'<b style="color:var(--green);">AO VIVO</b> — mensagens vão para os leads');}
+    else{stTxt='<b style="color:var(--red);">Cadência DESLIGADA</b> — nenhum envio automático';}
+    if(stEl){stEl.style.color='var(--muted)';stEl.innerHTML=stTxt+' · atualizado '+_cadpHora(Date.now());}
+
+    var kEl=document.getElementById('cadp-kpis');
+    if(kEl)kEl.innerHTML=[
+      _cadpKpi('Ativos na cadência',ativoKeys.length,'var(--cyan)'),
+      _cadpKpi('Precisam de atenção',atencao.length,atencao.length?'var(--amber)':'var(--text)','responderam / travados'),
+      _cadpKpi('Na fila agora',queued.length,'var(--text)',processing.length?(processing.length+' enviando'):'aguardando disparo'),
+      _cadpKpi('Enviadas hoje',enviadasHoje,'var(--text)'),
+      _cadpKpi('Viraram reunião',reunioes,'var(--green)'),
+      _cadpKpi('Opt-out',optKeys.length,optKeys.length?'var(--red)':'var(--text)','pediram p/ sair'),
+      _cadpKpi('Falhas',failed.length,failed.length?'var(--red)':'var(--text)','ver abaixo')
+    ].join('');
+
+    var B='';
+    var nomeDe=function(k){var l=leads[k];return l?(l.nome||l.empresa||k):k;};
+
+    if(atencao.length){
+      var rows=atencao.map(function(o){var l=o.l;var w=l.whatsapp||{};
+        return '<tr><td style="padding:7px 8px;">'+_cadpEsc(l.nome||'—')+'</td><td style="padding:7px 8px;color:var(--muted);">'+_cadpEsc(l.empresa||'—')+'</td><td style="padding:7px 8px;">'+_cadpTel(l.telefone)+'</td><td style="padding:7px 8px;color:var(--muted);">'+(w.lastInboundAt?('respondeu '+_cadpDT(w.lastInboundAt)):'—')+'</td><td style="padding:7px 8px;text-align:right;"><button onclick="cadPainelStop(\''+o.k+'\')" class="btn btn-outline" style="font-size:10.5px;padding:4px 9px;">Encerrar</button></td></tr>';
+      }).join('');
+      B+=_cadpCard('⚡ Precisam de atenção do João ('+atencao.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['WhatsApp'],['Última resposta'],['']])+'<tbody>'+rows+'</tbody></table></div>','var(--amber)');
+    }
+
+    var qsorted=queued.slice().sort(function(a,b){return (a.scheduledAt||0)-(b.scheduledAt||0);}).slice(0,40);
+    if(qsorted.length){
+      var frows=qsorted.map(function(it){var atras=(it.scheduledAt&&it.scheduledAt<=Date.now());
+        return '<tr><td style="padding:6px 8px;font-variant-numeric:tabular-nums;'+(atras?'color:var(--amber);':'')+'">'+(it.scheduledAt?_cadpDT(it.scheduledAt):'—')+(atras?' <span style="font-size:9px;">(vencido)</span>':'')+'</td><td style="padding:6px 8px;">'+_cadpEsc(nomeDe(it.leadKey))+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpTplLabel(it.templateId)+'</td></tr>';
+      }).join('');
+      B+=_cadpCard('📤 Próximos na fila ('+queued.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Previsto'],['Lead'],['Toque']])+'<tbody>'+frows+'</tbody></table></div>');
+    } else {
+      B+=_cadpCard('📤 Próximos na fila','<div style="color:var(--muted);font-size:12.5px;">Nenhum envio agendado agora. A fila é montada nos disparos das 9h e 14h (ou use os botões acima).</div>');
+    }
+
+    if(ativoKeys.length){
+      var arows=ativoKeys.map(function(k){var a=ativos[k]||{};var l=leads[k]||{};var dia=a.startedAt?(_cadpDias(a.startedAt,hoje)+1):'?';
+        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpEsc(l.empresa||'—')+'</td><td style="padding:6px 8px;">'+_cadpEsc(a.especialista||l.especialistaNome||'—')+'</td><td style="padding:6px 8px;text-align:center;">'+((dia==='?'||dia>5)?'<span style="color:var(--muted);">encerrando</span>':('Dia '+dia+'/5'))+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone)+'</td></tr>';
+      }).join('');
+      B+=_cadpCard('🔥 Leads ativos na cadência ('+ativoKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['Especialista'],['Progresso','center'],['WhatsApp']])+'<tbody>'+arows+'</tbody></table></div>','var(--cyan)');
+    }
+
+    if(failed.length){
+      var xrows=failed.slice(0,30).map(function(it){
+        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(nomeDe(it.leadKey))+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpTplLabel(it.templateId)+'</td><td style="padding:6px 8px;"><span style="color:var(--red);">'+_cadpEsc(it.status)+'</span>'+(it.reason?(' · '+_cadpEsc(it.reason)):'')+'</td><td style="padding:6px 8px;color:var(--muted);font-size:11px;">'+_cadpEsc(it.lastError||'—')+'</td></tr>';
+      }).join('');
+      B+=_cadpCard('⚠️ Falhas / bloqueios ('+failed.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Toque'],['Status'],['Motivo']])+'<tbody>'+xrows+'</tbody></table></div>','var(--red)');
+    }
+
+    if(optKeys.length){
+      var orows=optKeys.map(function(k){var o=optout[k]||{};var l=leads[k]||{};
+        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone)+'</td><td style="padding:6px 8px;color:var(--muted);">'+(o.at?_cadpDT(o.at):'—')+'</td></tr>';
+      }).join('');
+      B+=_cadpCard('🚫 Opt-out — não receber mais ('+optKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['WhatsApp'],['Quando']])+'<tbody>'+orows+'</tbody></table></div>','var(--red)');
+    }
+
+    var evSorted=evArr.sort(function(a,b){return (b.at||0)-(a.at||0);}).slice(0,25);
+    if(evSorted.length){
+      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)']};
+      var erows=evSorted.map(function(e){var m=EVMAP[e.type]||['·',e.type,'var(--muted)'];
+        return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;"><span style="width:118px;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;">'+_cadpDT(e.at)+'</span><span style="color:'+m[2]+';">'+m[0]+' '+_cadpEsc(m[1])+'</span>'+(e.templateId?'<span style="color:var(--muted);">· '+_cadpTplLabel(e.templateId)+'</span>':'')+(e.reason?'<span style="color:var(--muted);">· '+_cadpEsc(e.reason)+'</span>':'')+'</div>';
+      }).join('');
+      B+=_cadpCard('🕑 Últimos eventos',erows);
+    }
+
+    document.getElementById('cadp-body').innerHTML=B||'<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem dados de cadência ainda. Assim que os leads entrarem pela LP, eles aparecem aqui.</div>';
+  }catch(e){
+    if(stEl){stEl.style.color='var(--red)';stEl.textContent='Erro ao carregar: '+e.message;}
+    console.error('cadPainelInit',e);
+  }
+}
+
+async function cadPainelBuild(period){
+  var st=document.getElementById('cadp-status');if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Montando fila ('+period+')…';}
+  try{var r=await fetch(RECEBERLEAD_URL+'/cadencia-build?secret='+WEBHOOK_SECRET+'&period='+period,{method:'POST'});var j={};try{j=await r.json();}catch(e){}
+    if(j&&j.totals){if(st){st.style.color='var(--green)';st.textContent='Fila '+period+': '+j.totals.queued+' enfileiradas de '+j.totals.candidates+' candidatos.';}}
+    else if(j&&j.note){if(st){st.style.color='var(--amber)';st.textContent=j.note;}}
+    else{if(st){st.style.color='var(--amber)';st.textContent='Resposta inesperada — a rota /cadencia-build está no deploy?';}}
+    setTimeout(cadPainelInit,900);
+  }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function cadPainelDrain(){
+  var st=document.getElementById('cadp-status');if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Disparando fila…';}
+  try{var r=await fetch(RECEBERLEAD_URL+'/cadencia-drain?secret='+WEBHOOK_SECRET,{method:'POST'});var j={};try{j=await r.json();}catch(e){}
+    if(st){st.style.color='var(--green)';st.textContent='Disparo: '+((j&&j.sent)||0)+' enviadas, '+((j&&j.cancelled)||0)+' canceladas, '+((j&&j.failed)||0)+' falhas.';}
+    setTimeout(cadPainelInit,900);
+  }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function cadPainelStop(leadKey){
+  if(!confirm('Encerrar a cadência deste lead? Ele não recebe mais mensagens automáticas.'))return;
+  var st=document.getElementById('cadp-status');if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Encerrando…';}
+  try{await fetch(RECEBERLEAD_URL+'/cadencia-stop?secret='+WEBHOOK_SECRET+'&lead='+encodeURIComponent(leadKey)+'&reason=handled_manual',{method:'POST'});
+    try{if(fbDb)await fbDb.ref('leads/'+leadKey+'/needsHumanAttention').set(false);}catch(e){}
+    setTimeout(cadPainelInit,700);
+  }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
 
 // ==================== PROSPECÇÃO (Social Selling + BDR) ====================
