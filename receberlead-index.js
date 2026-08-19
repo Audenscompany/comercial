@@ -2762,6 +2762,51 @@ async function handleAgendamentoSim(req, res) {
   return res.status(200).json({ ok: true, leadKey: leadKey, opcoes: slots });
 }
 
+// ===================== BACKFILL: inscrever leads existentes na cadência =====================
+async function cadEnroll(leadKey, lead) {
+  var esp = cadResolveEsp(lead.faturamento).nome;
+  if (!esp) return false;
+  var startedAt = cadStartDate(Date.now());
+  await db.ref("leads/" + leadKey).update({ especialistaNome: lead.especialistaNome || esp, cadencia: { status: "active", startedAt: startedAt, paused: false, stopReason: null, completedAt: null, createdAt: Date.now(), viaBackfill: true } });
+  await db.ref("cadencia_ativos/" + leadKey).set({ startedAt: startedAt, especialista: lead.especialistaNome || esp, at: Date.now(), viaBackfill: true });
+  await db.ref("cadencia_events").push({ type: "cadence_backfill", leadKey: leadKey, at: Date.now() });
+  return true;
+}
+// ROTA /cadencia-backfill?secret=...&dryrun=1|0&days=N&limit=N
+async function handleCadenciaBackfill(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var dryrun = String((req.query.dryrun != null ? req.query.dryrun : "1")) !== "0";
+  var days = parseInt(req.query.days || "0", 10) || 0;
+  var limit = parseInt(req.query.limit || "50", 10) || 50;
+  var leads = (await db.ref("leads").once("value")).val() || {};
+  var kanban = (await db.ref("kanban").once("value")).val() || {};
+  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
+  var minTs = days > 0 ? (Date.now() - days * 86400000) : 0;
+  var elegiveis = [], skips = {};
+  Object.keys(leads).forEach(function (k) {
+    var l = leads[k]; if (!l) return;
+    var tel = String(l.telefone || "").replace(/\D/g, "");
+    if (tel.length < 10) { skips.invalid_phone = (skips.invalid_phone || 0) + 1; return; }
+    if (optout[k]) { skips.opt_out = (skips.opt_out || 0) + 1; return; }
+    if (l.cadencia) { skips.ja_tem_cadencia = (skips.ja_tem_cadencia || 0) + 1; return; }
+    var kb = kanban[k] || {}; var stt = kb.status || "";
+    if (!CAD_COLUNAS_OK[stt]) { skips.fora_das_colunas = (skips.fora_das_colunas || 0) + 1; return; }
+    var esp = cadResolveEsp(l.faturamento).nome;
+    if (!esp) { skips.faturamento_invalido = (skips.faturamento_invalido || 0) + 1; return; }
+    if (minTs && (l._createdAt || 0) < minTs) { skips.antigo = (skips.antigo || 0) + 1; return; }
+    elegiveis.push({ key: k, nome: l.nome || "", telefone: tel, faturamento: l.faturamento || "", especialista: esp });
+  });
+  var out = { dryrun: dryrun, total_elegiveis: elegiveis.length, skips: skips, amostra: elegiveis.slice(0, 20).map(function (e) { return { nome: e.nome, tel: cadMask(e.telefone), esp: e.especialista }; }) };
+  if (!dryrun) {
+    var toEnroll = elegiveis.slice(0, limit);
+    var inscritos = 0;
+    for (var i = 0; i < toEnroll.length; i++) { try { if (await cadEnroll(toEnroll[i].key, leads[toEnroll[i].key])) inscritos++; } catch (e) {} }
+    out.inscritos = inscritos;
+    out.restantes = Math.max(0, elegiveis.length - toEnroll.length);
+  }
+  return res.status(200).json(out);
+}
+
 // ROTA /cadencia-stop?secret=...&lead=<key>&reason=<...>
 async function handleCadenciaStop(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
@@ -2852,6 +2897,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/agendamento-sim") {
       return await handleAgendamentoSim(req, res);
+    }
+    if (path === "/cadencia-backfill") {
+      return await handleCadenciaBackfill(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);
