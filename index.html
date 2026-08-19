@@ -1534,6 +1534,13 @@ function copiarTelefoneKanban(ev,tel){
 function abrirDetalheKanban(key){
   var e=kanbanData[key];
   if(!e) return;
+  try{var _adId=(e.ad||'').trim(),_cpId=(e.campanha||'').trim();
+    var _needAd=/^\d{6,}$/.test(_adId)&&!(window._metaAdNameById&&window._metaAdNameById[_adId]);
+    var _needCp=/^\d{6,}$/.test(_cpId)&&!(window._metaCampaignNameById&&window._metaCampaignNameById[_cpId]);
+    if((_needAd||_needCp)&&typeof isMetaConnected==='function'&&isMetaConnected()&&metaAccountId&&typeof fetchMetaAdSpendMap==='function'&&!window._detAdFetching){
+      window._detAdFetching=true;
+      fetchMetaAdSpendMap(getCurrentPeriod()).then(function(m){window._metaAdSpendMap=m;window._detAdFetching=false;if(document.getElementById('modal-detalhe-kanban'))abrirDetalheKanban(key);}).catch(function(){window._detAdFetching=false;});
+    }}catch(_e){}
   var _qlead=(allLeads||[]).find(function(l){return (l.telefone||'').replace(/\D/g,'')===String(key);})||{};
   function qf(n){ return (e[n]!=null&&e[n]!=='')?e[n]:(_qlead[n]||''); }
 
@@ -1618,8 +1625,8 @@ function abrirDetalheKanban(key){
       row('trending-up','Disposto a investir',(function(){var v=String(qf('investimento')||'');if(v==='sim')return'Sim';if(v==='nao'||v==='não')return'Não';return v;})())+
       row('robot','Já investiu em tráfego',qf('ja_investiu'))+
       row('brand-instagram','Instagram',qf('instagram'),(function(){var ig=String(qf('instagram')||'').trim();if(!ig)return null;var hh=ig.replace(/^@/,'');return '<a href="https://instagram.com/'+hh+'" target="_blank" style="color:var(--purple3);text-decoration:none;">@'+hh+'</a>';})())+
-      row('ad-2','Anúncio (Ad)',e.ad)+
-      row('speakerphone','Campanha',e.campanha)+
+      row('ad-2','Anúncio (Ad)',e.ad, e.ad?esc(typeof _adDisplayName==='function'?_adDisplayName(e.ad):e.ad):null)+
+      row('speakerphone','Campanha',e.campanha, e.campanha?esc(typeof _campDisplayName==='function'?_campDisplayName(e.campanha):e.campanha):null)+
       row('map-pin','Cidade / Estado',e.cidade?(e.cidade+(e.estado?' – '+e.estado:'')):null)+
       row('source-code','Origem',e.origem)+
       row('id-badge-2','CNPJ',e.cnpj)+
@@ -3420,7 +3427,7 @@ async function fetchMetaAdSpendMap(period){
   for(var i=0;i<ids.length;i++){
     try{
       var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights'
-        +'?fields=ad_id,ad_name,spend'
+        +'?fields=ad_id,ad_name,campaign_id,campaign_name,spend'
         +'&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')
         +'&level=ad&limit=500'
         +'&access_token='+metaToken.access_token;
@@ -3433,6 +3440,7 @@ async function fetchMetaAdSpendMap(period){
         map[n]=(map[n]||0)+sp;
         // permite achar o gasto tambem quando o lead guardou o ID do ad (nao o nome)
         if(row.ad_id){var idk=String(row.ad_id);map[idk]=sp;if(n)window._metaAdNameById[idk]=n;}
+        if(row.campaign_id&&row.campaign_name){window._metaCampaignNameById=window._metaCampaignNameById||{};window._metaCampaignNameById[String(row.campaign_id)]=String(row.campaign_name);}
       });
     }catch(e){console.error('fetchMetaAdSpendMap acc '+ids[i],e);}
   }
@@ -12743,6 +12751,7 @@ function clearAdsDateRange(){
 }
 
 // Traduz um valor de "ad" que veio como ID numerico do Meta para o nome real do anuncio.
+function _campDisplayName(v){var s=(''+(v||'')).trim();if(/^\d{6,}$/.test(s)){var m=window._metaCampaignNameById||{};if(m[s])return m[s];return 'Campanha #'+s.slice(-6);}return s;}
 function _adDisplayName(v){
   var s=(''+(v||'')).trim();
   if(/^\d{6,}$/.test(s)){
