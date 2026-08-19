@@ -489,6 +489,8 @@ async function handleReceberLead(req, res) {
   const isQuizQualificado = /quiz/i.test(String(origem));
 
   await db.ref("leads/" + key).set(leadData);
+  // Inicia estado da cadência automática (envio só ocorre se config/cadencia/enabled=true)
+  try { await cadStart(key, leadData); } catch (e) { console.error("cadStart intake:", e); }
 
   // Evento Lead server-side para o Meta (CAPI) — nao bloqueia o fluxo
   try { await enviarMetaCAPI(leadData, req); } catch (e) { console.error("CAPI call error:", e); }
@@ -628,6 +630,7 @@ async function handleQuizAgendou(req, res) {
   // O horário exato, os lembretes e a confirmação no WhatsApp vêm pelo webhook do
   // Calendly (/calendly-webhook), que traz a data/hora reais do agendamento.
   try { await db.ref("kanban/" + key).update({ status: "reuniao", statusAt: Date.now(), responsavel: responsavel, _aguardandoWebhook: true }); } catch (e) { console.error("quiz-agendou kanban:", e); }
+  try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
   return res.status(200).json({ ok: true, responsavel: responsavel });
 }
 
@@ -934,6 +937,7 @@ async function handleCalendlyWebhook(req, res) {
         kanbanKey: key, sdrName: "JOÃO", meetLink: meetLink, scheduledAt: Date.now(), _viaCalendly: true
       });
     } catch (e) { console.error("calendly-webhook meeting:", e); }
+    try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
 
     // Confirmação no WhatsApp (com o horário) — mesma sequência da rota /agendar
     try {
@@ -2003,6 +2007,276 @@ async function handleCockpitProxy(req, res) {
   }
 }
 
+const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 1, "cond": false, "intake": true, "text": "Oi, {{primeiroNome}}! Tudo bem?\n\nAqui é o João, da Audens. Vi seu cadastro agora.\n\nEu sou o responsável por fazer esse primeiro contato e tentar conseguir um horário seu com o {{especialistaNome}}, que é um dos nossos especialistas.\n\nQueria entender rapidinho seu momento.\n\nHoje você consegue falar por alguns minutos?"}, "d1_tarde": {"day": 1, "period": "tarde", "version": 1, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}! João aqui de novo.\n\nDei uma olhada no seu cadastro e, pelo seu momento, quero tentar te colocar para conversar direto com o {{especialistaNome}}.\n\nEle também é dono de operação de delivery e vive isso na prática.\n\nPara você costuma ser melhor falar de manhã ou à tarde?"}, "d2_manha": {"day": 2, "period": "manha", "version": 1, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}!\n\nUma pergunta rápida antes de eu olhar a agenda do {{especialistaNome}}:\n\nHoje, qual é o principal ponto que você gostaria de melhorar no seu delivery?\n\nPode me responder bem resumido mesmo."}, "d2_tarde": {"day": 2, "period": "tarde", "version": 1, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nTe perguntei porque aqui na Audens quem conversa com você não é alguém que conhece delivery só na teoria.\n\nO {{especialistaNome}} também vive operação no dia a dia.\n\nSe fizer sentido, eu consigo olhar alguns horários na agenda dele para vocês conversarem.\n\nQuer que eu veja?"}, "d3_manha": {"day": 3, "period": "manha", "version": 1, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}!\n\nEstou organizando alguns horários com o {{especialistaNome}} e lembrei do seu cadastro.\n\nSe eu conseguir encaixar vocês, qual período seria mais tranquilo para você?\n\nManhã ou tarde?"}, "d3_tarde": {"day": 3, "period": "tarde", "version": 1, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSó para te dar um pouco mais de contexto: a Audens foi criada por gente que também é dona de delivery.\n\nO Lucas e o Gustavo têm operação própria e vivem na prática os desafios de gestão e crescimento desse mercado.\n\nPor isso achei válido tentar colocar você para falar com o {{especialistaNome}}.\n\nQuer que eu procure um horário?"}, "d4_manha": {"day": 4, "period": "manha", "version": 1, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}!\n\nQueria só entender uma coisa para eu não ficar te chamando sem necessidade.\n\nVocê ainda quer conversar sobre como melhorar os resultados do seu delivery?\n\nSe sim, eu vejo um horário com o {{especialistaNome}} para você."}, "d4_tarde": {"day": 4, "period": "tarde", "version": 1, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSe o problema estiver sendo correria para combinar horário comigo, posso facilitar.\n\nEu vejo os horários disponíveis do {{especialistaNome}} e te mando algumas opções.\n\nQuer que eu faça isso?"}, "d5_manha": {"day": 5, "period": "manha", "version": 1, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}!\n\nEstou fechando meus acompanhamentos e seu contato ainda ficou aqui comigo.\n\nAntes de encerrar, queria tentar uma última vez te colocar para conversar com o {{especialistaNome}}.\n\nSe ainda fizer sentido para você, me responde \"sim\" que eu já olho a agenda dele."}, "d5_tarde": {"day": 5, "period": "tarde", "version": 1, "cond": false, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nVou encerrar meus contatos por aqui para não ficar insistindo com você.\n\nSe quiser conversar com o {{especialistaNome}} depois, pode responder essa mensagem que eu mesmo vejo um horário para vocês.\n\nAbraço,\nJoão"}};
+
+// ===================== CADÊNCIA AUTOMÁTICA (Fase 1) =====================
+// Nasce DESLIGADA. Ativar em: config/cadencia { enabled:true, testPhone:"55...", intervalSeconds:300 }
+// testPhone preenchido = TODAS as mensagens vão para esse número (modo teste).
+const CAD_SENDER_ID = "audens_joao";
+
+async function cadCfg() {
+  try {
+    var v = (await db.ref("config/cadencia").once("value")).val() || {};
+    return {
+      enabled: v.enabled === true,
+      testPhone: (v.testPhone || "").toString().replace(/\D/g, ""),
+      intervalSeconds: parseInt(v.intervalSeconds) || 300
+    };
+  } catch (e) { return { enabled: false, testPhone: "", intervalSeconds: 300 }; }
+}
+function cadParseFat(str) {
+  var s = String(str || "").toLowerCase().replace(/\s/g, "");
+  var m = s.match(/[\d.,]+/g); if (!m) return null;
+  var n = parseFloat(m[0].replace(/\./g, "").replace(",", ".")); if (isNaN(n)) return null;
+  if (s.indexOf("mil") >= 0 && n < 1000) n = n * 1000;
+  if (s.indexOf("milh") >= 0) n = n * 1000000;
+  // faixas tipo "50-100" (mil): usa o piso da faixa
+  if (/^\d+-\d+$/.test((str||"").toString().trim())) { var a=parseInt((str+"").split("-")[0]); n=a*1000; }
+  return n;
+}
+function cadResolveEsp(fat) {
+  var v = cadParseFat(fat);
+  if (v == null || isNaN(v) || v <= 0) return { nome: null, motivo: "faturamento_invalido" };
+  if (v >= 50000) return { nome: "Lucas", motivo: "faturamento_gte_50k" };
+  return { nome: "Gustavo", motivo: "faturamento_lt_50k" };
+}
+function cadBRT(ts) {
+  var s = new Date(ts).toLocaleString("en-CA", { timeZone: "America/Sao_Paulo", hour12: false, year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+  var m = s.match(/(\d{4})-(\d{2})-(\d{2})[,\s]+(\d{2}):(\d{2})/);
+  if (!m) { var d=new Date(ts); return { date: d.toISOString().slice(0,10), hour: d.getHours(), dow: d.getDay() }; }
+  var dateStr = m[1] + "-" + m[2] + "-" + m[3];
+  var dow = new Date(dateStr + "T12:00:00Z").getUTCDay();
+  return { date: dateStr, hour: parseInt(m[4]), dow: dow };
+}
+function cadAddDaysStr(dateStr, days) {
+  var d = new Date(dateStr + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function cadDaysBetween(a, b) {
+  return Math.round((new Date(b + "T12:00:00Z") - new Date(a + "T12:00:00Z")) / 86400000);
+}
+function cadStartDate(nowTs) {
+  var b = cadBRT(nowTs);
+  // Se entrou até 12:59 BRT, começa hoje; senão, começa amanhã (para o build das 9h pegar o d1)
+  return b.hour < 13 ? b.date : cadAddDaysStr(b.date, 1);
+}
+function cadPrimeiroNome(n) { return String(n || "").trim().split(/\s+/)[0] || ""; }
+function cadRender(tplText, lead) {
+  var vars = {
+    primeiroNome: cadPrimeiroNome(lead.nome),
+    especialistaNome: lead.especialistaNome || "",
+    empresa: lead.empresa || "",
+    linkAgendamento: lead.linkAgendamento || ""
+  };
+  var required = { primeiroNome: 1, especialistaNome: 1 };
+  var out = String(tplText).replace(/\{\{\s*(\w+)\s*\}\}/g, function (_m, k) {
+    var val = vars[k];
+    if (val != null && String(val).trim() !== "") return val;
+    if (required[k]) return _m; // obrigatória vazia -> vira "faltando"
+    return ""; // opcional vazia
+  });
+  var missing = (out.match(/\{\{\s*\w+\s*\}\}/g) || []);
+  return { text: out, missing: missing };
+}
+function cadMask(p) { p = String(p || ""); return p.length > 4 ? "****" + p.slice(-4) : "****"; }
+
+// Inicia a cadência no intake (marca d1_manha como já enviado pela msg de primeiro contato do intake)
+async function cadStart(leadKey, lead) {
+  try {
+    var cfg = null; // não bloqueia por enabled aqui: sempre grava o ESTADO; o envio é que respeita enabled
+    var esp = cadResolveEsp(lead.faturamento);
+    var startedAt = cadStartDate(Date.now());
+    var patch = {
+      especialistaNome: esp.nome, especialistaMotivo: esp.motivo,
+      cadencia: { status: esp.nome ? "active" : "paused", startedAt: startedAt, paused: !esp.nome, stopReason: null, completedAt: null, createdAt: Date.now() },
+      whatsapp: { optOut: false, lastInboundAt: null, lastOutboundAt: null, humanConversationActive: false },
+      needsHumanAttention: !esp.nome
+    };
+    await db.ref("leads/" + leadKey).update(patch);
+    if (esp.nome) {
+      await db.ref("cadencia_ativos/" + leadKey).set({ startedAt: startedAt, especialista: esp.nome, at: Date.now() });
+      // d1_manha = a mensagem de primeiro contato do intake; marca como enviada p/ não duplicar
+      await db.ref("cadencia_msg/" + leadKey + "/d1_manha").set({ status: "sent", via: "intake", sentAt: Date.now(), templateId: "d1_manha" });
+    }
+  } catch (e) { console.error("cadStart:", e); }
+}
+
+function cadTouchFor(cad, period, todayDate) {
+  if (!cad || cad.status !== "active" || !cad.startedAt) return null;
+  var day = cadDaysBetween(cad.startedAt, todayDate) + 1;
+  if (day < 1 || day > 5) return null;
+  var id = "d" + day + "_" + period;
+  var tpl = CAD_TEMPLATES[id];
+  if (!tpl || tpl.intake) return null; // d1_manha é do intake
+  return { templateId: id, day: day, period: period, cond: !!tpl.cond, version: tpl.version };
+}
+
+// Valida um candidato para um período. Carrega lead+kanban+optout.
+async function cadValidate(leadKey, period, todayDate) {
+  var lead = (await db.ref("leads/" + leadKey).once("value")).val();
+  if (!lead) return { eligible: false, reason: "lead_not_found" };
+  var tel = String(lead.telefone || "").replace(/\D/g, "");
+  if (tel.length < 10) return { eligible: false, reason: "invalid_phone", lead: lead };
+  var kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {};
+  if (kb.status === "reuniao") return { eligible: false, reason: "meeting_scheduled", lead: lead };
+  var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+  if (opt && opt.optOut) return { eligible: false, reason: "opt_out", lead: lead };
+  if (lead.cadencia && (lead.cadencia.status === "stopped" || lead.cadencia.status === "completed")) return { eligible: false, reason: "cadence_" + lead.cadencia.status, lead: lead };
+  if (lead.cadencia && lead.cadencia.paused) return { eligible: false, reason: "cadence_paused", lead: lead };
+  if (lead.needsHumanAttention) return { eligible: false, reason: "human_attention", lead: lead };
+  var touch = cadTouchFor(lead.cadencia, period, todayDate);
+  if (!touch) return { eligible: false, reason: "outside_cadence", lead: lead };
+  // condicional: se respondeu desde o começo do dia, pula
+  if (touch.cond && lead.whatsapp && lead.whatsapp.lastInboundAt) return { eligible: false, reason: "skipped_conditional", lead: lead };
+  var already = (await db.ref("cadencia_msg/" + leadKey + "/" + touch.templateId).once("value")).val();
+  if (already && (already.status === "sent" || already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
+  if (!lead.especialistaNome) return { eligible: false, reason: "missing_variable", lead: lead };
+  return { eligible: true, reason: "eligible", lead: lead, touch: touch };
+}
+
+// Reserva de slot (transação) — garante 5 min entre disparos do mesmo número
+async function cadReserveSlot(intervalSeconds) {
+  var ref = db.ref("whatsapp_senders/" + CAD_SENDER_ID);
+  var out = 0;
+  await ref.transaction(function (sender) {
+    sender = sender || { nextAvailableAt: 0, minimumIntervalSeconds: intervalSeconds };
+    var now = Date.now();
+    var scheduledAt = Math.max(now, sender.nextAvailableAt || 0);
+    sender.nextAvailableAt = scheduledAt + (intervalSeconds * 1000);
+    sender.lastReservedAt = scheduledAt;
+    out = scheduledAt;
+    return sender;
+  });
+  return out;
+}
+
+// ROTA /cadencia-build?secret=...&period=manha|tarde
+async function handleCadenciaBuild(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var period = (req.query.period || "").toLowerCase();
+  if (period !== "manha" && period !== "tarde") return res.status(400).json({ ok: false, error: "period deve ser manha|tarde" });
+  var cfg = await cadCfg();
+  var today = cadBRT(Date.now()).date;
+  var dow = cadBRT(Date.now()).dow;
+  var out = { period: period, today: today, enabled: cfg.enabled, totals: { candidates: 0, eligible: 0, queued: 0 }, skips: {} };
+  if (!cfg.enabled) { out.note = "cadencia DESLIGADA (config/cadencia/enabled=false)"; return res.status(200).json(out); }
+  if (dow === 0) { out.note = "domingo: sem envio"; return res.status(200).json(out); }
+  var ativos = (await db.ref("cadencia_ativos").once("value")).val() || {};
+  var keys = Object.keys(ativos);
+  out.totals.candidates = keys.length;
+  var batchId = "b_" + period + "_" + today.replace(/-/g, "") + "_" + Date.now();
+  for (var i = 0; i < keys.length; i++) {
+    var leadKey = keys[i];
+    var v = await cadValidate(leadKey, period, today);
+    if (!v.eligible) { out.skips[v.reason] = (out.skips[v.reason] || 0) + 1; continue; }
+    out.totals.eligible++;
+    // enfileira idempotente
+    var itemRef = db.ref("cadencia_fila/" + leadKey + "_" + v.touch.templateId);
+    var created = false;
+    await itemRef.transaction(function (cur) {
+      if (cur) return; // já existe: aborta
+      created = true;
+      return { leadKey: leadKey, templateId: v.touch.templateId, day: v.touch.day, period: period,
+               cond: v.touch.cond, version: v.touch.version, status: "queued", batchId: batchId,
+               scheduledAt: 0, createdAt: Date.now() };
+    });
+    if (!created) { out.skips["already_queued"] = (out.skips["already_queued"] || 0) + 1; continue; }
+    var scheduledAt = await cadReserveSlot(cfg.intervalSeconds);
+    await itemRef.update({ scheduledAt: scheduledAt });
+    await db.ref("cadencia_msg/" + leadKey + "/" + v.touch.templateId).update({ status: "queued", templateId: v.touch.templateId, templateVersion: v.touch.version, scheduledAt: scheduledAt, batchId: batchId });
+    out.totals.queued++;
+  }
+  await db.ref("cadencia_batches/" + batchId).set({ period: period, date: today, createdAt: Date.now(), totals: out.totals, skips: out.skips });
+  return res.status(200).json(out);
+}
+
+// ROTA /cadencia-drain?secret=...
+async function handleCadenciaDrain(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var cfg = await cadCfg();
+  var out = { enabled: cfg.enabled, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
+  if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
+  var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
+  if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
+  var fila = (await db.ref("cadencia_fila").once("value")).val() || {};
+  var now = Date.now();
+  var today = cadBRT(now).date;
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  ids.sort(function (a, b) { return (fila[a].scheduledAt || 0) - (fila[b].scheduledAt || 0); });
+  ids = ids.slice(0, 15); // no máx. 15 por rodada (worker roda a cada 1 min)
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i]; var itemRef = db.ref("cadencia_fila/" + id);
+    // lock queued -> processing
+    var locked = false;
+    await itemRef.transaction(function (cur) { if (!cur || cur.status !== "queued") return cur; cur.status = "processing"; cur.processingAt = Date.now(); locked = true; return cur; });
+    if (!locked) continue;
+    out.processed++;
+    var item = (await itemRef.once("value")).val();
+    var leadKey = item.leadKey;
+    // revalida
+    var v = await cadValidate(leadKey, item.period, today);
+    var msgRef = db.ref("cadencia_msg/" + leadKey + "/" + item.templateId);
+    if (!v.eligible) {
+      await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
+      await msgRef.update({ status: "cancelled_before_send", reason: v.reason });
+      out.cancelled++; continue;
+    }
+    var tpl = CAD_TEMPLATES[item.templateId];
+    var lead = v.lead;
+    var r = cadRender(tpl.text, lead);
+    if (r.missing.length) {
+      await itemRef.update({ status: "blocked", reason: "missing_template_variable" });
+      await msgRef.update({ status: "blocked", reason: "missing_template_variable" });
+      out.failed++; continue;
+    }
+    var leadPhone = String(lead.telefone || "").replace(/\D/g, "");
+    var targetPhone = cfg.testPhone ? cfg.testPhone : leadPhone;
+    var body = cfg.testPhone ? ("[TESTE cadência → lead " + cadMask(leadPhone) + " · " + item.templateId + "]\n\n" + r.text) : r.text;
+    try {
+      await enviarMensagemWhatsapp(targetPhone, body);
+      await itemRef.update({ status: "sent", sentAt: Date.now() });
+      await msgRef.update({ status: "sent", sentAt: Date.now(), zapiTo: cadMask(targetPhone) });
+      await db.ref("leads/" + leadKey + "/whatsapp/lastOutboundAt").set(Date.now());
+      await db.ref("cadencia_events").push({ type: "message_sent", leadKey: cadMask(leadPhone), templateId: item.templateId, specialist: lead.especialistaNome || "", at: Date.now() });
+      out.sent++;
+    } catch (e) {
+      var att = (item.attemptCount || 0) + 1;
+      if (att >= 3) { await itemRef.update({ status: "failed", attemptCount: att, lastError: String(e && e.message || e) }); await msgRef.update({ status: "failed" }); out.failed++; }
+      else { await itemRef.update({ status: "queued", attemptCount: att, lastError: String(e && e.message || e), scheduledAt: Date.now() + 5 * 60000 }); }
+    }
+  }
+  return res.status(200).json(out);
+}
+
+// Para a cadência de um lead (idempotente) — usado ao agendar reunião / opt-out
+async function cadStop(leadKey, reason) {
+  try {
+    var ref = db.ref("leads/" + leadKey + "/cadencia");
+    await ref.transaction(function (c) {
+      if (c && (c.status === "stopped" || c.status === "completed")) return c;
+      c = c || {}; c.status = "stopped"; c.stopReason = reason; c.completedAt = Date.now(); return c;
+    });
+    await db.ref("cadencia_ativos/" + leadKey).remove();
+    // cancela itens de fila ainda não enviados
+    var fila = (await db.ref("cadencia_fila").once("value")).val() || {};
+    var updates = {};
+    Object.keys(fila).forEach(function (id) { var it = fila[id]; if (it && it.leadKey === leadKey && (it.status === "queued")) { updates["cadencia_fila/" + id + "/status"] = "cancelled"; updates["cadencia_fila/" + id + "/cancelReason"] = reason; } });
+    if (Object.keys(updates).length) await db.ref().update(updates);
+    await db.ref("cadencia_events").push({ type: reason === "meeting_scheduled" ? "meeting_scheduled" : "cadence_stopped", leadKey: leadKey, reason: reason, at: Date.now() });
+  } catch (e) { console.error("cadStop:", e); }
+}
+
+// ROTA /cadencia-stop?secret=...&lead=<key>&reason=<...>
+async function handleCadenciaStop(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var leadKey = (req.query.lead || (req.body && req.body.lead) || "").toString();
+  var reason = (req.query.reason || (req.body && req.body.reason) || "manual_stop").toString();
+  if (!leadKey) return res.status(400).json({ ok: false, error: "lead obrigatório" });
+  await cadStop(leadKey, reason);
+  return res.status(200).json({ ok: true, lead: leadKey, reason: reason });
+}
+// =================== FIM CADÊNCIA AUTOMÁTICA ===================
+
 http('receberLead', async (req, res) => {
   // CORS: o CRM (index.html) chama /agendar via fetch POST com
   // Content-Type: application/json, o que faz o navegador disparar um
@@ -2064,6 +2338,15 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/track") {
       return await handleTrack(req, res);
+    }
+    if (path === "/cadencia-build") {
+      return await handleCadenciaBuild(req, res);
+    }
+    if (path === "/cadencia-drain") {
+      return await handleCadenciaDrain(req, res);
+    }
+    if (path === "/cadencia-stop") {
+      return await handleCadenciaStop(req, res);
     }
     if (path === "/cockpit-venda") {
       return await handleCockpitProxy(req, res);
