@@ -631,6 +631,7 @@ async function handleQuizAgendou(req, res) {
   // Calendly (/calendly-webhook), que traz a data/hora reais do agendamento.
   try { await db.ref("kanban/" + key).update({ status: "reuniao", statusAt: Date.now(), responsavel: responsavel, _aguardandoWebhook: true }); } catch (e) { console.error("quiz-agendou kanban:", e); }
   try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
+  try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
   return res.status(200).json({ ok: true, responsavel: responsavel });
 }
 
@@ -938,6 +939,7 @@ async function handleCalendlyWebhook(req, res) {
       });
     } catch (e) { console.error("calendly-webhook meeting:", e); }
     try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
+  try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
 
     // Confirmação no WhatsApp (com o horário) — mesma sequência da rota /agendar
     try {
@@ -2017,6 +2019,8 @@ const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 2, "
 const CAD_SENDER_ID = "audens_joao";
 const CAD_COLUNAS_OK = { "": 1, "novo": 1, "qualificado": 1 };            // só manda nessas colunas
 const CAD_TERMINAL = { meeting_scheduled: 1, left_columns: 1, opt_out: 1, not_interested: 1, cadence_stopped: 1, cadence_completed: 1 };
+const CAD_NS_TERMINAL = { meeting_scheduled: 1, opt_out: 1, ns_completed: 1, ns_stopped: 1 };
+const CAD_NS_TEMPLATES = {"ns_d1_manha": {"day": 1, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Oi, {{primeiroNome}}! Aqui é o João, da Audens 🙂\n\nA gente tinha um horário marcado com o {{especialistaNome}} e acho que não rolou pra você — sem problema nenhum, acontece! 🙌\n\nQuer que eu remarque? Me diz um dia e horário que fica bom pra você que eu já cuido."}, "ns_d1_tarde": {"day": 1, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}! João de novo 👊\n\nSei bem como a correria da operação atropela a agenda 🍔\n\nSe quiser, eu já procuro um novo horário com o {{especialistaNome}}. Bora remarcar?"}, "ns_d2_manha": {"day": 2, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nNão quero te perder de vista 🙂\n\nO {{especialistaNome}} separou um tempo pra entender o seu delivery. Ainda faz sentido pra você essa conversa?"}, "ns_d2_tarde": {"day": 2, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}! Pra facilitar, já dei uma olhada na agenda do {{especialistaNome}} 👇\n\n{{horarios}}\n\nMe responde qual encaixa melhor que eu confirmo com ele na hora 👍"}, "ns_d3_manha": {"day": 3, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nSó pra você ter contexto: o {{especialistaNome}} também é dono de delivery e vive a operação na prática 🔥\n\nPor isso vale muito a conversa. Quer que eu ache um horário pra remarcar?"}, "ns_d3_tarde": {"day": 3, "period": "tarde", "version": 1, "cond": true, "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Olha o tipo de virada que a gente constrói com um delivery parecido com o seu 🚀 Hoje passa de 140 mil/mês com o Método Audens. É sobre isso que o {{especialistaNome}} quer te ajudar."}], "text": "Oi, {{primeiroNome}}!\n\nDeixa eu te mostrar rapidinho por que vale remarcar 👇"}, "ns_d4_manha": {"day": 4, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nNão quero ficar te chamando à toa 🙏\n\nVocê ainda quer conversar sobre melhorar os resultados do seu delivery? Se sim, eu remarco com o {{especialistaNome}} agora mesmo."}, "ns_d4_tarde": {"day": 4, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}!\n\nSe for questão de horário, isso eu resolvo 😉\n\nJá separei umas opções na agenda do {{especialistaNome}} 👇\n\n{{horarios}}\n\nÉ só me dizer qual fica melhor."}, "ns_d5_manha": {"day": 5, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou encerrando meus recontatos e o seu ficou aqui comigo.\n\nÚltima tentativa: quer que eu remarque com o {{especialistaNome}}? Responde \"sim\" que eu já cuido 👍"}, "ns_d5_tarde": {"day": 5, "period": "tarde", "version": 1, "cond": false, "media": [], "text": "Oi, {{primeiroNome}}!\n\nVou encerrar por aqui pra não ficar insistindo 🙂\n\nQuando quiser conversar com o {{especialistaNome}}, é só responder essa mensagem que eu remarco na hora.\n\nAbraço,\nJoão 👊"}};
 
 async function cadCfg() {
   try {
@@ -2175,11 +2179,13 @@ async function cadHandleInbound(phone, text) {
   if (isOptOut) {
     await db.ref("whatsapp_optout/" + leadKey).set({ optOut: true, at: Date.now(), reason: "user_request" });
     if (typeof cadStop === "function") await cadStop(leadKey, "opt_out");
+    try { await cadNsStop(leadKey, "opt_out"); } catch (e) {}
     await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
     return;
   }
   // resposta comum: pausa (reversível). A revalidação da fila já barra o envio de quem está pausado.
   try { await db.ref("leads/" + leadKey + "/cadencia/paused").set(true); } catch (e) {}
+  try { await db.ref("leads/" + leadKey + "/cadenciaNoshow/paused").set(true); } catch (e) {}
   // tarefa prioritária para o João (dia 0 = topo da lista)
   try {
     await db.ref("sdr_tarefas/" + leadKey + "_resposta").set({
@@ -2313,6 +2319,7 @@ async function handleCadenciaBuild(req, res) {
     out.totals.queued++;
   }
   await db.ref("cadencia_batches/" + batchId).set({ period: period, date: today, createdAt: Date.now(), totals: out.totals, skips: out.skips });
+  try { out.noshow = await cadNsBuild(period, cfg, today, dow); } catch (e) { console.error("cadNsBuild:", e); }
   return res.status(200).json(out);
 }
 
@@ -2375,6 +2382,7 @@ async function handleCadenciaDrain(req, res) {
       else { await itemRef.update({ status: "queued", attemptCount: att, lastError: String(e && e.message || e), scheduledAt: Date.now() + 5 * 60000 }); }
     }
   }
+  try { out.noshow = await cadNsDrain(cfg, today); } catch (e) { console.error("cadNsDrain:", e); }
   return res.status(200).json(out);
 }
 
@@ -2394,6 +2402,176 @@ async function cadStop(leadKey, reason) {
     if (Object.keys(updates).length) await db.ref().update(updates);
     await db.ref("cadencia_events").push({ type: reason === "meeting_scheduled" ? "meeting_scheduled" : "cadence_stopped", leadKey: leadKey, reason: reason, at: Date.now() });
   } catch (e) { console.error("cadStop:", e); }
+}
+
+
+// ===================== CADÊNCIA DE NO-SHOW (recontato pós-falta) =====================
+async function cadNsGetTemplate(id) {
+  var base = CAD_NS_TEMPLATES[id]; if (!base) return null;
+  var ov = null; try { ov = (await db.ref("config/cadencia_ns_templates/" + id).once("value")).val(); } catch (e) {}
+  return { text: (ov && ov.text) || base.text, version: (ov && ov.version) || base.version || 1, cond: (ov && typeof ov.cond === "boolean") ? ov.cond : !!base.cond, media: (ov && ov.media) || base.media || [] };
+}
+function cadNsTouchFor(cad, period, todayDate) {
+  if (!cad || cad.status !== "active" || !cad.startedAt) return null;
+  var day = cadDaysBetween(cad.startedAt, todayDate) + 1;
+  if (day < 1 || day > 5) return null;
+  var id = "ns_d" + day + "_" + period;
+  var tpl = CAD_NS_TEMPLATES[id]; if (!tpl) return null;
+  return { templateId: id, day: day, period: period, cond: !!tpl.cond, version: tpl.version || 1 };
+}
+async function cadNsValidate(leadKey, period, todayDate) {
+  var lead = (await db.ref("leads/" + leadKey).once("value")).val();
+  if (!lead) return { eligible: false, reason: "lead_not_found" };
+  var tel = String(lead.telefone || "").replace(/\D/g, "");
+  if (tel.length < 10) return { eligible: false, reason: "invalid_phone", lead: lead };
+  var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+  if (opt && opt.optOut) return { eligible: false, reason: "opt_out", lead: lead };
+  var cad = lead.cadenciaNoshow;
+  if (!cad) return { eligible: false, reason: "ns_not_active", lead: lead };
+  if (cad.status === "stopped" || cad.status === "completed") return { eligible: false, reason: "ns_" + cad.status, lead: lead };
+  var day = cad.startedAt ? (cadDaysBetween(cad.startedAt, todayDate) + 1) : 0;
+  if (day > 5) return { eligible: false, reason: "ns_completed", lead: lead };
+  if (cad.paused) return { eligible: false, reason: "cadence_paused", lead: lead };
+  if (lead.needsHumanAttention) return { eligible: false, reason: "human_attention", lead: lead };
+  var touch = cadNsTouchFor(cad, period, todayDate);
+  if (!touch) return { eligible: false, reason: "outside_cadence", lead: lead };
+  if (touch.cond && lead.whatsapp && lead.whatsapp.lastInboundAt) return { eligible: false, reason: "skipped_conditional", lead: lead };
+  var already = (await db.ref("cadencia_ns_msg/" + leadKey + "/" + touch.templateId).once("value")).val();
+  if (already && (already.status === "sent" || already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
+  if (!lead.especialistaNome) return { eligible: false, reason: "missing_variable", lead: lead };
+  return { eligible: true, reason: "eligible", lead: lead, touch: touch };
+}
+async function cadNsStop(leadKey, reason) {
+  try {
+    var st = (reason === "ns_completed") ? "completed" : "stopped";
+    var ref = db.ref("leads/" + leadKey + "/cadenciaNoshow");
+    await ref.transaction(function (c) { if (c && (c.status === "stopped" || c.status === "completed")) return c; c = c || {}; c.status = st; c.stopReason = reason; c.completedAt = Date.now(); return c; });
+    await db.ref("cadencia_ns_ativos/" + leadKey).remove();
+    var fila = (await db.ref("cadencia_ns_fila").once("value")).val() || {};
+    var updates = {};
+    Object.keys(fila).forEach(function (id) { var it = fila[id]; if (it && it.leadKey === leadKey && it.status === "queued") { updates["cadencia_ns_fila/" + id + "/status"] = "cancelled"; updates["cadencia_ns_fila/" + id + "/cancelReason"] = reason; } });
+    if (Object.keys(updates).length) await db.ref().update(updates);
+    await db.ref("cadencia_events").push({ type: reason === "meeting_scheduled" ? "meeting_scheduled" : "cadence_stopped", track: "noshow", leadKey: leadKey, reason: reason, at: Date.now() });
+  } catch (e) { console.error("cadNsStop:", e); }
+}
+async function cadNsEnqueueOne(leadKey, cfg) {
+  var b = cadBRT(Date.now());
+  if (b.dow === 0) return;
+  if (b.hour < (cfg.slotStartHour || 9) || b.hour > (cfg.slotEndHour || 18)) return; // fora do horário: o build agenda depois
+  var period = (b.hour < 13) ? "manha" : "tarde";
+  var v = await cadNsValidate(leadKey, period, b.date);
+  if (!v.eligible) return;
+  var itemRef = db.ref("cadencia_ns_fila/" + leadKey + "_" + v.touch.templateId);
+  var created = false;
+  await itemRef.transaction(function (cur) { if (cur) return; created = true; return { leadKey: leadKey, templateId: v.touch.templateId, day: v.touch.day, period: period, cond: v.touch.cond, version: v.touch.version, status: "queued", batchId: "immediate", scheduledAt: 0, createdAt: Date.now() }; });
+  if (!created) return;
+  var scheduledAt = await cadReserveSlot(cfg.intervalSeconds);
+  await itemRef.update({ scheduledAt: scheduledAt });
+  await db.ref("cadencia_ns_msg/" + leadKey + "/" + v.touch.templateId).update({ status: "queued", templateId: v.touch.templateId, scheduledAt: scheduledAt, batchId: "immediate" });
+}
+async function cadNsStart(leadKey, phone) {
+  try {
+    var lead = null;
+    if (leadKey) { lead = (await db.ref("leads/" + leadKey).once("value")).val(); }
+    if (!lead && phone) { var m = await acharKeyLead(String(phone).replace(/\D/g, ""), "", ""); if (m) { leadKey = m.key; lead = (await db.ref("leads/" + leadKey).once("value")).val(); } }
+    if (!lead) return { ok: false, reason: "lead_not_found" };
+    var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+    if (opt && opt.optOut) return { ok: false, reason: "opt_out" };
+    if (lead.cadenciaNoshow && lead.cadenciaNoshow.status === "active") return { ok: true, already: true, leadKey: leadKey };
+    var esp = lead.especialistaNome || cadResolveEsp(lead.faturamento).nome;
+    var startedAt = cadStartDate(Date.now());
+    var patch = { cadenciaNoshow: { status: esp ? "active" : "paused", startedAt: startedAt, paused: !esp, stopReason: null, completedAt: null, createdAt: Date.now() } };
+    if (esp && !lead.especialistaNome) patch.especialistaNome = esp;
+    if (!esp) patch.needsHumanAttention = true;
+    await db.ref("leads/" + leadKey).update(patch);
+    if (esp) {
+      await db.ref("cadencia_ns_ativos/" + leadKey).set({ startedAt: startedAt, especialista: esp, at: Date.now() });
+      await db.ref("cadencia_events").push({ type: "ns_started", track: "noshow", leadKey: leadKey, at: Date.now() });
+      var cfg = await cadCfg();
+      if (cfg.enabled) { try { await cadNsEnqueueOne(leadKey, cfg); } catch (e) {} }
+    }
+    return { ok: true, leadKey: leadKey, especialista: esp || null };
+  } catch (e) { console.error("cadNsStart:", e); return { ok: false, reason: String(e && e.message || e) }; }
+}
+async function cadNsBuild(period, cfg, today, dow) {
+  var out = { candidates: 0, eligible: 0, queued: 0, skips: {} };
+  if (dow === 0) { out.note = "domingo"; return out; }
+  var ativos = (await db.ref("cadencia_ns_ativos").once("value")).val() || {};
+  var keys = Object.keys(ativos); out.candidates = keys.length;
+  var batchId = "bns_" + period + "_" + today.replace(/-/g, "") + "_" + Date.now();
+  for (var i = 0; i < keys.length; i++) {
+    var leadKey = keys[i];
+    var v = await cadNsValidate(leadKey, period, today);
+    if (!v.eligible) { out.skips[v.reason] = (out.skips[v.reason] || 0) + 1; if (CAD_NS_TERMINAL[v.reason]) { try { await cadNsStop(leadKey, v.reason); } catch (e) {} } continue; }
+    out.eligible++;
+    var itemRef = db.ref("cadencia_ns_fila/" + leadKey + "_" + v.touch.templateId);
+    var created = false;
+    await itemRef.transaction(function (cur) { if (cur) return; created = true; return { leadKey: leadKey, templateId: v.touch.templateId, day: v.touch.day, period: period, cond: v.touch.cond, version: v.touch.version, status: "queued", batchId: batchId, scheduledAt: 0, createdAt: Date.now() }; });
+    if (!created) { out.skips["already_queued"] = (out.skips["already_queued"] || 0) + 1; continue; }
+    var scheduledAt = await cadReserveSlot(cfg.intervalSeconds);
+    await itemRef.update({ scheduledAt: scheduledAt });
+    await db.ref("cadencia_ns_msg/" + leadKey + "/" + v.touch.templateId).update({ status: "queued", templateId: v.touch.templateId, scheduledAt: scheduledAt, batchId: batchId });
+    out.queued++;
+  }
+  await db.ref("cadencia_ns_batches/" + batchId).set({ period: period, date: today, createdAt: Date.now(), totals: out });
+  return out;
+}
+async function cadNsDrain(cfg, today) {
+  var out = { processed: 0, sent: 0, cancelled: 0, failed: 0 };
+  var fila = (await db.ref("cadencia_ns_fila").once("value")).val() || {};
+  var now = Date.now();
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  ids.sort(function (a, b) { return (fila[a].scheduledAt || 0) - (fila[b].scheduledAt || 0); });
+  ids = ids.slice(0, 15);
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i]; var itemRef = db.ref("cadencia_ns_fila/" + id);
+    var locked = false;
+    await itemRef.transaction(function (cur) { if (!cur || cur.status !== "queued") return cur; cur.status = "processing"; cur.processingAt = Date.now(); locked = true; return cur; });
+    if (!locked) continue;
+    out.processed++;
+    var item = (await itemRef.once("value")).val();
+    var leadKey = item.leadKey;
+    var v = await cadNsValidate(leadKey, item.period, today);
+    var msgRef = db.ref("cadencia_ns_msg/" + leadKey + "/" + item.templateId);
+    if (!v.eligible) {
+      await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
+      await msgRef.update({ status: "cancelled_before_send", reason: v.reason });
+      if (CAD_NS_TERMINAL[v.reason]) { try { await cadNsStop(leadKey, v.reason); } catch (e) {} }
+      out.cancelled++; continue;
+    }
+    var tpl = await cadNsGetTemplate(item.templateId);
+    if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
+    var lead = v.lead;
+    if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { lead._horarios = await cadCrmSlots(lead.especialistaNome, 3); } catch (e) { lead._horarios = ""; } }
+    var r = cadRender(tpl.text, lead);
+    if (r.missing.length) { await itemRef.update({ status: "blocked", reason: "missing_template_variable" }); await msgRef.update({ status: "blocked", reason: "missing_template_variable" }); out.failed++; continue; }
+    var leadPhone = String(lead.telefone || "").replace(/\D/g, "");
+    var targetPhone = cfg.testPhone ? cfg.testPhone : leadPhone;
+    var body = cfg.testPhone ? ("[TESTE no-show → lead " + cadMask(leadPhone) + " · " + item.templateId + "]\n\n" + r.text) : r.text;
+    try {
+      await enviarMensagemWhatsapp(targetPhone, body);
+      if (tpl.media && tpl.media.length) { for (var mi = 0; mi < tpl.media.length; mi++) { var md = tpl.media[mi]; if (!md || !md.url) continue; var cap = cadRender(md.caption || "", lead).text; try { await enviarImagemWhatsapp(targetPhone, md.url, cap); } catch (e) {} } }
+      await itemRef.update({ status: "sent", sentAt: Date.now() });
+      await msgRef.update({ status: "sent", sentAt: Date.now(), zapiTo: cadMask(targetPhone) });
+      await db.ref("leads/" + leadKey + "/whatsapp/lastOutboundAt").set(Date.now());
+      await db.ref("cadencia_events").push({ type: "message_sent", track: "noshow", leadKey: cadMask(leadPhone), templateId: item.templateId, specialist: lead.especialistaNome || "", at: Date.now() });
+      out.sent++;
+    } catch (e) {
+      var att = (item.attemptCount || 0) + 1;
+      if (att >= 3) { await itemRef.update({ status: "failed", attemptCount: att, lastError: String(e && e.message || e) }); await msgRef.update({ status: "failed" }); out.failed++; }
+      else { await itemRef.update({ status: "queued", attemptCount: att, lastError: String(e && e.message || e), scheduledAt: Date.now() + 5 * 60000 }); }
+    }
+  }
+  return out;
+}
+// ROTA /noshow-start?secret=...&lead=<key>&phone=<tel>
+async function handleNoshowStart(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var leadKey = (req.query.lead || (req.body && req.body.lead) || "").toString();
+  var phone = (req.query.phone || (req.body && req.body.phone) || "").toString();
+  if (!leadKey && !phone) return res.status(400).json({ ok: false, error: "lead ou phone obrigatorio" });
+  var r = await cadNsStart(leadKey, phone);
+  return res.status(200).json(r);
 }
 
 // ROTA /cadencia-stop?secret=...&lead=<key>&reason=<...>
@@ -2480,6 +2658,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/cadencia-test-send") {
       return await handleCadenciaTest(req, res);
+    }
+    if (path === "/noshow-start") {
+      return await handleNoshowStart(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);

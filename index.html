@@ -9439,6 +9439,7 @@ function saveFollowup(){
     saveAll();closeModal('modal-followup');
     // Envia o lead para o fluxo de recontato de no-shows
     saveReativacaoStatus(_fuMeeting.tel,'nao-atendeu');
+    try{ if(typeof RECEBERLEAD_URL!=='undefined'&&RECEBERLEAD_URL){ fetch(RECEBERLEAD_URL+'/noshow-start?secret='+WEBHOOK_SECRET+'&lead='+encodeURIComponent(_fuMeeting.kanbanKey||'')+'&phone='+encodeURIComponent((_fuMeeting.tel||'').replace(/\D/g,'')),{method:'POST'}).catch(function(){}); } }catch(e){}
     if(_fuMeeting.kanbanKey) moveKanbanCard(_fuMeeting.kanbanKey,'recuperacao');
     if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
     return;
@@ -9706,6 +9707,7 @@ function saveFollowupEdit(){
     saveMeetingFB(fid, meetings[fid]);
     saveFollowupFB(fid, followups[fid]);
     updateReuniaoSheetStatus(fid,'NO-SHOW');
+    try{ if(typeof RECEBERLEAD_URL!=='undefined'&&RECEBERLEAD_URL){ fetch(RECEBERLEAD_URL+'/noshow-start?secret='+WEBHOOK_SECRET+'&phone='+encodeURIComponent((_fuMeeting.tel||'').replace(/\D/g,'')),{method:'POST'}).catch(function(){}); } }catch(e){}
     saveAll();closeModal('modal-followup');
     showSheetToast('Resultado atualizado.', false);
     showPage('reunioes');
@@ -29107,8 +29109,8 @@ async function cadPainelInit(){
   var stEl=document.getElementById('cadp-status');
   if(stEl){stEl.style.color='var(--muted)';stEl.innerHTML='<i class="ti ti-loader"></i> Carregando dados da cadência…';}
   try{
-    var res=await Promise.all([fbGet('cadencia_ativos'),fbGet('leads'),fbGet('cadencia_fila'),fbGet('cadencia_events'),fbGet('whatsapp_optout'),fbGet('config/cadencia')]);
-    var ativos=res[0]||{},leads=res[1]||{},fila=res[2]||{},events=res[3]||{},optout=res[4]||{},cfg=res[5]||{};
+    var res=await Promise.all([fbGet('cadencia_ativos'),fbGet('leads'),fbGet('cadencia_fila'),fbGet('cadencia_events'),fbGet('whatsapp_optout'),fbGet('config/cadencia'),fbGet('cadencia_ns_ativos'),fbGet('cadencia_ns_fila')]);
+    var ativos=res[0]||{},leads=res[1]||{},fila=res[2]||{},events=res[3]||{},optout=res[4]||{},cfg=res[5]||{},nsAtivos=res[6]||{},nsFila=res[7]||{};
     var hoje=_cadpHojeBRT();
     var ativoKeys=Object.keys(ativos);
     var filaArr=Object.keys(fila).map(function(id){var it=fila[id]||{};it._id=id;return it;});
@@ -29116,6 +29118,9 @@ async function cadPainelInit(){
     var processing=filaArr.filter(function(it){return it.status==='processing';});
     var failed=filaArr.filter(function(it){return it.status==='failed'||it.status==='blocked';});
     var optKeys=Object.keys(optout);
+    var nsAtivoKeys=Object.keys(nsAtivos);
+    var nsFilaArr=Object.keys(nsFila).map(function(id){var it=nsFila[id]||{};it._id=id;return it;});
+    var nsQueued=nsFilaArr.filter(function(it){return it.status==='queued';});
     var atencao=[],reunioes=0;
     Object.keys(leads).forEach(function(k){var l=leads[k];if(!l)return;var c=l.cadencia||{};
       if(l.needsHumanAttention===true&&!optout[k])atencao.push({k:k,l:l});
@@ -29136,6 +29141,7 @@ async function cadPainelInit(){
       _cadpKpi('Na fila agora',queued.length,'var(--text)',processing.length?(processing.length+' enviando'):'aguardando disparo'),
       _cadpKpi('Enviadas hoje',enviadasHoje,'var(--text)'),
       _cadpKpi('Viraram reunião',reunioes,'var(--green)'),
+      _cadpKpi('No-show ativos',nsAtivoKeys.length,nsAtivoKeys.length?'#a78bfa':'var(--text)','recontato'),
       _cadpKpi('Opt-out',optKeys.length,optKeys.length?'var(--red)':'var(--text)','pediram p/ sair'),
       _cadpKpi('Falhas',failed.length,failed.length?'var(--red)':'var(--text)','ver abaixo')
     ].join('');
@@ -29167,6 +29173,14 @@ async function cadPainelInit(){
       B+=_cadpCard('🔥 Leads ativos na cadência ('+ativoKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['Especialista'],['Progresso','center'],['WhatsApp']])+'<tbody>'+arows+'</tbody></table></div>','var(--cyan)');
     }
 
+    if(nsAtivoKeys.length){
+      var nsrows=nsAtivoKeys.map(function(k){var a=nsAtivos[k]||{};var l=leads[k]||{};var dia=a.startedAt?(_cadpDias(a.startedAt,hoje)+1):'?';
+        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpEsc(l.empresa||'—')+'</td><td style="padding:6px 8px;">'+_cadpEsc(a.especialista||l.especialistaNome||'—')+'</td><td style="padding:6px 8px;text-align:center;">'+((dia==='?'||dia>5)?'<span style="color:var(--muted);">encerrando</span>':('Dia '+dia+'/5'))+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone)+'</td></tr>';
+      }).join('');
+      var nsq=nsQueued.length?'<div style="font-size:11px;color:var(--muted);margin-top:8px;">'+nsQueued.length+' mensagem(ns) de no-show na fila.</div>':'';
+      B+=_cadpCard('🔁 No-show — recontato ativo ('+nsAtivoKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['Especialista'],['Progresso','center'],['WhatsApp']])+'<tbody>'+nsrows+'</tbody></table></div>'+nsq,'#a78bfa');
+    }
+
     if(failed.length){
       var xrows=failed.slice(0,30).map(function(it){
         return '<tr><td style="padding:6px 8px;">'+_cadpEsc(nomeDe(it.leadKey))+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpTplLabel(it.templateId)+'</td><td style="padding:6px 8px;"><span style="color:var(--red);">'+_cadpEsc(it.status)+'</span>'+(it.reason?(' · '+_cadpEsc(it.reason)):'')+'</td><td style="padding:6px 8px;color:var(--muted);font-size:11px;">'+_cadpEsc(it.lastError||'—')+'</td></tr>';
@@ -29183,9 +29197,9 @@ async function cadPainelInit(){
 
     var evSorted=evArr.sort(function(a,b){return (b.at||0)-(a.at||0);}).slice(0,25);
     if(evSorted.length){
-      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)']};
+      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)'],ns_started:['🔁','No-show iniciado','#a78bfa']};
       var erows=evSorted.map(function(e){var m=EVMAP[e.type]||['·',e.type,'var(--muted)'];
-        return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;"><span style="width:118px;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;">'+_cadpDT(e.at)+'</span><span style="color:'+m[2]+';">'+m[0]+' '+_cadpEsc(m[1])+'</span>'+(e.templateId?'<span style="color:var(--muted);">· '+_cadpTplLabel(e.templateId)+'</span>':'')+(e.reason?'<span style="color:var(--muted);">· '+_cadpEsc(e.reason)+'</span>':'')+'</div>';
+        return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;"><span style="width:118px;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;">'+_cadpDT(e.at)+'</span><span style="color:'+m[2]+';">'+m[0]+' '+_cadpEsc(m[1])+'</span>'+(e.track==='noshow'?'<span style="color:#a78bfa;font-size:10px;"> · no-show</span>':'')+(e.templateId?'<span style="color:var(--muted);">· '+_cadpTplLabel(e.templateId)+'</span>':'')+(e.reason?'<span style="color:var(--muted);">· '+_cadpEsc(e.reason)+'</span>':'')+'</div>';
       }).join('');
       B+=_cadpCard('🕑 Últimos eventos',erows);
     }
