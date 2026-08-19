@@ -500,7 +500,9 @@ async function handleReceberLead(req, res) {
   // Quiz qualificado recebe a mensagem própria; demais leads, o primeiro contato do João.
   // EXCEÇÃO: leads de faixa baixa (<15k quiz / <20k LP) são direcionados à LP "Vivendo de Delivery"
   // e NÃO recebem mensagem (entram arquivados no board, apenas salvos no banco).
-  const faixaBaixa = ["ate-15", "0-15", "ate-20"].includes(String(faixa || ""));
+  const _invLC = String(investimento || "").toLowerCase();
+  const _naoQuer = _invLC === "nao" || _invLC.indexOf("prioridade") >= 0 || _invLC.indexOf("não pretendo") >= 0 || _invLC.indexOf("nao pretendo") >= 0 || _invLC.indexOf("não consigo") >= 0 || _invLC.indexOf("nao consigo") >= 0;
+  const faixaBaixa = ["ate-15", "0-15", "ate-20"].includes(String(faixa || "")) || (_naoQuer && ["15-20", "20-50", "15-30", "30-50"].includes(String(faixa || "")));
   if (!faixaBaixa) {
     await enviarMensagemWhatsapp(tel, isQuizQualificado ? mensagemQuizQualificado(nome) : mensagemPrimeiroContato(nome));
   }
