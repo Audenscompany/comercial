@@ -149,22 +149,25 @@ var firebaseConfig = {
 };
 var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
 
-var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null, events:null};
+var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null, events:null, kanban:null};
 /* LP antiga = Elementor (só gerava leads, sem tracking próprio). LP nova = 'lp-audens' (tracking completo). */
 var OLD_SOURCES = {'lp-elementor':1,'elementor':1,'lp-antiga':1};
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(m){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[m];});}
 function leadTel(l){return String((l&&(l.telefone||l.whatsapp||l.tel||l.phone||l.celular))||"").replace(/\D/g,"");}
-/* Onde o lead parou na LP — derivado do roteamento (faixa + disposição a investir) */
+/* Onde o lead parou na LP — cruza o roteamento (faixa + investir) com o agendamento REAL (kanban) */
 function destinoLead(l){
   var faixa=String(l.faixa||'');
+  var KB=cache.kanban||{}; var kb=KB[leadTel(l)]||null; var st=kb&&kb.status;
+  var agendouDeFato=(st==='reuniao'||st==='proposta'||st==='fechado');
   if(['ate-15','0-15','ate-20'].indexOf(faixa)>=0) return {t:'🎓 Curso (Vivendo de Delivery)', bg:'rgba(124,52,240,.18)', fg:'#c9a2ff'};
+  if(agendouDeFato) return {t:'✅ Agendou reunião'+(st!=='reuniao'?' ('+st+')':''), bg:'rgba(37,211,102,.18)', fg:'#25d366'};
   var isQuiz=/quiz/i.test(String(l._source||''));
   if(!isQuiz) return {t:'Lead comercial', bg:'rgba(255,255,255,.06)', fg:'var(--muted)'};
   var inv=String(l.investimento||'').toLowerCase();
   var naoQuer = inv==='nao' || inv.indexOf('prioridade')>=0 || inv.indexOf('não pretendo')>=0 || inv.indexOf('nao pretendo')>=0 || inv.indexOf('não consigo')>=0 || inv.indexOf('nao consigo')>=0;
   if(naoQuer) return {t:'▶ YouTube (não quis investir)', bg:'rgba(245,176,1,.15)', fg:'#f5b301'};
-  return {t:'📅 Agenda (reunião)', bg:'rgba(37,211,102,.15)', fg:'#25d366'};
+  return {t:'📅 Qualificado — não agendou', bg:'rgba(120,160,255,.16)', fg:'#8ab4ff'};
 }
 function destinoCell(l){ var d=destinoLead(l); return '<td><span class="pill" style="background:'+d.bg+';color:'+d.fg+'">'+esc(d.t)+'</span></td>'; }
 function fmtTel(d){d=String(d||"").replace(/\D/g,"");if(!d)return "";var n=d.replace(/^55/,"");if(n.length===11)return "("+n.slice(0,2)+") "+n.slice(2,7)+"-"+n.slice(7);if(n.length===10)return "("+n.slice(0,2)+") "+n.slice(2,6)+"-"+n.slice(6);return d;}
@@ -205,7 +208,8 @@ function load(){
   var p1 = fbDb.ref('analytics/sessions').once('value').then(function(s){ cache.sessions = s.val()||{}; }).catch(function(e){ cache.sessions={}; console.warn('sessions:',e.message); });
   var p2 = fbDb.ref('leads').once('value').then(function(s){ cache.leads = s.val()||{}; }).catch(function(e){ cache.leads={}; console.warn('leads:',e.message); });
   var p3 = fbDb.ref('analytics/events').once('value').then(function(s){ cache.events = s.val()||{}; }).catch(function(e){ cache.events={}; console.warn('events:',e.message); });
-  Promise.all([p1,p2,p3]).then(render);
+  var p4 = fbDb.ref('kanban').once('value').then(function(s){ cache.kanban = s.val()||{}; }).catch(function(e){ cache.kanban={}; console.warn('kanban:',e.message); });
+  Promise.all([p1,p2,p3,p4]).then(render);
 }
 el('reload').addEventListener('click', load);
 Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b){
