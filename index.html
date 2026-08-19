@@ -861,6 +861,8 @@ function startRealtimeSync(){
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
+  fbDb.ref('meta_names/ads').on('value',function(s){var v=s.val();if(v){window._metaAdNameById=Object.assign(window._metaAdNameById||{},v);}});
+  fbDb.ref('meta_names/campaigns').on('value',function(s){var v=s.val();if(v){window._metaCampaignNameById=Object.assign(window._metaCampaignNameById||{},v);}});
 
   // ===== STORIES LAB: listeners + coletor automático (boot) =====
   try{ storiesStartListeners(); }catch(e){ console.error('storiesStartListeners',e); }
@@ -3444,6 +3446,8 @@ async function fetchMetaAdSpendMap(period){
       });
     }catch(e){console.error('fetchMetaAdSpendMap acc '+ids[i],e);}
   }
+  // Persiste o dicionário ID->nome no nosso Firebase (assim o CRM/back-end resolve sem depender do Meta conectado)
+  try{ if(fbDb||initFirebase()){ if(window._metaAdNameById)fbDb.ref('meta_names/ads').update(window._metaAdNameById); if(window._metaCampaignNameById)fbDb.ref('meta_names/campaigns').update(window._metaCampaignNameById); } }catch(e){}
   return map;
 }
 function saveMetaConfig(){
