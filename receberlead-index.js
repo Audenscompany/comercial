@@ -2041,7 +2041,8 @@ function cadDiaNome(dateStr) {
   return dias[dow];
 }
 // Calcula horários livres do especialista a partir das reuniões do PRÓPRIO CRM (nó meetings)
-async function cadCrmSlots(especialista, maxN) {
+async function cadCrmSlotsData(especialista, maxN) {
+  var out = [];
   try {
     var cfg = await cadCfg();
     var startH = cfg.slotStartHour, endH = cfg.slotEndHour, days = cfg.slotDays;
@@ -2053,25 +2054,28 @@ async function cadCrmSlots(especialista, maxN) {
       var st = String(m.status || "").toLowerCase();
       if (st === "cancelado" || st === "reagendado" || st === "noshow") return;
       var resp = String(m.responsavel || "").trim().toLowerCase();
-      if (esp && resp && resp.indexOf(esp) < 0 && esp.indexOf(resp) < 0) return; // só do especialista
+      if (esp && resp && resp.indexOf(esp) < 0 && esp.indexOf(resp) < 0) return;
       var b = cadBRT(m.dtISO);
       occupied[b.date + " " + b.hour] = true;
     });
-    var out = [];
     var now = Date.now();
-    var minTs = now + 2 * 3600000; // pelo menos 2h de antecedência
+    var minTs = now + 2 * 3600000;
     for (var dd = 0; dd < days + 3 && out.length < (maxN || 3); dd++) {
       var b = cadBRT(now + dd * 86400000);
-      if (b.dow === 0) continue; // domingo não
+      if (b.dow === 0) continue;
       for (var h = startH; h <= endH && out.length < (maxN || 3); h++) {
         if (occupied[b.date + " " + h]) continue;
-        var slotIso = b.date + "T" + String(h).padStart(2, "0") + ":00:00-03:00"; // BRT
+        var slotIso = b.date + "T" + String(h).padStart(2, "0") + ":00:00-03:00";
         if (new Date(slotIso).getTime() < minTs) continue;
-        out.push("• " + cadDiaNome(b.date) + " " + b.date.slice(8, 10) + "/" + b.date.slice(5, 7) + " às " + h + "h");
+        out.push({ iso: slotIso, hour: h, date: b.date, label: cadDiaNome(b.date) + " " + b.date.slice(8, 10) + "/" + b.date.slice(5, 7) + " às " + h + "h" });
       }
     }
-    return out.join("\n");
-  } catch (e) { console.error("cadCrmSlots:", e); return ""; }
+  } catch (e) { console.error("cadCrmSlotsData:", e); }
+  return out;
+}
+async function cadCrmSlots(especialista, maxN) {
+  var d = await cadCrmSlotsData(especialista, maxN);
+  return d.map(function (x) { return "• " + x.label; }).join("\n");
 }
 function cadParseFat(str) {
   var s = String(str || "").toLowerCase().replace(/\s/g, "");
@@ -2167,33 +2171,37 @@ async function cadHandleInbound(phone, text) {
   var tel = String(phone || "").replace(/\D/g, "");
   if (!tel) return;
   var m = await acharKeyLead(tel, "", "");
-  if (!m) return; // não é um lead conhecido
+  if (!m) return;
   var leadKey = m.key;
   var lead = (await db.ref("leads/" + leadKey).once("value")).val();
   if (!lead) return;
-  // só age se o lead está numa cadência ativa/pausada (evita mexer em quem já saiu)
   var cadStatus = (lead.cadencia && lead.cadencia.status) || "";
-  await db.ref("leads/" + leadKey).update({ "whatsapp/lastInboundAt": Date.now(), "whatsapp/humanConversationActive": true, needsHumanAttention: true });
+  await db.ref("leads/" + leadKey).update({ "whatsapp/lastInboundAt": Date.now(), "whatsapp/humanConversationActive": true });
   var norm = String(text || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, " ");
   var isOptOut = /(para de (me )?(mandar|chamar|enviar)|nao (me )?(mande|manda|chame|chama|envie|envia)( mais)?|nao quero (mais )?(receber|mensagem|mensagens|contato)|remov(er|a) (meu|o) (contato|numero)|descadastr|sair da lista|me tira( da lista)?|opt ?out|^\s*stop\s*$|pare de me)/.test(norm);
   if (isOptOut) {
     await db.ref("whatsapp_optout/" + leadKey).set({ optOut: true, at: Date.now(), reason: "user_request" });
     if (typeof cadStop === "function") await cadStop(leadKey, "opt_out");
     try { await cadNsStop(leadKey, "opt_out"); } catch (e) {}
+    try { await db.ref("leads/" + leadKey + "/agendamento").remove(); } catch (e) {}
     await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
     return;
   }
-  // resposta comum: pausa (reversível). A revalidação da fila já barra o envio de quem está pausado.
+  // pausa as cadências enquanto há conversa humana / agendamento em curso
   try { await db.ref("leads/" + leadKey + "/cadencia/paused").set(true); } catch (e) {}
   try { await db.ref("leads/" + leadKey + "/cadenciaNoshow/paused").set(true); } catch (e) {}
-  // tarefa prioritária para o João (dia 0 = topo da lista)
+  // AGENDAMENTO CONVERSACIONAL: se há horários oferecidos, tenta entender e marcar
+  var ag = lead.agendamento;
+  if (ag && (ag.status === "options_sent" || ag.status === "awaiting_confirm")) {
+    try {
+      var handled = await cadTentarAgendar(leadKey, lead, ag, text, tel);
+      if (handled) return; // resolvido automaticamente — não passa pro João
+    } catch (e) { console.error("cadTentarAgendar:", e); }
+  }
+  // não deu pra resolver sozinho → passa pro João
+  try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: true }); } catch (e) {}
   try {
-    await db.ref("sdr_tarefas/" + leadKey + "_resposta").set({
-      leadKey: leadKey, nome: lead.nome || "", telefone: lead.telefone || tel,
-      empresa: lead.empresa || "", faturamento: lead.faturamento || "",
-      tipo: "⚡ Lead respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha",
-      dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now()
-    });
+    await db.ref("sdr_tarefas/" + leadKey + "_resposta").set({ leadKey: leadKey, nome: lead.nome || "", telefone: lead.telefone || tel, empresa: lead.empresa || "", faturamento: lead.faturamento || "", tipo: "⚡ Lead respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
   } catch (e) {}
   await db.ref("cadencia_events").push({ type: "lead_replied", leadKey: leadKey, cadStatus: cadStatus, at: Date.now() });
 }
@@ -2358,7 +2366,9 @@ async function handleCadenciaDrain(req, res) {
     var tpl = await cadGetTemplate(item.templateId);
     if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
     var lead = v.lead;
-    if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { lead._horarios = await cadCrmSlots(lead.especialistaNome, 3); } catch (e) { lead._horarios = ""; } }
+    var _opc = null;
+    if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { var _sd = await cadCrmSlotsData(lead.especialistaNome, 3); lead._horarios = _sd.map(function (x) { return "• " + x.label; }).join("\n"); _opc = _sd; } catch (e) { lead._horarios = ""; } }
+    if (_opc && _opc.length && !cfg.testPhone) { try { await db.ref("leads/" + leadKey + "/agendamento").set({ status: "options_sent", opcoes: _opc, sentAt: Date.now(), especialista: lead.especialistaNome || "", templateId: item.templateId }); } catch (e) {} }
     var r = cadRender(tpl.text, lead);
     if (r.missing.length) {
       await itemRef.update({ status: "blocked", reason: "missing_template_variable" });
@@ -2542,7 +2552,9 @@ async function cadNsDrain(cfg, today) {
     var tpl = await cadNsGetTemplate(item.templateId);
     if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
     var lead = v.lead;
-    if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { lead._horarios = await cadCrmSlots(lead.especialistaNome, 3); } catch (e) { lead._horarios = ""; } }
+    var _opc = null;
+    if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { var _sd = await cadCrmSlotsData(lead.especialistaNome, 3); lead._horarios = _sd.map(function (x) { return "• " + x.label; }).join("\n"); _opc = _sd; } catch (e) { lead._horarios = ""; } }
+    if (_opc && _opc.length && !cfg.testPhone) { try { await db.ref("leads/" + leadKey + "/agendamento").set({ status: "options_sent", opcoes: _opc, sentAt: Date.now(), especialista: lead.especialistaNome || "", templateId: item.templateId }); } catch (e) {} }
     var r = cadRender(tpl.text, lead);
     if (r.missing.length) { await itemRef.update({ status: "blocked", reason: "missing_template_variable" }); await msgRef.update({ status: "blocked", reason: "missing_template_variable" }); out.failed++; continue; }
     var leadPhone = String(lead.telefone || "").replace(/\D/g, "");
@@ -2572,6 +2584,137 @@ async function handleNoshowStart(req, res) {
   if (!leadKey && !phone) return res.status(400).json({ ok: false, error: "lead ou phone obrigatorio" });
   var r = await cadNsStart(leadKey, phone);
   return res.status(200).json(r);
+}
+
+
+// ===================== AGENDAMENTO CONVERSACIONAL (lead escolhe horário no WhatsApp) =====================
+function cadPickOrdinal(t, n) {
+  if (/\b(primeir|1a|1o|opcao 1|opcao1|numero 1|a 1)\b/.test(t)) return 1;
+  if (/\b(segund|2a|2o|opcao 2|opcao2|numero 2|a 2)\b/.test(t)) return 2;
+  if (n >= 3 && /\b(terceir|3a|3o|opcao 3|opcao3|numero 3|a 3)\b/.test(t)) return 3;
+  return 0;
+}
+function cadPickByHour(t, opcoes) {
+  var found = [];
+  for (var i = 0; i < opcoes.length; i++) {
+    var h = opcoes[i].hour;
+    var re1 = new RegExp("(^|\\D)" + h + "\\s*h", "");
+    var re2 = new RegExp("(as|às|as as)\\s*" + h + "(\\D|$)", "");
+    if (re1.test(t) || re2.test(t)) found.push(i + 1);
+  }
+  return (found.length === 1) ? found[0] : 0;
+}
+async function cadClassifyAI(opcoes, status, texto) {
+  var lista = opcoes.map(function (o, i) { return (i + 1) + ") " + o.label; }).join("\n");
+  var prompt = "Você interpreta a resposta de um lead a uma oferta de horários para uma reunião.\n\nHorários oferecidos:\n" + lista + "\n\nEstado atual: " + (status === "awaiting_confirm" ? "aguardando o lead CONFIRMAR um horário já escolhido" : "aguardando o lead ESCOLHER um dos horários") + "\n\nMensagem do lead:\n\"" + String(texto || "") + "\"\n\nResponda em JSON puro, sem markdown, com uma destas formas:\n- {\"action\":\"pick\",\"index\":N}  quando o lead escolhe/prefere o horário N da lista\n- {\"action\":\"confirm\"}  quando o lead confirma/aceita (sim, pode, fechado...)\n- {\"action\":\"other\"}  quando pede outro horário, recusa, ou não é sobre escolher horário\n\nApenas o JSON.";
+  var resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 60, messages: [{ role: "user", content: prompt }] })
+  });
+  if (!resp.ok) throw new Error("anthropic " + resp.status);
+  var data = await resp.json();
+  var txt = ((data.content && data.content[0] && data.content[0].text) || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  var j = JSON.parse(txt);
+  if (j.action === "pick") j.index = parseInt(j.index, 10) || 0;
+  return j;
+}
+async function cadInterpretarAgendamento(opcoes, status, texto) {
+  var t = String(texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, " ");
+  if (status === "awaiting_confirm") {
+    if (/\b(sim|confirmo|confirmado|confirmar|pode|isso|fechad|fechou|perfeito|bora|ok|blz|beleza|combinado|vamos|quero|marca|marcar|certo|show)\b/.test(t) && !/\b(nao|nunca|outro|outra|nenhum|remarca)\b/.test(t)) return { action: "confirm" };
+  }
+  var po = cadPickOrdinal(t, opcoes.length); if (po) return { action: "pick", index: po };
+  var ph = cadPickByHour(t, opcoes); if (ph) return { action: "pick", index: ph };
+  if (ANTHROPIC_API_KEY) { try { return await cadClassifyAI(opcoes, status, texto); } catch (e) { console.error("cadClassifyAI:", e); } }
+  return { action: "other" };
+}
+async function cadAgendarConversa(leadKey, lead, slot, target) {
+  var cfg = await cadCfg();
+  var kb = {}; try { kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {}; } catch (e) {}
+  var nome = lead.nome || kb.nome || "";
+  var telFinal = String(lead.telefone || kb.telefone || "").replace(/\D/g, "");
+  var faixa = lead.faixa || kb.faixa || "";
+  var responsavel = kb.responsavel || closerPorFaixa(faixa) || lead.especialistaNome || "";
+  var meetingISO = slot.iso;
+  var meetingDisplay = formatBRT(slot.iso);
+  var mid = "km_" + leadKey + "_" + Date.now();
+  try {
+    await db.ref("kanban/" + leadKey).update({ status: "reuniao", statusAt: Date.now(), meetingISO: meetingISO, meetingDisplay: meetingDisplay, responsavel: responsavel, meetingId: mid, lembretes: { h2: false, h1: false, m10: false }, _aguardandoWebhook: null });
+  } catch (e) { console.error("cadAgendarConversa kanban:", e); }
+  try {
+    await db.ref("meetings/" + mid).set({ id: mid, tel: telFinal, nome: String(nome), dtISO: meetingISO, dtDisplay: meetingDisplay, status: "pending", responsavel: responsavel, guestEmail: lead.email || "", faturamentoLead: lead.faturamento || kb.faturamento || "", origem: "Tráfego", kanbanKey: leadKey, sdrName: "JOÃO", scheduledAt: Date.now(), _viaCadencia: true });
+  } catch (e) { console.error("cadAgendarConversa meeting:", e); }
+  try { await db.ref("leads/" + leadKey + "/agendamento").set({ status: "booked", meetingId: mid, iso: meetingISO, label: slot.label, bookedAt: Date.now() }); } catch (e) {}
+  try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: false }); } catch (e) {}
+  try { await cadStop(leadKey, "meeting_scheduled"); } catch (e) {}
+  try { await cadNsStop(leadKey, "meeting_scheduled"); } catch (e) {}
+  await db.ref("cadencia_events").push({ type: "meeting_scheduled", track: "conversational", leadKey: leadKey, meetingId: mid, at: Date.now() });
+  var to = cfg.testPhone ? cfg.testPhone : (target || telFinal);
+  try {
+    if (to) {
+      await enviarMensagemWhatsapp(to, mensagemConfirmacaoParte1(nome));
+      await enviarImagemWhatsapp(to, IMG_FATURAMENTO_ANTERIOR, "");
+      await enviarImagemWhatsapp(to, IMG_FATURAMENTO_ATUAL, legendaFaturamentoAtual());
+      if (meetingDisplay) await enviarMensagemWhatsapp(to, mensagemConfirmacaoParte2(meetingDisplay));
+      await enviarMensagemWhatsapp(to, mensagemEscassez(nome, responsavel));
+    }
+  } catch (e) { console.error("cadAgendarConversa WA:", e); }
+}
+async function cadTentarAgendar(leadKey, lead, ag, texto, senderPhone) {
+  var opcoes = ag.opcoes || [];
+  if (!opcoes.length) return false;
+  var esp = lead.especialistaNome || ag.especialista || "o especialista";
+  var pn = primeiroNomeDe(lead.nome || "");
+  var target = senderPhone;
+  var interp = await cadInterpretarAgendamento(opcoes, ag.status, texto);
+  if (ag.status === "options_sent") {
+    if (interp.action === "pick" && interp.index >= 1 && interp.index <= opcoes.length) {
+      var slot = opcoes[interp.index - 1];
+      await db.ref("leads/" + leadKey + "/agendamento").update({ status: "awaiting_confirm", escolhido: slot, escolhidoAt: Date.now() });
+      await enviarMensagemWhatsapp(target, "Show" + (pn ? ", " + pn : "") + "! 🙌 Fecho então com o " + esp + ":\n\n📅 *" + slot.label + "*\n\nConfirma que eu já marco? É só responder *sim* 👍");
+      await db.ref("cadencia_events").push({ type: "agendamento_escolha", leadKey: leadKey, at: Date.now() });
+      return true;
+    }
+    return false;
+  }
+  if (ag.status === "awaiting_confirm") {
+    if (interp.action === "confirm") {
+      var slotC = ag.escolhido; if (!slotC) return false;
+      await cadAgendarConversa(leadKey, lead, slotC, target);
+      return true;
+    }
+    if (interp.action === "pick" && interp.index >= 1 && interp.index <= opcoes.length) {
+      var slot2 = opcoes[interp.index - 1];
+      await db.ref("leads/" + leadKey + "/agendamento").update({ status: "awaiting_confirm", escolhido: slot2, escolhidoAt: Date.now() });
+      await enviarMensagemWhatsapp(target, "Perfeito! Então fica *" + slot2.label + "*. Confirma? Responde *sim* que eu marco 👍");
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+// ROTA /agendamento-sim?secret=...&phone=...&especialista=Lucas  (teste do fluxo conversacional)
+async function handleAgendamentoSim(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var phone = String(req.query.phone || (req.body && req.body.phone) || "").replace(/\D/g, "");
+  var esp = String(req.query.especialista || (req.body && req.body.especialista) || "Lucas");
+  if (phone.length < 10) return res.status(400).json({ ok: false, error: "phone invalido" });
+  var m = await acharKeyLead(phone, "", "");
+  var leadKey;
+  if (m) { leadKey = m.key; } else {
+    leadKey = "teste_" + phone + "_" + Date.now();
+    await db.ref("leads/" + leadKey).set({ nome: "Teste Agendamento", telefone: phone, especialistaNome: esp, faturamento: "acima de 50 mil", origem: "Teste", _teste: true, createdAt: Date.now() });
+  }
+  var lead = (await db.ref("leads/" + leadKey).once("value")).val() || {};
+  var esp2 = lead.especialistaNome || esp;
+  var slots = await cadCrmSlotsData(esp2, 2);
+  if (!slots.length) return res.status(200).json({ ok: false, error: "sem horarios livres na agenda" });
+  var pn = primeiroNomeDe(lead.nome || "");
+  var msg = "Oi" + (pn ? " " + pn : "") + "! Pra facilitar, já olhei a agenda do " + esp2 + " 👇\n\n" + slots.map(function (s) { return "• " + s.label; }).join("\n") + "\n\nMe responde qual encaixa melhor que eu confirmo 👍";
+  await enviarMensagemWhatsapp(phone, msg);
+  await db.ref("leads/" + leadKey + "/agendamento").set({ status: "options_sent", opcoes: slots, sentAt: Date.now(), especialista: esp2, _teste: true });
+  return res.status(200).json({ ok: true, leadKey: leadKey, opcoes: slots });
 }
 
 // ROTA /cadencia-stop?secret=...&lead=<key>&reason=<...>
@@ -2661,6 +2804,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/noshow-start") {
       return await handleNoshowStart(req, res);
+    }
+    if (path === "/agendamento-sim") {
+      return await handleAgendamentoSim(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);

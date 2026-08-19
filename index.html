@@ -29096,7 +29096,7 @@ function renderCadenciaPainel(){
     '<div style="display:flex;gap:7px;flex-wrap:wrap;">'+
       '<button onclick="cadPainelBuild(\'manha\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila manhã</button>'+
       '<button onclick="cadPainelBuild(\'tarde\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila tarde</button>'+
-      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+
+      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+'<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+
       '<button onclick="cadPainelInit()" class="btn btn-primary" style="font-size:11px;padding:7px 13px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
     '</div></div>'+
     '<div id="cadp-status" style="font-size:12px;color:var(--muted);margin:6px 0 14px;">Carregando…</div>'+
@@ -29197,7 +29197,7 @@ async function cadPainelInit(){
 
     var evSorted=evArr.sort(function(a,b){return (b.at||0)-(a.at||0);}).slice(0,25);
     if(evSorted.length){
-      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)'],ns_started:['🔁','No-show iniciado','#a78bfa']};
+      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)'],ns_started:['🔁','No-show iniciado','#a78bfa'],agendamento_escolha:['🗓️','Lead escolheu horário','var(--cyan)']};
       var erows=evSorted.map(function(e){var m=EVMAP[e.type]||['·',e.type,'var(--muted)'];
         return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;"><span style="width:118px;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;">'+_cadpDT(e.at)+'</span><span style="color:'+m[2]+';">'+m[0]+' '+_cadpEsc(m[1])+'</span>'+(e.track==='noshow'?'<span style="color:#a78bfa;font-size:10px;"> · no-show</span>':'')+(e.templateId?'<span style="color:var(--muted);">· '+_cadpTplLabel(e.templateId)+'</span>':'')+(e.reason?'<span style="color:var(--muted);">· '+_cadpEsc(e.reason)+'</span>':'')+'</div>';
       }).join('');
@@ -29219,6 +29219,21 @@ async function cadPainelBuild(period){
     else{if(st){st.style.color='var(--amber)';st.textContent='Resposta inesperada — a rota /cadencia-build está no deploy?';}}
     setTimeout(cadPainelInit,900);
   }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function cadPainelSimAgendamento(){
+  var st=document.getElementById('cadp-status');
+  var cfg=await fbGet('config/cadencia')||{};
+  var phone=(cfg.testPhone||'').replace(/\D/g,'');
+  if(!phone){ phone=(prompt('Número (com DDD, ex 5531999999999) para receber os 2 horários de teste:')||'').replace(/\D/g,''); }
+  if(!phone||phone.length<10){ if(st){st.style.color='var(--red)';st.textContent='Informe um número válido (ou preencha o número de teste no IA|SDR).';} return; }
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Enviando 2 horários para '+phone+'…';}
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/agendamento-sim?secret='+WEBHOOK_SECRET+'&phone='+phone,{method:'POST'});
+    var j={};try{j=await r.json();}catch(e){}
+    if(j&&j.ok){ if(st){st.style.color='var(--green)';st.textContent='Horários enviados para '+phone+'. Responda no WhatsApp (ex.: "a primeira" e depois "sim") pra testar o agendamento automático.';} }
+    else{ if(st){st.style.color='var(--amber)';st.textContent=(j&&j.error)||'Falhou — a rota /agendamento-sim já está no deploy?';} }
+    setTimeout(cadPainelInit,1400);
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 async function cadPainelDrain(){
   var st=document.getElementById('cadp-status');if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Disparando fila…';}
