@@ -2629,6 +2629,28 @@ async function cadInterpretarAgendamento(opcoes, status, texto) {
   if (ANTHROPIC_API_KEY) { try { return await cadClassifyAI(opcoes, status, texto); } catch (e) { console.error("cadClassifyAI:", e); } }
   return { action: "other" };
 }
+function cadSlotKey(responsavel, slot) {
+  return String(responsavel || "esp").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24) + "_" + slot.date + "_" + slot.hour;
+}
+async function cadSlotLivre(responsavel, esp, slot) {
+  try {
+    var mts = (await db.ref("meetings").once("value")).val() || {};
+    var respN = String(responsavel || "").trim().toLowerCase();
+    var espN = String(esp || "").trim().toLowerCase();
+    var keys = Object.keys(mts);
+    for (var i = 0; i < keys.length; i++) {
+      var m = mts[keys[i]]; if (!m || !m.dtISO) continue;
+      var st = String(m.status || "").toLowerCase();
+      if (st === "cancelado" || st === "reagendado" || st === "noshow") continue;
+      var b = cadBRT(m.dtISO);
+      if (b.date === slot.date && b.hour === slot.hour) {
+        var r = String(m.responsavel || "").trim().toLowerCase();
+        if (!r || !respN || r.indexOf(respN) >= 0 || respN.indexOf(r) >= 0 || (espN && (r.indexOf(espN) >= 0 || espN.indexOf(r) >= 0))) return false;
+      }
+    }
+    return true;
+  } catch (e) { return true; }
+}
 async function cadAgendarConversa(leadKey, lead, slot, target) {
   var cfg = await cadCfg();
   var kb = {}; try { kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {}; } catch (e) {}
@@ -2636,9 +2658,33 @@ async function cadAgendarConversa(leadKey, lead, slot, target) {
   var telFinal = String(lead.telefone || kb.telefone || "").replace(/\D/g, "");
   var faixa = lead.faixa || kb.faixa || "";
   var responsavel = kb.responsavel || closerPorFaixa(faixa) || lead.especialistaNome || "";
+  var esp = lead.especialistaNome || responsavel;
+  var to = cfg.testPhone ? cfg.testPhone : (target || telFinal);
+  var pn = primeiroNomeDe(lead.nome || "");
+  // TRAVA ANTI-DUPLICIDADE: horário ainda livre + reserva atômica por slot
+  var lockRef = db.ref("slot_locks/" + cadSlotKey(responsavel, slot));
+  var livre = await cadSlotLivre(responsavel, esp, slot);
+  var got = false;
+  if (livre) {
+    await lockRef.transaction(function (cur) { if (cur && cur.leadKey && cur.leadKey !== leadKey) return cur; got = true; return { leadKey: leadKey, at: Date.now() }; });
+  }
+  if (!livre || !got) {
+    var novos = await cadCrmSlotsData(esp, 2);
+    if (novos.length) {
+      await db.ref("leads/" + leadKey + "/agendamento").set({ status: "options_sent", opcoes: novos, sentAt: Date.now(), especialista: esp });
+      if (to) await enviarMensagemWhatsapp(to, "Ihh" + (pn ? ", " + pn : "") + "! Esse horário acabou de ser preenchido 😬 Mas consigo estes aqui:\n\n" + novos.map(function (s) { return "• " + s.label; }).join("\n") + "\n\nQual fica melhor pra você?");
+    } else {
+      await db.ref("leads/" + leadKey).update({ needsHumanAttention: true });
+      try { await db.ref("sdr_tarefas/" + leadKey + "_resposta").set({ leadKey: leadKey, nome: nome, telefone: telFinal, empresa: lead.empresa || "", faturamento: lead.faturamento || "", tipo: "⚡ Horário lotado — reagendar", icon: "ti-calendar-x", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() }); } catch (e) {}
+      if (to) await enviarMensagemWhatsapp(to, "Ihh" + (pn ? ", " + pn : "") + "! Esse horário acabou de ser preenchido 😬 Já te chamo com uma nova opção, tá?");
+    }
+    await db.ref("cadencia_events").push({ type: "slot_conflict", leadKey: leadKey, at: Date.now() });
+    return;
+  }
   var meetingISO = slot.iso;
   var meetingDisplay = formatBRT(slot.iso);
   var mid = "km_" + leadKey + "_" + Date.now();
+  try { await lockRef.update({ meetingId: mid }); } catch (e) {}
   try {
     await db.ref("kanban/" + leadKey).update({ status: "reuniao", statusAt: Date.now(), meetingISO: meetingISO, meetingDisplay: meetingDisplay, responsavel: responsavel, meetingId: mid, lembretes: { h2: false, h1: false, m10: false }, _aguardandoWebhook: null });
   } catch (e) { console.error("cadAgendarConversa kanban:", e); }
@@ -2650,7 +2696,6 @@ async function cadAgendarConversa(leadKey, lead, slot, target) {
   try { await cadStop(leadKey, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(leadKey, "meeting_scheduled"); } catch (e) {}
   await db.ref("cadencia_events").push({ type: "meeting_scheduled", track: "conversational", leadKey: leadKey, meetingId: mid, at: Date.now() });
-  var to = cfg.testPhone ? cfg.testPhone : (target || telFinal);
   try {
     if (to) {
       await enviarMensagemWhatsapp(to, mensagemConfirmacaoParte1(nome));
