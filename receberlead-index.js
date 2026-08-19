@@ -2013,6 +2013,8 @@ const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 1, "
 // Nasce DESLIGADA. Ativar em: config/cadencia { enabled:true, testPhone:"55...", intervalSeconds:300 }
 // testPhone preenchido = TODAS as mensagens vão para esse número (modo teste).
 const CAD_SENDER_ID = "audens_joao";
+const CAD_COLUNAS_OK = { "": 1, "novo": 1, "qualificado": 1 };            // só manda nessas colunas
+const CAD_TERMINAL = { meeting_scheduled: 1, left_columns: 1, opt_out: 1, not_interested: 1, cadence_stopped: 1, cadence_completed: 1 };
 
 async function cadCfg() {
   try {
@@ -2118,7 +2120,7 @@ async function cadValidate(leadKey, period, todayDate) {
   var tel = String(lead.telefone || "").replace(/\D/g, "");
   if (tel.length < 10) return { eligible: false, reason: "invalid_phone", lead: lead };
   var kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {};
-  if (kb.status === "reuniao") return { eligible: false, reason: "meeting_scheduled", lead: lead };
+  if (!CAD_COLUNAS_OK[kb.status || ""]) return { eligible: false, reason: (kb.status === "reuniao" ? "meeting_scheduled" : "left_columns"), lead: lead };
   var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
   if (opt && opt.optOut) return { eligible: false, reason: "opt_out", lead: lead };
   if (lead.cadencia && (lead.cadencia.status === "stopped" || lead.cadencia.status === "completed")) return { eligible: false, reason: "cadence_" + lead.cadencia.status, lead: lead };
@@ -2168,7 +2170,7 @@ async function handleCadenciaBuild(req, res) {
   for (var i = 0; i < keys.length; i++) {
     var leadKey = keys[i];
     var v = await cadValidate(leadKey, period, today);
-    if (!v.eligible) { out.skips[v.reason] = (out.skips[v.reason] || 0) + 1; continue; }
+    if (!v.eligible) { out.skips[v.reason] = (out.skips[v.reason] || 0) + 1; if (CAD_TERMINAL[v.reason]) { try { await cadStop(leadKey, v.reason); } catch (e) {} } continue; }
     out.totals.eligible++;
     // enfileira idempotente
     var itemRef = db.ref("cadencia_fila/" + leadKey + "_" + v.touch.templateId);
@@ -2219,6 +2221,7 @@ async function handleCadenciaDrain(req, res) {
     if (!v.eligible) {
       await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
       await msgRef.update({ status: "cancelled_before_send", reason: v.reason });
+      if (CAD_TERMINAL[v.reason]) { try { await cadStop(leadKey, v.reason); } catch (e) {} }
       out.cancelled++; continue;
     }
     var tpl = CAD_TEMPLATES[item.templateId];
