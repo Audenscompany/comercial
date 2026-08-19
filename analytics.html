@@ -88,6 +88,7 @@
         <button data-m="quiz">Quiz FV1</button>
         <button data-m="quizfv2">Quiz FV2</button>
         <button data-m="antiga">LP antiga</button>
+        <button data-m="curso">Curso</button>
       </div>
       <div class="seg" id="range">
         <button data-d="0">Hoje</button>
@@ -236,8 +237,10 @@ function isAntiga(src){ return src!=='lp-audens' && !MANUAL[src]; }
 function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.card'); if(card){ var h=card.querySelector('h2'); if(h) h.textContent=text; } } }
 
 function render(){
+  setH2('funnel','Funil da LP'); setH2('sources','Origem do tráfego'); setH2('devices','Conversão por dispositivo'); setH2('abandono','Abandono por seção (onde pararam)'); setH2('leads','Leads recentes (com atribuição)');
   if(MODE==='quiz'){ return renderQuiz('fv1'); }
   if(MODE==='quizfv2'){ return renderQuiz('fv2'); }
+  if(MODE==='curso'){ return renderCurso(); }
   setH2('funnel','Funil da LP');
   setH2('abandono','Abandono por seção (onde pararam)');
   var antiga = (MODE==='antiga');
@@ -443,6 +446,58 @@ function renderQuiz(variant){
   } else { el('leads').innerHTML = '<div class="empty">Nenhum lead do quiz no período.</div>'; }
   var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = vis===0 ? 'Ainda não há dados do '+VNAME+' neste período.' : ('Atualizado agora · '+VNAME+' ('+VPAGE+') · período: '+per);
+}
+
+function renderCurso(){
+  setH2('funnel','Funil do curso');
+  setH2('devices','Conversão por dispositivo (checkout)');
+  setH2('abandono','Cliques no checkout por origem');
+  setH2('leads','Cliques de checkout recentes');
+  var now=Date.now();
+  var cut=RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var S=cache.sessions||{}, E=cache.events||{};
+  function evOf(sid){ var o={}; var ev=E[sid]; if(ev){ for(var kk in ev){ var e=ev[kk]||{}; if(e.e) o[e.e]=1; } } return o; }
+  var sids=[];
+  for(var sid in S){ var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<cut) continue;
+    var isC=String(sv.page||'').indexOf('vivendo-de-delivery')>=0;
+    if(!isC){ var ev=E[sid]; if(ev){ for(var kk in ev){ var pv=(ev[kk]||{}).p; if((ev[kk]||{}).e==='lp_view'&&pv&&pv.variante==='curso'){isC=true;break;} } } }
+    if(isC) sids.push(sid);
+  }
+  var vis=sids.length, offerC=0, checkoutC=0;
+  var dev={desktop:{t:0,c:0},mobile:{t:0,c:0}};
+  var srcMap={}, coMap={}, recent=[];
+  sids.forEach(function(sid){ var sv=S[sid]||{}; var x=evOf(sid);
+    var offer=!!x['offer_cta_click']; var checkout=!!x['checkout_click'];
+    if(offer) offerC++;
+    if(checkout) checkoutC++;
+    var d=sv.device==='mobile'?'mobile':(sv.device==='desktop'?'desktop':null);
+    if(d){ dev[d].t++; if(checkout) dev[d].c++; }
+    var src=(sv.utm_source||'').trim()||(sv.ref?dominio(sv.ref):'')||'direto'; src=src||'direto';
+    if(!srcMap[src]) srcMap[src]={sess:0,leads:0}; srcMap[src].sess++; if(checkout) srcMap[src].leads++;
+    if(checkout){ coMap[src]=(coMap[src]||0)+1; recent.push({src:src,device:sv.device||'',t:sv.lastSeen||sv.firstSeen||0}); }
+  });
+  el('kpis').innerHTML =
+    kpi(fmt(vis),'Visitantes') +
+    kpi(fmt(offerC),'Clicaram "Quero"') +
+    kpi(fmt(checkoutC),'Foram ao checkout','p') +
+    kpi(pct(checkoutC,vis),'Taxa p/ checkout','p') +
+    kpi(pct(dev.mobile.t,vis),'Mobile') +
+    kpi(pct(dev.desktop.t,vis),'Desktop');
+  var steps=[{n:'Visitantes',v:vis},{n:'Clicaram "Quero garantir"',v:offerC},{n:'Foram ao checkout (Hotmart)',v:checkoutC}];
+  var max=vis||1;
+  el('funnel').innerHTML = steps.map(function(s,i){ var prev=i>0?steps[i-1].v:s.v; var drop=i>0&&prev>0?Math.round((1-s.v/prev)*100):0;
+    return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,vis):'')+'</span></div><div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+(i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
+  }).join('') + '<div class="empty" style="margin-top:8px">O checkout abre no Hotmart — este é o número de <b>cliques no checkout</b>, não de vendas confirmadas.</div>';
+  el('sources').innerHTML = barsFrom(srcMap,'sess',vis) || '<div class="empty">Sem dados de origem ainda.</div>';
+  el('devices').innerHTML = ['desktop','mobile'].map(function(k){ var r=dev[k].t>0?(dev[k].c/dev[k].t*100):0; return '<div class="row"><div class="name">'+(k==='desktop'?'Desktop':'Mobile')+'</div><div class="bar"><span class="g" style="width:'+Math.min(100,r*4)+'%"></span></div><div class="val">'+r.toFixed(1)+'%</div></div>'; }).join('') + '<div class="empty" style="margin-top:6px">Taxa = cliques no checkout ÷ sessões do dispositivo.</div>';
+  el('abandono').innerHTML = barsSimple(coMap, checkoutC, 'a') || '<div class="empty">Nenhum clique no checkout ainda.</div>';
+  recent.sort(function(a,b){return b.t-a.t;});
+  if(recent.length){
+    el('leads').innerHTML = '<table><thead><tr><th>Origem</th><th>Dispositivo</th><th class="num">Quando</th></tr></thead><tbody>'+
+      recent.slice(0,25).map(function(r){ return '<tr><td><span class="pill">'+esc(r.src)+'</span></td><td>'+esc(r.device||'—')+'</td><td class="num">'+quando(r.t)+'</td></tr>'; }).join('')+'</tbody></table>';
+  } else { el('leads').innerHTML='<div class="empty">Nenhum clique no checkout no período. A LP do curso não captura lead no CRM — a conversão medida é o clique pro Hotmart.</div>'; }
+  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  el('status').textContent = vis===0 ? 'Ainda não há dados da LP do curso neste período. Assim que o tráfego chegar (ou você navegar nela), aparece aqui.' : ('Atualizado agora · Curso Vivendo de Delivery · período: '+per);
 }
 
 function kpi(v,l,cls){ return '<div class="kpi"><div class="v '+(cls||'')+'">'+v+'</div><div class="l">'+l+'</div></div>'; }
