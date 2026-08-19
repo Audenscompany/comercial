@@ -29058,9 +29058,9 @@ async function csdrTestSend(){
   try{
     var r=await fetch(RECEBERLEAD_URL+'/cadencia-test-send?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templateId:templateId,phone:phone,nome:g('csdr-test-nome').value||'Pedro',especialista:g('csdr-test-esp').value})});
     var j={}; try{j=await r.json();}catch(e){}
-    if(j.ok){st.style.color='var(--green)';st.textContent='✅ Enviado para '+phone+'! Confira o WhatsApp.';}
-    else{st.style.color='var(--red)';st.textContent='❌ '+(j.error||('HTTP '+r.status));}
-    if(j.preview&&pv){pv.style.display='block';pv.textContent=j.preview;}
+    if(j.ok&&j.preview){st.style.color='var(--green)';st.textContent='✅ Enviado para '+phone+' ('+templateId+')! Confira o WhatsApp.';pv.style.display='block';pv.textContent=j.preview;}
+    else if(j.key||(j.ok&&!j.preview)){st.style.color='var(--amber)';st.textContent='⚠️ A rota /cadencia-test-send ainda NÃO está no deploy do backend. Suba o receberlead-index.js novo. (Essa chamada acabou criando um lead de teste — pode apagar no funil.)';}
+    else{st.style.color='var(--red)';st.textContent='❌ '+(j.error||('HTTP '+r.status));if(j.preview&&pv){pv.style.display='block';pv.textContent=j.preview;}}
   }catch(e){st.style.color='var(--red)';st.textContent='Erro: '+e.message+' (a Cloud Function já foi deployada com a rota /cadencia-test-send?)';}
 }
 
