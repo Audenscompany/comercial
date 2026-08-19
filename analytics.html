@@ -155,6 +155,18 @@ var OLD_SOURCES = {'lp-elementor':1,'elementor':1,'lp-antiga':1};
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(m){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[m];});}
 function leadTel(l){return String((l&&(l.telefone||l.whatsapp||l.tel||l.phone||l.celular))||"").replace(/\D/g,"");}
+/* Onde o lead parou na LP — derivado do roteamento (faixa + disposição a investir) */
+function destinoLead(l){
+  var faixa=String(l.faixa||'');
+  if(['ate-15','0-15','ate-20'].indexOf(faixa)>=0) return {t:'🎓 Curso (Vivendo de Delivery)', bg:'rgba(124,52,240,.18)', fg:'#c9a2ff'};
+  var isQuiz=/quiz/i.test(String(l._source||''));
+  if(!isQuiz) return {t:'Lead comercial', bg:'rgba(255,255,255,.06)', fg:'var(--muted)'};
+  var inv=String(l.investimento||'').toLowerCase();
+  var naoQuer = inv==='nao' || inv.indexOf('prioridade')>=0 || inv.indexOf('não pretendo')>=0 || inv.indexOf('nao pretendo')>=0 || inv.indexOf('não consigo')>=0 || inv.indexOf('nao consigo')>=0;
+  if(naoQuer) return {t:'▶ YouTube (não quis investir)', bg:'rgba(245,176,1,.15)', fg:'#f5b301'};
+  return {t:'📅 Agenda (reunião)', bg:'rgba(37,211,102,.15)', fg:'#25d366'};
+}
+function destinoCell(l){ var d=destinoLead(l); return '<td><span class="pill" style="background:'+d.bg+';color:'+d.fg+'">'+esc(d.t)+'</span></td>'; }
 function fmtTel(d){d=String(d||"").replace(/\D/g,"");if(!d)return "";var n=d.replace(/^55/,"");if(n.length===11)return "("+n.slice(0,2)+") "+n.slice(2,7)+"-"+n.slice(7);if(n.length===10)return "("+n.slice(0,2)+") "+n.slice(2,6)+"-"+n.slice(6);return d;}
 function wppCell(l){var d=leadTel(l);if(!d)return '<span style="color:var(--muted2);font-size:12px;">\u2014</span>';return '<button class="wpp" onclick="copiarWpp(this,\''+d+'\')" title="Copiar WhatsApp"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.8.9.9-2.7-.2-.3A8 8 0 1 1 12 20zm4.5-5.9c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1-.2.2-.6.8-.8 1-.1.1-.3.2-.5 0-1.3-.6-2.1-1.1-3-2.6-.2-.4.2-.4.6-1.2.1-.1 0-.3 0-.4 0-.1-.5-1.3-.7-1.7-.2-.5-.4-.4-.5-.4h-.5c-.1 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.5 4 3.4.6.3 1 .4 1.4.5.6.2 1.1.2 1.5.1.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.4-.2z"/></svg>'+fmtTel(d)+'</button>';}
 function copiarWpp(btn,d){try{navigator.clipboard.writeText(d);}catch(e){var ta=document.createElement("textarea");ta.value=d;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(_){}document.body.removeChild(ta);}var old=btn.innerHTML;btn.classList.add("ok");btn.innerHTML='\u2713 Copiado';setTimeout(function(){btn.classList.remove("ok");btn.innerHTML=old;},1400);}
@@ -335,10 +347,10 @@ function render(){
   /* Leads recentes */
   leads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
   if(leads.length){
-    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Campanha</th><th>Faturamento</th><th class="num">Quando</th></tr></thead><tbody>'+
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
       leads.slice(0,25).map(function(l){
         var src = l.utm_source || l._source || (l.ref?dominio(l.ref):'') || 'direto';
-        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td><td class="num">'+quando(l._createdAt)+'</td></tr>';
+        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>';
       }).join('')+'</tbody></table>';
   } else {
     el('leads').innerHTML = '<div class="empty">Nenhum lead no período selecionado.</div>';
@@ -419,8 +431,8 @@ function renderQuiz(variant){
   var qleads=[]; for(var lk in L){ var lv=L[lk]||{}; if(String(lv._source||'').indexOf('quiz-'+variant)<0) continue; var lt=lv._createdAt||0; if(lt>=cut) qleads.push(lv); }
   qleads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
   if(qleads.length){
-    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th class="num">Quando</th></tr></thead><tbody>'+
-      qleads.slice(0,25).map(function(l){ var src=l.utm_source||l._source||'quiz'; return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td><td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>';
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
+      qleads.slice(0,25).map(function(l){ var src=l.utm_source||l._source||'quiz'; return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>';
   } else { el('leads').innerHTML = '<div class="empty">Nenhum lead do quiz no período.</div>'; }
   var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = vis===0 ? 'Ainda não há dados do '+VNAME+' neste período.' : ('Atualizado agora · '+VNAME+' ('+VPAGE+') · período: '+per);
