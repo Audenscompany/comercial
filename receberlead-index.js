@@ -1550,6 +1550,8 @@ async function handleFinanceiroWpp(req, res) {
   const isLucasDirect = fromMe || rawPhone === LUCAS_PHONE;
   const groupPhoneNorm = toWhatsappPhone(body.phone || "");
   const isGroupAllowed = isGroup && (!FINANCEIRO_GROUP_ID || groupPhoneNorm === FINANCEIRO_GROUP_ID);
+  // Cadência (Fase 2): resposta de lead (não-Lucas, não-grupo) pausa a cadência dele
+  try { if (!fromMe && !isGroup && rawPhone) { await cadHandleInbound(rawPhone, (body.text && body.text.message) || ""); } } catch (e) { console.error("cad inbound(fin):", e); }
   if (!isLucasDirect && !isGroupAllowed) {
     return res.status(200).send("ok");
   }
@@ -2156,6 +2158,54 @@ async function handleCadenciaTest(req, res) {
   catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e) }); }
 }
 
+// ===== FASE 2: resposta do lead pausa a cadência (+ opt-out automático) =====
+async function cadHandleInbound(phone, text) {
+  var tel = String(phone || "").replace(/\D/g, "");
+  if (!tel) return;
+  var m = await acharKeyLead(tel, "", "");
+  if (!m) return; // não é um lead conhecido
+  var leadKey = m.key;
+  var lead = (await db.ref("leads/" + leadKey).once("value")).val();
+  if (!lead) return;
+  // só age se o lead está numa cadência ativa/pausada (evita mexer em quem já saiu)
+  var cadStatus = (lead.cadencia && lead.cadencia.status) || "";
+  await db.ref("leads/" + leadKey).update({ "whatsapp/lastInboundAt": Date.now(), "whatsapp/humanConversationActive": true, needsHumanAttention: true });
+  var norm = String(text || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, " ");
+  var isOptOut = /(para de (me )?(mandar|chamar|enviar)|nao (me )?(mande|manda|chame|chama|envie|envia)( mais)?|nao quero (mais )?(receber|mensagem|mensagens|contato)|remov(er|a) (meu|o) (contato|numero)|descadastr|sair da lista|me tira( da lista)?|opt ?out|^\s*stop\s*$|pare de me)/.test(norm);
+  if (isOptOut) {
+    await db.ref("whatsapp_optout/" + leadKey).set({ optOut: true, at: Date.now(), reason: "user_request" });
+    if (typeof cadStop === "function") await cadStop(leadKey, "opt_out");
+    await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
+    return;
+  }
+  // resposta comum: pausa (reversível). A revalidação da fila já barra o envio de quem está pausado.
+  try { await db.ref("leads/" + leadKey + "/cadencia/paused").set(true); } catch (e) {}
+  // tarefa prioritária para o João (dia 0 = topo da lista)
+  try {
+    await db.ref("sdr_tarefas/" + leadKey + "_resposta").set({
+      leadKey: leadKey, nome: lead.nome || "", telefone: lead.telefone || tel,
+      empresa: lead.empresa || "", faturamento: lead.faturamento || "",
+      tipo: "⚡ Lead respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha",
+      dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now()
+    });
+  } catch (e) {}
+  await db.ref("cadencia_events").push({ type: "lead_replied", leadKey: leadKey, cadStatus: cadStatus, at: Date.now() });
+}
+// ROTA /wa-inbound — webhook de mensagem recebida (Z-API). Pausa a cadência quando o lead responde.
+async function handleWaInbound(req, res) {
+  try {
+    var body = req.body || {};
+    if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+    if (body.fromMe === true) return res.status(200).send("ok");
+    var isGroup = body.isGroup === true || String(body.phone || "").includes("@g.us") || String(body.phone || "").endsWith("-group");
+    if (isGroup) return res.status(200).send("ok");
+    var phone = String(body.phone || body.sender || "").replace(/\D/g, "");
+    var text = (body.text && body.text.message) || body.message || "";
+    await cadHandleInbound(phone, text);
+  } catch (e) { console.error("wa-inbound:", e); }
+  return res.status(200).send("ok");
+}
+
 // Inicia a cadência no intake (marca d1_manha como já enviado pela msg de primeiro contato do intake)
 async function cadStart(leadKey, lead) {
   try {
@@ -2430,6 +2480,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/cadencia-test-send") {
       return await handleCadenciaTest(req, res);
+    }
+    if (path === "/wa-inbound") {
+      return await handleWaInbound(req, res);
     }
     if (path === "/cockpit-venda") {
       return await handleCockpitProxy(req, res);
