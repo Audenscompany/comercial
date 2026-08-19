@@ -9912,11 +9912,33 @@ function renderHistBase(rows,title){
 }
 
 // ===== REUNIOES =====
+var _reunRange=null;
 function renderReunioes(){
   var now=new Date();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
   var filtY=_reunMesFiltro?_reunMesFiltro.y:now.getFullYear();
   var prevM=filtM===0?11:filtM-1,prevY=filtM===0?filtY-1:filtY;
+  var _rngA=!!(_reunRange&&_reunRange.since&&_reunRange.until);
+  var _curSince,_curUntil,_prevSince,_prevUntil,periodoLabel;
+  var _isoBR=function(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();};
+  if(_rngA){
+    var _d1=new Date(_reunRange.since+'T00:00:00'),_d2=new Date(_reunRange.until+'T00:00:00');
+    if(_d2<_d1){var _tt=_d1;_d1=_d2;_d2=_tt;}
+    var _lenDays=Math.round((_d2-_d1)/86400000)+1;
+    _curSince=new Date(_d1);_curSince.setHours(0,0,0,0);
+    _curUntil=new Date(_d2);_curUntil.setHours(23,59,59,999);
+    _prevUntil=new Date(_d1.getTime()-86400000);_prevUntil.setHours(23,59,59,999);
+    _prevSince=new Date(_d1.getTime()-_lenDays*86400000);_prevSince.setHours(0,0,0,0);
+    periodoLabel=_isoBR(_curSince)+' a '+_isoBR(_curUntil);
+  } else {
+    _curSince=new Date(filtY,filtM,1,0,0,0);
+    _curUntil=new Date(filtY,filtM+1,0,23,59,59,999);
+    _prevSince=new Date(prevY,prevM,1,0,0,0);
+    _prevUntil=new Date(prevY,prevM+1,0,23,59,59,999);
+    periodoLabel=mesLabel;
+  }
+  function _inPeriodo(d){return d&&d>=_curSince&&d<=_curUntil;}
+  function _inPeriodoAnt(d){return d&&d>=_prevSince&&d<=_prevUntil;}
   var _mns=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   var _mnsL=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   var mesLabel=_mnsL[filtM]+' '+filtY;
@@ -9924,8 +9946,8 @@ function renderReunioes(){
 
   var allM=Object.values(meetings).filter(function(m){return !m._retorno;});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
-  var rows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),filtM,filtY);});
-  var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
+  var rows=allM.filter(function(m){if(!m.dtISO)return false;return _inPeriodo(new Date(m.dtISO));});
+  var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return _inPeriodoAnt(new Date(m.dtISO));});
 
   // Today's meetings (use local date, not filtered month)
   var todayMeets=allM.filter(function(m){
@@ -10046,7 +10068,7 @@ function renderReunioes(){
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!_inPeriodo(_dt))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
   // Faixas
@@ -10054,7 +10076,7 @@ function renderReunioes(){
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
   dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!_inPeriodo(_dt))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
   var closerMap={};
@@ -10070,7 +10092,7 @@ function renderReunioes(){
     var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
     if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
     if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
-    if(!dt||!inMes(dt,filtM,filtY))return;
+    if(!dt||!_inPeriodo(dt))return;
     // Dedup por telefone — evita contar followup sintético junto com real do mesmo cliente
     var tel=((m&&m.tel)||fu.tel||'').replace(/\D/g,'').slice(-10);
     if(tel&&tel.length>=8){if(_closerVTel[tel])return;_closerVTel[tel]=1;}
@@ -10140,9 +10162,16 @@ function renderReunioes(){
   // Header
   H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px;">'
     +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;">VISÃO GERAL DE REUNIÕES</div>'
-    +'<div style="font-size:11px;color:var(--muted);">Panorama completo da performance comercial · '+mesLabel+' · <span style="color:#22c55e;">engrenagem editável ✎v2</span></div></div>'
+    +'<div style="font-size:11px;color:var(--muted);">Panorama completo da performance comercial · '+periodoLabel+'</div></div>'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
     +mesSelect
+    +'<button onclick="_rvPreset(7)" style="padding:5px 9px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;">7 dias</button>'
+    +'<button onclick="_rvPreset(30)" style="padding:5px 9px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;">30 dias</button>'
+    +'<input type="date" id="rv-dt-de" value="'+(_rngA?_reunRange.since:'')+'" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:5px 8px;font-size:11px;outline:none;">'
+    +'<span style="color:var(--muted);font-size:11px;">até</span>'
+    +'<input type="date" id="rv-dt-ate" value="'+(_rngA?_reunRange.until:'')+'" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:5px 8px;font-size:11px;outline:none;">'
+    +'<button onclick="_rvAplicarRange()" style="padding:5px 11px;border-radius:8px;border:1px solid var(--purple3);background:rgba(123,47,255,0.15);color:var(--purple3);font-size:11px;font-weight:700;cursor:pointer;">Aplicar</button>'
+    +(_rngA?'<button onclick="_rvClearRange()" style="padding:5px 9px;border-radius:8px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);color:var(--red);font-size:11px;cursor:pointer;">\u00d7 período</button>':'')
     +'<button onclick="showPage(\'reunioes\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:12px;"></i> Atualizar</button>'
     +'</div></div>';
 
@@ -10243,7 +10272,7 @@ function renderReunioes(){
     var sortedRows=_activeRows;
 
     H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;">';
-    H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
+    H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' período anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
     H+=kpiCard('Realizadas','<span>'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal);
     H+=kpiCard('No-shows','<span>'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',histAg.map(function(){return noshows;}));
     H+=kpiCard('Propostas','<span>'+propostas+'</span>',txProp+'% das realizadas','','#3b82f6','ti-file-description',histReal.map(function(){return propostas;}));
@@ -10255,7 +10284,7 @@ function renderReunioes(){
     H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">';
     H+='<i class="ti ti-search" style="color:var(--muted);font-size:14px;"></i>';
     H+='<input type="text" id="reun-search" placeholder="Buscar por nome, origem, SDR..." oninput="_rvFilter()" style="flex:1;background:none;border:none;color:var(--white);font-size:12px;outline:none;min-width:180px;">';
-    H+='<span style="font-size:11px;color:var(--muted);">'+sortedRows.length+' reuniões no mês</span>';
+    H+='<span style="font-size:11px;color:var(--muted);">'+sortedRows.length+' reuniões no período</span>';
     H+='</div>';
 
     // Editable table
@@ -10308,7 +10337,7 @@ function renderReunioes(){
   else {
     // 6 KPI cards
     H+='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;">';
-    H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' mês anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
+    H+=kpiCard('Agendadas','<span>'+agendadas+'</span>',pA?pA+' período anterior':'—',dStr(agendadas,pA,false),'#9333ea','ti-calendar-check',histAg);
     H+=kpiCard('Realizadas','<span>'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal);
     H+=kpiCard('No-shows','<span>'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',histAg.map(function(){return noshows;}));
     H+=kpiCard('Propostas','<span>'+propostas+'</span>',txProp+'% das realizadas','','#3b82f6','ti-file-description',histReal.map(function(){return propostas;}));
@@ -10382,7 +10411,10 @@ function renderReunioes(){
   return H;
 }
 
-function _rvMesCh(v){try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;}showPage('reunioes');}
+function _rvMesCh(v){_reunRange=null;try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;}showPage('reunioes');}
+function _rvPreset(days){var u=new Date();var s=new Date();s.setDate(s.getDate()-(days-1));var iso=function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};_reunRange={since:iso(s),until:iso(u)};showPage('reunioes');}
+function _rvAplicarRange(){var a=document.getElementById('rv-dt-de'),b=document.getElementById('rv-dt-ate');if(!a||!b||!a.value||!b.value){alert('Escolha as duas datas (de/até).');return;}_reunRange={since:a.value,until:b.value};showPage('reunioes');}
+function _rvClearRange(){_reunRange=null;showPage('reunioes');}
 
 function _rvFilter(){
   var q=(document.getElementById('reun-search')||{}).value||'';q=q.toLowerCase().trim();
