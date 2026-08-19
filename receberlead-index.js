@@ -2082,6 +2082,33 @@ function cadRender(tplText, lead) {
 }
 function cadMask(p) { p = String(p || ""); return p.length > 4 ? "****" + p.slice(-4) : "****"; }
 
+// Lê o template do Firebase (editável no CRM) com fallback para o hardcode
+async function cadGetTemplate(id) {
+  try {
+    var v = (await db.ref("config/cadencia_templates/" + id).once("value")).val();
+    if (v && v.text) {
+      var base = CAD_TEMPLATES[id] || {};
+      return { text: v.text, version: v.version || 1, cond: (typeof v.cond === "boolean" ? v.cond : base.cond), intake: base.intake };
+    }
+  } catch (e) {}
+  return CAD_TEMPLATES[id] || null;
+}
+// ROTA /cadencia-test-send — envia UM template para UM número (teste manual pelo CRM)
+async function handleCadenciaTest(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {};
+  if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var id = b.templateId, phone = String(b.phone || "").replace(/\D/g, "");
+  if (!id || phone.length < 10) return res.status(400).json({ ok: false, error: "templateId e phone (com DDD) obrigatorios" });
+  var tpl = await cadGetTemplate(id);
+  if (!tpl) return res.status(404).json({ ok: false, error: "template nao encontrado: " + id });
+  var lead = { nome: b.nome || "Fulano", especialistaNome: b.especialista || "Lucas", empresa: b.empresa || "" };
+  var r = cadRender(tpl.text, lead);
+  if (r.missing.length) return res.status(200).json({ ok: false, error: "variavel nao resolvida: " + r.missing.join(", "), preview: r.text });
+  try { await enviarMensagemWhatsapp(phone, "[TESTE] " + r.text); return res.status(200).json({ ok: true, preview: r.text }); }
+  catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e) }); }
+}
+
 // Inicia a cadência no intake (marca d1_manha como já enviado pela msg de primeiro contato do intake)
 async function cadStart(leadKey, lead) {
   try {
@@ -2224,7 +2251,8 @@ async function handleCadenciaDrain(req, res) {
       if (CAD_TERMINAL[v.reason]) { try { await cadStop(leadKey, v.reason); } catch (e) {} }
       out.cancelled++; continue;
     }
-    var tpl = CAD_TEMPLATES[item.templateId];
+    var tpl = await cadGetTemplate(item.templateId);
+    if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
     var lead = v.lead;
     var r = cadRender(tpl.text, lead);
     if (r.missing.length) {
@@ -2350,6 +2378,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/cadencia-stop") {
       return await handleCadenciaStop(req, res);
+    }
+    if (path === "/cadencia-test-send") {
+      return await handleCadenciaTest(req, res);
     }
     if (path === "/cockpit-venda") {
       return await handleCockpitProxy(req, res);
