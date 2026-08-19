@@ -2007,7 +2007,7 @@ async function handleCockpitProxy(req, res) {
   }
 }
 
-const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 2, "cond": false, "intake": true, "text": "Oi, {{primeiroNome}}! Tudo bem? 👋\n\nAqui é o João, da Audens 🙂 Vi seu cadastro agora.\n\nEu sou o responsável por fazer esse primeiro contato e tentar conseguir um horário seu com o {{especialistaNome}}, que é um dos nossos especialistas.\n\nQueria entender rapidinho seu momento.\n\nHoje você consegue falar por alguns minutos?", "media": []}, "d1_tarde": {"day": 1, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}! João aqui de novo 👊\n\nDei uma olhada no seu cadastro e, pelo seu momento, quero tentar te colocar para conversar direto com o {{especialistaNome}}.\n\nEle também é dono de operação de delivery e vive isso na prática 🍔\n\nPara você costuma ser melhor falar de manhã ou à tarde?", "media": []}, "d2_manha": {"day": 2, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nUma pergunta rápida antes de eu olhar a agenda do {{especialistaNome}}:\n\nHoje, qual é o principal ponto que você gostaria de melhorar no seu delivery? 📈\n\nPode me responder bem resumido mesmo.", "media": []}, "d2_tarde": {"day": 2, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nTe perguntei porque aqui na Audens quem conversa com você não é alguém que conhece delivery só na teoria.\n\nO {{especialistaNome}} também vive operação no dia a dia 🔥\n\nSe fizer sentido, eu consigo olhar alguns horários na agenda dele para vocês conversarem.\n\nQuer que eu veja? 📅", "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Resultado real de um cliente com um delivery parecido com o seu 🚀 Hoje vende mais de 140 mil/mês com o Método Audens. É esse tipo de virada que o {{especialistaNome}} pode te ajudar a construir."}]}, "d3_manha": {"day": 3, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou organizando alguns horários com o {{especialistaNome}} e lembrei do seu cadastro.\n\nSe eu conseguir encaixar vocês, qual período seria mais tranquilo para você?\n\nManhã ou tarde? 🕐", "media": []}, "d3_tarde": {"day": 3, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSó para te dar um pouco mais de contexto: a Audens foi criada por gente que também é dona de delivery 🍔\n\nO Lucas e o Gustavo têm operação própria e vivem na prática os desafios de gestão e crescimento desse mercado.\n\nPor isso achei válido tentar colocar você para falar com o {{especialistaNome}}.\n\nQuer que eu procure um horário? 📅", "media": []}, "d4_manha": {"day": 4, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nQueria só entender uma coisa para eu não ficar te chamando sem necessidade 🙏\n\nVocê ainda quer conversar sobre como melhorar os resultados do seu delivery?\n\nSe sim, eu vejo um horário com o {{especialistaNome}} para você.", "media": []}, "d4_tarde": {"day": 4, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSe o problema estiver sendo correria para combinar horário comigo, posso facilitar 😉\n\nEu vejo os horários disponíveis do {{especialistaNome}} e te mando algumas opções.\n\nQuer que eu faça isso?", "media": []}, "d5_manha": {"day": 5, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou fechando meus acompanhamentos e seu contato ainda ficou aqui comigo.\n\nAntes de encerrar, queria tentar uma última vez te colocar para conversar com o {{especialistaNome}}.\n\nSe ainda fizer sentido para você, me responde \"sim\" que eu já olho a agenda dele 👍", "media": []}, "d5_tarde": {"day": 5, "period": "tarde", "version": 2, "cond": false, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nVou encerrar meus contatos por aqui para não ficar insistindo com você 🙂\n\nSe quiser conversar com o {{especialistaNome}} depois, pode responder essa mensagem que eu mesmo vejo um horário para vocês.\n\nAbraço,\nJoão 👊", "media": []}};
+const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 2, "cond": false, "intake": true, "text": "Oi, {{primeiroNome}}! Tudo bem? 👋\n\nAqui é o João, da Audens 🙂 Vi seu cadastro agora.\n\nEu sou o responsável por fazer esse primeiro contato e tentar conseguir um horário seu com o {{especialistaNome}}, que é um dos nossos especialistas.\n\nQueria entender rapidinho seu momento.\n\nHoje você consegue falar por alguns minutos?", "media": []}, "d1_tarde": {"day": 1, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}! João aqui de novo 👊\n\nDei uma olhada no seu cadastro e, pelo seu momento, quero tentar te colocar para conversar direto com o {{especialistaNome}}.\n\nEle também é dono de operação de delivery e vive isso na prática 🍔\n\nPara você costuma ser melhor falar de manhã ou à tarde?", "media": []}, "d2_manha": {"day": 2, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nUma pergunta rápida antes de eu olhar a agenda do {{especialistaNome}}:\n\nHoje, qual é o principal ponto que você gostaria de melhorar no seu delivery? 📈\n\nPode me responder bem resumido mesmo.", "media": []}, "d2_tarde": {"day": 2, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nTe perguntei porque aqui na Audens quem conversa com você não é alguém que conhece delivery só na teoria.\n\nO {{especialistaNome}} também vive operação no dia a dia 🔥\n\nSe fizer sentido, eu consigo olhar alguns horários na agenda dele para vocês conversarem.\n\nQuer que eu veja? 📅", "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Resultado real de um cliente com um delivery parecido com o seu 🚀 Hoje vende mais de 140 mil/mês com o Método Audens. É esse tipo de virada que o {{especialistaNome}} pode te ajudar a construir."}]}, "d3_manha": {"day": 3, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou organizando alguns horários com o {{especialistaNome}} e lembrei do seu cadastro.\n\nSe eu conseguir encaixar vocês, qual período seria mais tranquilo para você?\n\nManhã ou tarde? 🕐", "media": []}, "d3_tarde": {"day": 3, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSó para te dar um pouco mais de contexto: a Audens foi criada por gente que também é dona de delivery 🍔\n\nO Lucas e o Gustavo têm operação própria e vivem na prática os desafios de gestão e crescimento desse mercado.\n\nPor isso achei válido tentar colocar você para falar com o {{especialistaNome}}.\n\nQuer que eu procure um horário? 📅", "media": []}, "d4_manha": {"day": 4, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nQueria só entender uma coisa para eu não ficar te chamando sem necessidade 🙏\n\nVocê ainda quer conversar sobre como melhorar os resultados do seu delivery?\n\nSe sim, eu vejo um horário com o {{especialistaNome}} para você.", "media": []}, "d4_tarde": {"day": 4, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nPra facilitar, já olhei a agenda do {{especialistaNome}} e separei alguns horários pra vocês conversarem 👇\n\n{{horarios}}\n\nMe responde qual fica melhor pra você que eu já confirmo com ele 👍", "media": []}, "d5_manha": {"day": 5, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou fechando meus acompanhamentos e seu contato ainda ficou aqui comigo.\n\nAntes de encerrar, queria tentar uma última vez te colocar para conversar com o {{especialistaNome}}.\n\nSe ainda fizer sentido para você, me responde \"sim\" que eu já olho a agenda dele 👍", "media": []}, "d5_tarde": {"day": 5, "period": "tarde", "version": 2, "cond": false, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nVou encerrar meus contatos por aqui para não ficar insistindo com você 🙂\n\nSe quiser conversar com o {{especialistaNome}} depois, pode responder essa mensagem que eu mesmo vejo um horário para vocês.\n\nAbraço,\nJoão 👊", "media": []}};
 
 // ===================== CADÊNCIA AUTOMÁTICA (Fase 1) =====================
 // Nasce DESLIGADA. Ativar em: config/cadencia { enabled:true, testPhone:"55...", intervalSeconds:300 }
@@ -2022,9 +2022,50 @@ async function cadCfg() {
     return {
       enabled: v.enabled === true,
       testPhone: (v.testPhone || "").toString().replace(/\D/g, ""),
-      intervalSeconds: parseInt(v.intervalSeconds) || 300
+      intervalSeconds: parseInt(v.intervalSeconds) || 300,
+      slotStartHour: parseInt(v.slotStartHour) || 9,
+      slotEndHour: parseInt(v.slotEndHour) || 18,
+      slotDays: parseInt(v.slotDays) || 6
     };
-  } catch (e) { return { enabled: false, testPhone: "", intervalSeconds: 300 }; }
+  } catch (e) { return { enabled: false, testPhone: "", intervalSeconds: 300, slotStartHour: 9, slotEndHour: 18, slotDays: 6 }; }
+}
+function cadDiaNome(dateStr) {
+  var dias = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  var dow = new Date(dateStr + "T12:00:00Z").getUTCDay();
+  return dias[dow];
+}
+// Calcula horários livres do especialista a partir das reuniões do PRÓPRIO CRM (nó meetings)
+async function cadCrmSlots(especialista, maxN) {
+  try {
+    var cfg = await cadCfg();
+    var startH = cfg.slotStartHour, endH = cfg.slotEndHour, days = cfg.slotDays;
+    var esp = String(especialista || "").trim().toLowerCase();
+    var mts = (await db.ref("meetings").once("value")).val() || {};
+    var occupied = {};
+    Object.keys(mts).forEach(function (k) {
+      var m = mts[k]; if (!m || !m.dtISO) return;
+      var st = String(m.status || "").toLowerCase();
+      if (st === "cancelado" || st === "reagendado" || st === "noshow") return;
+      var resp = String(m.responsavel || "").trim().toLowerCase();
+      if (esp && resp && resp.indexOf(esp) < 0 && esp.indexOf(resp) < 0) return; // só do especialista
+      var b = cadBRT(m.dtISO);
+      occupied[b.date + " " + b.hour] = true;
+    });
+    var out = [];
+    var now = Date.now();
+    var minTs = now + 2 * 3600000; // pelo menos 2h de antecedência
+    for (var dd = 0; dd < days + 3 && out.length < (maxN || 3); dd++) {
+      var b = cadBRT(now + dd * 86400000);
+      if (b.dow === 0) continue; // domingo não
+      for (var h = startH; h <= endH && out.length < (maxN || 3); h++) {
+        if (occupied[b.date + " " + h]) continue;
+        var slotIso = b.date + "T" + String(h).padStart(2, "0") + ":00:00-03:00"; // BRT
+        if (new Date(slotIso).getTime() < minTs) continue;
+        out.push("• " + cadDiaNome(b.date) + " " + b.date.slice(8, 10) + "/" + b.date.slice(5, 7) + " às " + h + "h");
+      }
+    }
+    return out.join("\n");
+  } catch (e) { console.error("cadCrmSlots:", e); return ""; }
 }
 function cadParseFat(str) {
   var s = String(str || "").toLowerCase().replace(/\s/g, "");
@@ -2070,7 +2111,8 @@ function cadRender(tplText, lead) {
     empresa: lead.empresa || "",
     linkAgendamento: lead.linkAgendamento || ""
   };
-  var required = { primeiroNome: 1, especialistaNome: 1 };
+  vars.horarios = (lead._horarios != null ? lead._horarios : "");
+  var required = { primeiroNome: 1, especialistaNome: 1, horarios: 1 };
   var out = String(tplText).replace(/\{\{\s*(\w+)\s*\}\}/g, function (_m, k) {
     var val = vars[k];
     if (val != null && String(val).trim() !== "") return val;
@@ -2103,6 +2145,7 @@ async function handleCadenciaTest(req, res) {
   var tpl = await cadGetTemplate(id);
   if (!tpl) return res.status(404).json({ ok: false, error: "template nao encontrado: " + id });
   var lead = { nome: b.nome || "Fulano", especialistaNome: b.especialista || "Lucas", empresa: b.empresa || "" };
+  if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { lead._horarios = await cadCrmSlots(lead.especialistaNome, 3); } catch (e) { lead._horarios = ""; } }
   var r = cadRender(tpl.text, lead);
   if (r.missing.length) return res.status(200).json({ ok: false, error: "variavel nao resolvida: " + r.missing.join(", "), preview: r.text });
   try {
@@ -2258,6 +2301,7 @@ async function handleCadenciaDrain(req, res) {
     var tpl = await cadGetTemplate(item.templateId);
     if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
     var lead = v.lead;
+    if (String(tpl.text).indexOf("{{horarios}}") >= 0) { try { lead._horarios = await cadCrmSlots(lead.especialistaNome, 3); } catch (e) { lead._horarios = ""; } }
     var r = cadRender(tpl.text, lead);
     if (r.missing.length) {
       await itemRef.update({ status: "blocked", reason: "missing_template_variable" });
