@@ -12971,6 +12971,7 @@ function buildAnaliseAdsHTML(data){
     var conjunto=(col(l,['Conjunto','CONJUNTO','conjunto'])||'').trim();
     var fat=parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']));
     if(!ad||ad==='-') ad='(sem ad)';
+    if(typeof _adDisplayName==='function') ad=_adDisplayName(ad);
     if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
@@ -13024,6 +13025,7 @@ function buildAnaliseAdsHTML(data){
     if(!adInfo||!adInfo.ad) return;
     _step3Phones.add(rTel);
     var adKey=adInfo.ad;
+    if(typeof _adDisplayName==='function'&&adKey) adKey=_adDisplayName(adKey);
     if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     // Dedup: se já contamos esta reunião (mesmo telefone) para este ad, pula
@@ -13086,6 +13088,7 @@ function buildAnaliseAdsHTML(data){
     _step3Phones.add(mTel);
     var adKey=(kb.ad||'').trim();
     if(!adKey) return;
+    if(typeof _adDisplayName==='function') adKey=_adDisplayName(adKey);
     if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:kb.campanha||'',conjunto:kb.conjunto||'',leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     entry.reunioes++;
