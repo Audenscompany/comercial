@@ -19343,7 +19343,7 @@ async function calcCloserFromSheets(nivelIdx, month){
       // MRR normalizado do 1º mês: Starter (45 dias) ÷1,5 ; TCV ÷ meses ; senão mensal
       var _normMRR = _isStarter ? (cv.mrr/1.5) : ((_isTCV && _dur>1) ? (cv.mrr/_dur) : cv.mrr);
       var _saleDt = (typeof _vendaDate==='function' ? _vendaDate(fu,m2) : null) || new Date(0);
-      var clienteC=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
+      var clienteC=_empresaCliente(fu,m2);
       if(isColdCallFU){
         // Cold call: 25% sobre o MRR (comissão de quem AGENDOU/prospectou) — sempre, independe da meta
         _coldCallItems.push({cliente:clienteC,mrr:_normMRR,plano:planoFU||'Mensal',date:_saleDt});
@@ -19652,7 +19652,7 @@ async function calcSDRFromSheets(nivelIdx, month){
       // meetingId como chave mais confiável
       var midKey=fu.meetingId||'';
       var origemFU=(v.origemRaw||'').toLowerCase();
-      var clienteNome=fu.empresa||(m2&&m2.empresa)||fu.nome||(m2&&m2.nome)||'—';
+      var clienteNome=_empresaCliente(fu,m2);
       _sdrCand.push({tel:tel,empresaKey:empresaKey,nomeKey:nomeKey,nomeFirstKey:nomeFirstKey,midKey:midKey,mrr:mrr,origemFU:origemFU,clienteNome:clienteNome,fid:v.fid});
     });
     // Dedup: maior MRR vence; meetingId > tel > empresa (sem espaços) > nome completo > primeiro nome
@@ -26492,6 +26492,17 @@ function renderVendas(){
   return html;
 }
 
+function _empresaCliente(fu,m){
+  var ke=(m&&m.kanbanKey)?kanbanData[m.kanbanKey]:null;
+  var emp=(fu&&fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa);
+  if(emp) return emp;
+  var tel=String((m&&m.tel)||(fu&&fu.tel)||(ke&&ke.telefone)||'').replace(/\D/g,'');
+  if(tel){
+    try{for(var k in kanbanData){var kk=kanbanData[k];if(kk&&kk.empresa&&String(kk.telefone||'').replace(/\D/g,'')===tel)return kk.empresa;}}catch(e){}
+    try{if(typeof allLeads!=='undefined'&&allLeads){for(var i=0;i<allLeads.length;i++){var l=allLeads[i];if(l&&l.empresa&&String(l.telefone||'').replace(/\D/g,'')===tel)return l.empresa;}}}catch(e){}
+  }
+  return (fu&&fu.nome)||(m&&m.nome)||'—';
+}
 function _renderVendasTabela(){
   var data=window._vendasPageData;if(!data)return;
   var vendas=data.vendas,statusConfig=data.statusConfig,planoLabels=data.planoLabels,fmtV=data.fmtV,_mrrV=data.mrrV;
@@ -26529,7 +26540,7 @@ function _renderVendasTabela(){
     :paginadas.map(function(v){
       var fu=v.fu,m=v.m,fid=v.fid;
       var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
-      var cliente=(fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa)||fu.nome||(m&&m.nome)||'—';
+      var cliente=_empresaCliente(fu,m);
       var closer=(m&&m.responsavel)||fu.closer||fu.responsavel||'—';
       var _sdrRaw=(m&&(m.sdrName||m.sdr))||fu.sdr||fu.sdrName||'';
       var sdr=normCloserName(_sdrRaw)||'—';
