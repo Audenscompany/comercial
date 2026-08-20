@@ -861,6 +861,7 @@ function startRealtimeSync(){
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
+  fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
 
   // ===== STORIES LAB: listeners + coletor automático (boot) =====
   try{ storiesStartListeners(); }catch(e){ console.error('storiesStartListeners',e); }
@@ -18960,6 +18961,14 @@ var _contratosCache = null;
 // Populado sempre que _contratosCache é atualizado
 var _cancelledContratoKeys = new Set();
 var _vendasExcluidas = {}; // fids removidos manualmente na tela de Vendas
+var _vendasExcluidasSig = {}; // exclusões por identidade (tel+nome+valor) — matam a venda em qualquer fonte
+function _vendaSig(fu,m){
+  var tel=String((fu&&fu.tel)||(m&&m.tel)||'').replace(/\D/g,'').slice(-11);
+  var nome=String((fu&&fu.nome)||(m&&m.nome)||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,16);
+  if(!tel&&!nome)return '';
+  var val=Math.round((fu&&(parseFloat(fu.contrato)||parseFloat(fu.mensalidade)))||0);
+  return 'sig_'+(tel||'x')+'_'+(nome||'x')+'_'+val;
+}
 function _rebuildCancelledSet(contratos){
   _cancelledContratoKeys.clear();
   (contratos||[]).forEach(function(c){
@@ -26127,6 +26136,9 @@ function renderVendas(){
         mensalidade:mensBase,dt:dtBR,_fromContrato:aid,_assinaturaSync:true};
       followups[synId]=synFu;
       var origemRaw=(r.comercial&&r.comercial.origem)||'';
+      if(r._vendaExcluida)return;
+      var _sgA=_vendaSig(synFu,synMeeting);
+      if(_sgA&&_vendasExcluidasSig&&_vendasExcluidasSig[_sgA])return;
       todasVendas.push({fu:synFu,m:synMeeting,fid:synId,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
       // Persiste no Firebase em background
       saveFollowupFB(synId,synFu);
@@ -26175,9 +26187,12 @@ function renderVendas(){
   }
 
   // Exclusão manual: vendas removidas pelo usuário (por fid, estável em qualquer fonte)
-  if(_vendasExcluidas&&Object.keys(_vendasExcluidas).length){
-    todasVendas=todasVendas.filter(function(v){return !_vendasExcluidas[v.fid];});
-  }
+  todasVendas=todasVendas.filter(function(v){
+    if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
+    var _sg=_vendaSig(v.fu,v.m);
+    if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+    return true;
+  });
   // Dedup por telefone — preferir followup real sobre sintético (_assinaturaSync/_contratoSync)
   var _telDedup={};
   var _todasDedup=[];
@@ -26906,18 +26921,24 @@ async function salvarEdicaoVenda(){
   }catch(e){alert('Erro ao salvar: '+e.message);}
 }
 async function removerVenda(fid){
-  if(!confirm('Remover esta venda da lista? Ela deixa de aparecer em Vendas (o contrato/assinatura em Financeiro não é apagado).'))return;
+  if(!confirm('Remover esta venda de vez? Ela não vai mais reaparecer na lista de Vendas (o contrato/assinatura em Financeiro não é apagado).'))return;
   try{
     if(!fbDb)initFirebase();
-    // Exclusão por fid — cobre followup real, assin_<id> e contrato_<id> (todos estáveis)
+    // Identidade estável (tel+nome+valor) — mata a venda em QUALQUER fonte que a regenere
+    var _vo=null; try{ if(window._vendasPageData&&window._vendasPageData.vendas){ _vo=window._vendasPageData.vendas.find(function(x){return x.fid===fid;}); } }catch(e){}
+    var _fu=(_vo&&_vo.fu)||followups[fid]||null;
+    var _m=(_vo&&_vo.m)||meetings[fid]||null;
+    var _sig=_vendaSig(_fu,_m);
     _vendasExcluidas[fid]=true;
     if(fbDb)await fbDb.ref('vendas_excluidas/'+fid).set(true);
-    // Limpeza da fonte quando é followup real (some também dos demais contadores)
-    if(fid.indexOf('assin_')!==0&&fid.indexOf('contrato_')!==0){
-      if(fbDb)await fbDb.ref('followups/'+fid).remove();
-      var m=meetings[fid];
-      if(m){m.status='done';m.followupRemovido=true;saveMeetingFB(fid,m);}
-    }
+    if(_sig){ _vendasExcluidasSig[_sig]=true; if(fbDb)await fbDb.ref('vendas_excluidas_sig/'+_sig).set(true); }
+    // Marca a fonte (assinatura) pra parar de recriar a venda
+    var _aid=(_fu&&_fu._fromContrato)||(fid.indexOf('assin_')===0?fid.slice(6):null);
+    if(_aid&&fbDb)await fbDb.ref('assinaturas/'+_aid).update({_vendaExcluida:true});
+    // Remove o followup persistido (real ou sintético) pra não ressurgir
+    if(fbDb)await fbDb.ref('followups/'+fid).remove();
+    var m=meetings[fid];
+    if(m){m.status='done';m.followupRemovido=true;saveMeetingFB(fid,m);}
     delete followups[fid];
     saveAll();
     showSheetToast('Venda removida.',false);
