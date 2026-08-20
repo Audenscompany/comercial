@@ -1591,6 +1591,9 @@ function abrirDetalheKanban(key){
   var _criadoEm='';
   if(e._createdAt){ try{ _criadoEm=new Date(e._createdAt).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(ex){} }
 
+  var _adRaw=(e.ad||qf('ad')||'').toString().trim();
+  if(!_adRaw){ try{ var _t9=(e.telefone||'').replace(/\D/g,'').slice(-9); if(_t9&&typeof allLeads!=='undefined'&&allLeads){ var _lm=allLeads.find(function(x){return String(x.telefone||'').replace(/\D/g,'').slice(-9)===_t9&&(x.ad||x.Ad);}); if(_lm)_adRaw=(_lm.ad||_lm.Ad||'').toString().trim(); } }catch(ex){} }
+  var _adNome=_adRaw?((typeof _adDisplayName==='function')?_adDisplayName(_adRaw):_adRaw):'';
   var html='<div class="modal-ov active" id="modal-detalhe-kanban" data-dynamic="1" onclick="if(event.target===this)closeModal(\'modal-detalhe-kanban\')" style="z-index:3000;">'+
     '<div class="modal-box" style="max-width:480px;max-height:85vh;overflow-y:auto;">'+
       '<div class="modal-hd">'+
@@ -1622,7 +1625,7 @@ function abrirDetalheKanban(key){
       row('trending-up','Disposto a investir',(function(){var v=String(qf('investimento')||'');if(v==='sim')return'Sim';if(v==='nao'||v==='não')return'Não';return v;})())+
       row('robot','Já investiu em tráfego',qf('ja_investiu'))+
       row('brand-instagram','Instagram',qf('instagram'),(function(){var ig=String(qf('instagram')||'').trim();if(!ig)return null;var hh=ig.replace(/^@/,'');return '<a href="https://instagram.com/'+hh+'" target="_blank" style="color:var(--purple3);text-decoration:none;">@'+hh+'</a>';})())+
-      row('ad-2','Anúncio (Ad)',e.ad)+
+      row('ad-2','Anúncio (Ad)',_adNome||'(sem anúncio)',_adNome?_adNome:'<span style="color:var(--amber);">(sem anúncio — não veio na URL da LP)</span>')+
       row('speakerphone','Campanha',e.campanha)+
       row('map-pin','Cidade / Estado',e.cidade?(e.cidade+(e.estado?' – '+e.estado:'')):null)+
       row('source-code','Origem',e.origem)+
