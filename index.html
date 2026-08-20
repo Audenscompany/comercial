@@ -4442,6 +4442,7 @@ function buildNav(){
   var sdrDef=[
     {id:'prospeccao',icon:'ti-target-arrow',label:'Prospecção'},
     {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
+    {id:'cadencia-painel',icon:'ti-activity-heartbeat',label:'Painel Cadência'},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
       {id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
@@ -29234,16 +29235,24 @@ function _cadpCard(title,inner,accent){return '<div style="background:var(--card
 function _cadpTh(cols){return '<thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;">'+cols.map(function(c){return '<th style="text-align:'+(c[1]||'left')+';padding:0 8px 6px;">'+c[0]+'</th>';}).join('')+'</tr></thead>';}
 
 function renderCadenciaPainel(){
+  var g=(typeof CU!=='undefined'&&CU&&CU.role==='gestor');
+  var adminBtns = g ? (
+    '<button onclick="cadPainelBuild(\'manha\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila manhã</button>'+
+    '<button onclick="cadPainelBuild(\'tarde\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila tarde</button>'+
+    '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+
+    '<button onclick="cadPainelReprogramar()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#f59e0b;border-color:rgba(245,158,11,.4);">Reprogramar fila p/ agora</button>'+
+    '<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+
+    '<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+
+    '<button onclick="cadPainelNoshowBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Recontatar no-shows</button>'
+  ) : '';
+  var sub = g ? 'Motor de follow-up do João · ao vivo do Firebase' : 'Leads que responderam a automação — encerre quando assumir o atendimento';
   return '<div class="page active" id="pg-cadencia-painel" style="max-width:1180px;">'+
-    '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="page-title">Painel da Cadência</div><div class="page-sub">Motor de follow-up do João · ao vivo do Firebase</div></div>'+
-    '<div style="display:flex;gap:7px;flex-wrap:wrap;">'+
-      '<button onclick="cadPainelBuild(\'manha\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila manhã</button>'+
-      '<button onclick="cadPainelBuild(\'tarde\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila tarde</button>'+
-      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+'<button onclick="cadPainelReprogramar()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#f59e0b;border-color:rgba(245,158,11,.4);">Reprogramar fila p/ agora</button>'+'<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+'<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+'<button onclick="cadPainelNoshowBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Recontatar no-shows</button>'+
+    '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="page-title">Painel da Cadência</div><div class="page-sub">'+sub+'</div></div>'+
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;">'+adminBtns+
       '<button onclick="cadPainelInit()" class="btn btn-primary" style="font-size:11px;padding:7px 13px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
     '</div></div>'+
     '<div id="cadp-status" style="font-size:12px;color:var(--muted);margin:6px 0 14px;">Carregando…</div>'+
-    '<div id="cadp-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:20px;"></div>'+
+    (g?'<div id="cadp-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:20px;"></div>':'')+
     '<div id="cadp-body"></div>'+
   '</div>';
 }
@@ -29302,6 +29311,7 @@ async function cadPainelInit(){
       }).join('');
       B+=_cadpCard('⚡ Precisam de atenção do João ('+atencao.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['WhatsApp'],['Última resposta'],['']])+'<tbody>'+rows+'</tbody></table></div>','var(--amber)');
     }
+    if(!(typeof CU!=='undefined'&&CU&&CU.role==='gestor')){ var _bd=document.getElementById('cadp-body'); if(_bd)_bd.innerHTML=B||'<div style="color:var(--muted);font-size:13px;padding:20px 0;">Nenhum lead precisando de atenção agora \u2705</div>'; return; }
 
     var qsorted=queued.slice().sort(function(a,b){return (a.scheduledAt||0)-(b.scheduledAt||0);}).slice(0,40);
     if(qsorted.length){
