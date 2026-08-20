@@ -2250,7 +2250,7 @@ function cadTouchFor(cad, period, todayDate) {
 }
 
 // Valida um candidato para um período. Carrega lead+kanban+optout.
-async function cadValidate(leadKey, period, todayDate) {
+async function cadValidate(leadKey, period, todayDate, fromDrain) {
   var lead = (await db.ref("leads/" + leadKey).once("value")).val();
   if (!lead) return { eligible: false, reason: "lead_not_found" };
   var tel = String(lead.telefone || "").replace(/\D/g, "");
@@ -2265,7 +2265,8 @@ async function cadValidate(leadKey, period, todayDate) {
   // condicional: se respondeu desde o começo do dia, pula
   if (touch.cond && lead.whatsapp && lead.whatsapp.lastInboundAt) return { eligible: false, reason: "skipped_conditional", lead: lead };
   var already = (await db.ref("cadencia_msg/" + leadKey + "/" + touch.templateId).once("value")).val();
-  if (already && (already.status === "sent" || already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
+  if (already && already.status === "sent") return { eligible: false, reason: "already_sent", lead: lead };
+  if (!fromDrain && already && (already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
   if (!lead.especialistaNome) return { eligible: false, reason: "missing_variable", lead: lead };
   return { eligible: true, reason: "eligible", lead: lead, touch: touch };
 }
@@ -2351,7 +2352,7 @@ async function handleCadenciaDrain(req, res) {
     var item = (await itemRef.once("value")).val();
     var leadKey = item.leadKey;
     // revalida
-    var v = await cadValidate(leadKey, item.period, today);
+    var v = await cadValidate(leadKey, item.period, today, true);
     var msgRef = db.ref("cadencia_msg/" + leadKey + "/" + item.templateId);
     if (!v.eligible) {
       await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
@@ -2455,7 +2456,7 @@ async function cadNsReengajou(leadKey, lead, nsStartedAt) {
   } catch (e) {}
   return null;
 }
-async function cadNsValidate(leadKey, period, todayDate) {
+async function cadNsValidate(leadKey, period, todayDate, fromDrain) {
   var lead = (await db.ref("leads/" + leadKey).once("value")).val();
   if (!lead) return { eligible: false, reason: "lead_not_found" };
   var tel = String(lead.telefone || "").replace(/\D/g, "");
@@ -2473,7 +2474,8 @@ async function cadNsValidate(leadKey, period, todayDate) {
   if (!touch) return { eligible: false, reason: "outside_cadence", lead: lead };
   if (touch.cond && lead.whatsapp && lead.whatsapp.lastInboundAt) return { eligible: false, reason: "skipped_conditional", lead: lead };
   var already = (await db.ref("cadencia_ns_msg/" + leadKey + "/" + touch.templateId).once("value")).val();
-  if (already && (already.status === "sent" || already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
+  if (already && already.status === "sent") return { eligible: false, reason: "already_sent", lead: lead };
+  if (!fromDrain && already && (already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
   if (!lead.especialistaNome) return { eligible: false, reason: "missing_variable", lead: lead };
   return { eligible: true, reason: "eligible", lead: lead, touch: touch };
 }
@@ -2567,7 +2569,7 @@ async function cadNsDrain(cfg, today) {
     out.processed++;
     var item = (await itemRef.once("value")).val();
     var leadKey = item.leadKey;
-    var v = await cadNsValidate(leadKey, item.period, today);
+    var v = await cadNsValidate(leadKey, item.period, today, true);
     var msgRef = db.ref("cadencia_ns_msg/" + leadKey + "/" + item.templateId);
     if (!v.eligible) {
       await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
