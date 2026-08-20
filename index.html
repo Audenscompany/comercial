@@ -596,6 +596,7 @@ function startRealtimeSync(){
     var fbKanban = snap.val() || {};
     var prev = JSON.stringify(kanbanData);
     kanbanData = fbKanban;
+    try{ purgeArchivedLeadTasks(); }catch(e){}
     var changed = JSON.stringify(kanbanData) !== prev;
     if(changed){
       localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -630,6 +631,7 @@ function startRealtimeSync(){
     var prev = JSON.stringify(sdrTarefas);
     sdrTarefas = fbTarefas;
     try{ purgeNonCallTasks(); }catch(e){}
+    try{ purgeArchivedLeadTasks(); }catch(e){}
     if(JSON.stringify(sdrTarefas) !== prev){
       localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
       var area = document.getElementById('content');
@@ -2382,6 +2384,14 @@ function purgeNonCallTasks(){
   if(!fbDb && !initFirebase())return;
   var toDel=[];
   Object.keys(sdrTarefas||{}).forEach(function(tk){ if(!_isJoaoTask(tk,sdrTarefas[tk])) toDel.push(tk); });
+  toDel.forEach(function(tk){ delete sdrTarefas[tk]; try{fbDb.ref('sdr_tarefas/'+tk).remove();}catch(e){} });
+  if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
+}
+// Limpeza: apaga do banco as tarefas de leads que estão ARQUIVADOS
+function purgeArchivedLeadTasks(){
+  if(!fbDb && !initFirebase())return;
+  if(typeof kanbanData==='undefined'||!kanbanData)return;
+  var toDel=Object.keys(sdrTarefas||{}).filter(function(tk){var t=sdrTarefas[tk];if(!t||!t.leadKey)return false;var kb=kanbanData[t.leadKey];return kb&&kb.status==='arquivado';});
   toDel.forEach(function(tk){ delete sdrTarefas[tk]; try{fbDb.ref('sdr_tarefas/'+tk).remove();}catch(e){} });
   if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
 }
