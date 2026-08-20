@@ -2187,9 +2187,7 @@ async function cadHandleInbound(phone, text) {
     await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
     return;
   }
-  // pausa as cadências enquanto há conversa humana / agendamento em curso
-  try { await db.ref("leads/" + leadKey + "/cadencia/paused").set(true); } catch (e) {}
-  try { await db.ref("leads/" + leadKey + "/cadenciaNoshow/paused").set(true); } catch (e) {}
+  // NÃO pausa a cadência: ela continua durante os 5 dias mesmo que o lead responda (só para ao sair de Novo/Qualificado, no opt-out ou ao agendar reunião)
   // AGENDAMENTO CONVERSACIONAL: se há horários oferecidos, tenta entender e marcar
   var ag = lead.agendamento;
   if (ag && (ag.status === "options_sent" || ag.status === "awaiting_confirm")) {
@@ -2262,8 +2260,6 @@ async function cadValidate(leadKey, period, todayDate) {
   var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
   if (opt && opt.optOut) return { eligible: false, reason: "opt_out", lead: lead };
   if (lead.cadencia && (lead.cadencia.status === "stopped" || lead.cadencia.status === "completed")) return { eligible: false, reason: "cadence_" + lead.cadencia.status, lead: lead };
-  if (lead.cadencia && lead.cadencia.paused) return { eligible: false, reason: "cadence_paused", lead: lead };
-  if (lead.needsHumanAttention) return { eligible: false, reason: "human_attention", lead: lead };
   var touch = cadTouchFor(lead.cadencia, period, todayDate);
   if (!touch) return { eligible: false, reason: "outside_cadence", lead: lead };
   // condicional: se respondeu desde o começo do dia, pula
@@ -2441,8 +2437,6 @@ async function cadNsValidate(leadKey, period, todayDate) {
   if (cad.status === "stopped" || cad.status === "completed") return { eligible: false, reason: "ns_" + cad.status, lead: lead };
   var day = cad.startedAt ? (cadDaysBetween(cad.startedAt, todayDate) + 1) : 0;
   if (day > 5) return { eligible: false, reason: "ns_completed", lead: lead };
-  if (cad.paused) return { eligible: false, reason: "cadence_paused", lead: lead };
-  if (lead.needsHumanAttention) return { eligible: false, reason: "human_attention", lead: lead };
   var touch = cadNsTouchFor(cad, period, todayDate);
   if (!touch) return { eligible: false, reason: "outside_cadence", lead: lead };
   if (touch.cond && lead.whatsapp && lead.whatsapp.lastInboundAt) return { eligible: false, reason: "skipped_conditional", lead: lead };
@@ -2798,7 +2792,6 @@ async function handleCadenciaBackfill(req, res) {
     var cad = l.cadencia;
     if (cad && cad.status === "active" && !cad.paused) { skips.ja_ativo = (skips.ja_ativo || 0) + 1; return; }
     if (cad && (cad.status === "stopped" || cad.status === "completed")) { skips.encerrado = (skips.encerrado || 0) + 1; return; }
-    if (l.whatsapp && l.whatsapp.lastInboundAt) { skips.respondeu = (skips.respondeu || 0) + 1; return; }
     var fat = l.faturamento || kb.faturamento || "";
     var esp = cadResolveEsp(fat).nome;
     if (!esp) { skips.faturamento_invalido = (skips.faturamento_invalido || 0) + 1; return; }
