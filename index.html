@@ -1331,6 +1331,7 @@ function moveKanbanCard(key,newStatus){
     kanbanData[key].statusHistory=_sh;
     fbDb.ref('kanban/'+key).update({status:newStatus,statusAt:Date.now(),statusHistory:_sh});
   }
+  if(newStatus==='arquivado'){ try{_arquivarLeadCadencia(key);}catch(e){} }
   var area=document.getElementById('content');
   if(area && area.getAttribute('data-page')==='kanban') showPage('kanban');
 }
@@ -2383,6 +2384,19 @@ function purgeNonCallTasks(){
   Object.keys(sdrTarefas||{}).forEach(function(tk){ if(!_isJoaoTask(tk,sdrTarefas[tk])) toDel.push(tk); });
   toDel.forEach(function(tk){ delete sdrTarefas[tk]; try{fbDb.ref('sdr_tarefas/'+tk).remove();}catch(e){} });
   if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
+}
+// Ao arquivar um lead: apaga todas as tarefas do João desse lead e o remove das cadências
+function _arquivarLeadCadencia(key){
+  if(!fbDb && !initFirebase())return;
+  var toDel=Object.keys(sdrTarefas||{}).filter(function(tk){var t=sdrTarefas[tk];return t&&t.leadKey===key;});
+  toDel.forEach(function(tk){ delete sdrTarefas[tk]; try{fbDb.ref('sdr_tarefas/'+tk).remove();}catch(e){} });
+  if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
+  try{
+    fbDb.ref('cadencia_ativos/'+key).remove();
+    fbDb.ref('cadencia_ns_ativos/'+key).remove();
+    fbDb.ref('cadencia_reat_ativos/'+key).remove();
+    fbDb.ref('leads/'+key).update({'cadencia/status':'stopped','cadencia/stopReason':'arquivado','cadenciaNoshow/status':'stopped','cadenciaReativacao/status':'stopped'});
+  }catch(e){}
 }
 var bdrLeads={};
 var _bdrSearchResults=[];
