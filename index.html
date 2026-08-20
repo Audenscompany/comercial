@@ -2373,7 +2373,7 @@ function _leadNaCadencia5d(k){
   var d=new Date(sa+'T12:00:00'); if(isNaN(d.getTime()))return true;
   return (Date.now()-d.getTime())/86400000 < 5;
 }
-function _isLigacaoTask(tk,t){ t=t||{}; return /_d\d+_/.test(tk||'')||/liga/i.test(t.tipo||''); }
+function _isLigacaoTask(tk,t){ t=t||{}; return /liga/i.test(t.tipo||''); }
 function _isReplyTask(tk,t){ t=t||{}; return /_resposta$/.test(tk||'')||/respond/i.test(t.tipo||''); }
 function _isJoaoTask(tk,t){ return _isLigacaoTask(tk,t)||_isReplyTask(tk,t); }
 // João só tem tarefas de LIGAÇÃO — apaga qualquer outra (resposta, horário lotado, etc.)
@@ -2448,7 +2448,7 @@ function syncJoaoCallTasks(){
   if(!fbDb && !initFirebase()) return;
   Object.keys(cadenciaAtivos||{}).forEach(function(leadKey){
     if(!_leadNaCadencia5d(leadKey)) return;
-    var hasCall=Object.keys(sdrTarefas||{}).some(function(tk){var t=sdrTarefas[tk];return t&&t.leadKey===leadKey&&/_d\d_/.test(tk);});
+    var hasCall=Object.keys(sdrTarefas||{}).some(function(tk){var t=sdrTarefas[tk];return t&&t.leadKey===leadKey&&_isLigacaoTask(tk,t);});
     if(hasCall) return;
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[leadKey])||{};
     generateCadenciaTasks({nome:kb.nome||'',telefone:kb.telefone||'',empresa:kb.empresa||'',faturamento:kb.faturamento||''},leadKey,true);
