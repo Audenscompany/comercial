@@ -26183,11 +26183,12 @@ function renderVendas(){
           if(c.ativo===false||c._excluirComissao) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
+          if(!telC && c._segundaLoja && c._meetingId && meetings[c._meetingId]){ telC=(meetings[c._meetingId].tel||'').replace(/\D/g,''); }
           if(!telC) return;
-          if(_tRV[telC]||_tRV[telC.slice(-11)]||_tRV[telC.slice(-10)]) return;
-          var synFuE={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
-          var synME={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
-          _tRV[telC]=1;_tRV[telShort]=1;
+          if(!c._segundaLoja && (_tRV[telC]||_tRV[telC.slice(-11)]||_tRV[telC.slice(-10)])) return;
+          var synFuE={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true,_segundaLoja:!!c._segundaLoja};
+          var synME={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true,_segundaLoja:!!c._segundaLoja};
+          if(!c._segundaLoja){ _tRV[telC]=1;_tRV[telC.slice(-10)]=1; }
           extras.push({fu:synFuE,m:synME,fid:'contrato_'+c.id,origemRaw:c.origem||'',origemCat:categorizeOrigem(c.origem||'')});
         });
         window._contratosVendasExtra=extras;
@@ -26203,7 +26204,7 @@ function renderVendas(){
     todasVendas.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tExtraRV[t]=1;_tExtraRV[t.slice(-11)]=1;_tExtraRV[t.slice(-10)]=1;}});
     window._contratosVendasExtra.forEach(function(entry){
       var telE=(entry.m&&entry.m.tel||'').replace(/\D/g,'');
-      if(telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-11)]||_tExtraRV[telE.slice(-10)])) return;
+      if(!entry.fu._segundaLoja && telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-11)]||_tExtraRV[telE.slice(-10)])) return;
       todasVendas.push(entry);
     });
   }
@@ -26219,6 +26220,7 @@ function renderVendas(){
   var _telDedup={};
   var _todasDedup=[];
   todasVendas.forEach(function(v){
+    if(v.fu&&v.fu._segundaLoja){_todasDedup.push(v);return;}
     var tel=((v.m&&v.m.tel)||v.fu.tel||'').replace(/\D/g,'');
     var key=tel?tel.slice(-10):'';
     if(!key||key.length<8){_todasDedup.push(v);return;}
