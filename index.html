@@ -29150,7 +29150,7 @@ function renderCadenciaPainel(){
     '<div style="display:flex;gap:7px;flex-wrap:wrap;">'+
       '<button onclick="cadPainelBuild(\'manha\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila manhã</button>'+
       '<button onclick="cadPainelBuild(\'tarde\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila tarde</button>'+
-      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+'<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+'<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+
+      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+'<button onclick="cadPainelReprogramar()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#f59e0b;border-color:rgba(245,158,11,.4);">Reprogramar fila p/ agora</button>'+'<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+'<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+
       '<button onclick="cadPainelInit()" class="btn btn-primary" style="font-size:11px;padding:7px 13px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
     '</div></div>'+
     '<div id="cadp-status" style="font-size:12px;color:var(--muted);margin:6px 0 14px;">Carregando…</div>'+
@@ -29306,6 +29306,28 @@ async function cadPainelSimAgendamento(){
     if(j&&j.ok){ if(st){st.style.color='var(--green)';st.textContent='Horários enviados para '+phone+'. Responda no WhatsApp (ex.: "a primeira" e depois "sim") pra testar o agendamento automático.';} }
     else{ if(st){st.style.color='var(--amber)';st.textContent=(j&&j.error)||'Falhou — a rota /agendamento-sim já está no deploy?';} }
     setTimeout(cadPainelInit,1400);
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function cadPainelReprogramar(){
+  var st=document.getElementById('cadp-status');
+  if(!confirm('Reprogramar a fila para começar AGORA? As mensagens passam a sair a partir de já, respeitando o intervalo configurado no IA|SDR.'))return;
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Reprogramando fila…';}
+  try{
+    var cfg=await fbGet('config/cadencia')||{};
+    var iv=(parseInt(cfg.intervalSeconds)||300)*1000;
+    var now=Date.now();
+    var nodes=['cadencia_fila','cadencia_ns_fila'];
+    var n=0;
+    for(var ni=0;ni<nodes.length;ni++){
+      var node=nodes[ni];
+      var fila=await fbGet(node)||{};
+      var ids=Object.keys(fila).filter(function(id){return fila[id]&&fila[id].status==='queued';});
+      ids.sort(function(a,b){return (fila[a].scheduledAt||0)-(fila[b].scheduledAt||0);});
+      for(var i=0;i<ids.length;i++){ await fbDb.ref(node+'/'+ids[i]+'/scheduledAt').set(now+n*iv); n++; }
+    }
+    await fbDb.ref('whatsapp_senders/audens_joao/nextAvailableAt').set(now+n*iv);
+    if(st){st.style.color='var(--green)';st.textContent=n+' mensagem(ns) reprogramada(s) a partir de agora (1 a cada '+Math.round(iv/60000)+' min). A 1ª sai no próximo ciclo do disparador.';}
+    setTimeout(cadPainelInit,1500);
   }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 async function cadPainelDrain(){
