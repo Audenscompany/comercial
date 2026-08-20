@@ -2767,7 +2767,7 @@ async function cadEnroll(leadKey, lead, startedAt) {
   var esp = lead.especialistaNome || cadResolveEsp(lead.faturamento).nome;
   if (!esp) return false;
   var sa = startedAt || cadStartDate(Date.now());
-  var patch = { especialistaNome: esp, cadencia: { status: "active", startedAt: sa, paused: false, stopReason: null, completedAt: null, createdAt: Date.now(), viaBackfill: true } };
+  var patch = { especialistaNome: esp, needsHumanAttention: false, cadencia: { status: "active", startedAt: sa, paused: false, stopReason: null, completedAt: null, createdAt: Date.now(), viaBackfill: true } };
   if (lead.telefone) patch.telefone = lead.telefone;
   if (lead.nome) patch.nome = lead.nome;
   if (lead.empresa) patch.empresa = lead.empresa;
@@ -2795,7 +2795,10 @@ async function handleCadenciaBackfill(req, res) {
     var tel = String(l.telefone || kb.telefone || "").replace(/\D/g, "");
     if (tel.length < 10) { skips.invalid_phone = (skips.invalid_phone || 0) + 1; return; }
     if (optout[k]) { skips.opt_out = (skips.opt_out || 0) + 1; return; }
-    if (l.cadencia) { skips.ja_tem_cadencia = (skips.ja_tem_cadencia || 0) + 1; return; }
+    var cad = l.cadencia;
+    if (cad && cad.status === "active" && !cad.paused) { skips.ja_ativo = (skips.ja_ativo || 0) + 1; return; }
+    if (cad && (cad.status === "stopped" || cad.status === "completed")) { skips.encerrado = (skips.encerrado || 0) + 1; return; }
+    if (l.whatsapp && l.whatsapp.lastInboundAt) { skips.respondeu = (skips.respondeu || 0) + 1; return; }
     var fat = l.faturamento || kb.faturamento || "";
     var esp = cadResolveEsp(fat).nome;
     if (!esp) { skips.faturamento_invalido = (skips.faturamento_invalido || 0) + 1; return; }
