@@ -29256,15 +29256,15 @@ async function cadPainelBackfill(){
   var st=document.getElementById('cadp-status');
   if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Procurando leads elegíveis…';}
   try{
-    var r=await fetch(RECEBERLEAD_URL+'/cadencia-backfill?secret='+WEBHOOK_SECRET+'&dryrun=1',{method:'POST'});
+    var r=await fetch(RECEBERLEAD_URL+'/cadencia-backfill?secret='+WEBHOOK_SECRET+'&dryrun=1&days=5',{method:'POST'});
     var j={};try{j=await r.json();}catch(e){}
     if(!j||j.total_elegiveis==null){ if(st){st.style.color='var(--amber)';st.textContent='Não consegui ler os elegíveis — a rota /cadencia-backfill já está no deploy?';} return; }
     var n=j.total_elegiveis;
     if(n===0){ if(st){st.style.color='var(--muted)';st.textContent='Nenhum lead elegível agora (todos já estão na cadência, sem faturamento válido, ou fora das colunas Novo/Qualificado).';} return; }
     var amostra=(j.amostra||[]).slice(0,8).map(function(a){return '• '+(a.nome||'—')+' ('+a.esp+')';}).join('\n');
-    if(!confirm(n+' lead(s) podem entrar na cadência.\n\nExemplos:\n'+amostra+'\n\nInscrever agora? Eles começam a receber o João nos próximos disparos (até 50 por vez).')){ if(st){st.textContent='Cancelado.';} return; }
+    if(!confirm(n+' lead(s) do kanban (Novo/Qualificado, últimos 5 dias) entram na cadência, cada um no dia certo.\n\nExemplos:\n'+amostra+'\n\nInscrever agora? Começam a receber o João nos próximos disparos.')){ if(st){st.textContent='Cancelado.';} return; }
     if(st){st.innerHTML='<i class="ti ti-loader"></i> Inscrevendo…';}
-    var r2=await fetch(RECEBERLEAD_URL+'/cadencia-backfill?secret='+WEBHOOK_SECRET+'&dryrun=0&limit=50',{method:'POST'});
+    var r2=await fetch(RECEBERLEAD_URL+'/cadencia-backfill?secret='+WEBHOOK_SECRET+'&dryrun=0&days=5&limit=300',{method:'POST'});
     var j2={};try{j2=await r2.json();}catch(e){}
     var msg=(j2.inscritos||0)+' lead(s) inscritos'+(j2.restantes?(' — ainda faltam '+j2.restantes+', clique de novo pra continuar'):'')+'.';
     if(st){st.style.color='var(--green)';st.textContent=msg;}
