@@ -29242,6 +29242,13 @@ async function cadPainelInit(){
       B+=_cadpCard('⚠️ Falhas / bloqueios ('+failed.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Toque'],['Status'],['Motivo']])+'<tbody>'+xrows+'</tbody></table></div>','var(--red)');
     }
 
+    var _allFila=filaArr.concat(nsFilaArr);
+    var _canc=_allFila.filter(function(it){return it.status==='cancelled'||it.status==='cancelled_before_send';});
+    if(_canc.length){
+      var _cm={}; _canc.forEach(function(it){var r=it.cancelReason||it.reason||'?';_cm[r]=(_cm[r]||0)+1;});
+      var _cmRows=Object.keys(_cm).sort(function(a,b){return _cm[b]-_cm[a];}).map(function(r){return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12.5px;"><span style="color:var(--muted);">'+_cadpEsc(r)+'</span><span style="color:var(--amber);font-weight:700;">'+_cm[r]+'</span></div>';}).join('');
+      B+=_cadpCard('🚫 Cancelamentos ('+_canc.length+') — motivo de não ter enviado',_cmRows,'var(--amber)');
+    }
     if(optKeys.length){
       var orows=optKeys.map(function(k){var o=optout[k]||{};var l=leads[k]||{};
         return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone)+'</td><td style="padding:6px 8px;color:var(--muted);">'+(o.at?_cadpDT(o.at):'—')+'</td></tr>';
