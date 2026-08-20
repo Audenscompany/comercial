@@ -2255,7 +2255,7 @@ function renderMinhasTarefas(){
   var amanha=new Date(hoje); amanha.setDate(amanha.getDate()+1);
   var amanhaISO=amanha.toISOString().split('T')[0];
 
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){if(!_isLigacaoTask(t._key,t))return false;return (cadenciaAtivos&&Object.keys(cadenciaAtivos).length)?_leadNaCadencia5d(t.leadKey):true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
   var pend=all.filter(function(t){return !t.done;});
   var atrasadas=pend.filter(function(t){return t.dataISO<hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
   var hojeT=pend.filter(function(t){return t.dataISO===hojeISO;});
@@ -2298,7 +2298,7 @@ function sdrKpiBoxHtml(label,value,colorVar){
 }
 function renderDesempenhoSDR(){
   var hojeISO=new Date().toISOString().split('T')[0];
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){if(!_isLigacaoTask(t._key,t))return false;return (cadenciaAtivos&&Object.keys(cadenciaAtivos).length)?_leadNaCadencia5d(t.leadKey):true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
   var total=all.length;
   var done=all.filter(function(t){return t.done;}).length;
   var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
@@ -2374,11 +2374,13 @@ function _leadNaCadencia5d(k){
   return (Date.now()-d.getTime())/86400000 < 5;
 }
 function _isLigacaoTask(tk,t){ t=t||{}; return /_d\d+_/.test(tk||'')||/liga/i.test(t.tipo||''); }
+function _isReplyTask(tk,t){ t=t||{}; return /_resposta$/.test(tk||'')||/respond/i.test(t.tipo||''); }
+function _isJoaoTask(tk,t){ return _isLigacaoTask(tk,t)||_isReplyTask(tk,t); }
 // João só tem tarefas de LIGAÇÃO — apaga qualquer outra (resposta, horário lotado, etc.)
 function purgeNonCallTasks(){
   if(!fbDb && !initFirebase())return;
   var toDel=[];
-  Object.keys(sdrTarefas||{}).forEach(function(tk){ if(!_isLigacaoTask(tk,sdrTarefas[tk])) toDel.push(tk); });
+  Object.keys(sdrTarefas||{}).forEach(function(tk){ if(!_isJoaoTask(tk,sdrTarefas[tk])) toDel.push(tk); });
   toDel.forEach(function(tk){ delete sdrTarefas[tk]; try{fbDb.ref('sdr_tarefas/'+tk).remove();}catch(e){} });
   if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
 }
