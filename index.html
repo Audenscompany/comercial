@@ -13094,6 +13094,25 @@ function buildAnaliseAdsHTML(data){
   });
 
   var ads=Object.values(adData).sort(function(a,b){return b.leads-a.leads;});
+  // Mescla anúncios que resolvem para o MESMO nome (ID do Meta + nome amigável viram uma linha só)
+  (function(){
+    var _sm=window._metaAdSpendMap||{};
+    var _byName={};
+    ads.forEach(function(a){
+      var dn=(typeof _adDisplayName==='function'?_adDisplayName(a.ad):a.ad)||a.ad;
+      var sp=_sm[a.ad]||0;
+      if(!_byName[dn]){ a._spend=sp; _byName[dn]=a; }
+      else{
+        var t=_byName[dn];
+        ['leads','qualif','reunioes','realizadas','fechamentos','mrr'].forEach(function(f){t[f]=(t[f]||0)+(a[f]||0);});
+        t._spend=(t._spend||0)+sp;
+        if(a.vendasList)t.vendasList=(t.vendasList||[]).concat(a.vendasList);
+        if(a.fats)t.fats=(t.fats||[]).concat(a.fats);
+        if(/^\d{6,}$/.test(String(t.ad))&&!/^\d{6,}$/.test(String(a.ad)))t.ad=a.ad;
+      }
+    });
+    ads=Object.values(_byName).sort(function(a,b){return b.leads-a.leads;});
+  })();
   // Salva mapa global para popup de detalhes
   window._adVendasMap={};ads.forEach(function(a){window._adVendasMap[a.ad]=a.vendasList||[];});
   if(ads.length===0) return '<div class="empty-st"><i class="ti ti-ad-2"></i><p>Nenhum lead de anúncio encontrado no período</p></div>';
@@ -13308,7 +13327,7 @@ function buildAnaliseAdsHTML(data){
         '</tr>'+
       '</thead>'+
       '<tbody>';
-  var _rankTop=adsSorted.slice(0,10);
+  var _rankTop=adsSorted;
   var _maxLeads=_rankTop.length>0?_rankTop[0].leads:1;
   _rankTop.forEach(function(a,idx){
     var pct=_maxLeads>0?Math.round(a.leads/_maxLeads*100):0;
@@ -13332,7 +13351,7 @@ function buildAnaliseAdsHTML(data){
       '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+qCol+';">'+q+'%</td>'+
       (function(){
         var _sm=window._metaAdSpendMap||{};
-        var _sp=_sm[a.ad]||0;
+        var _sp=(a._spend!=null?a._spend:(_sm[a.ad]||0));
         var _cplQ=(_sp>0&&a.qualif>0)?(_sp/a.qualif):0;
         var _spFmt=_sp>0?'R$'+(_sp>=1000?(_sp/1000).toFixed(1)+'k':Math.round(_sp)):'—';
         var _cplFmt=_cplQ>0?'R$'+Math.round(_cplQ):'—';
