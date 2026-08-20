@@ -29030,7 +29030,7 @@ function renderConfigSDR(){
       '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--white);margin-bottom:16px;"><input type="checkbox" id="csdr-enabled" style="width:18px;height:18px;accent-color:#22c55e;"> <b>Cadência ligada</b> <span id="csdr-enabled-tag" style="font-size:11px;color:var(--muted);"></span></label>'+
       '<div class="modal-grid2" style="margin-bottom:14px;">'+
         '<div><label style="'+lbl+'">Número de teste (modo teste)</label><input id="csdr-testphone" placeholder="55DDDNUMERO — vazio = envia pro lead real" style="'+inp+'"></div>'+
-        '<div><label style="'+lbl+'">Intervalo entre disparos (segundos)</label><input id="csdr-interval" type="number" placeholder="300" style="'+inp+'"></div>'+
+        '<div><label style="'+lbl+'">Intervalo entre disparos (segundos)</label><input id="csdr-interval" type="number" placeholder="300" style="'+inp+'"></div>'+'<div style="grid-column:1/-1;margin-top:4px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--white);"><input type="checkbox" id="csdr-reat-enabled" style="width:16px;height:16px;accent-color:#a78bfa;"> <b>Reativação da base ligada</b> <span style="font-size:11px;color:var(--muted);">(leads +30 dias parados em Novo/Qualificado · 1 msg a cada 15 dias · a partir das 17h · até 15/dia)</span></label></div>'+
       '</div>'+
       '<div style="font-size:11.5px;color:var(--amber);background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;padding:9px 12px;margin-bottom:14px;">Com um número de teste preenchido, <b>todas</b> as mensagens da cadência vão só para ele (com cabeçalho [TESTE]). Deixe vazio só quando for pra valer.</div>'+'<div style="font-size:11.5px;color:var(--cyan);background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.25);border-radius:8px;padding:9px 12px;margin-bottom:14px;">Templates com <code>{{horarios}}</code> mostram horários livres reais do especialista, calculados a partir das reuniões do próprio CRM (seg–sáb, 9h–18h). O lead responde qual prefere e o João confirma.</div>'+
       '<button onclick="csdrSaveConfig()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-device-floppy"></i> Salvar configuração</button>'+
@@ -29066,6 +29066,7 @@ function csdrInit(){
     if(g('csdr-enabled-tag'))g('csdr-enabled-tag').textContent=cfg.enabled===true?'(disparando)':'(desligada)';
     if(g('csdr-testphone'))g('csdr-testphone').value=cfg.testPhone||'';
     if(g('csdr-interval'))g('csdr-interval').value=cfg.intervalSeconds||300;
+    if(g('csdr-reat-enabled'))g('csdr-reat-enabled').checked=cfg.reatEnabled===true;
   });
   // carrega templates (semeia defaults se faltar)
   fbGet('config/cadencia_templates').then(function(tpls){
@@ -29097,7 +29098,7 @@ function csdrRenderTpls(){
 }
 function csdrSaveConfig(){
   var g=function(id){return document.getElementById(id);};
-  var cfg={ enabled:g('csdr-enabled').checked===true, testPhone:(g('csdr-testphone').value||'').replace(/\D/g,''), intervalSeconds:parseInt(g('csdr-interval').value)||300 };
+  var cfg={ enabled:g('csdr-enabled').checked===true, testPhone:(g('csdr-testphone').value||'').replace(/\D/g,''), intervalSeconds:parseInt(g('csdr-interval').value)||300, reatEnabled:(g('csdr-reat-enabled')?g('csdr-reat-enabled').checked===true:false) };
   try{ fbDb.ref('config/cadencia').update(cfg); var st=g('csdr-cfg-status'); if(st){st.textContent='Salvo ✓';setTimeout(function(){st.textContent='';},2500);} if(g('csdr-enabled-tag'))g('csdr-enabled-tag').textContent=cfg.enabled?'(disparando)':'(desligada)'; }
   catch(e){ alert('Erro ao salvar: '+e.message); }
 }
@@ -29165,8 +29166,8 @@ async function cadPainelInit(){
   var stEl=document.getElementById('cadp-status');
   if(stEl){stEl.style.color='var(--muted)';stEl.innerHTML='<i class="ti ti-loader"></i> Carregando dados da cadência…';}
   try{
-    var res=await Promise.all([fbGet('cadencia_ativos'),fbGet('leads'),fbGet('cadencia_fila'),fbGet('cadencia_events'),fbGet('whatsapp_optout'),fbGet('config/cadencia'),fbGet('cadencia_ns_ativos'),fbGet('cadencia_ns_fila')]);
-    var ativos=res[0]||{},leads=res[1]||{},fila=res[2]||{},events=res[3]||{},optout=res[4]||{},cfg=res[5]||{},nsAtivos=res[6]||{},nsFila=res[7]||{};
+    var res=await Promise.all([fbGet('cadencia_ativos'),fbGet('leads'),fbGet('cadencia_fila'),fbGet('cadencia_events'),fbGet('whatsapp_optout'),fbGet('config/cadencia'),fbGet('cadencia_ns_ativos'),fbGet('cadencia_ns_fila'),fbGet('cadencia_reat_ativos'),fbGet('cadencia_reat_fila')]);
+    var ativos=res[0]||{},leads=res[1]||{},fila=res[2]||{},events=res[3]||{},optout=res[4]||{},cfg=res[5]||{},nsAtivos=res[6]||{},nsFila=res[7]||{},reatAtivos=res[8]||{},reatFila=res[9]||{};
     var hoje=_cadpHojeBRT();
     var ativoKeys=Object.keys(ativos);
     var filaArr=Object.keys(fila).map(function(id){var it=fila[id]||{};it._id=id;return it;});
@@ -29177,6 +29178,9 @@ async function cadPainelInit(){
     var nsAtivoKeys=Object.keys(nsAtivos);
     var nsFilaArr=Object.keys(nsFila).map(function(id){var it=nsFila[id]||{};it._id=id;return it;});
     var nsQueued=nsFilaArr.filter(function(it){return it.status==='queued';});
+    var reatAtivoKeys=Object.keys(reatAtivos);
+    var reatFilaArr=Object.keys(reatFila).map(function(id){var it=reatFila[id]||{};return it;});
+    var reatQueued=reatFilaArr.filter(function(it){return it.status==='queued';});
     var atencao=[],reunioes=0;
     Object.keys(leads).forEach(function(k){var l=leads[k];if(!l)return;var c=l.cadencia||{};
       if(l.needsHumanAttention===true&&!optout[k])atencao.push({k:k,l:l});
@@ -29198,6 +29202,7 @@ async function cadPainelInit(){
       _cadpKpi('Enviadas hoje',enviadasHoje,'var(--text)'),
       _cadpKpi('Viraram reunião',reunioes,'var(--green)'),
       _cadpKpi('No-show ativos',nsAtivoKeys.length,nsAtivoKeys.length?'#a78bfa':'var(--text)','recontato'),
+      _cadpKpi('Reativação (base fria)',reatAtivoKeys.length,reatAtivoKeys.length?'#f59e0b':'var(--text)','+30 dias'),
       _cadpKpi('Opt-out',optKeys.length,optKeys.length?'var(--red)':'var(--text)','pediram p/ sair'),
       _cadpKpi('Falhas',failed.length,failed.length?'var(--red)':'var(--text)','ver abaixo')
     ].join('');
@@ -29237,6 +29242,14 @@ async function cadPainelInit(){
       B+=_cadpCard('🔁 No-show — recontato ativo ('+nsAtivoKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['Especialista'],['Progresso','center'],['WhatsApp']])+'<tbody>'+nsrows+'</tbody></table></div>'+nsq,'#a78bfa');
     }
 
+    if(reatAtivoKeys.length){
+      var rrows=reatAtivoKeys.map(function(k){var l=leads[k]||{};var ti=(l.cadenciaReativacao&&l.cadenciaReativacao.touchIndex)||0;
+        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpEsc(l.empresa||'—')+'</td><td style="padding:6px 8px;">'+_cadpEsc((reatAtivos[k]&&reatAtivos[k].especialista)||l.especialistaNome||'—')+'</td><td style="padding:6px 8px;text-align:center;">'+(ti>=4?'<span style="color:var(--muted);">encerrando</span>':('Toque '+(ti+1)+'/4'))+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone)+'</td></tr>';
+      }).join('');
+      var rq=reatQueued.length?'<div style="font-size:11px;color:var(--muted);margin-top:8px;">'+reatQueued.length+' mensagem(ns) de reativação na fila (saem a partir das 17h, até 15/dia).</div>':'';
+      B+=_cadpCard('♻️ Reativação — base fria ('+reatAtivoKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['Empresa'],['Especialista'],['Progresso','center'],['WhatsApp']])+'<tbody>'+rrows+'</tbody></table></div>'+rq,'#f59e0b');
+    }
+
     if(failed.length){
       var xrows=failed.slice(0,30).map(function(it){
         return '<tr><td style="padding:6px 8px;">'+_cadpEsc(nomeDe(it.leadKey))+'</td><td style="padding:6px 8px;color:var(--muted);">'+_cadpTplLabel(it.templateId)+'</td><td style="padding:6px 8px;"><span style="color:var(--red);">'+_cadpEsc(it.status)+'</span>'+(it.reason?(' · '+_cadpEsc(it.reason)):'')+'</td><td style="padding:6px 8px;color:var(--muted);font-size:11px;">'+_cadpEsc(it.lastError||'—')+'</td></tr>';
@@ -29260,9 +29273,9 @@ async function cadPainelInit(){
 
     var evSorted=evArr.sort(function(a,b){return (b.at||0)-(a.at||0);}).slice(0,25);
     if(evSorted.length){
-      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)'],ns_started:['🔁','No-show iniciado','#a78bfa'],agendamento_escolha:['🗓️','Lead escolheu horário','var(--cyan)'],slot_conflict:['⚠️','Horário já ocupado','var(--amber)'],cadence_backfill:['📥','Lead inscrito','var(--muted)']};
+      var EVMAP={message_sent:['📨','Mensagem enviada','var(--cyan)'],lead_replied:['💬','Lead respondeu','var(--amber)'],opt_out:['🚫','Opt-out','var(--red)'],cadence_stopped:['⏹️','Cadência encerrada','var(--muted)'],meeting_scheduled:['✅','Reunião agendada','var(--green)'],ns_started:['🔁','No-show iniciado','#a78bfa'],reat_started:['♻️','Reativação iniciada','#f59e0b'],agendamento_escolha:['🗓️','Lead escolheu horário','var(--cyan)'],slot_conflict:['⚠️','Horário já ocupado','var(--amber)'],cadence_backfill:['📥','Lead inscrito','var(--muted)']};
       var erows=evSorted.map(function(e){var m=EVMAP[e.type]||['·',e.type,'var(--muted)'];
-        return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;"><span style="width:118px;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;">'+_cadpDT(e.at)+'</span><span style="color:'+m[2]+';">'+m[0]+' '+_cadpEsc(m[1])+'</span>'+(e.track==='noshow'?'<span style="color:#a78bfa;font-size:10px;"> · no-show</span>':'')+(e.templateId?'<span style="color:var(--muted);">· '+_cadpTplLabel(e.templateId)+'</span>':'')+(e.reason?'<span style="color:var(--muted);">· '+_cadpEsc(e.reason)+'</span>':'')+'</div>';
+        return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;"><span style="width:118px;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;">'+_cadpDT(e.at)+'</span><span style="color:'+m[2]+';">'+m[0]+' '+_cadpEsc(m[1])+'</span>'+(e.track&&e.track!=='lead'?'<span style="color:#a78bfa;font-size:10px;"> · '+_cadpEsc(e.track)+'</span>':'')+(e.templateId?'<span style="color:var(--muted);">· '+_cadpTplLabel(e.templateId)+'</span>':'')+(e.reason?'<span style="color:var(--muted);">· '+_cadpEsc(e.reason)+'</span>':'')+'</div>';
       }).join('');
       B+=_cadpCard('🕑 Últimos eventos',erows);
     }

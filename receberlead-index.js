@@ -632,6 +632,7 @@ async function handleQuizAgendou(req, res) {
   try { await db.ref("kanban/" + key).update({ status: "reuniao", statusAt: Date.now(), responsavel: responsavel, _aguardandoWebhook: true }); } catch (e) { console.error("quiz-agendou kanban:", e); }
   try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
+  try { await cadReatStop(key, "meeting_scheduled"); } catch (e) {}
   return res.status(200).json({ ok: true, responsavel: responsavel });
 }
 
@@ -940,6 +941,7 @@ async function handleCalendlyWebhook(req, res) {
     } catch (e) { console.error("calendly-webhook meeting:", e); }
     try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
+  try { await cadReatStop(key, "meeting_scheduled"); } catch (e) {}
 
     // Confirmação no WhatsApp (com o horário) — mesma sequência da rota /agendar
     try {
@@ -2020,6 +2022,9 @@ const CAD_SENDER_ID = "audens_joao";
 const CAD_COLUNAS_OK = { "": 1, "novo": 1, "qualificado": 1 };            // só manda nessas colunas
 const CAD_TERMINAL = { meeting_scheduled: 1, left_columns: 1, opt_out: 1, not_interested: 1, cadence_stopped: 1, cadence_completed: 1 };
 const CAD_NS_TERMINAL = { meeting_scheduled: 1, opt_out: 1, ns_completed: 1, ns_stopped: 1, virou_venda: 1, reuniao_recente: 1 };
+const CAD_REAT_TERMINAL = { left_columns: 1, meeting_scheduled: 1, opt_out: 1, reat_completed: 1, reat_stopped: 1 };
+const CAD_REAT_ORDER = ["reat_1", "reat_2", "reat_3", "reat_4"];
+const CAD_REAT_TEMPLATES = {"reat_1": {"idx": 0, "media": [], "text": "Oi, {{primeiroNome}}! Aqui é o João, da Audens 🙂\n\nFaz um tempo que você se cadastrou pra falar com a gente sobre o seu delivery e acabamos não conseguindo conversar.\n\nIsso ainda é uma prioridade pra você? Se sim, eu remarco um horário com o {{especialistaNome}} 👍"}, "reat_2": {"idx": 1, "media": [], "text": "Oi, {{primeiroNome}}! João aqui de novo 👋\n\nSei que a rotina do delivery é uma correria 🍔\n\nSe você ainda quer entender como a gente pode te ajudar a vender mais, é só responder que eu já olho um horário com o {{especialistaNome}}."}, "reat_3": {"idx": 2, "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Resultado real de um delivery parecido com o seu 🚀 É esse tipo de virada que o {{especialistaNome}} pode te ajudar a construir."}], "text": "Oi, {{primeiroNome}}!\n\nDeixa eu te mostrar rapidinho por que ainda vale a conversa 👇"}, "reat_4": {"idx": 3, "media": [], "text": "Oi, {{primeiroNome}}!\n\nVou encerrar meu contato por aqui pra não ficar te incomodando 🙂\n\nQuando quiser falar sobre o seu delivery, é só responder essa mensagem que eu te retorno.\n\nAbraço,\nJoão 👊"}};
 const CAD_NS_TEMPLATES = {"ns_d1_manha": {"day": 1, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Oi, {{primeiroNome}}! Aqui é o João, da Audens 🙂\n\nA gente tinha um horário marcado com o {{especialistaNome}} e acho que não rolou pra você — sem problema nenhum, acontece! 🙌\n\nQuer que eu remarque? Me diz um dia e horário que fica bom pra você que eu já cuido."}, "ns_d1_tarde": {"day": 1, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}! João de novo 👊\n\nSei bem como a correria da operação atropela a agenda 🍔\n\nSe quiser, eu já procuro um novo horário com o {{especialistaNome}}. Bora remarcar?"}, "ns_d2_manha": {"day": 2, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nNão quero te perder de vista 🙂\n\nO {{especialistaNome}} separou um tempo pra entender o seu delivery. Ainda faz sentido pra você essa conversa?"}, "ns_d2_tarde": {"day": 2, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}! Pra facilitar, já dei uma olhada na agenda do {{especialistaNome}} 👇\n\n{{horarios}}\n\nMe responde qual encaixa melhor que eu confirmo com ele na hora 👍"}, "ns_d3_manha": {"day": 3, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nSó pra você ter contexto: o {{especialistaNome}} também é dono de delivery e vive a operação na prática 🔥\n\nPor isso vale muito a conversa. Quer que eu ache um horário pra remarcar?"}, "ns_d3_tarde": {"day": 3, "period": "tarde", "version": 1, "cond": true, "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Olha o tipo de virada que a gente constrói com um delivery parecido com o seu 🚀 Hoje passa de 140 mil/mês com o Método Audens. É sobre isso que o {{especialistaNome}} quer te ajudar."}], "text": "Oi, {{primeiroNome}}!\n\nDeixa eu te mostrar rapidinho por que vale remarcar 👇"}, "ns_d4_manha": {"day": 4, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nNão quero ficar te chamando à toa 🙏\n\nVocê ainda quer conversar sobre melhorar os resultados do seu delivery? Se sim, eu remarco com o {{especialistaNome}} agora mesmo."}, "ns_d4_tarde": {"day": 4, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}!\n\nSe for questão de horário, isso eu resolvo 😉\n\nJá separei umas opções na agenda do {{especialistaNome}} 👇\n\n{{horarios}}\n\nÉ só me dizer qual fica melhor."}, "ns_d5_manha": {"day": 5, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou encerrando meus recontatos e o seu ficou aqui comigo.\n\nÚltima tentativa: quer que eu remarque com o {{especialistaNome}}? Responde \"sim\" que eu já cuido 👍"}, "ns_d5_tarde": {"day": 5, "period": "tarde", "version": 1, "cond": false, "media": [], "text": "Oi, {{primeiroNome}}!\n\nVou encerrar por aqui pra não ficar insistindo 🙂\n\nQuando quiser conversar com o {{especialistaNome}}, é só responder essa mensagem que eu remarco na hora.\n\nAbraço,\nJoão 👊"}};
 
 async function cadCfg() {
@@ -2183,6 +2188,7 @@ async function cadHandleInbound(phone, text) {
     await db.ref("whatsapp_optout/" + leadKey).set({ optOut: true, at: Date.now(), reason: "user_request" });
     if (typeof cadStop === "function") await cadStop(leadKey, "opt_out");
     try { await cadNsStop(leadKey, "opt_out"); } catch (e) {}
+    try { await cadReatStop(leadKey, "opt_out"); } catch (e) {}
     try { await db.ref("leads/" + leadKey + "/agendamento").remove(); } catch (e) {}
     await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
     return;
@@ -2390,6 +2396,7 @@ async function handleCadenciaDrain(req, res) {
     }
   }
   try { out.noshow = await cadNsDrain(cfg, today); } catch (e) { console.error("cadNsDrain:", e); }
+  try { out.reativacao = await cadReatDrain(cfg, today); } catch (e) { console.error("cadReatDrain:", e); }
   return res.status(200).json(out);
 }
 
@@ -2892,6 +2899,180 @@ async function handleCadenciaBackfill(req, res) {
   return res.status(200).json(out);
 }
 
+// ===================== CADÊNCIA DE REATIVAÇÃO (base fria — 1 msg a cada 15 dias, a partir das 17h, teto/dia) =====================
+async function cadReatCfg() {
+  try {
+    var v = (await db.ref("config/cadencia").once("value")).val() || {};
+    return {
+      enabled: v.reatEnabled === true,
+      testPhone: (v.testPhone || "").toString().replace(/\D/g, ""),
+      intervalSeconds: parseInt(v.intervalSeconds) || 300,
+      maxPerDay: parseInt(v.reatMaxPerDay) || 15,
+      startHour: parseInt(v.reatStartHour) || 17,
+      intervalDays: parseInt(v.reatIntervalDays) || 15,
+      minIdadeDias: parseInt(v.reatMinIdadeDias) || 30
+    };
+  } catch (e) { return { enabled: false, testPhone: "", intervalSeconds: 300, maxPerDay: 15, startHour: 17, intervalDays: 15, minIdadeDias: 30 }; }
+}
+async function cadReatGetTemplate(id) {
+  var base = CAD_REAT_TEMPLATES[id]; if (!base) return null;
+  var ov = null; try { ov = (await db.ref("config/cadencia_reat_templates/" + id).once("value")).val(); } catch (e) {}
+  return { text: (ov && ov.text) || base.text, media: (ov && ov.media) || base.media || [] };
+}
+async function cadReatValidate(leadKey, intervalDays, fromDrain) {
+  var lead = (await db.ref("leads/" + leadKey).once("value")).val();
+  if (!lead) return { eligible: false, reason: "lead_not_found" };
+  var tel = String(lead.telefone || "").replace(/\D/g, "");
+  if (tel.length < 10) return { eligible: false, reason: "invalid_phone", lead: lead };
+  var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+  if (opt && opt.optOut) return { eligible: false, reason: "opt_out", lead: lead };
+  var cad = lead.cadenciaReativacao;
+  if (!cad) return { eligible: false, reason: "reat_not_active", lead: lead };
+  if (cad.status === "stopped" || cad.status === "completed") return { eligible: false, reason: "reat_" + cad.status, lead: lead };
+  var kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {};
+  if (!CAD_COLUNAS_OK[kb.status || ""]) return { eligible: false, reason: (kb.status === "reuniao" ? "meeting_scheduled" : "left_columns"), lead: lead };
+  if (!lead.especialistaNome) return { eligible: false, reason: "missing_variable", lead: lead };
+  var idx = cad.touchIndex || 0;
+  if (idx >= CAD_REAT_ORDER.length) return { eligible: false, reason: "reat_completed", lead: lead };
+  var touchId = CAD_REAT_ORDER[idx];
+  var lastAt = cad.lastTouchAt || 0;
+  if (lastAt) { var dias = (Date.now() - lastAt) / 86400000; if (dias < (intervalDays || 15)) return { eligible: false, reason: "nao_venceu_15d", lead: lead }; }
+  var already = (await db.ref("cadencia_reat_msg/" + leadKey + "/" + touchId).once("value")).val();
+  if (already && already.status === "sent") return { eligible: false, reason: "already_sent", lead: lead };
+  if (!fromDrain && already && (already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status, lead: lead };
+  return { eligible: true, reason: "eligible", lead: lead, touch: { id: touchId, index: idx } };
+}
+async function cadReatStop(leadKey, reason) {
+  try {
+    var st = (reason === "reat_completed") ? "completed" : "stopped";
+    var ref = db.ref("leads/" + leadKey + "/cadenciaReativacao");
+    await ref.transaction(function (c) { if (c && (c.status === "stopped" || c.status === "completed")) return c; c = c || {}; c.status = st; c.stopReason = reason; c.completedAt = Date.now(); return c; });
+    await db.ref("cadencia_reat_ativos/" + leadKey).remove();
+    var fila = (await db.ref("cadencia_reat_fila").once("value")).val() || {};
+    var updates = {};
+    Object.keys(fila).forEach(function (id) { var it = fila[id]; if (it && it.leadKey === leadKey && it.status === "queued") { updates["cadencia_reat_fila/" + id + "/status"] = "cancelled"; updates["cadencia_reat_fila/" + id + "/cancelReason"] = reason; } });
+    if (Object.keys(updates).length) await db.ref().update(updates);
+    await db.ref("cadencia_events").push({ type: reason === "meeting_scheduled" ? "meeting_scheduled" : "cadence_stopped", track: "reativacao", leadKey: leadKey, reason: reason, at: Date.now() });
+  } catch (e) { console.error("cadReatStop:", e); }
+}
+// inscreve automaticamente leads antigos (>= minIdadeDias) parados em Novo/Qualificado
+async function cadReatAutoEnroll(cfg) {
+  var cutoff = Date.now() - (cfg.minIdadeDias || 30) * 86400000;
+  var leads = (await db.ref("leads").once("value")).val() || {};
+  var kanban = (await db.ref("kanban").once("value")).val() || {};
+  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
+  var count = 0;
+  var keys = Object.keys(leads);
+  for (var i = 0; i < keys.length && count < 500; i++) {
+    var k = keys[i], l = leads[k]; if (!l) continue;
+    if (l.cadenciaReativacao) continue;
+    var idade = l._createdAt || (kanban[k] && kanban[k].statusAt) || 0;
+    if (!idade || idade > cutoff) continue;
+    var kb = kanban[k] || {}; if (!CAD_COLUNAS_OK[kb.status || ""]) continue;
+    if (optout[k]) continue;
+    var tel = String(l.telefone || kb.telefone || "").replace(/\D/g, ""); if (tel.length < 10) continue;
+    var esp = l.especialistaNome || cadResolveEsp(l.faturamento || kb.faturamento).nome; if (!esp) continue;
+    try {
+      await db.ref("leads/" + k).update({ especialistaNome: esp, cadenciaReativacao: { status: "active", startedAt: cadStartDate(Date.now()), touchIndex: 0, lastTouchAt: 0, paused: false, stopReason: null, completedAt: null, createdAt: Date.now() } });
+      await db.ref("cadencia_reat_ativos/" + k).set({ at: Date.now(), especialista: esp });
+      await db.ref("cadencia_events").push({ type: "reat_started", track: "reativacao", leadKey: k, at: Date.now() });
+      count++;
+    } catch (e) {}
+  }
+  return count;
+}
+// ROTA /reativacao-build?secret=...  (chamar 1x/dia às 17h pelo Scheduler)
+async function handleReativacaoBuild(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var cfg = await cadReatCfg();
+  var b = cadBRT(Date.now());
+  var out = { enabled: cfg.enabled, enrolled: 0, candidates: 0, eligible: 0, queued: 0, skips: {} };
+  if (!cfg.enabled) { out.note = "reativacao DESLIGADA (config/cadencia/reatEnabled=false)"; return res.status(200).json(out); }
+  if (b.dow === 0) { out.note = "domingo: sem envio"; return res.status(200).json(out); }
+  try { out.enrolled = await cadReatAutoEnroll(cfg); } catch (e) { console.error("cadReatAutoEnroll:", e); }
+  var today = b.date;
+  var dailyRef = db.ref("cadencia_reat_daily/" + today);
+  var sentToday = (await dailyRef.once("value")).val() || 0;
+  var budget = Math.max(0, (cfg.maxPerDay || 15) - sentToday);
+  if (budget <= 0) { out.note = "teto diário atingido (" + (cfg.maxPerDay || 15) + ")"; return res.status(200).json(out); }
+  var floor = new Date(today + "T" + String(cfg.startHour || 17).padStart(2, "0") + ":00:00-03:00").getTime();
+  var ativos = (await db.ref("cadencia_reat_ativos").once("value")).val() || {};
+  var keys = Object.keys(ativos);
+  out.candidates = keys.length;
+  var n = 0;
+  for (var i = 0; i < keys.length && n < budget; i++) {
+    var leadKey = keys[i];
+    var v = await cadReatValidate(leadKey, cfg.intervalDays);
+    if (!v.eligible) { out.skips[v.reason] = (out.skips[v.reason] || 0) + 1; if (CAD_REAT_TERMINAL[v.reason]) { try { await cadReatStop(leadKey, v.reason); } catch (e) {} } continue; }
+    out.eligible++;
+    var itemRef = db.ref("cadencia_reat_fila/" + leadKey + "_" + v.touch.id);
+    var created = false;
+    await itemRef.transaction(function (cur) { if (cur) return; created = true; return { leadKey: leadKey, touchId: v.touch.id, touchIndex: v.touch.index, status: "queued", scheduledAt: 0, createdAt: Date.now() }; });
+    if (!created) { out.skips.already_queued = (out.skips.already_queued || 0) + 1; continue; }
+    var sa = await cadReserveSlot(cfg.intervalSeconds);
+    if (sa < floor) sa = floor + n * (cfg.intervalSeconds) * 1000;
+    await itemRef.update({ scheduledAt: sa });
+    await db.ref("cadencia_reat_msg/" + leadKey + "/" + v.touch.id).update({ status: "queued", scheduledAt: sa });
+    n++;
+  }
+  out.queued = n;
+  await dailyRef.set(sentToday + n);
+  return res.status(200).json(out);
+}
+async function cadReatDrain(cfg, today) {
+  var out = { processed: 0, sent: 0, cancelled: 0, failed: 0 };
+  var reatCfg = await cadReatCfg();
+  var fila = (await db.ref("cadencia_reat_fila").once("value")).val() || {};
+  var now = Date.now();
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  ids.sort(function (a, b2) { return (fila[a].scheduledAt || 0) - (fila[b2].scheduledAt || 0); });
+  ids = ids.slice(0, 15);
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i]; var itemRef = db.ref("cadencia_reat_fila/" + id);
+    var locked = false;
+    await itemRef.transaction(function (cur) { if (!cur || cur.status !== "queued") return cur; cur.status = "processing"; cur.processingAt = Date.now(); locked = true; return cur; });
+    if (!locked) continue;
+    out.processed++;
+    var item = (await itemRef.once("value")).val();
+    var leadKey = item.leadKey;
+    var v = await cadReatValidate(leadKey, reatCfg.intervalDays, true);
+    var msgRef = db.ref("cadencia_reat_msg/" + leadKey + "/" + item.touchId);
+    if (!v.eligible) {
+      await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
+      await msgRef.update({ status: "cancelled_before_send", reason: v.reason });
+      if (CAD_REAT_TERMINAL[v.reason]) { try { await cadReatStop(leadKey, v.reason); } catch (e) {} }
+      out.cancelled++; continue;
+    }
+    var tpl = await cadReatGetTemplate(item.touchId);
+    if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
+    var lead = v.lead;
+    var r = cadRender(tpl.text, lead);
+    if (r.missing.length) { await itemRef.update({ status: "blocked", reason: "missing_template_variable" }); await msgRef.update({ status: "blocked", reason: "missing_template_variable" }); out.failed++; continue; }
+    var leadPhone = String(lead.telefone || "").replace(/\D/g, "");
+    var targetPhone = reatCfg.testPhone ? reatCfg.testPhone : leadPhone;
+    var body = reatCfg.testPhone ? ("[TESTE reativação → lead " + cadMask(leadPhone) + " · " + item.touchId + "]\n\n" + r.text) : r.text;
+    try {
+      await enviarMensagemWhatsapp(targetPhone, body);
+      if (tpl.media && tpl.media.length) { for (var mi = 0; mi < tpl.media.length; mi++) { var md = tpl.media[mi]; if (!md || !md.url) continue; var cap = cadRender(md.caption || "", lead).text; try { await enviarImagemWhatsapp(targetPhone, md.url, cap); } catch (e) {} } }
+      await itemRef.update({ status: "sent", sentAt: Date.now() });
+      await msgRef.update({ status: "sent", sentAt: Date.now(), zapiTo: cadMask(targetPhone) });
+      // avança o toque (próximo em +15 dias)
+      var nextIdx = (item.touchIndex || 0) + 1;
+      var patch = { "cadenciaReativacao/touchIndex": nextIdx, "cadenciaReativacao/lastTouchAt": Date.now() };
+      await db.ref("leads/" + leadKey).update(patch);
+      if (nextIdx >= CAD_REAT_ORDER.length) { try { await cadReatStop(leadKey, "reat_completed"); } catch (e) {} }
+      await db.ref("leads/" + leadKey + "/whatsapp/lastOutboundAt").set(Date.now());
+      await db.ref("cadencia_events").push({ type: "message_sent", track: "reativacao", leadKey: cadMask(leadPhone), templateId: item.touchId, at: Date.now() });
+      out.sent++;
+    } catch (e) {
+      var att = (item.attemptCount || 0) + 1;
+      if (att >= 3) { await itemRef.update({ status: "failed", attemptCount: att, lastError: String(e && e.message || e) }); await msgRef.update({ status: "failed" }); out.failed++; }
+      else { await itemRef.update({ status: "queued", attemptCount: att, lastError: String(e && e.message || e), scheduledAt: Date.now() + 5 * 60000 }); }
+    }
+  }
+  return out;
+}
+
 // ROTA /cadencia-stop?secret=...&lead=<key>&reason=<...>
 async function handleCadenciaStop(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
@@ -2988,6 +3169,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/noshow-backfill") {
       return await handleNoshowBackfill(req, res);
+    }
+    if (path === "/reativacao-build") {
+      return await handleReativacaoBuild(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);
