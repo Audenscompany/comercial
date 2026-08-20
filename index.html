@@ -10069,7 +10069,22 @@ function renderReunioes(){
   var closerMap={};
   // realiz + proposta: usa meetings
   dedupedRows.forEach(function(m){var c=normCloserName(m.responsavel||'')||'—';if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};if(isReal(m))closerMap[c].real++;if(isProp(m))closerMap[c].prop++;});
-  // vendas: mesma fonte e atribuição do Dashboard Comercial (m.responsavel tem prioridade)
+  // vendas: prioriza a lista já corrigida da aba Vendas (2ª loja conta separado; atribuição correta)
+  var _vcache=window._todasVendasCache;
+  if(_vcache&&_vcache.length){
+    _vcache.forEach(function(v){
+      var fu=v.fu,m=v.m; if(!fu)return;
+      var dt=(typeof _vendaDate==='function')?_vendaDate(fu,m):null;
+      if(!dt&&fu.dataInicio)dt=new Date(fu.dataInicio+'T12:00:00');
+      if(!dt&&m&&m.dtISO)dt=new Date(m.dtISO);
+      if(!dt||!inMes(dt,filtM,filtY))return;
+      var raw=(m&&m.responsavel)||(fu.closerNome)||(fu.closer)||(fu.responsavel)||'';
+      var c=normCloserName(raw)||'—';
+      if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};
+      closerMap[c].vend++;
+      closerMap[c].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;
+    });
+  } else {
   var _closerVTel={};
   Object.keys(followups||{}).forEach(function(fid){
     var fu=followups[fid];
@@ -10091,6 +10106,7 @@ function renderReunioes(){
     closerMap[c].vend++;
     closerMap[c].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;
   });
+  }
   var closerRank=Object.keys(closerMap).map(function(c){return{name:c,d:closerMap[c]};}).sort(function(a,b){return b.d.vend-a.d.vend||b.d.real-a.d.real;});
 
   // SDR ranking
