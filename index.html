@@ -4320,7 +4320,7 @@ function showMain(){
   });
   if(CU.role==='atendente'){
     if(CU.funcao==='sdr'){
-      showPage('sdr-hoje');
+      showPage('reunioes');
     } else {
       var pend=getPendingFollowups();
       if(pend.length>0){setTimeout(function(){openFollowup(pend[0]);},400);}
@@ -4404,7 +4404,10 @@ function buildNav(){
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
-    {id:'reunioes',icon:'ti-calendar-check',label:'Minhas Reunioes'},
+    {group:'Reunioes',icon:'ti-calendar-check',items:[
+      {id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
+      {id:'reunioes-noshow',icon:'ti-user-off',label:'No-show'}
+    ]},
     {group:'Financeiro',icon:'ti-report-money',items:[
       {id:'assinaturas',icon:'ti-signature',label:'Assinaturas'},
       {id:'plano-carreira',icon:'ti-award',label:'Meu Plano de Carreira'}
@@ -4416,8 +4419,10 @@ function buildNav(){
     {id:'prospeccao',icon:'ti-target-arrow',label:'Prospecção'},
     {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
-    {id:'sdr-hoje',icon:'ti-calendar-day',label:'Reunioes do Dia'},
-    {id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
+    {group:'Reunioes',icon:'ti-calendar-check',items:[
+      {id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
+      {id:'reunioes-noshow',icon:'ti-user-off',label:'No-show'}
+    ]},
     {id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
     {group:'SDR',icon:'ti-report-analytics',items:[
@@ -9942,7 +9947,6 @@ function renderHistBase(rows,title){
 
 // ===== REUNIOES =====
 function renderReunioes(){
-  if(CU&&CU.role==='atendente')return renderReunioesPersonal();
   var now=new Date();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
   var filtY=_reunMesFiltro?_reunMesFiltro.y:now.getFullYear();
