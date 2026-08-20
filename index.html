@@ -29152,7 +29152,7 @@ function renderCadenciaPainel(){
     '<div style="display:flex;gap:7px;flex-wrap:wrap;">'+
       '<button onclick="cadPainelBuild(\'manha\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila manhã</button>'+
       '<button onclick="cadPainelBuild(\'tarde\')" class="btn btn-outline" style="font-size:11px;padding:7px 11px;">Montar fila tarde</button>'+
-      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+'<button onclick="cadPainelReprogramar()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#f59e0b;border-color:rgba(245,158,11,.4);">Reprogramar fila p/ agora</button>'+'<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+'<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+
+      '<button onclick="cadPainelDrain()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--cyan);border-color:rgba(6,182,212,.4);">Disparar agora</button>'+'<button onclick="cadPainelReprogramar()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#f59e0b;border-color:rgba(245,158,11,.4);">Reprogramar fila p/ agora</button>'+'<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+'<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+'<button onclick="cadPainelNoshowBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Recontatar no-shows</button>'+
       '<button onclick="cadPainelInit()" class="btn btn-primary" style="font-size:11px;padding:7px 13px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
     '</div></div>'+
     '<div id="cadp-status" style="font-size:12px;color:var(--muted);margin:6px 0 14px;">Carregando…</div>'+
@@ -29282,6 +29282,24 @@ async function cadPainelBuild(period){
     else{if(st){st.style.color='var(--amber)';st.textContent='Resposta inesperada — a rota /cadencia-build está no deploy?';}}
     setTimeout(cadPainelInit,900);
   }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function cadPainelNoshowBackfill(){
+  var st=document.getElementById('cadp-status');
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Procurando no-shows do mês…';}
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/noshow-backfill?secret='+WEBHOOK_SECRET+'&dryrun=1&days=31',{method:'POST'});
+    var j={};try{j=await r.json();}catch(e){}
+    if(!j||j.total_elegiveis==null){ if(st){st.style.color='var(--amber)';st.textContent='Não consegui ler — a rota /noshow-backfill já está no deploy?';} return; }
+    var n=j.total_elegiveis;
+    if(n===0){ if(st){st.style.color='var(--muted)';st.textContent='Nenhum no-show elegível (já na cadência, viraram venda, remarcaram ou opt-out).';} return; }
+    var amostra=(j.amostra||[]).slice(0,8).map(function(a){return '• '+(a.nome||'—');}).join('\n');
+    if(!confirm(n+' no-show(s) do último mês entram na cadência de recontato (5 dias, começando agora).\n\nExemplos:\n'+amostra+'\n\nRecontatar agora?')){ if(st){st.textContent='Cancelado.';} return; }
+    if(st){st.innerHTML='<i class="ti ti-loader"></i> Inscrevendo no-shows…';}
+    var r2=await fetch(RECEBERLEAD_URL+'/noshow-backfill?secret='+WEBHOOK_SECRET+'&dryrun=0&days=31',{method:'POST'});
+    var j2={};try{j2=await r2.json();}catch(e){}
+    if(st){st.style.color='var(--green)';st.textContent=(j2.inscritos||0)+' no-show(s) na cadência de recontato. As mensagens começam a sair nos próximos disparos.';}
+    setTimeout(cadPainelInit,1500);
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 async function cadPainelBackfill(){
   var st=document.getElementById('cadp-status');

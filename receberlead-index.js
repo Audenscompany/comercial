@@ -2805,6 +2805,53 @@ async function cadEnroll(leadKey, lead, startedAt) {
   await db.ref("cadencia_events").push({ type: "cadence_backfill", leadKey: leadKey, at: Date.now() });
   return true;
 }
+// ROTA /noshow-backfill?secret=...&dryrun=1|0&days=N  — recontata no-shows ja marcados
+async function handleNoshowBackfill(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var dryrun = String((req.query.dryrun != null ? req.query.dryrun : "1")) !== "0";
+  var days = parseInt(req.query.days || "31", 10) || 31;
+  var minTs = Date.now() - days * 86400000;
+  var meetings = (await db.ref("meetings").once("value")).val() || {};
+  var followups = (await db.ref("followups").once("value")).val() || {};
+  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
+  var leads = (await db.ref("leads").once("value")).val() || {};
+  var vendaTels = {};
+  Object.keys(followups).forEach(function (k) { var fu = followups[k]; if (fu && fu.resultado === "venda") { var t = String(fu.tel || "").replace(/\D/g, "").slice(-9); if (t) vendaTels[t] = 1; } });
+  var meetsByTel = {}, noshowList = [];
+  Object.keys(meetings).forEach(function (k) {
+    var m = meetings[k]; if (!m || !m.dtISO) return;
+    var t = String(m.tel || "").replace(/\D/g, "").slice(-9);
+    var when = m.scheduledAt || new Date(m.dtISO).getTime();
+    var st = String(m.status || "").toLowerCase();
+    if (t) { if (!meetsByTel[t]) meetsByTel[t] = []; meetsByTel[t].push({ status: st, when: when }); }
+    if (st === "noshow" && when >= minTs) noshowList.push({ m: m, tel: t, when: when });
+  });
+  var byTel = {};
+  noshowList.forEach(function (ns) { if (!ns.tel) return; if (!byTel[ns.tel] || ns.when > byTel[ns.tel].when) byTel[ns.tel] = ns; });
+  var elegiveis = [], skips = {};
+  var leadKeys = Object.keys(leads);
+  Object.keys(byTel).forEach(function (tel) {
+    var ns = byTel[tel];
+    var leadKey = ns.m.kanbanKey, lead = leadKey ? leads[leadKey] : null;
+    if (!lead) { var fk = leadKeys.find(function (k) { var l = leads[k]; return l && String(l.telefone || "").replace(/\D/g, "").slice(-9) === tel; }); if (fk) { leadKey = fk; lead = leads[fk]; } }
+    if (!leadKey || !lead) { skips.lead_nao_encontrado = (skips.lead_nao_encontrado || 0) + 1; return; }
+    if (optout[leadKey]) { skips.opt_out = (skips.opt_out || 0) + 1; return; }
+    if (lead.cadenciaNoshow && lead.cadenciaNoshow.status === "active") { skips.ja_ativo = (skips.ja_ativo || 0) + 1; return; }
+    if (vendaTels[tel]) { skips.virou_venda = (skips.virou_venda || 0) + 1; return; }
+    var reeng = (meetsByTel[tel] || []).some(function (x) { return (x.status === "pending" || x.status === "done") && x.when > ns.when; });
+    if (reeng) { skips.reuniao_recente = (skips.reuniao_recente || 0) + 1; return; }
+    var esp = lead.especialistaNome || cadResolveEsp(lead.faturamento).nome;
+    if (!esp) { skips.sem_especialista = (skips.sem_especialista || 0) + 1; return; }
+    elegiveis.push({ leadKey: leadKey, tel: tel, nome: lead.nome || ns.m.nome || "" });
+  });
+  var out = { dryrun: dryrun, total_elegiveis: elegiveis.length, skips: skips, amostra: elegiveis.slice(0, 20).map(function (e) { return { nome: e.nome }; }) };
+  if (!dryrun) {
+    var inscritos = 0;
+    for (var i = 0; i < elegiveis.length; i++) { try { var r = await cadNsStart(elegiveis[i].leadKey, elegiveis[i].tel); if (r && r.ok && !r.already) inscritos++; } catch (e) {} }
+    out.inscritos = inscritos;
+  }
+  return res.status(200).json(out);
+}
 async function handleCadenciaBackfill(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var dryrun = String((req.query.dryrun != null ? req.query.dryrun : "1")) !== "0";
@@ -2938,6 +2985,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/cadencia-backfill") {
       return await handleCadenciaBackfill(req, res);
+    }
+    if (path === "/noshow-backfill") {
+      return await handleNoshowBackfill(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);
