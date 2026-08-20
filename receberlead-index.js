@@ -2204,9 +2204,7 @@ async function cadHandleInbound(phone, text) {
   }
   // não deu pra resolver sozinho → passa pro João
   try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: true }); } catch (e) {}
-  try {
-    await db.ref("sdr_tarefas/" + leadKey + "_resposta").set({ leadKey: leadKey, nome: lead.nome || "", telefone: lead.telefone || tel, empresa: lead.empresa || "", faturamento: lead.faturamento || "", tipo: "⚡ Lead respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
-  } catch (e) {}
+  // (Joao só tem tarefas de ligação — o "respondeu" fica só no needsHumanAttention / Painel, não vira tarefa)
   await db.ref("cadencia_events").push({ type: "lead_replied", leadKey: leadKey, cadStatus: cadStatus, at: Date.now() });
 }
 // ROTA /wa-inbound — webhook de mensagem recebida (Z-API). Pausa a cadência quando o lead responde.

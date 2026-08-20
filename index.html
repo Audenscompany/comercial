@@ -629,6 +629,7 @@ function startRealtimeSync(){
     var fbTarefas = snap.val() || {};
     var prev = JSON.stringify(sdrTarefas);
     sdrTarefas = fbTarefas;
+    try{ purgeNonCallTasks(); }catch(e){}
     if(JSON.stringify(sdrTarefas) !== prev){
       localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
       var area = document.getElementById('content');
@@ -2254,7 +2255,7 @@ function renderMinhasTarefas(){
   var amanha=new Date(hoje); amanha.setDate(amanha.getDate()+1);
   var amanhaISO=amanha.toISOString().split('T')[0];
 
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){return (cadenciaAtivos&&Object.keys(cadenciaAtivos).length)?!!cadenciaAtivos[t.leadKey]:true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){if(!_isLigacaoTask(t._key,t))return false;return (cadenciaAtivos&&Object.keys(cadenciaAtivos).length)?_leadNaCadencia5d(t.leadKey):true;});
   var pend=all.filter(function(t){return !t.done;});
   var atrasadas=pend.filter(function(t){return t.dataISO<hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
   var hojeT=pend.filter(function(t){return t.dataISO===hojeISO;});
@@ -2297,7 +2298,7 @@ function sdrKpiBoxHtml(label,value,colorVar){
 }
 function renderDesempenhoSDR(){
   var hojeISO=new Date().toISOString().split('T')[0];
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){return (cadenciaAtivos&&Object.keys(cadenciaAtivos).length)?!!cadenciaAtivos[t.leadKey]:true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){if(!_isLigacaoTask(t._key,t))return false;return (cadenciaAtivos&&Object.keys(cadenciaAtivos).length)?_leadNaCadencia5d(t.leadKey):true;});
   var total=all.length;
   var done=all.filter(function(t){return t.done;}).length;
   var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
@@ -2364,6 +2365,23 @@ var KANBAN_TASK_FAT_MIN=20000;
 var sdrTarefas={};
 // Conjunto de leads ATIVOS na cadência (fonte de verdade do backend) — só esses geram tarefa do João
 var cadenciaAtivos={};
+// Lead está na cadência HÁ MENOS DE 5 DIAS?
+function _leadNaCadencia5d(k){
+  if(!cadenciaAtivos||!cadenciaAtivos[k])return false;
+  var sa=cadenciaAtivos[k].startedAt;
+  if(!sa)return true;
+  var d=new Date(sa+'T12:00:00'); if(isNaN(d.getTime()))return true;
+  return (Date.now()-d.getTime())/86400000 < 5;
+}
+function _isLigacaoTask(tk,t){ t=t||{}; return /_d\d+_/.test(tk||'')||/liga/i.test(t.tipo||''); }
+// João só tem tarefas de LIGAÇÃO — apaga qualquer outra (resposta, horário lotado, etc.)
+function purgeNonCallTasks(){
+  if(!fbDb && !initFirebase())return;
+  var toDel=[];
+  Object.keys(sdrTarefas||{}).forEach(function(tk){ if(!_isLigacaoTask(tk,sdrTarefas[tk])) toDel.push(tk); });
+  toDel.forEach(function(tk){ delete sdrTarefas[tk]; try{fbDb.ref('sdr_tarefas/'+tk).remove();}catch(e){} });
+  if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
+}
 var bdrLeads={};
 var _bdrSearchResults=[];
 var _bdrFilter='';
@@ -2427,6 +2445,7 @@ function generateCadenciaTasks(lead,leadKey,forced){
 function syncJoaoCallTasks(){
   if(!fbDb && !initFirebase()) return;
   Object.keys(cadenciaAtivos||{}).forEach(function(leadKey){
+    if(!_leadNaCadencia5d(leadKey)) return;
     var hasCall=Object.keys(sdrTarefas||{}).some(function(tk){var t=sdrTarefas[tk];return t&&t.leadKey===leadKey&&/_d\d_/.test(tk);});
     if(hasCall) return;
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[leadKey])||{};
