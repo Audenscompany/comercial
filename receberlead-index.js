@@ -2019,7 +2019,7 @@ const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 2, "
 const CAD_SENDER_ID = "audens_joao";
 const CAD_COLUNAS_OK = { "": 1, "novo": 1, "qualificado": 1 };            // só manda nessas colunas
 const CAD_TERMINAL = { meeting_scheduled: 1, left_columns: 1, opt_out: 1, not_interested: 1, cadence_stopped: 1, cadence_completed: 1 };
-const CAD_NS_TERMINAL = { meeting_scheduled: 1, opt_out: 1, ns_completed: 1, ns_stopped: 1 };
+const CAD_NS_TERMINAL = { meeting_scheduled: 1, opt_out: 1, ns_completed: 1, ns_stopped: 1, virou_venda: 1, reuniao_recente: 1 };
 const CAD_NS_TEMPLATES = {"ns_d1_manha": {"day": 1, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Oi, {{primeiroNome}}! Aqui é o João, da Audens 🙂\n\nA gente tinha um horário marcado com o {{especialistaNome}} e acho que não rolou pra você — sem problema nenhum, acontece! 🙌\n\nQuer que eu remarque? Me diz um dia e horário que fica bom pra você que eu já cuido."}, "ns_d1_tarde": {"day": 1, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}! João de novo 👊\n\nSei bem como a correria da operação atropela a agenda 🍔\n\nSe quiser, eu já procuro um novo horário com o {{especialistaNome}}. Bora remarcar?"}, "ns_d2_manha": {"day": 2, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nNão quero te perder de vista 🙂\n\nO {{especialistaNome}} separou um tempo pra entender o seu delivery. Ainda faz sentido pra você essa conversa?"}, "ns_d2_tarde": {"day": 2, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}! Pra facilitar, já dei uma olhada na agenda do {{especialistaNome}} 👇\n\n{{horarios}}\n\nMe responde qual encaixa melhor que eu confirmo com ele na hora 👍"}, "ns_d3_manha": {"day": 3, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nSó pra você ter contexto: o {{especialistaNome}} também é dono de delivery e vive a operação na prática 🔥\n\nPor isso vale muito a conversa. Quer que eu ache um horário pra remarcar?"}, "ns_d3_tarde": {"day": 3, "period": "tarde", "version": 1, "cond": true, "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Olha o tipo de virada que a gente constrói com um delivery parecido com o seu 🚀 Hoje passa de 140 mil/mês com o Método Audens. É sobre isso que o {{especialistaNome}} quer te ajudar."}], "text": "Oi, {{primeiroNome}}!\n\nDeixa eu te mostrar rapidinho por que vale remarcar 👇"}, "ns_d4_manha": {"day": 4, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nNão quero ficar te chamando à toa 🙏\n\nVocê ainda quer conversar sobre melhorar os resultados do seu delivery? Se sim, eu remarco com o {{especialistaNome}} agora mesmo."}, "ns_d4_tarde": {"day": 4, "period": "tarde", "version": 1, "cond": true, "media": [], "text": "Oi, {{primeiroNome}}!\n\nSe for questão de horário, isso eu resolvo 😉\n\nJá separei umas opções na agenda do {{especialistaNome}} 👇\n\n{{horarios}}\n\nÉ só me dizer qual fica melhor."}, "ns_d5_manha": {"day": 5, "period": "manha", "version": 1, "cond": false, "media": [], "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou encerrando meus recontatos e o seu ficou aqui comigo.\n\nÚltima tentativa: quer que eu remarque com o {{especialistaNome}}? Responde \"sim\" que eu já cuido 👍"}, "ns_d5_tarde": {"day": 5, "period": "tarde", "version": 1, "cond": false, "media": [], "text": "Oi, {{primeiroNome}}!\n\nVou encerrar por aqui pra não ficar insistindo 🙂\n\nQuando quiser conversar com o {{especialistaNome}}, é só responder essa mensagem que eu remarco na hora.\n\nAbraço,\nJoão 👊"}};
 
 async function cadCfg() {
@@ -2425,6 +2425,36 @@ function cadNsTouchFor(cad, period, todayDate) {
   var tpl = CAD_NS_TEMPLATES[id]; if (!tpl) return null;
   return { templateId: id, day: day, period: period, cond: !!tpl.cond, version: tpl.version || 1 };
 }
+async function cadNsReengajou(leadKey, lead, nsStartedAt) {
+  var tel = String(lead.telefone || "").replace(/\D/g, "").slice(-9);
+  var startTs = 0; try { startTs = new Date(nsStartedAt + "T00:00:00-03:00").getTime(); } catch (e) {}
+  // 1) já virou venda (followup com resultado venda)
+  try {
+    var fus = (await db.ref("followups").once("value")).val() || {};
+    var venda = Object.keys(fus).some(function (k) {
+      var fu = fus[k]; if (!fu || fu.resultado !== "venda") return false;
+      var ft = String(fu.tel || "").replace(/\D/g, "").slice(-9);
+      return ft && ft === tel;
+    });
+    if (venda) return "virou_venda";
+  } catch (e) {}
+  // 2) marcou/fez reunião nova depois do no-show
+  try {
+    var mts = (await db.ref("meetings").once("value")).val() || {};
+    var reeng = Object.keys(mts).some(function (k) {
+      var m = mts[k]; if (!m) return false;
+      var st = String(m.status || "").toLowerCase();
+      if (st !== "pending" && st !== "done") return false;
+      var mt = String(m.tel || "").replace(/\D/g, "").slice(-9);
+      var sameLead = (m.kanbanKey && m.kanbanKey === leadKey) || (mt && mt === tel);
+      if (!sameLead) return false;
+      var when = m.scheduledAt || (m.dtISO ? new Date(m.dtISO).getTime() : 0);
+      return when && when >= startTs;
+    });
+    if (reeng) return "reuniao_recente";
+  } catch (e) {}
+  return null;
+}
 async function cadNsValidate(leadKey, period, todayDate) {
   var lead = (await db.ref("leads/" + leadKey).once("value")).val();
   if (!lead) return { eligible: false, reason: "lead_not_found" };
@@ -2437,6 +2467,8 @@ async function cadNsValidate(leadKey, period, todayDate) {
   if (cad.status === "stopped" || cad.status === "completed") return { eligible: false, reason: "ns_" + cad.status, lead: lead };
   var day = cad.startedAt ? (cadDaysBetween(cad.startedAt, todayDate) + 1) : 0;
   if (day > 5) return { eligible: false, reason: "ns_completed", lead: lead };
+  var _reeng = await cadNsReengajou(leadKey, lead, cad.startedAt);
+  if (_reeng) return { eligible: false, reason: _reeng, lead: lead };
   var touch = cadNsTouchFor(cad, period, todayDate);
   if (!touch) return { eligible: false, reason: "outside_cadence", lead: lead };
   if (touch.cond && lead.whatsapp && lead.whatsapp.lastInboundAt) return { eligible: false, reason: "skipped_conditional", lead: lead };
