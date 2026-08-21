@@ -10011,15 +10011,21 @@ function renderReunioes(){
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
   var filtY=_reunMesFiltro?_reunMesFiltro.y:now.getFullYear();
   var prevM=filtM===0?11:filtM-1,prevY=filtM===0?filtY-1:filtY;
+  var _perFrom=null,_perTo=null;
+  if(_reunPeriodo&&_reunPeriodo.from&&_reunPeriodo.to){_perFrom=new Date(_reunPeriodo.from+'T00:00:00');_perTo=new Date(_reunPeriodo.to+'T23:59:59');if(isNaN(_perFrom.getTime())||isNaN(_perTo.getTime())){_perFrom=null;_perTo=null;}}
+  var periodoAtivo=!!(_perFrom&&_perTo);
+  function _fmtBRd(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
   var _mns=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   var _mnsL=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  var mesLabel=_mnsL[filtM]+' '+filtY;
+  var mesLabel=periodoAtivo?(_fmtBRd(_perFrom)+' – '+_fmtBRd(_perTo)):(_mnsL[filtM]+' '+filtY);
   var tab=window._reunOvTab||'hoje';
 
   var allM=Object.values(meetings).filter(function(m){return !m._retorno;});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
-  var rows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),filtM,filtY);});
-  var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
+  var rows=allM.filter(function(m){if(!m.dtISO)return false;var _d=new Date(m.dtISO);return periodoAtivo?(_d>=_perFrom&&_d<=_perTo):inMes(_d,filtM,filtY);});
+  var prevRows;
+  if(periodoAtivo){var _span=_perTo.getTime()-_perFrom.getTime();var _pF=new Date(_perFrom.getTime()-_span-86400000),_pT=new Date(_perFrom.getTime()-1);prevRows=allM.filter(function(m){if(!m.dtISO)return false;var _d=new Date(m.dtISO);return _d>=_pF&&_d<=_pT;});}
+  else prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
 
   // Today's meetings (use local date, not filtered month)
   var todayMeets=allM.filter(function(m){
@@ -10213,6 +10219,8 @@ function renderReunioes(){
   var opts='';
   for(var mi=0;mi<18;mi++){var mo=new Date(now.getFullYear(),now.getMonth()-mi,1);var mv='{"m":'+mo.getMonth()+',"y":'+mo.getFullYear()+'}';var isSel=(mo.getMonth()===filtM&&mo.getFullYear()===filtY);opts+='<option value="'+mv.replace(/"/g,'&quot;')+'"'+(isSel?' selected':'')+'>'+_mnsL[mo.getMonth()]+' '+mo.getFullYear()+'</option>';}
   var mesSelect='<select onchange="_rvMesCh(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 10px;font-size:12px;font-weight:600;outline:none;">'+opts+'</select>';
+  var _pvf=(_reunPeriodo&&_reunPeriodo.from)||'',_pvt=(_reunPeriodo&&_reunPeriodo.to)||'';
+  var periodoBox='<div style="display:flex;align-items:center;gap:5px;background:var(--card);border:1px solid '+(periodoAtivo?'var(--purple3)':'var(--border2)')+';border-radius:8px;padding:4px 8px;">'+'<i class="ti ti-calendar-stats" style="font-size:13px;color:'+(periodoAtivo?'var(--purple3)':'var(--muted)')+';"></i>'+'<input type="date" id="_reunPerFrom" value="'+_pvf+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<span style="color:var(--muted);font-size:10px;">até</span>'+'<input type="date" id="_reunPerTo" value="'+_pvt+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<button onclick="_reunAplicarPeriodo()" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;">OK</button>'+(periodoAtivo?'<button onclick="_reunLimparPeriodo()" style="background:none;border:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;" title="Limpar período">×</button>':'')+'</div>';
 
   function trow(cells,hdr){var tag=hdr?'th':'td';return '<tr>'+cells.map(function(c){return '<'+tag+' style="padding:9px 12px;font-size:'+(hdr?'9px':'12px')+';'+(hdr?'font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;':'border-bottom:1px solid rgba(255,255,255,0.04);vertical-align:middle;')+'">'+c+'</'+tag+'>';}).join('')+'</tr>';}
   function tbl(hdrs,rows2){return '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead>'+trow(hdrs,true)+'</thead><tbody>'+(rows2.length?rows2.join(''):'<tr><td colspan="'+hdrs.length+'" style="padding:32px;text-align:center;color:var(--muted);font-size:12px;">Nenhuma reunião no período</td></tr>')+'</tbody></table></div>';}
@@ -10257,7 +10265,7 @@ function renderReunioes(){
     +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;">VISÃO GERAL DE REUNIÕES</div>'
     +'<div style="font-size:11px;color:var(--muted);">Panorama completo da performance comercial · '+mesLabel+'</div></div>'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-    +mesSelect
+    +mesSelect+periodoBox
     +'<button onclick="showPage(\'reunioes\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:12px;"></i> Atualizar</button>'
     +'</div></div>';
 
@@ -10497,7 +10505,9 @@ function renderReunioes(){
   return H;
 }
 
-function _rvMesCh(v){try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;}showPage('reunioes');}
+function _rvMesCh(v){_reunPeriodo=null;try{_reunMesFiltro=JSON.parse(v.replace(/&quot;/g,'"'));}catch(e){_reunMesFiltro=null;}showPage('reunioes');}
+function _reunAplicarPeriodo(){var f=document.getElementById('_reunPerFrom'),t=document.getElementById('_reunPerTo');if(!f||!t)return;var fv=f.value,tv=t.value;if(!fv||!tv){alert('Selecione as duas datas (De e Até).');return;}if(fv>tv){var _x=fv;fv=tv;tv=_x;}_reunPeriodo={from:fv,to:tv};showPage('reunioes');}
+function _reunLimparPeriodo(){_reunPeriodo=null;showPage('reunioes');}
 
 function _rvFilter(){
   var q=(document.getElementById('reun-search')||{}).value||'';q=q.toLowerCase().trim();
@@ -16891,6 +16901,7 @@ async function loadFunilReunioes(){
 }
 // Filtro de mês global para Reuniões
 var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
+var _reunPeriodo=null; // {from,to} YYYY-MM-DD ou null (período customizado)
 var _reunTab='geral'; // 'geral' | 'noshow'
 var _vendasMesFiltro=null;
 var _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
