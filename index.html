@@ -10690,11 +10690,14 @@ function buildDashComHTML(data){
 
     // Adicionar Firebase para o mês atual em diante
     // Usa mesma lógica da aba Vendas: meetings[fu.meetingId] || meetings[fid]
-    Object.keys(followups||{}).forEach(function(fid){
-      var fu=followups[fid];
+    var _vcDash=(window._todasVendasCache&&window._todasVendasCache.length)
+      ?window._todasVendasCache.map(function(v){return {fu:v.fu,m:v.m};})
+      :Object.keys(followups||{}).map(function(fid){var _f=followups[fid];return {fu:_f,m:meetings[(_f&&_f.meetingId)]||meetings[fid]};});
+    _vcDash.forEach(function(_it){
+      var fu=_it.fu;
       if(!fu||fu.resultado!=='venda')return;
       if(typeof isVendaCancelada==='function'&&isVendaCancelada(fu))return;
-      var m=meetings[fu.meetingId]||meetings[fid]; // igual renderVendas
+      var m=_it.m; // fonte = aba Vendas (_todasVendasCache): inclui 2a loja, exclusoes e dedup
       var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
       if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
       if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
