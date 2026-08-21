@@ -597,6 +597,7 @@ function startRealtimeSync(){
     var prev = JSON.stringify(kanbanData);
     kanbanData = fbKanban;
     try{ purgeArchivedLeadTasks(); }catch(e){}
+    try{ autoArquivarLeadsAntigos(); }catch(e){}
     var changed = JSON.stringify(kanbanData) !== prev;
     if(changed){
       localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -608,6 +609,8 @@ function startRealtimeSync(){
       _kanbanFirstLoad = false;
       // Na primeira carga: sync de pendentes após Google auth estar pronto
       setTimeout(syncPendingLeadsToSheets, 2000);
+      setTimeout(function(){try{autoArquivarLeadsAntigos();}catch(e){}},3000);
+      setInterval(function(){try{autoArquivarLeadsAntigos();}catch(e){}},30*60000);
     } else if(changed && isGcalConnected()){
       // Kanban atualizou em tempo real: verifica se há entradas novas sem _sheetSynced
       Object.keys(fbKanban).forEach(function(key){
@@ -2396,6 +2399,34 @@ function purgeArchivedLeadTasks(){
   if(toDel.length){ try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
 }
 // Ao arquivar um lead: apaga todas as tarefas do João desse lead e o remove das cadências
+// Arquiva automaticamente leads com +5 dias no funil, em Novo/Qualificado
+var _autoArqBusy=false;
+function autoArquivarLeadsAntigos(){
+  if(_autoArqBusy)return; if(!fbDb && !initFirebase())return;
+  if(typeof kanbanData==='undefined'||!kanbanData)return;
+  var cutoff=5*86400000, now=Date.now(), updates={}, arq=[];
+  Object.keys(kanbanData).forEach(function(k){
+    var e=kanbanData[k]; if(!e)return;
+    var st=e.status||'novo';
+    if(st!=='novo'&&st!=='qualificado')return;
+    var ca=e._createdAt||e.statusAt||0; if(!ca)return;
+    if(now-ca<=cutoff)return;
+    e.status='arquivado'; e.statusAt=now;
+    var _sh=e.statusHistory||{}; _sh['arquivado']=now; e.statusHistory=_sh;
+    updates['kanban/'+k+'/status']='arquivado';
+    updates['kanban/'+k+'/statusAt']=now;
+    updates['kanban/'+k+'/statusHistory']=_sh;
+    arq.push(k);
+  });
+  if(arq.length){
+    _autoArqBusy=true;
+    try{ fbDb.ref().update(updates); }catch(e){}
+    try{ localStorage.setItem('audens_kanban',JSON.stringify(kanbanData)); }catch(e){}
+    arq.forEach(function(k){ try{_arquivarLeadCadencia(k);}catch(e){} });
+    var area=document.getElementById('content'); if(area&&area.getAttribute('data-page')==='kanban') showPage('kanban');
+    setTimeout(function(){_autoArqBusy=false;},1500);
+  }
+}
 function _arquivarLeadCadencia(key){
   if(!fbDb && !initFirebase())return;
   var toDel=Object.keys(sdrTarefas||{}).filter(function(tk){var t=sdrTarefas[tk];return t&&t.leadKey===key;});
