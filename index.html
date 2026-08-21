@@ -19129,8 +19129,7 @@ function _vendaSig(fu,m){
   var tel=String((fu&&fu.tel)||(m&&m.tel)||'').replace(/\D/g,'').slice(-11);
   var nome=String((fu&&fu.nome)||(m&&m.nome)||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,16);
   if(!tel&&!nome)return '';
-  var val=Math.round((fu&&(parseFloat(fu.contrato)||parseFloat(fu.mensalidade)))||0);
-  return 'sig_'+(tel||'x')+'_'+(nome||'x')+'_'+val;
+  return 'sig_'+(tel||'x')+'_'+(nome||'x');
 }
 function _rebuildCancelledSet(contratos){
   _cancelledContratoKeys.clear();
@@ -19455,7 +19454,7 @@ async function calcCloserFromSheets(nivelIdx, month){
         var _tSyncC={};
         _todasVC.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncC[t]=1;_tSyncC[t.slice(-11)]=1;_tSyncC[t.slice(-10)]=1;}});
         _ctrC.forEach(function(c){
-          if(c.ativo===false||c._excluirComissao) return;
+          if(c.ativo===false||c._excluirComissao||c._vendaExcluida) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
           if(!telC) return;
@@ -19787,7 +19786,7 @@ async function calcSDRFromSheets(nivelIdx, month){
         var _tSyncS={};
         _todasV.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tSyncS[t]=1;_tSyncS[t.slice(-11)]=1;_tSyncS[t.slice(-10)]=1;}});
         _ctrS.forEach(function(c){
-          if(c.ativo===false||c._excluirComissao) return;
+          if(c.ativo===false||c._excluirComissao||c._vendaExcluida) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
           if(!telC) return;
@@ -26321,7 +26320,7 @@ function renderVendas(){
         Object.values(data||{}).forEach(function(av){if(av.status!=='assinado')return;_addTelRV((av.telefone||'').replace(/\D/g,''));});
         var extras=[];
         _ctrRV.forEach(function(c){
-          if(c.ativo===false||c._excluirComissao) return;
+          if(c.ativo===false||c._excluirComissao||c._vendaExcluida) return;
           if(!c.dataInicio) return;
           var telC=(c.kanbanKey||'').replace(/\D/g,'');
           if(!telC && c._segundaLoja && c._meetingId && meetings[c._meetingId]){ telC=(meetings[c._meetingId].tel||'').replace(/\D/g,''); }
@@ -27099,7 +27098,9 @@ async function removerVenda(fid){
     if(_sig){ _vendasExcluidasSig[_sig]=true; if(fbDb)await fbDb.ref('vendas_excluidas_sig/'+_sig).set(true); }
     // Marca a fonte (assinatura) pra parar de recriar a venda
     var _aid=(_fu&&_fu._fromContrato)||(fid.indexOf('assin_')===0?fid.slice(6):null);
-    if(_aid&&fbDb)await fbDb.ref('assinaturas/'+_aid).update({_vendaExcluida:true});
+    if(_aid&&fbDb){ try{await fbDb.ref('assinaturas/'+_aid).update({_vendaExcluida:true});}catch(e){} }
+    var _cid=(fid.indexOf('contrato_')===0)?fid.slice(9):((_fu&&_fu._fromContrato)||null);
+    if(_cid&&fbDb){ try{await fbDb.ref('contratos/'+_cid).update({_vendaExcluida:true});}catch(e){} }
     // Remove o followup persistido (real ou sintético) pra não ressurgir
     if(fbDb)await fbDb.ref('followups/'+fid).remove();
     var m=meetings[fid];
