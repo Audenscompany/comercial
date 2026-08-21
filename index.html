@@ -13435,8 +13435,8 @@ function buildAnaliseAdsHTML(data){
         '</tr>'+
       '</thead>'+
       '<tbody>';
-  var _rankTop=adsSorted;
-  var _maxLeads=_rankTop.length>0?_rankTop[0].leads:1;
+  var _rankTop=adsSorted.slice().sort(function(a,b){return (b.realizadas||0)-(a.realizadas||0)||(b.reunioes||0)-(a.reunioes||0)||(b.leads||0)-(a.leads||0);}).slice(0,10);
+  var _maxLeads=Math.max.apply(null,adsSorted.map(function(a){return a.leads||0;}).concat([1]));
   _rankTop.forEach(function(a,idx){
     var pct=_maxLeads>0?Math.round(a.leads/_maxLeads*100):0;
     var q=Math.round((a.txQ||0)*100);
