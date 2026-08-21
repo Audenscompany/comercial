@@ -2545,13 +2545,13 @@ function parseFaturamentoValue(str){
   return val;
 }
 // Tag do lead de acordo com a faixa de faturamento:
-// < 20 mil = VDH (vermelho) | 20-40 mil = Marketplaces (amarelo) | 40 mil+ = Assessoria de Marketing (verde)
+// Faixa de plano por faturamento: < 40 mil = Starter | 40-100 mil = Premium | 100 mil+ = Elite
 function getLeadTag(faturamento){
   if(!faturamento) return null;
   var v=parseFaturamentoValue(faturamento);
-  if(v<20000) return {label:'VDH',cls:'b-red'};
-  if(v<40000) return {label:'Marketplaces',cls:'b-amber'};
-  return {label:'Assessoria de Marketing',cls:'b-green'};
+  if(v<40000) return {label:'Plano Starter',cls:'b-cyan'};
+  if(v<100000) return {label:'Plano Premium',cls:'b-purple'};
+  return {label:'Plano Elite',cls:'b-gold'};
 }
 // Converte string de data do lead (_data) em timestamp (ms)
 // Suporta DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, MM/DD/YYYY
