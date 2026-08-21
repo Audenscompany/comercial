@@ -9998,9 +9998,14 @@ function renderReunioes(){
   }).sort(function(a,b){return(a.dtISO||'').localeCompare(b.dtISO||'');});
 
   function getFu(m){
-    if(followups[m.id])return followups[m.id];
-    var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
-    if(byMid)return byMid;
+    var _mt9=((m.tel||m.telefone||'')).replace(/\D/g,'').slice(-9);
+    var _direct=followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;})||null;
+    // Venda prevalece sobre no-show: se o lead já tem venda registrada, ela é o resultado da reunião
+    if(_mt9.length>=8 && (!_direct||_direct.resultado!=='venda')){
+      var _vfu=Object.values(followups).find(function(f){return f.resultado==='venda'&&(f.tel||'').replace(/\D/g,'').slice(-9)===_mt9;});
+      if(_vfu)return _vfu;
+    }
+    if(_direct)return _direct;
     // Fallback por telefone: followup salvo num ID de meeting diferente (bug dedup antigo)
     var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
     if(mTel.length>=8&&m.dtISO){
@@ -16829,9 +16834,14 @@ function renderReunioesNoshow(){
   var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
 
   function getFu(m){
-    if(followups[m.id])return followups[m.id];
-    var byMid=Object.values(followups).find(function(f){return f.meetingId===m.id;});
-    if(byMid)return byMid;
+    var _mt9=((m.tel||m.telefone||'')).replace(/\D/g,'').slice(-9);
+    var _direct=followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;})||null;
+    // Venda prevalece sobre no-show: se o lead já tem venda registrada, ela é o resultado da reunião
+    if(_mt9.length>=8 && (!_direct||_direct.resultado!=='venda')){
+      var _vfu=Object.values(followups).find(function(f){return f.resultado==='venda'&&(f.tel||'').replace(/\D/g,'').slice(-9)===_mt9;});
+      if(_vfu)return _vfu;
+    }
+    if(_direct)return _direct;
     // Fallback por telefone: followup salvo num ID de meeting diferente (bug dedup antigo)
     var mTel=((m.tel||m.telefone||'')).replace(/\D/g,'');
     if(mTel.length>=8&&m.dtISO){
