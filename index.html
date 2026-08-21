@@ -3436,8 +3436,9 @@ async function salvarCriarAssinatura(){
     if(btn){btn.disabled=false;btn.textContent='Criar Assinatura';}
   }
 }
-async function fetchMetaSpend(period){
+async function fetchMetaSpend(period, sinceOv, untilOv){
   if(!isMetaConnected()||!metaAccountId)return null;
+  period=period||getCurrentPeriod();
   var pp=period.split('/');
   var month=parseInt(pp[0]),year=parseInt(pp[1]);
   var since=year+'-'+String(month).padStart(2,'0')+'-01';
@@ -3452,6 +3453,7 @@ async function fetchMetaSpend(period){
     until=year+'-'+String(month).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
   }
   // Suporta múltiplas contas separadas por vírgula — soma o spend de todas
+  if(sinceOv&&untilOv){since=sinceOv;until=untilOv;}
   var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
   var totalSpend=0;
   var anyOk=false;
@@ -3473,8 +3475,9 @@ async function fetchMetaSpend(period){
   return anyOk?totalSpend:null;
 }
 
-async function fetchMetaAdSpendMap(period){
+async function fetchMetaAdSpendMap(period, sinceOv, untilOv){
   if(!isMetaConnected()||!metaAccountId)return {};
+  period=period||getCurrentPeriod();
   var pp=period.split('/');
   var month=parseInt(pp[0]),year=parseInt(pp[1]);
   var since=year+'-'+String(month).padStart(2,'0')+'-01';
@@ -3483,6 +3486,7 @@ async function fetchMetaAdSpendMap(period){
   var until=isCurrent
     ?now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
     :year+'-'+String(month).padStart(2,'0')+'-'+String(new Date(year,month,0).getDate()).padStart(2,'0');
+  if(sinceOv&&untilOv){since=sinceOv;until=untilOv;}
   var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
   var map={};
   for(var i=0;i<ids.length;i++){
@@ -11982,12 +11986,12 @@ function renderAnaliseAds(){
         (function(){
           // Usa spend do Meta API se disponível para o período selecionado
           var _p=_adsPeriod||getCurrentPeriod();
-          var _ms=(_investidoMes&&_p)?(_investidoMes[_p]||0):0;
+          var _ms=(_adsStart&&_adsEnd&&window._adsRangeSpend!=null)?window._adsRangeSpend:((_investidoMes&&_p)?(_investidoMes[_p]||0):0);
           if(_ms>0){
             return '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto em anúncios — via Meta API">'+
               '<i class="ti ti-brand-meta" style="color:var(--amber);font-size:13px;"></i>'+
               '<span style="color:var(--amber);font-size:10px;font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;">Gasto</span>'+
-              '<span style="color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;padding:0 2px;">R$ '+Math.round(_ms).toLocaleString('pt-BR')+'</span>'+
+              '<span id="ads-gasto-val" style="color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;padding:0 2px;">R$ '+Math.round(_ms).toLocaleString('pt-BR')+'</span>'+
             '</div>';
           }
           return '<div style="display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:5px 12px;" title="Gasto total em anúncios">'+
@@ -12845,9 +12849,18 @@ async function refreshAnaliseAds(){
     // Atualiza gasto do Meta antes de construir o HTML
     if(isMetaConnected()&&metaAccountId){
       var period=_adsPeriod||getCurrentPeriod();
-      var spend=await fetchMetaSpend(period);
-      if(spend!==null){_investidoMes[period]=spend;saveAll();}
-      window._metaAdSpendMap=await fetchMetaAdSpendMap(period);
+      if(_adsStart&&_adsEnd){
+        var _si=_adsStart.toISOString().slice(0,10), _un=_adsEnd.toISOString().slice(0,10);
+        var spendR=await fetchMetaSpend(null,_si,_un);
+        window._adsRangeSpend=(spendR!==null?spendR:0);
+        window._metaAdSpendMap=await fetchMetaAdSpendMap(null,_si,_un);
+      } else {
+        window._adsRangeSpend=null;
+        var spend=await fetchMetaSpend(period);
+        if(spend!==null){_investidoMes[period]=spend;saveAll();}
+        window._metaAdSpendMap=await fetchMetaAdSpendMap(period);
+      }
+      try{ var _gv=document.getElementById('ads-gasto-val'); if(_gv){ var _sv=(_adsStart&&_adsEnd&&window._adsRangeSpend!=null)?window._adsRangeSpend:((_investidoMes&&_investidoMes[period])||0); _gv.textContent='R$ '+Math.round(_sv).toLocaleString('pt-BR'); } }catch(e){}
     }
     // Ads: lê leads, reuniões e clientes da planilha via loadDataHybrid (leads+reuniões+clientes em 3 requests)
     var dataAds=await loadDataHybrid();
@@ -12960,7 +12973,7 @@ function buildAnaliseAdsHTML(data){
     }
   },0);
   // Usa gasto do Meta API (mesmo período da dash) se disponível; fallback para input manual
-  var _metaSpendAds=(_investidoMes&&period)?(_investidoMes[period]||0):0;
+  var _metaSpendAds=(_adsStart&&_adsEnd&&window._adsRangeSpend!=null)?window._adsRangeSpend:((_investidoMes&&period)?(_investidoMes[period]||0):0);
   var gastoAds=_metaSpendAds||_adsGasto||0;
   var _gastoViaFacebook=_metaSpendAds>0;
   var roas=gastoAds>0?(funilRevenue/gastoAds):null;
