@@ -2435,8 +2435,8 @@ function _arquivarLeadCadencia(key){
   try{
     fbDb.ref('cadencia_ativos/'+key).remove();
     fbDb.ref('cadencia_ns_ativos/'+key).remove();
-    fbDb.ref('cadencia_reat_ativos/'+key).remove();
-    fbDb.ref('leads/'+key).update({'cadencia/status':'stopped','cadencia/stopReason':'arquivado','cadenciaNoshow/status':'stopped','cadenciaReativacao/status':'stopped'});
+    // NÃO para a reativação: leads arquivados por inatividade voltam a ser recontatados pela reativação aos +30 dias
+    fbDb.ref('leads/'+key).update({'cadencia/status':'stopped','cadencia/stopReason':'arquivado','cadenciaNoshow/status':'stopped'});
   }catch(e){}
 }
 var bdrLeads={};
