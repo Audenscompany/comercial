@@ -2360,8 +2360,8 @@ var WEBHOOK_SECRET='audens2025xk';
 // URL do webhook externo disparado manualmente ao confirmar uma venda (botão na aba Assinaturas)
 var webhookVendaUrl=localStorage.getItem('webhookVendaUrl')||'';
 var webhookVendaSecret=localStorage.getItem('webhookVendaSecret')||'';
-// Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card
-var KANBAN_FAT_DESTAQUE=40000;
+// Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card (agora 20 mil)
+var KANBAN_FAT_DESTAQUE=20000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
 var KANBAN_TASK_FAT_MIN=20000;
 // Estado das tarefas de cadencia (SDR)
@@ -10695,7 +10695,7 @@ function buildDashComHTML(data){
 
   // ---- BASE METRICS ----
   var totalLeads=leadsF.length;
-  var leadsQ=leadsF.filter(function(l){return parseFaturamentoLead(l)>=40000;}).length;
+  var leadsQ=leadsF.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
 
   // ---- TRÁFEGO METRICS (Fonte = Anúncios) ----
   var leadsTrafego=leadsF.filter(function(l){
@@ -10703,7 +10703,7 @@ function buildDashComHTML(data){
     return ad && ad!=='-';
   });
   var leadsTrafegoCount=leadsTrafego.length;
-  var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamentoLead(l)>=40000;}).length;
+  var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
   var txQualifTrafego=leadsTrafegoCount>0?Math.round(leadsTrafegoQ/leadsTrafegoCount*100):0;
 
   // Meetings de-duplicadas (deve estar antes de reunRealTrafego)
@@ -10738,7 +10738,7 @@ function buildDashComHTML(data){
   // ---- RANKING DE ADS ----
   var adMap={};
   leadsTrafego.filter(function(l){
-    return parseFaturamentoLead(l)>=40000;
+    return parseFaturamentoLead(l)>=20000;
   }).forEach(function(l){
     var ad=(col(l,['Ad','AD','ad'])||'').trim();
     if(!ad||ad==='-'||ad==='') return;
@@ -10837,7 +10837,7 @@ function buildDashComHTML(data){
     return ad && ad!=='-';
   });
   var leadsTrafegoCountP=leadsTrafegoP.length;
-  var leadsTrafegoQP=leadsTrafegoP.filter(function(l){return parseFaturamentoLead(l)>=40000;}).length;
+  var leadsTrafegoQP=leadsTrafegoP.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
   var reunRealP=reunioesFP.filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
   var novosClientesP=clientesFP.length;
   var valorVendidoP=clientesFP.reduce(function(s,c){
@@ -10955,7 +10955,7 @@ function buildDashComHTML(data){
     var k=ad+'||'+camp+'||'+conj;
     if(!byAd[k])byAd[k]={ad:ad,camp:camp,conj:conj,count:0,q:0};
     byAd[k].count++;
-    if(parseFaturamentoLead(l)>=40000)byAd[k].q++;
+    if(parseFaturamentoLead(l)>=20000)byAd[k].q++;
   });
   // Vendas por anúncio: mapeia tel → adKey via leadsF, depois conta followups de venda
   var _telToAdKey={};
@@ -11173,7 +11173,7 @@ function buildDashComHTML(data){
           '<div style="display:flex;align-items:center;padding:0 6px;color:var(--muted);font-size:18px;">&#8594;</div>'+
           // Qualificados
           '<div style="flex:1;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.25);border-radius:10px;padding:12px 10px;text-align:center;">'+
-            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Qualificados (40k+)</div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Qualificados (20k+)</div>'+
             '<div style="font-family:Bebas Neue,sans-serif;font-size:30px;color:var(--cyan);line-height:1;">'+leadsQ+'</div>'+
           '</div>'+
           '<div style="display:flex;align-items:center;padding:0 6px;color:var(--muted);font-size:18px;">&#8594;</div>'+
@@ -11263,7 +11263,7 @@ function buildDashComHTML(data){
         '</div>'+
         // Leads Qualificados
         '<div style="background:var(--bg3);border:1px solid rgba(56,189,248,0.2);border-radius:10px;padding:14px;text-align:center;">'+
-          '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Qualificados (40k+)</div>'+
+          '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Qualificados (20k+)</div>'+
           '<div style="font-family:Bebas Neue,sans-serif;font-size:34px;color:var(--cyan);line-height:1;">'+leadsTrafegoQ+'</div>'+
           '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);margin-top:4px;">'+delta(leadsTrafegoQ,leadsTrafegoQP,false)+'</div>'+
         '</div>'+
@@ -11308,7 +11308,7 @@ function buildDashComHTML(data){
       '<thead><tr>'+
         '<th style="text-align:left;">Anúncio</th>'+
         '<th>Leads</th>'+
-        '<th>Qualif. (40k+)</th>'+
+        '<th>Qualif. (20k+)</th>'+
         '<th>Taxa Qualif.</th>'+
         '<th style="color:#22c55e;">Vendas</th>'+
         '<th>Decisão</th>'+
@@ -13067,7 +13067,7 @@ function buildAnaliseAdsHTML(data){
     if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
-    if(fat>=40000) d.qualif++;
+    if(fat>=20000) d.qualif++;
     d.fats.push(fat);
   });
 
@@ -13228,7 +13228,7 @@ function buildAnaliseAdsHTML(data){
 
   // ===== SCORING =====
   // Dimensions (weights sum to 100):
-  // 1. Taxa qualificação 40k+ (25%) — qualif/leads
+  // 1. Taxa qualificação 20k+ (25%) — qualif/leads
   // 2. Taxa reunião agendada (20%) — reunioes/qualif
   // 3. Taxa reunião realizada (20%) — realizadas/reunioes
   // 4. Taxa fechamento (25%) — fechamentos/realizadas
@@ -13264,7 +13264,7 @@ function buildAnaliseAdsHTML(data){
   var totReal=funilReal;
   var totFech=funilFech;
   var totQualif=_allLeadsTrafego.filter(function(r){
-    return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000;
+    return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
   }).length;
 
   // ===== PREVIOUS PERIOD COMPUTATIONS =====
@@ -13281,7 +13281,7 @@ function buildAnaliseAdsHTML(data){
     return orig.includes('tr')||orig.includes('trafego')||(ad2&&ad2!=='-'&&ad2!=='(sem ad)');
   });
   var _prevTotL=_prevLeads.length;
-  var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000;}).length;
+  var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;}).length;
   var _prevReal=(data.reunioes&&data.reunioes.rows||[]).filter(function(r){
     var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento']));
     if(!inPrevAR(d))return false;
@@ -13321,7 +13321,7 @@ function buildAnaliseAdsHTML(data){
     var o2=(adField&&adField!=='-'&&adField!=='(sem ad)')?'Trafego Pago':categorizeOrigem(col(r,['Origem','ORIGEM','origem']));
     if(_origD[o2]){
       _origD[o2].leads++;
-      if(parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000)_origD[o2].qualif++;
+      if(parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000)_origD[o2].qualif++;
     }
   });
   (data.reunioes&&data.reunioes.rows||[]).forEach(function(r){
@@ -13380,7 +13380,7 @@ function buildAnaliseAdsHTML(data){
       return {ic:'ti-trending-down',bg:'rgba(239,68,68,0.12)',cl:'#f87171',tit:'Volume em queda',desc:'Leads de trafego pago cairam vs. mes anterior ('+_prevTotL+' para '+totLeads+'). Revisar publico e criativos.'};
     })(),
     (function(){
-      if(_txQ2>=0.15)return {ic:'ti-circle-check',bg:'rgba(34,197,94,0.12)',cl:'#4ade80',tit:'Qualificacao boa',desc:Math.round(_txQ2*100)+'% dos leads com faturamento 40k+. Audiencia bem segmentada.'};
+      if(_txQ2>=0.15)return {ic:'ti-circle-check',bg:'rgba(34,197,94,0.12)',cl:'#4ade80',tit:'Qualificacao boa',desc:Math.round(_txQ2*100)+'% dos leads com faturamento 20k+. Audiencia bem segmentada.'};
       return {ic:'ti-filter-off',bg:'rgba(245,158,11,0.12)',cl:'var(--amber)',tit:'Qualificacao baixa',desc:Math.round(_txQ2*100)+'% dos leads qualificam (meta 15%+). Revisar copy e publico-alvo dos anuncios.'};
     })(),
     (function(){
@@ -13493,7 +13493,7 @@ function buildAnaliseAdsHTML(data){
   var _origColors={'Trafego Pago':'var(--amber)','Trafego Organico':'var(--green)','Indicacoes / Outros':'var(--cyan)'};
   var _funnelRows=[
     {k:'leads',label:'Leads Totais'},
-    {k:'qualif',label:'Qualificados 40k+'},
+    {k:'qualif',label:'Qualificados 20k+'},
     {k:'agend',label:'Reunioes Agend.'},
     {k:'real',label:'Reunioes Reais'},
     {k:'ns',label:'No-Show'},
