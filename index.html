@@ -10727,6 +10727,50 @@ function buildDashComHTML(data){
     });
   })();
 
+  // ── UNIFICAÇÃO DE FONTE DE REUNIÕES (mesma da aba Reuniões: Firebase no mês atual) ──
+  (function(){
+    var now=new Date();
+    var curMonthStart=new Date(now.getFullYear(),now.getMonth(),1);
+    // planilha só para histórico (antes do mês atual)
+    reunioesF=reunioesF.filter(function(r){
+      var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento','DataAgendamento','Data Agendamento']));
+      return d&&d<curMonthStart;
+    });
+    function _temVendaTel(tel){
+      tel=(tel||'').replace(/\D/g,'').slice(-9); if(!tel)return false;
+      return Object.values(followups||{}).some(function(f){return f&&f.resultado==='venda'&&(f.tel||'').replace(/\D/g,'').slice(-9)===tel;});
+    }
+    Object.keys(meetings||{}).forEach(function(mid){
+      var m=meetings[mid]; if(!m)return;
+      if(m._retorno||m._hidden||m.followupRemovido)return;
+      var dt=m.dtISO?new Date(m.dtISO):(m.scheduledAt?new Date(m.scheduledAt):null);
+      if(!dt||isNaN(dt.getTime())||dt<curMonthStart)return;
+      if(!inRange(dt))return;
+      var st=String(m.status||'').toLowerCase();
+      if(st==='cancelado'||st==='reagendado')return;
+      var fu=followups[mid]||Object.values(followups).find(function(f){return f&&f.meetingId===mid;})||null;
+      var tel=(m.tel||'').replace(/\D/g,'');
+      var isReal=(fu?(fu.comparecimento==='sim'||fu.resultado==='venda'):(st==='done'||st==='realizada'))||_temVendaTel(tel);
+      var isNs=!isReal&&(fu?fu.comparecimento==='nao':(st==='noshow'||st==='no-show'||st==='no_show'));
+      if(!isReal&&!isNs)return; // só reuniões resolvidas (realizada/no-show)
+      var statusStr=isReal?'REALIZADA':'NO-SHOW';
+      var dtStr=String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
+      var _kb=m.kanbanKey&&typeof kanbanData!=='undefined'?kanbanData[m.kanbanKey]:null;
+      var fatv=(m.faturamentoLead)||(_kb&&_kb.faturamento)||'';
+      reunioesF.push({
+        'DATA DE AGENDAMENTO':dtStr,'Data de Agendamento':dtStr,
+        'STATUS REUNIÃO':statusStr,'STATUS REUNIAO':statusStr,'STATUS':statusStr,'Status':statusStr,
+        'ORIGEM':m.origem||'','Origem':m.origem||'',
+        'TELEFONE':m.tel||'','Telefone':m.tel||'',
+        'NOME':m.nome||'','Nome':m.nome||'',
+        'CLOSER':m.responsavel||'','Closer':m.responsavel||'',
+        'SDR/BDR':m.sdrName||m.sdr||'','SDR':m.sdrName||m.sdr||'','Sdr':m.sdrName||m.sdr||'',
+        'FATURAMENTO':fatv,'Faturamento':fatv,
+        '_fb':true
+      });
+    });
+  })();
+
   // ---- BASE METRICS ----
   var totalLeads=leadsF.length;
   var leadsQ=leadsF.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
