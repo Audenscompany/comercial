@@ -10006,6 +10006,18 @@ function renderHistBase(rows,title){
 }
 
 // ===== REUNIOES =====
+function _cadOrigemVal(m){
+  if(!m)return '';
+  var v=m.cadenciaOrigem||'';
+  if(!v&&m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey])v=kanbanData[m.kanbanKey].cadenciaOrigem||'';
+  return v;
+}
+function _cadOrigemBadge(m){
+  var v=_cadOrigemVal(m);
+  if(v==='noshow')return '<span style="font-size:9px;color:#a78bfa;background:rgba(167,139,250,0.14);padding:1px 7px;border-radius:8px;white-space:nowrap;font-weight:600;">\uD83D\uDD01 Recuperação No-show</span>';
+  if(v==='reativacao')return '<span style="font-size:9px;color:#f59e0b;background:rgba(245,158,11,0.14);padding:1px 7px;border-radius:8px;white-space:nowrap;font-weight:600;">\u267B\uFE0F Reativação base fria</span>';
+  return '';
+}
 function renderReunioes(){
   var now=new Date();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
@@ -10323,6 +10335,7 @@ function renderReunioes(){
           +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
           +(m.origem?'<span style="font-size:10px;background:'+canalColor(normCanal(m.origem)).replace('#','rgba(').slice(0,-1)+',0.15);color:'+canalColor(normCanal(m.origem))+';padding:1px 7px;border-radius:10px;">'+normCanal(m.origem)+'</span>':'')
           +(m.tel||m.telefone?'<span style="font-size:10px;color:var(--muted);"><i class="ti ti-phone" style="font-size:9px;"></i> '+(m.tel||m.telefone)+'</span>':'')
+          +_cadOrigemBadge(m)
           +'</div></div>';
         // SDR → Closer
         H+='<div style="display:flex;align-items:center;gap:6px;">'
@@ -10404,7 +10417,7 @@ function renderReunioes(){
 
       H+='<tr data-nome="'+(m.nome||'').toLowerCase()+'" data-origem="'+(m.origem||'').toLowerCase()+'" data-sdr="'+sdr.toLowerCase()+'" style="border-bottom:1px solid rgba(255,255,255,0.04);background:'+rowBg+';transition:background .15s;" onmouseover="if(!this.style.background||!this.style.background.includes(\'0.04\'))this.style.background=\'rgba(255,255,255,0.02)\';" onmouseout="this.style.background=\''+rowBg+'\'">';
       H+='<td style="padding:10px 12px;font-size:11px;color:var(--muted);white-space:nowrap;">'+fmtDt(m.dtISO)+'</td>';
-      H+='<td style="padding:10px 12px;"><div style="font-size:12px;color:var(--white);font-weight:500;">'+(m.nome||'—')+'</div>'+(m.tel||m.telefone?'<div style="font-size:10px;color:var(--muted);">'+(m.tel||m.telefone)+'</div>':'')+'</td>';
+      H+='<td style="padding:10px 12px;"><div style="font-size:12px;color:var(--white);font-weight:500;">'+(m.nome||'—')+'</div>'+(m.tel||m.telefone?'<div style="font-size:10px;color:var(--muted);">'+(m.tel||m.telefone)+'</div>':'')+(function(){var _b=_cadOrigemBadge(m);return _b?'<div style="margin-top:3px;">'+_b+'</div>':'';})()+'</td>';
       H+='<td style="padding:10px 12px;"><span style="font-size:10px;color:'+canalColor(normCanal(m.origem||''))+';background:'+canalColor(normCanal(m.origem||'')).replace('#','rgba(').slice(0,-1)+',0.12);padding:2px 8px;border-radius:10px;">'+(m.origem?normCanal(m.origem):'—')+'</span></td>';
       // SDR — clickable to edit
       H+='<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:5px;">'+av(sdr,22)+'<span style="font-size:11px;color:var(--white);">'+sdr+'</span><button onclick="_openReunEdit(\''+m.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;font-size:11px;" title="Editar"><i class="ti ti-pencil" style="font-size:10px;"></i></button></div></td>';
@@ -10462,6 +10475,21 @@ function renderReunioes(){
       +(function(){var ha=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.ag;},0);var hv=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.vend;},0);return agendadas>0&&ha>0?'<div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:10px;color:var(--muted);">Leads acima de R$60k = <b style="color:#fff;">'+pct(ha,agendadas)+'%</b> das reuniões, mas <b style="color:#22c55e;">'+pct(hv,vendas||1)+'%</b> das vendas.</div>':'';})()+
       '</div>';
     H+='</div>';
+
+    // Reuniões por origem de cadência (atribuição das automações)
+    (function(){
+      var grp={noshow:{ag:0,real:0,vend:0,rec:0},reativacao:{ag:0,real:0,vend:0,rec:0}};
+      dedupedRows.forEach(function(m){var v=_cadOrigemVal(m);if(v!=='noshow'&&v!=='reativacao')return;grp[v].ag++;if(isReal(m))grp[v].real++;if(isVenda(m)){grp[v].vend++;grp[v].rec+=getReceita(m);}});
+      if(grp.noshow.ag||grp.reativacao.ag){
+        H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;">'
+          +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">REUNIÕES POR ORIGEM DE CADÊNCIA <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);">· quais vieram das automações de WhatsApp</span></div>'
+          +tbl(['Origem','Agendadas','Realizadas','Vendas','Conversão','Receita'],[
+            trow(['<span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#a78bfa;"></span>Recuperação No-show</span>',grp.noshow.ag,grp.noshow.real,'<b style="color:#22c55e;">'+grp.noshow.vend+'</b>','<span style="color:'+(pct(grp.noshow.vend,grp.noshow.real)>=15?'#22c55e':'#f59e0b')+';">'+pct(grp.noshow.vend,grp.noshow.real)+'%</span>',fmtR(grp.noshow.rec)]),
+            trow(['<span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;"></span>Reativação (base fria)</span>',grp.reativacao.ag,grp.reativacao.real,'<b style="color:#22c55e;">'+grp.reativacao.vend+'</b>','<span style="color:'+(pct(grp.reativacao.vend,grp.reativacao.real)>=15?'#22c55e':'#f59e0b')+';">'+pct(grp.reativacao.vend,grp.reativacao.real)+'%</span>',fmtR(grp.reativacao.rec)])
+          ])
+          +'</div>';
+      }
+    })();
 
     // SDR + Closer + Capacidade + Últimas
     H+='<div style="display:grid;grid-template-columns:1fr 1.2fr 220px 1.4fr;gap:14px;">';
