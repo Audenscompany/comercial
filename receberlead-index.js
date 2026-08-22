@@ -2699,6 +2699,14 @@ async function cadAgendarConversa(leadKey, lead, slot, target) {
   var esp = lead.especialistaNome || responsavel;
   var to = cfg.testPhone ? cfg.testPhone : (target || telFinal);
   var pn = primeiroNomeDe(lead.nome || "");
+  // Descobre de qual cadência veio esse agendamento (para atribuir a reunião)
+  var _cadTrack = 'lead';
+  try {
+    var _reA = (await db.ref('cadencia_reat_ativos/' + leadKey).once('value')).val();
+    var _nsA = (await db.ref('cadencia_ns_ativos/' + leadKey).once('value')).val();
+    if (_reA) _cadTrack = 'reativacao';
+    else if (_nsA) _cadTrack = 'noshow';
+  } catch (e) {}
   // TRAVA ANTI-DUPLICIDADE: horário ainda livre + reserva atômica por slot
   var lockRef = db.ref("slot_locks/" + cadSlotKey(responsavel, slot));
   var livre = await cadSlotLivre(responsavel, esp, slot);
@@ -2724,16 +2732,17 @@ async function cadAgendarConversa(leadKey, lead, slot, target) {
   var mid = "km_" + leadKey + "_" + Date.now();
   try { await lockRef.update({ meetingId: mid }); } catch (e) {}
   try {
-    await db.ref("kanban/" + leadKey).update({ status: "reuniao", statusAt: Date.now(), meetingISO: meetingISO, meetingDisplay: meetingDisplay, responsavel: responsavel, meetingId: mid, lembretes: { h2: false, h1: false, m10: false }, _aguardandoWebhook: null });
+    await db.ref("kanban/" + leadKey).update({ status: "reuniao", statusAt: Date.now(), meetingISO: meetingISO, meetingDisplay: meetingDisplay, responsavel: responsavel, meetingId: mid, cadenciaOrigem: _cadTrack, lembretes: { h2: false, h1: false, m10: false }, _aguardandoWebhook: null });
   } catch (e) { console.error("cadAgendarConversa kanban:", e); }
   try {
-    await db.ref("meetings/" + mid).set({ id: mid, tel: telFinal, nome: String(nome), dtISO: meetingISO, dtDisplay: meetingDisplay, status: "pending", responsavel: responsavel, guestEmail: lead.email || "", faturamentoLead: lead.faturamento || kb.faturamento || "", origem: "Tráfego", kanbanKey: leadKey, sdrName: "JOÃO", scheduledAt: Date.now(), _viaCadencia: true });
+    await db.ref("meetings/" + mid).set({ id: mid, tel: telFinal, nome: String(nome), dtISO: meetingISO, dtDisplay: meetingDisplay, status: "pending", responsavel: responsavel, guestEmail: lead.email || "", faturamentoLead: lead.faturamento || kb.faturamento || "", origem: "Tráfego", kanbanKey: leadKey, sdrName: "JOÃO", scheduledAt: Date.now(), cadenciaOrigem: _cadTrack, _viaCadencia: true });
   } catch (e) { console.error("cadAgendarConversa meeting:", e); }
   try { await db.ref("leads/" + leadKey + "/agendamento").set({ status: "booked", meetingId: mid, iso: meetingISO, label: slot.label, bookedAt: Date.now() }); } catch (e) {}
   try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: false }); } catch (e) {}
   try { await cadStop(leadKey, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(leadKey, "meeting_scheduled"); } catch (e) {}
-  await db.ref("cadencia_events").push({ type: "meeting_scheduled", track: "conversational", leadKey: leadKey, meetingId: mid, at: Date.now() });
+  try { await cadReatStop(leadKey, "meeting_scheduled"); } catch (e) {}
+  await db.ref("cadencia_events").push({ type: "meeting_scheduled", track: _cadTrack, leadKey: leadKey, meetingId: mid, at: Date.now() });
   try {
     if (to) {
       await enviarMensagemWhatsapp(to, mensagemConfirmacaoParte1(nome));
