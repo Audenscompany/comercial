@@ -662,6 +662,9 @@ function startRealtimeSync(){
     var pg = area ? area.getAttribute('data-page') : null;
     if(pg==='minhas-tarefas'||pg==='desempenho-sdr') showPage(pg);
   });
+  // Cadências de NO-SHOW e REATIVAÇÃO ativas (para atribuir a origem também no agendamento manual)
+  fbDb.ref('cadencia_ns_ativos').on('value', function(snap){ cadNsAtivos = snap.val() || {}; });
+  fbDb.ref('cadencia_reat_ativos').on('value', function(snap){ cadReatAtivos = snap.val() || {}; });
 
   // Percorre kanban e conclui automaticamente tarefas pendentes de leads ja em status 'reuniao'
   function concluirTarefasLeadsEmReuniao(){
@@ -1417,6 +1420,7 @@ async function confirmarAgendamentoReuniao(key){
   kanbanData[key].meetingDisplay=meetingDisplay;
   kanbanData[key].responsavel=responsavel;
   kanbanData[key].lembretes={h2:false,h1:false,m10:false};
+  if(!kanbanData[key].cadenciaOrigem){var _tk=_cadTrackDoLead(key);if(_tk)kanbanData[key].cadenciaOrigem=_tk;}
   if(email) kanbanData[key].email=email;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
@@ -1426,6 +1430,7 @@ async function confirmarAgendamentoReuniao(key){
       meetingISO:meetingISO,
       meetingDisplay:meetingDisplay,
       responsavel:responsavel,
+      cadenciaOrigem:(kanbanData[key].cadenciaOrigem||_cadTrackDoLead(key)||null),
       lembretes:{h2:false,h1:false,m10:false},
       email:kanbanData[key].email||''
     });
@@ -1468,6 +1473,7 @@ async function confirmarAgendamentoReuniao(key){
   var meetingObj={id:mid,tel:kanbanData[key].telefone,nome:kanbanData[key].nome,dtISO:meetingISO,dtDisplay:meetingDisplay,
     status:'pending',responsavel:responsavel,guestEmail:email||'',faturamentoLead:kanbanData[key].faturamento||'',
     origem:(kanbanData[key].origem||'Tráfego'),ad:kanbanData[key].ad||'',kanbanKey:key,
+    cadenciaOrigem:(kanbanData[key].cadenciaOrigem||_cadTrackDoLead(key)||''),
     sdrName:((CU&&CU.closer)||'João').toUpperCase(),
     scheduledAt:Date.now(),
     tarefaOrigem: ultimaTarefaSDR ? ultimaTarefaSDR.tipo : '',
@@ -1652,6 +1658,7 @@ function abrirDetalheKanban(key){
         e.meetingDisplay?(e.meetingDisplay+(e.responsavel?' · '+e.responsavel:'')+
           (e.meetLink?' <a href="'+e.meetLink+'" target="_blank" style="color:var(--cyan);margin-left:6px;font-size:12px;"><i class="ti ti-video"></i> Meet</a>':'')):null
       )+
+      (function(){var _b=(typeof _cadOrigemBadge==='function')?_cadOrigemBadge(e):'';return _b?row('robot','Origem da cadência','x',_b):'';})()+
       row('calendar-due','Retorno',e.retornoDisplay,e.retornoDisplay?'<span style="color:var(--amber);">'+e.retornoDisplay+'</span>':null)+
       row('note','Observações',e.obs)+
       _fuHtml+
@@ -2371,6 +2378,13 @@ var KANBAN_TASK_FAT_MIN=20000;
 var sdrTarefas={};
 // Conjunto de leads ATIVOS na cadência (fonte de verdade do backend) — só esses geram tarefa do João
 var cadenciaAtivos={};
+var cadNsAtivos={};   // leads ativos na cadência de NO-SHOW
+var cadReatAtivos={}; // leads ativos na cadência de REATIVAÇÃO (base fria)
+function _cadTrackDoLead(key){
+  if(cadReatAtivos&&cadReatAtivos[key])return 'reativacao';
+  if(cadNsAtivos&&cadNsAtivos[key])return 'noshow';
+  return '';
+}
 // Lead está na cadência HÁ MENOS DE 5 DIAS?
 function _leadNaCadencia5d(k){
   if(!cadenciaAtivos||!cadenciaAtivos[k])return false;
