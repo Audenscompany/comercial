@@ -29090,7 +29090,7 @@ function _chFontsCss(){
   var st=document.createElement('style');st.id='ch-slide-css';
   st.textContent=
   ".ch-slide{position:relative;width:1080px;height:1350px;overflow:hidden;background:#0B0910;font-family:'Archivo',system-ui,sans-serif;color:#fff;box-sizing:border-box;}"+
-  ".ch-slide .bg{position:absolute;inset:0;background-size:cover;background-position:center;}"+
+  ".ch-slide .bg{position:absolute;inset:0;overflow:hidden;}"+".ch-slide .bg img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transform-origin:center;}"+
   ".ch-slide .bgph{position:absolute;inset:0;background:radial-gradient(115% 80% at 50% 18%,rgba(124,58,237,.42),transparent 60%),linear-gradient(165deg,#241a3d 0%,#140f22 45%,#0B0910 100%);}"+
   ".ch-slide .grid{position:absolute;inset:0;opacity:.55;background-image:linear-gradient(rgba(167,139,250,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(167,139,250,.07) 1px,transparent 1px);background-size:64px 64px;-webkit-mask-image:linear-gradient(180deg,#000,transparent 42%);mask-image:linear-gradient(180deg,#000,transparent 42%);}"+
   ".ch-slide .scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,9,16,.35) 0%,rgba(11,9,16,0) 26%,rgba(11,9,16,.55) 55%,rgba(11,9,16,.94) 85%,#0B0910 100%);}"+
@@ -29125,7 +29125,7 @@ function _chBadge(){
 }
 function chSlideHTML(sl,idx,total){
   var img=sl.img||'';
-  var bg=img?'<div class="bg" style="background-image:url('+img+');"></div>':'<div class="bgph"></div>';
+  var bg=img?'<div class="bg"><img src="'+img+'" style="object-position:'+(sl.imgX==null?50:sl.imgX)+'% '+(sl.imgY==null?50:sl.imgY)+'%;transform:scale('+(sl.imgZoom||1)+');"></div>':'<div class="bgph"></div>';
   var dots='';for(var i=0;i<total;i++){dots+='<i class="'+(i===idx?'on':'')+'"></i>';}
   var kick=(sl.tipo!=='capa'&&sl.kicker)?'<div class="kick">'+_chMk(sl.kicker)+'</div>':'';
   var h1sz=sl.h1size||(sl.tipo==='capa'?88:70);
@@ -29258,7 +29258,7 @@ function chSlideEditor(i){
     '</div>';
   };
   var h='<div style="width:'+W+'px;">';
-  h+='<div style="display:flex;gap:5px;margin-top:8px;"><button onclick="chGenSlideImg('+i+',this)" style="flex:1;padding:6px 0;background:rgba(124,58,237,0.16);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;font-weight:700;font-size:10px;cursor:pointer;">🎨 Foto IA</button><button onclick="document.getElementById(\'ch-imgf-'+i+'\').click()" style="flex:1;padding:6px 0;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:10px;cursor:pointer;">Enviar</button>'+(sl.img?'<button onclick="chDelImg('+i+')" style="padding:6px 9px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:7px;color:#f87171;font-size:10px;cursor:pointer;">✕</button>':'')+'<input id="ch-imgf-'+i+'" type="file" accept="image/*" style="display:none;" onchange="chUploadSlideImg('+i+',this)"></div>';
+  h+='<div style="display:flex;gap:5px;margin-top:8px;"><button onclick="chGenSlideImg('+i+',this)" style="flex:1;padding:6px 0;background:rgba(124,58,237,0.16);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;font-weight:700;font-size:10px;cursor:pointer;">🎨 Foto IA</button><button onclick="document.getElementById(\'ch-imgf-'+i+'\').click()" style="flex:1;padding:6px 0;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:10px;cursor:pointer;">Enviar</button>'+(sl.img?'<button onclick="chAdjustImg('+i+')" style="padding:6px 9px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;font-size:10px;cursor:pointer;">Ajustar</button>':'')+(sl.img?'<button onclick="chDelImg('+i+')" style="padding:6px 9px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:7px;color:#f87171;font-size:10px;cursor:pointer;">✕</button>':'')+'<input id="ch-imgf-'+i+'" type="file" accept="image/*" style="display:none;" onchange="chUploadSlideImg('+i+',this)"></div>';
   if(sl.tipo!=='capa') h+=f('Kicker','kicker',sl.kicker);
   h+=f('Título (h1)','h1',sl.h1,true);
   if(sl.tipo!=='capa') h+=f('Apoio','support',sl.support,true);
@@ -29299,29 +29299,77 @@ async function chGenAllImgs(){
   chRenderPreview();
 }
 function _chStripMk(t){return String(t==null?'':t).replace(/\[\[|\]\]/g,'').replace(/\*\*/g,'');}
+var _CH_ARTPROMPT=`Quero que você atue como um Diretor de Arte Sênior, Pesquisador Visual, Fotógrafo Editorial e Especialista em Storytelling de Marcas.
+
+Sua missão é encontrar ou criar as melhores imagens possíveis para ilustrar visualmente esta história, fazendo o carrossel parecer um mini-documentário premium sobre a empresa, e não um conjunto de imagens genéricas de banco de imagens ou de IA.
+
+OBJETIVO PRINCIPAL
+Cada imagem deve ajudar a pessoa a entender a história mesmo antes de ler todo o texto. A sequência visual precisa mostrar: marca atual → origem → dificuldades → decisões → processo → crescimento → escala → aprendizado final. Não quero imagens só bonitas; quero imagens que provem, representem ou reforcem exatamente o momento da história contado naquele slide.
+
+ETAPA 1 — PESQUISE A EMPRESA
+Pesquise profundamente antes de escolher qualquer imagem: site oficial, página "Nossa História", entrevistas com fundadores, matérias de jornais e revistas de negócios, portais especializados, podcasts, vídeos, reportagens antigas, redes sociais oficiais, fotos de arquivo e pessoais dos fundadores, inaugurações, primeiras lojas/fachadas/equipes, crescimento da operação, unidades atuais, filas, clientes, cozinha, bastidores, expansão, centros de produção, produtos e embalagens antigas, fotografias históricas. Priorize fontes confiáveis. Se houver divergência de datas/números/fatos, me avise antes de afirmar. Não invente fatos.
+
+ETAPA 2 — BUSQUE FOTOS REAIS PRIMEIRO
+Prioridade absoluta: fotografias reais da empresa e da história (históricas, fundadores, primeiras lojas/fachadas/produtos, equipes antigas, bastidores, expansão, unidades atuais, consumidores reais, filas, operação, produção, acontecimentos citados). Pergunte sempre: "Essa imagem realmente ajuda a contar este trecho?" Se não, continue buscando.
+
+ETAPA 3 — REGRA ESPECIAL PARA A CAPA
+O SLIDE 1 precisa causar reconhecimento imediato: antes de ler o título, dá pra saber qual empresa é. Priorize: fachada icônica; logotipo/letreiro físico bem visível; loja flagship; produto extremamente reconhecível + identidade; fundador em ambiente ligado à empresa; sede emblemática. A capa deve ser impactante, premium, reconhecível, forte no feed e com boa composição para receber texto. Apresente 3 alternativas de capa e diga qual escolheria e por quê (1 frase).
+
+ETAPA 4 — OS OUTROS SLIDES SEGUEM A HISTÓRIA
+A partir do Slide 2, não repita fotos bonitas da empresa atual. Coerência histórica: "começou numa pequena loja" → a primeira loja; "os fundadores no balcão" → foto deles trabalhando; "começou a formar filas" → clientes esperando de verdade; "a operação virou uma máquina" → cozinha/produção/equipe real.
+
+ETAPA 5 — CONSTRUA UMA NARRATIVA VISUAL
+Analise o carrossel inteiro antes de selecionar. Não quero 8 imagens independentes, quero uma história visual com contraste entre começo e fim (ex.: gigante hoje → começo pequeno → primeira loja → trabalho dos fundadores → processos → demanda → escala → equipe/estrutura atual ou a lição final).
+
+ETAPA 6 — CRITÉRIOS PARA ESCOLHER ENTRE DUAS FOTOS
+Relevância histórica, poder narrativo (conta algo sem texto?), reconhecimento, emoção (esforço/ambição/crescimento/escala), qualidade (resolução p/ Instagram), composição (cabe título e texto?), autenticidade (documental x publicidade genérica). Autenticidade vale mais que perfeição estética.
+
+ETAPA 7 — NÃO USE IA QUANDO EXISTIR UMA BOA FOTO REAL
+Se existir fotografia histórica relevante, não substitua por IA — mesmo antiga, granulada, com cores antigas ou enquadramento imperfeito (isso aumenta a verdade). IA é complemento, nunca substituta de registro histórico importante.
+
+ETAPA 8 — QUANDO GERAR IMAGEM COM IA
+Só gere quando não houver registro do acontecimento, a foto for inutilizável, o conceito for abstrato, precisar de transição, ou nenhuma foto real representar bem o slide. A imagem deve ser claramente ilustrativa, sem fingir ser registro histórico real. Nunca invente uma "fotografia" de um acontecimento específico como se fosse verdadeira.
+
+PADRÃO VISUAL PARA IMAGENS GERADAS
+Fotografia editorial cinematográfica ultra-realista: aparência fotográfica real, comportamento natural das pessoas, imperfeições reais, iluminação plausível, textura de pele real, materiais realistas, documental, atmosfera premium, profundidade de campo natural, contraste cinematográfico moderado. Sem render 3D, sem aparência artificial, sem estética exageradamente publicitária, sem rostos perfeitos demais. Ambientes de alimentação (restaurante, cozinha, hamburgueria, pizzaria, cafeteria, delivery, salão, operação, produção) podem aparecer conforme a história.
+
+IDENTIDADE VISUAL AUDENS (só para imagens GERADAS, não históricas)
+Unidade estética sutil: ambiente elegante, sombras profundas, luz quente, contraste cinematográfico, madeira, metal, vapor quando fizer sentido, pequenos pontos de luz roxa próximos de #7C3AED, aparência premium e realista. O roxo deve ser SUTIL — não deixe a foto toda roxa.
+
+FORMATO
+Instagram vertical 4:5 — 1080 × 1350. Em fotos horizontais, avalie corte vertical. O elemento principal deve ficar na parte superior/lateral ou deixar espaço negativo. Preciso de espaço para inserir texto depois.
+
+TEXTO NAS IMAGENS GERADAS
+NÃO coloque palavras, títulos, números, logotipos inventados, placas/marcas falsas, letras ou elementos tipográficos. Eu adiciono o texto depois no design. EXCEÇÃO: na CAPA, se for foto real da empresa, o logotipo/nome que existe naturalmente na fachada pode e deve permanecer.
+
+ESPAÇO PARA TEXTO
+Sempre analise onde o texto entrará (metade inferior mais escura, lateral limpa, parede vazia, chão escuro, mesa, sombra, céu, área desfocada). Nunca coloque o elemento principal exatamente onde ficará o título.
+
+ETAPA 9 — O QUE ENTREGAR (para cada slide)
+SLIDE X — [TÍTULO]
+Imagem recomendada: descrição objetiva.
+Por que funciona: ligação curta entre imagem e história.
+Tipo: REAL / HISTÓRICA / ATUAL / IA ILUSTRATIVA.
+Fonte: publicação/site/perfil.
+Link da fonte: link direto sempre que possível.
+Imagem: mostre a imagem quando disponível.
+Alternativa: 2ª opção boa, se existir.
+Se nenhuma foto real adequada existir, escreva: "Não encontrei um registro real suficientemente forte para este slide. Recomendo uma imagem ilustrativa." e então forneça um prompt específico (contexto, época, ambiente, ação, personagem, iluminação, composição, emoção, espaço para texto, formato 4:5).
+
+ETAPA 10 — ANÁLISE FINAL
+Depois de tudo, avalie a sequência: existe começo, evolução, contraste, tensão, crescimento, transformação e conclusão? Se duas imagens ficarem repetitivas, troque. Evite fachada→fachada→fachada; prefira fachada atual → arquivo histórico → primeira loja → fundador → operação → clientes → escala → equipe.
+
+CRITÉRIO PRINCIPAL
+Imagine uma matéria de Forbes / Bloomberg Businessweek / Exame / Fast Company / Fortune, adaptada para um carrossel da Audens Company. A sensação deve ser "estou conhecendo os bastidores reais de como essa empresa foi construída" — nunca "estou vendo 8 imagens bonitas de IA".
+
+A partir das informações abaixo: 1) pesquise a empresa; 2) valide os fatos; 3) encontre fotografias reais; 4) traga 3 opções para a capa; 5) escolha a melhor; 6) associe uma foto a cada slide; 7) priorize arquivos históricos; 8) use atuais quando fizer sentido; 9) só gere IA onde faltar registro; 10) apresente tudo na ordem do carrossel.
+
+===== INFORMAÇÕES =====`;
+
 function chBuildImgPrompt(){
   var h=_CH_HISTORIAS[_chState.story]||{};
-  var L=[];
-  L.push('Preciso de imagens de FUNDO para um carrossel de Instagram da Audens Company (agência de marketing para food service/delivery).');
-  L.push('');
-  L.push('ESTILO VISUAL (vale para todas as imagens):');
-  L.push('- Fotografia editorial cinematográfica, ultra realista.');
-  L.push('- Ambiente de hamburgueria / pizzaria / restaurante / delivery.');
-  L.push('- Fundo escuro e elegante, luz quente e dramática vinda de cima, vapor sutil, superfícies de madeira e metal.');
-  L.push('- Atmosfera premium com um tom roxo (#7C3AED) sutil.');
-  L.push('- Formato VERTICAL 1080x1350 (proporção 4:5).');
-  L.push('- CRÍTICO: a imagem NÃO pode conter NENHUM texto, letra, número ou logotipo. Apenas a cena/foto (o texto eu coloco depois).');
-  L.push('- Deixe a metade de baixo mais escura/limpa, pois vou sobrepor o título ali.');
-  L.push('');
-  L.push('HISTÓRIA BASE: '+(h.empresa||'')+' — '+(h.historia||'')+' ('+(h.numeros||'')+')');
-  L.push('');
-  L.push('Gere 1 imagem para cada slide abaixo, combinando a cena com o tema do slide:');
-  (_chState.slides||[]).forEach(function(sl,i){
-    var linha='SLIDE '+(i+1)+(i===0?' (capa)':'')+': '+_chStripMk(sl.h1||'');
-    if(sl.support) linha+=' — '+_chStripMk(sl.support);
-    L.push(linha);
-  });
-  return L.join('\n');
+  var slides=(_chState.slides||[]).map(function(sl,i){var l='SLIDE '+(i+1)+(i===0?' (capa)':'')+': '+_chStripMk(sl.h1||'');if(sl.support)l+=' — '+_chStripMk(sl.support);return l;}).join('\n');
+  return _CH_ARTPROMPT+'\nEMPRESA:\n'+(h.empresa||'')+'\n\nHISTÓRIA:\n'+(h.historia||'')+' ('+(h.numeros||'')+')\n\nSLIDES:\n'+slides;
 }
 function chCopyImgPrompt(){
   if(!_chState.slides.length){alert('Gere os slides primeiro.');return;}
@@ -29344,6 +29392,32 @@ function chDoCopyPrompt(btn){
   try{ navigator.clipboard.writeText(ta.value); }catch(e){ try{document.execCommand('copy');}catch(_){} }
   if(btn){btn.innerHTML='<i class="ti ti-check"></i> Copiado!';setTimeout(function(){btn.innerHTML='<i class="ti ti-copy"></i> Copiar prompt';},1500);}
 }
+function chAdjustImg(i){
+  var sl=_chState.slides[i]; if(!sl||!sl.img){alert('Adicione uma foto primeiro.');return;}
+  var X=(sl.imgX==null?50:sl.imgX),Y=(sl.imgY==null?50:sl.imgY),Z=(sl.imgZoom||1);
+  var ov=document.getElementById('ch-adj-modal'); if(ov)ov.remove();
+  ov=document.createElement('div'); ov.id='ch-adj-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:4200;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px;width:400px;max-width:100%;">'+
+    '<div style="font-weight:800;color:var(--white);margin-bottom:10px;">Ajustar foto \u2014 slide '+(i+1)+'</div>'+
+    '<div id="ch-adj-box" style="position:relative;width:288px;height:360px;margin:0 auto;border-radius:10px;overflow:hidden;cursor:grab;border:1px solid var(--border);background:#000;"><img id="ch-adj-img" src="'+sl.img+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:'+X+'% '+Y+'%;transform:scale('+Z+');pointer-events:none;user-select:none;"></div>'+
+    '<div style="margin-top:12px;"><label style="font-size:11px;color:var(--muted);">Zoom</label><input id="ch-adj-zoom" type="range" min="1" max="3" step="0.02" value="'+Z+'" style="width:100%;accent-color:#7C3AED;"></div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:2px;">Arraste a imagem para reposicionar.</div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px;"><button onclick="chAdjReset()" style="padding:9px 14px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--white);font-size:12px;cursor:pointer;">Resetar</button><button onclick="chAdjApply()" style="flex:1;padding:9px 0;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:9px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;">Aplicar</button><button onclick="var m=document.getElementById(\'ch-adj-modal\');if(m)m.remove();" style="padding:9px 14px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--muted);font-size:12px;cursor:pointer;">Cancelar</button></div>'+
+  '</div>';
+  document.body.appendChild(ov);
+  var img=document.getElementById('ch-adj-img'), box=document.getElementById('ch-adj-box');
+  var stt={X:X,Y:Y,Z:Z,drag:false,px:0,py:0};
+  window._chAdj={i:i,st:stt};
+  function ap(){img.style.objectPosition=stt.X+'% '+stt.Y+'%';img.style.transform='scale('+stt.Z+')';}
+  box.addEventListener('mousedown',function(e){stt.drag=true;stt.px=e.clientX;stt.py=e.clientY;box.style.cursor='grabbing';e.preventDefault();});
+  window.addEventListener('mousemove',function(e){if(!stt.drag)return;var dx=e.clientX-stt.px,dy=e.clientY-stt.py;stt.px=e.clientX;stt.py=e.clientY;stt.X=Math.max(0,Math.min(100,stt.X-dx/box.offsetWidth*100/stt.Z));stt.Y=Math.max(0,Math.min(100,stt.Y-dy/box.offsetHeight*100/stt.Z));ap();});
+  window.addEventListener('mouseup',function(){stt.drag=false;if(box)box.style.cursor='grab';});
+  var zi=document.getElementById('ch-adj-zoom'); if(zi)zi.addEventListener('input',function(){stt.Z=parseFloat(this.value);ap();});
+}
+function chAdjReset(){var a=window._chAdj;if(!a)return;a.st.X=50;a.st.Y=50;a.st.Z=1;var img=document.getElementById('ch-adj-img');if(img){img.style.objectPosition='50% 50%';img.style.transform='scale(1)';}var z=document.getElementById('ch-adj-zoom');if(z)z.value=1;}
+function chAdjApply(){var a=window._chAdj;if(!a)return;var sl=_chState.slides[a.i];sl.imgX=a.st.X;sl.imgY=a.st.Y;sl.imgZoom=a.st.Z;var m=document.getElementById('ch-adj-modal');if(m)m.remove();chRenderPreview();}
 function chEnsureExportLibs(cb){
   _chFontsCss();
   function step2(){ if(window.JSZip)return cb(); var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=cb;document.head.appendChild(s); }
