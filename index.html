@@ -29240,7 +29240,7 @@ function chRenderPreview(){
   if(!_chState.slides.length){wrap.innerHTML='';return;}
   var total=_chState.slides.length, SC=0.30;
   var head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;"><div style="font-size:12px;color:var(--muted);"><i class="ti ti-edit"></i> Edite os textos e adicione as fotos de cada slide</div><button onclick="chExportZIP()" style="padding:9px 16px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:10px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;"><i class="ti ti-download"></i> Baixar ZIP ('+total+' PNGs)</button></div>'+
-  '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:11px;color:var(--muted);"><i class="ti ti-photo"></i> Fotos de fundo (full-bleed):</span><button onclick="chGenAllImgs()" style="padding:7px 12px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">🎨 Gerar imagens de todos (IA)</button><span style="font-size:10.5px;color:var(--muted);">ou adicione foto slide a slide abaixo</span><span id="ch-imgall-status" style="font-size:11px;color:var(--muted);flex-basis:100%;"></span></div>'+
+  '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:11px;color:var(--muted);"><i class="ti ti-photo"></i> Fotos de fundo (full-bleed):</span><button onclick="chGenAllImgs()" style="padding:7px 12px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">🎨 Gerar imagens de todos (IA)</button><button onclick="chCopyImgPrompt()" style="padding:7px 12px;background:var(--bg);border:1px solid var(--purple3);border-radius:8px;color:#a78bfa;font-weight:700;font-size:11px;cursor:pointer;">📋 Prompt p/ ChatGPT</button><span style="font-size:10.5px;color:var(--muted);">ou adicione foto slide a slide abaixo</span><span id="ch-imgall-status" style="font-size:11px;color:var(--muted);flex-basis:100%;"></span></div>'+
   '<div id="ch-zip-status" style="font-size:11.5px;color:var(--muted);margin-bottom:10px;min-height:14px;"></div>';
   var grid='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+Math.round(1080*SC)+'px,1fr));gap:18px;">';
   for(var i=0;i<total;i++){
@@ -29297,6 +29297,52 @@ async function chGenAllImgs(){
   }
   if(st){st.style.color='#39d98a';st.textContent='Imagens geradas! Exporte o ZIP.';}
   chRenderPreview();
+}
+function _chStripMk(t){return String(t==null?'':t).replace(/\[\[|\]\]/g,'').replace(/\*\*/g,'');}
+function chBuildImgPrompt(){
+  var h=_CH_HISTORIAS[_chState.story]||{};
+  var L=[];
+  L.push('Preciso de imagens de FUNDO para um carrossel de Instagram da Audens Company (agência de marketing para food service/delivery).');
+  L.push('');
+  L.push('ESTILO VISUAL (vale para todas as imagens):');
+  L.push('- Fotografia editorial cinematográfica, ultra realista.');
+  L.push('- Ambiente de hamburgueria / pizzaria / restaurante / delivery.');
+  L.push('- Fundo escuro e elegante, luz quente e dramática vinda de cima, vapor sutil, superfícies de madeira e metal.');
+  L.push('- Atmosfera premium com um tom roxo (#7C3AED) sutil.');
+  L.push('- Formato VERTICAL 1080x1350 (proporção 4:5).');
+  L.push('- CRÍTICO: a imagem NÃO pode conter NENHUM texto, letra, número ou logotipo. Apenas a cena/foto (o texto eu coloco depois).');
+  L.push('- Deixe a metade de baixo mais escura/limpa, pois vou sobrepor o título ali.');
+  L.push('');
+  L.push('HISTÓRIA BASE: '+(h.empresa||'')+' — '+(h.historia||'')+' ('+(h.numeros||'')+')');
+  L.push('');
+  L.push('Gere 1 imagem para cada slide abaixo, combinando a cena com o tema do slide:');
+  (_chState.slides||[]).forEach(function(sl,i){
+    var linha='SLIDE '+(i+1)+(i===0?' (capa)':'')+': '+_chStripMk(sl.h1||'');
+    if(sl.support) linha+=' — '+_chStripMk(sl.support);
+    L.push(linha);
+  });
+  return L.join('\n');
+}
+function chCopyImgPrompt(){
+  if(!_chState.slides.length){alert('Gere os slides primeiro.');return;}
+  var txt=chBuildImgPrompt();
+  var ov=document.getElementById('ch-prompt-modal'); if(ov)ov.remove();
+  ov=document.createElement('div'); ov.id='ch-prompt-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:4000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:640px;width:100%;padding:20px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:15px;color:var(--white);">\uD83D\uDDBC\uFE0F Prompt de imagem p/ ChatGPT</div><button onclick="var m=document.getElementById(\'ch-prompt-modal\');if(m)m.remove();" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">\u2715</button></div>'+
+    '<textarea id="ch-prompt-ta" readonly style="width:100%;height:300px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-size:12px;padding:12px;outline:none;resize:vertical;box-sizing:border-box;line-height:1.5;">'+_chEsc(txt)+'</textarea>'+
+    '<button onclick="chDoCopyPrompt(this)" style="width:100%;margin-top:12px;padding:11px 0;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:10px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;"><i class="ti ti-copy"></i> Copiar prompt</button>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:8px;">Cole no ChatGPT e peça as imagens. Depois use \u201cEnviar\u201d em cada slide pra subir as fotos geradas.</div>'+
+  '</div>';
+  document.body.appendChild(ov);
+}
+function chDoCopyPrompt(btn){
+  var ta=document.getElementById('ch-prompt-ta'); if(!ta)return;
+  ta.select();
+  try{ navigator.clipboard.writeText(ta.value); }catch(e){ try{document.execCommand('copy');}catch(_){} }
+  if(btn){btn.innerHTML='<i class="ti ti-check"></i> Copiado!';setTimeout(function(){btn.innerHTML='<i class="ti ti-copy"></i> Copiar prompt';},1500);}
 }
 function chEnsureExportLibs(cb){
   _chFontsCss();
