@@ -29186,6 +29186,14 @@ function _chMk(t,br){
   return t;
 }
 function _chProfile(){return (typeof _carState!=='undefined'&&_carState.profile)?_carState.profile:(window.__chProf||(window.__chProf={name:'',handle:'',avatar:null}));}
+function _chAutoHlH1(t){
+  t=String(t==null?'':t);
+  if(t.indexOf('[[')>=0) return t; // ja tem destaque marcado
+  var w=t.trim().split(/\s+/); if(w.length<=1) return t;
+  var n=Math.min(4,Math.max(1,Math.round(w.length*0.4)));
+  var head=w.slice(0,w.length-n).join(' '), tail=w.slice(w.length-n).join(' ');
+  return (head?head+' ':'')+'[['+tail+']]';
+}
 function _chFontsCss(){
   if(!document.getElementById('ch-fonts')){var l=document.createElement('link');l.id='ch-fonts';l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Black&display=swap';document.head.appendChild(l);}
   if(document.getElementById('ch-slide-css'))return;
@@ -29235,7 +29243,7 @@ function chSlideHTML(sl,idx,total){
   var dots='';for(var i=0;i<total;i++){dots+='<i class="'+(i===idx?'on':'')+'"></i>';}
   var kick=(sl.tipo!=='capa'&&sl.kicker)?'<div class="kick">'+_chMk(sl.kicker)+'</div>':'';
   var h1sz=sl.h1size||(sl.tipo==='capa'?88:70);
-  var h1='<h1 style="font-size:'+h1sz+'px;">'+_chMk(sl.h1,true)+'</h1>';
+  var h1='<h1 style="font-size:'+h1sz+'px;">'+_chMk(_chAutoHlH1(sl.h1),true)+'</h1>';
   var sup=(sl.tipo!=='capa'&&sl.support)?'<p class="sup">'+_chMk(sl.support,true)+'</p>':'';
   var cta=(sl.tipo==='cta'&&sl.cta)?'<div class="cta">'+_chEsc(sl.cta)+' <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" width="30" height="30"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></div>':'';
   var swipe=(idx===0)?'<div class="swipe">Arraste para o lado <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>':'';
@@ -29317,7 +29325,7 @@ function chSelectStory(i){
     '</div>'+
     '<div id="ch-gen-status" style="font-size:11.5px;color:var(--muted);margin-top:10px;min-height:14px;"></div>';
 }
-var _CH_SYS='Você é o copywriter de carrossel de autoridade da Audens Company — agência de marketing feita POR donos de hamburgueria, para food service/delivery. Transforme UMA história real do setor alimentício em um carrossel de 8 slides na FÓRMULA DE AUTORIDADE da Audens.\n\nFÓRMULA (ordem): 1 CAPA headline-gancho com o número/curiosidade mais forte (só h1, sem kicker). 2 O PONTO DE PARTIDA (dor/cenário inicial). 3 O ERRO DO MERCADO/A TENSÃO. 4 A VIRADA (insight que mudou o jogo). 5 COMO parte 1 (passo prático). 6 COMO parte 2/A PROVA. 7 O RESULTADO (número final com a causa). 8 A LIÇÃO + CTA (lição pro dono de food service + comentar uma PALAVRA).\n\nREGRAS: tom dono pra dono, frases curtas; h1 em CAIXA ALTA curto (Anton gigante, máx ~9 palavras); marque [[texto]] no trecho de DESTAQUE ROXO (números/resultados, máx 2 por slide); no support **texto**=negrito, 1-3 frases máx ~28 palavras; kicker 2-4 palavras; NUNCA invente números fora da história; conecte a lição ao dono travado no faturamento; slide 8 cta = Comenta "PALAVRA"; h1size px: capa 78-92, internos 60-78, slide 8 ~60.\n\nSAÍDA: APENAS JSON válido, sem markdown: {"slides":[{"tipo":"capa","h1":"...","h1size":86},{"tipo":"texto","kicker":"...","h1":"...","support":"...","h1size":72}, (slides 2-7 tipo texto), {"tipo":"cta","kicker":"...","h1":"...","support":"...","cta":"Comenta \\"PALAVRA\\"","h1size":60}]} Exatamente 8 objetos.';
+var _CH_SYS='Você é o copywriter de carrossel de autoridade da Audens Company — agência de marketing feita POR donos de hamburgueria, para food service/delivery. Transforme UMA história real do setor alimentício em um carrossel de 8 slides na FÓRMULA DE AUTORIDADE da Audens.\n\nFÓRMULA (ordem): 1 CAPA headline-gancho com o número/curiosidade mais forte (só h1, sem kicker). 2 O PONTO DE PARTIDA (dor/cenário inicial). 3 O ERRO DO MERCADO/A TENSÃO. 4 A VIRADA (insight que mudou o jogo). 5 COMO parte 1 (passo prático). 6 COMO parte 2/A PROVA. 7 O RESULTADO (número final com a causa). 8 A LIÇÃO + CTA (lição pro dono de food service + comentar uma PALAVRA).\n\nREGRAS: tom dono pra dono, frases curtas; h1 em CAIXA ALTA curto (Anton gigante, máx ~9 palavras); marque [[texto]] no trecho de DESTAQUE ROXO; SEMPRE destaque a PARTE FINAL da headline (as ultimas 2 a 4 palavras) com [[...]], como fecho de impacto — mesmo sem numero (ex.: DONO DO [[BRASIL]], QUEIMANDO [[O SEU DINHEIRO]]); no maximo 2 destaques por slide; no support **texto**=negrito, 1-3 frases máx ~28 palavras; kicker 2-4 palavras; NUNCA invente números fora da história; conecte a lição ao dono travado no faturamento; slide 8 cta = Comenta "PALAVRA"; h1size px: capa 78-92, internos 60-78, slide 8 ~60.\n\nSAÍDA: APENAS JSON válido, sem markdown: {"slides":[{"tipo":"capa","h1":"...","h1size":86},{"tipo":"texto","kicker":"...","h1":"...","support":"...","h1size":72}, (slides 2-7 tipo texto), {"tipo":"cta","kicker":"...","h1":"...","support":"...","cta":"Comenta \\"PALAVRA\\"","h1size":60}]} Exatamente 8 objetos.';
 async function chGerarIA(){
   var key=localStorage.getItem('audens_claude_key');
   if(!key){alert('Configure a Claude API Key em ⚙ Configurações do Jarvis.');return;}
