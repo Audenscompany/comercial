@@ -1560,6 +1560,33 @@ function copiarTelefoneKanban(ev,tel){
     document.body.removeChild(ta);done();
   }
 }
+// Identidade do lead quando o Meta nao trouxe o nome: cai para empresa -> @instagram -> telefone
+function _chEscSafe(v){try{return (typeof esc==='function')?esc(v):String(v==null?'':v);}catch(e){return String(v==null?'':v);}}
+function _instaHandle(ig){ig=String(ig||'').trim();if(!ig)return '';ig=ig.replace(/^https?:\/\/(www\.)?instagram\.com\//i,'').replace(/[\/?].*$/,'').replace(/^@+/,'').trim();return ig?('@'+ig):'';}
+function _meetLeadName(m){
+  if(!m)return '(sem nome)';
+  var n=String(m.nome||'').trim(); if(n && n.toLowerCase()!=='(sem nome)') return n;
+  var kb=(m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey])||null;
+  if(kb){ var d=_leadDisplayName(kb); if(d&&d!=='(sem nome)') return d; }
+  var ig=_instaHandle(m.instagram||''); if(ig) return ig;
+  var tel=String(m.tel||m.telefone||'').trim(); if(tel) return tel;
+  return '(sem nome)';
+}
+function _leadRec(e){
+  if(!e||typeof allLeads==='undefined'||!allLeads||!allLeads.length)return null;
+  var t=String(e._key||e.telefone||e.tel||'').replace(/\D/g,'').slice(-9);
+  if(!t)return null;
+  return allLeads.find(function(l){return String(l.telefone||'').replace(/\D/g,'').slice(-9)===t;})||null;
+}
+function _leadDisplayName(e){
+  if(!e)return '(sem nome)';
+  var rec=_leadRec(e)||{};
+  var n=String(e.nome||rec.nome||'').trim(); if(n && n.toLowerCase()!=='(sem nome)') return n;
+  var emp=String(e.empresa||rec.empresa||'').trim(); if(emp) return emp;
+  var ig=_instaHandle(e.instagram||e.Instagram||rec.instagram||''); if(ig) return ig;
+  var tel=String(e.telefone||e.tel||rec.telefone||'').trim(); if(tel) return tel;
+  return '(sem nome)';
+}
 function abrirDetalheKanban(key){
   var e=kanbanData[key];
   if(!e) return;
@@ -1628,7 +1655,7 @@ function abrirDetalheKanban(key){
       // Header
       '<div style="padding:14px 0 6px;">'+
         '<div style="font-size:18px;font-weight:800;color:var(--white);margin-bottom:4px;">'+
-          (e.nome||'(sem nome)')+
+          esc(_leadDisplayName(Object.assign({_key:key},e)))+
           (leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;font-size:11px;">'+leadTag.label+'</span>':'')+
         '</div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">'+
@@ -2210,7 +2237,7 @@ function kanbanCardHtml(e,idx){
   var nextCol=(!isArchived)?KANBAN_COLS[idx+1]:null;
   if(nextCol && nextCol.id==='arquivado') nextCol=null;
   if(isArchived) prevCol=null;
-  var nome=e.nome||'(sem nome)';
+  var nome=_leadDisplayName(e);
   var fatVal=parseFaturamentoValue(e.faturamento);
   var fatClass=(fatVal>=KANBAN_FAT_DESTAQUE)?' kanban-fat-hot':'';
   var actions;
@@ -10351,7 +10378,7 @@ function renderReunioes(){
         H+='<div style="width:1px;height:40px;background:var(--border);flex-shrink:0;"></div>';
         // Lead info
         H+='<div style="flex:1;min-width:160px;">'
-          +'<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;">'+(m.nome||'Lead sem nome')+'</div>'
+          +'<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;">'+_chEscSafe(_meetLeadName(m))+'</div>'
           +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
           +(m.origem?'<span style="font-size:10px;background:'+canalColor(normCanal(m.origem)).replace('#','rgba(').slice(0,-1)+',0.15);color:'+canalColor(normCanal(m.origem))+';padding:1px 7px;border-radius:10px;">'+normCanal(m.origem)+'</span>':'')
           +(m.tel||m.telefone?'<span style="font-size:10px;color:var(--muted);"><i class="ti ti-phone" style="font-size:9px;"></i> '+(m.tel||m.telefone)+'</span>':'')
@@ -10437,7 +10464,7 @@ function renderReunioes(){
 
       H+='<tr data-nome="'+(m.nome||'').toLowerCase()+'" data-origem="'+(m.origem||'').toLowerCase()+'" data-sdr="'+sdr.toLowerCase()+'" style="border-bottom:1px solid rgba(255,255,255,0.04);background:'+rowBg+';transition:background .15s;" onmouseover="if(!this.style.background||!this.style.background.includes(\'0.04\'))this.style.background=\'rgba(255,255,255,0.02)\';" onmouseout="this.style.background=\''+rowBg+'\'">';
       H+='<td style="padding:10px 12px;font-size:11px;color:var(--muted);white-space:nowrap;">'+fmtDt(m.dtISO)+'</td>';
-      H+='<td style="padding:10px 12px;"><div style="font-size:12px;color:var(--white);font-weight:500;">'+(m.nome||'—')+'</div>'+(m.tel||m.telefone?'<div style="font-size:10px;color:var(--muted);">'+(m.tel||m.telefone)+'</div>':'')+(function(){var _b=_cadOrigemBadge(m);return _b?'<div style="margin-top:3px;">'+_b+'</div>':'';})()+'</td>';
+      H+='<td style="padding:10px 12px;"><div style="font-size:12px;color:var(--white);font-weight:500;">'+_chEscSafe(_meetLeadName(m))+'</div>'+(m.tel||m.telefone?'<div style="font-size:10px;color:var(--muted);">'+(m.tel||m.telefone)+'</div>':'')+(function(){var _b=_cadOrigemBadge(m);return _b?'<div style="margin-top:3px;">'+_b+'</div>':'';})()+'</td>';
       H+='<td style="padding:10px 12px;"><span style="font-size:10px;color:'+canalColor(normCanal(m.origem||''))+';background:'+canalColor(normCanal(m.origem||'')).replace('#','rgba(').slice(0,-1)+',0.12);padding:2px 8px;border-radius:10px;">'+(m.origem?normCanal(m.origem):'—')+'</span></td>';
       // SDR — clickable to edit
       H+='<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:5px;">'+av(sdr,22)+'<span style="font-size:11px;color:var(--white);">'+sdr+'</span><button onclick="_openReunEdit(\''+m.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;font-size:11px;" title="Editar"><i class="ti ti-pencil" style="font-size:10px;"></i></button></div></td>';
