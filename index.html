@@ -28400,19 +28400,8 @@ function cwCopy(iso,tipo,campo,btn){
 function renderPlanoSemana(){
   var dias=Object.keys(_conteudoSemana||{}).map(function(k){return _conteudoSemana[k];}).filter(function(x){return x&&x.data;}).sort(function(a,b){return (a.dataISO||'').localeCompare(b.dataISO||'');});
   var H='<div class="page active" style="padding:22px;max-width:1080px;margin:0 auto;">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">'+
-      '<div><div class="page-title">Planejamento da Semana</div><div class="page-sub">Conteúdo salvo na base · Reel 17h · Carrossel 20h · Histórias 12h · CTA PLANILHA</div></div>'+
-      '<div style="display:flex;gap:8px;">'+
-        '<button onclick="importarConteudoSemana(false)" class="btn btn-outline" style="font-size:12px;padding:8px 12px;"><i class="ti ti-download"></i> Importar da base</button>'+
-        '<button onclick="if(confirm(\'Recarregar o conteúdo original? (mantém o status de cada item)\'))importarConteudoSemana(true)" class="btn btn-outline" style="font-size:12px;padding:8px 12px;"><i class="ti ti-refresh"></i> Recarregar</button>'+
-      '</div>'+
-    '</div>';
-  if(!dias.length){
-    H+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:44px;text-align:center;color:var(--muted);">Nada na base ainda.<br><br><button onclick="importarConteudoSemana(true)" class="btn btn-primary" style="font-size:12px;padding:10px 18px;">Importar plano da semana</button></div></div>';
-    return H;
-  }
-  var stMap={a_fazer:['A fazer','#f59e0b'],pronto:['Pronto','#06b6d4'],postado:['Postado','#10b981']};
-  function statusSel(iso,tipo,cur){cur=cur||'a_fazer';return '<select onchange="cwSetStatus(\''+iso+'\',\''+tipo+'\',this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:'+(stMap[cur]?stMap[cur][1]:'var(--white)')+';font-size:11px;font-weight:700;padding:5px 8px;outline:none;cursor:pointer;">'+Object.keys(stMap).map(function(k){return '<option value="'+k+'"'+(cur===k?' selected':'')+'>'+stMap[k][0]+'</option>';}).join('')+'</select>';}
+    '<div class="page-header"><div><div class="page-title">Conteúdos salvos</div><div class="page-sub">Banco de conteúdo pronto pra reusar · tema · título · legenda · slides</div></div></div>';
+  if(!dias.length){ H+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:44px;text-align:center;color:var(--muted);">Nada salvo ainda.</div></div>'; return H; }
   function legBox(txt){return '<div style="white-space:pre-wrap;font-size:12px;color:var(--white);line-height:1.5;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:11px 13px;max-height:150px;overflow-y:auto;">'+_cwEsc(txt)+'</div>';}
   function copyBtn(iso,tipo,campo,lbl,cor){return '<button onclick="cwCopy(\''+iso+'\',\''+tipo+'\',\''+campo+'\',this)" style="padding:6px 10px;background:'+(cor||'rgba(124,58,237,0.14)')+';border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> '+lbl+'</button>';}
   dias.forEach(function(d){
@@ -28422,36 +28411,24 @@ function renderPlanoSemana(){
         '<span style="font-family:Bebas Neue,sans-serif;font-size:22px;letter-spacing:1px;color:var(--white);">'+_cwEsc(d.diaSemana)+' · '+_cwEsc(d.data)+'</span>'+
         (d.tema?'<span style="font-size:11px;color:#a78bfa;background:rgba(124,58,237,0.12);padding:3px 10px;border-radius:20px;">'+_cwEsc(d.tema)+'</span>':'')+
       '</div>'+
-      // REEL
       '<div style="border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:13px 14px;margin-bottom:10px;">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'+
-          '<span style="font-size:10px;font-weight:800;color:#a78bfa;background:rgba(124,58,237,0.15);padding:3px 8px;border-radius:6px;">REEL 10s · '+_cwEsc(r.hora||'17h')+'</span>'+
-          statusSel(d.dataISO,'reel',r.status)+
-        '</div>'+
+        '<div style="font-size:10px;font-weight:800;color:#a78bfa;background:rgba(124,58,237,0.15);padding:3px 8px;border-radius:6px;display:inline-block;margin-bottom:8px;">REEL · TÍTULO + LEGENDA</div>'+
         '<div style="font-size:13px;font-weight:700;color:var(--white);line-height:1.4;margin-bottom:8px;">'+_cwEsc(r.titulo)+'</div>'+
         legBox(r.legenda)+
         '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+copyBtn(d.dataISO,'reel','titulo','Título')+copyBtn(d.dataISO,'reel','legenda','Legenda')+'</div>'+
       '</div>'+
-      // CARROSSEL
       '<div style="border:1px solid rgba(225,48,108,0.25);border-radius:12px;padding:13px 14px;">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'+
-          '<span style="font-size:10px;font-weight:800;color:#e1306c;background:rgba(225,48,108,0.15);padding:3px 8px;border-radius:6px;">CARROSSEL · '+_cwEsc(c.hora||'20h')+'</span>'+
-          statusSel(d.dataISO,'carrossel',c.status)+
-        '</div>'+
+        '<div style="font-size:10px;font-weight:800;color:#e1306c;background:rgba(225,48,108,0.15);padding:3px 8px;border-radius:6px;display:inline-block;margin-bottom:8px;">CARROSSEL · SLIDES + LEGENDA</div>'+
         (c.titulo?'<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+_cwEsc(c.titulo)+'</div>':'')+
         '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;">'+((c.slides||[]).map(function(sl,i){return '<div style="font-size:12px;color:var(--white);line-height:1.5;padding:3px 0;'+(i>0?'border-top:1px solid rgba(255,255,255,0.04);':'')+'">'+_cwEsc(sl)+'</div>';}).join(''))+'</div>'+
         '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:4px 0 5px;">Legenda</div>'+legBox(c.legenda)+
-        '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+copyBtn(d.dataISO,'carrossel','slides','Slides','rgba(225,48,108,0.12)')+copyBtn(d.dataISO,'carrossel','legenda','Legenda','rgba(225,48,108,0.12)')+
-          '<button onclick="showPage(\'carrossel-hist\')" style="padding:6px 10px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-layout-grid"></i> Montar no gerador</button>'+
-        '</div>'+
+        '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+copyBtn(d.dataISO,'carrossel','slides','Slides','rgba(225,48,108,0.12)')+copyBtn(d.dataISO,'carrossel','legenda','Legenda','rgba(225,48,108,0.12)')+'</div>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-top:10px;"><i class="ti ti-clock"></i> Histórias · 12h · você monta (4–6 cards, 1º com gancho numérico).</div>'+
     '</div>';
   });
   H+='</div>';
   return H;
 }
-
 function renderContentCalendar(){
   setTimeout(function(){ccEnsureData(true);},40);
   return '<div class="page active">'+
