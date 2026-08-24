@@ -29375,12 +29375,31 @@ function chSlideEditor(i){
   h+='<div style="display:flex;gap:5px;margin-top:8px;"><button onclick="chGenSlideImg('+i+',this)" style="flex:1;padding:6px 0;background:rgba(124,58,237,0.16);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;font-weight:700;font-size:10px;cursor:pointer;">🎨 Foto IA</button><button onclick="document.getElementById(\'ch-imgf-'+i+'\').click()" style="flex:1;padding:6px 0;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:10px;cursor:pointer;">Enviar</button>'+(sl.img?'<button onclick="chAdjustImg('+i+')" style="padding:6px 9px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;font-size:10px;cursor:pointer;">Ajustar</button>':'')+(sl.img?'<button onclick="chDelImg('+i+')" style="padding:6px 9px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:7px;color:#f87171;font-size:10px;cursor:pointer;">✕</button>':'')+'<input id="ch-imgf-'+i+'" type="file" accept="image/*" style="display:none;" onchange="chUploadSlideImg('+i+',this)"></div>';
   if(sl.tipo!=='capa') h+=f('Kicker','kicker',sl.kicker);
   h+=f('Título (h1)','h1',sl.h1,true);
+  if(sl.tipo==='capa') h+='<button onclick="chRegenCapa(this)" style="width:100%;margin-top:7px;padding:8px 0;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">\u2728 Gerar outra capa</button>';
   if(sl.tipo!=='capa') h+=f('Apoio','support',sl.support,true);
   if(sl.tipo==='cta') h+=f('Botão CTA','cta',sl.cta);
   h+='</div>';
   return h;
 }
 function chEdit(i,field,val){ if(!_chState.slides[i])return; _chState.slides[i][field]=val; var el=document.getElementById('ch-slide-'+i); if(el)el.innerHTML=chSlideHTML(_chState.slides[i],i,_chState.slides.length); }
+async function chRegenCapa(btn){
+  var key=localStorage.getItem('audens_claude_key');
+  if(!key){alert('Configure a Claude API Key em ⚙ Configurações do Jarvis.');return;}
+  var h=_CH_HISTORIAS[_chState.story]; if(!h||!_chState.slides.length){return;}
+  var atual=String((_chState.slides[0]&&_chState.slides[0].h1)||'').replace(/\[\[|\]\]/g,'');
+  if(btn){btn.disabled=true;btn.dataset._t=btn.innerHTML;btn.innerHTML='<i class="ti ti-loader-2"></i> Gerando...';}
+  var sys='Você é copywriter de carrossel de autoridade da Audens (food service/delivery). Gere UMA capa (headline-gancho) MUITO forte, feita pra parar o dedo, a partir da história. Fórmulas que funcionam: transformação DE X PARA Y, número/resultado absurdo, provocação/contradição, O [detalhe simples] QUE VIROU [resultado gigante], ou curiosidade que abre um loop na cabeça. CAIXA ALTA, curta (máx ~9 palavras), sem inventar número. Marque com [[...]] as ÚLTIMAS 2 a 4 palavras (fecho de impacto). NÃO repita a capa atual — traga um ÂNGULO diferente e mais forte. Responda SÓ a headline, uma única linha, sem aspas e sem explicação.';
+  var userMsg='HISTÓRIA:\nEmpresa: '+h.empresa+'\nOrigem: '+h.origem+'\nHistória: '+h.historia+'\nNúmeros: '+h.numeros+'\n\nCapa atual (NÃO repetir): "'+atual+'"\n\nGere uma capa nova e mais forte.';
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-opus-4-8',max_tokens:200,system:sys,messages:[{role:'user',content:userMsg}]})});
+    if(!resp.ok)throw new Error('Claude API '+resp.status);
+    var data=await resp.json();
+    var txt=((data.content&&data.content[0]&&data.content[0].text)||'').trim();
+    txt=txt.split('\n')[0].replace(/^["'\s]+|["'\s]+$/g,'').trim();
+    if(txt){ _chState.slides[0].h1=txt; chRenderPreview(); }
+    else if(btn){btn.disabled=false;btn.innerHTML=btn.dataset._t||'\u2728 Gerar outra capa';}
+  }catch(e){ alert('Erro ao gerar capa: '+e.message); if(btn){btn.disabled=false;btn.innerHTML=btn.dataset._t||'\u2728 Gerar outra capa';} }
+}
 function chDelImg(i){ if(_chState.slides[i]){_chState.slides[i].img='';chRenderPreview();} }
 function chUploadSlideImg(i,inp){ if(!inp.files||!inp.files[0])return; var fr=new FileReader(); fr.onload=function(){var sl=_chState.slides[i];if(!sl)return;sl.img=fr.result;var im=new Image();im.onload=function(){sl.imgAR=(im.naturalHeight?im.naturalWidth/im.naturalHeight:null);chRenderPreview();};im.onerror=function(){chRenderPreview();};im.src=fr.result;}; fr.readAsDataURL(inp.files[0]); inp.value=''; }
 function _chImgPrompt(i){
