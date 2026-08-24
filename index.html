@@ -2288,7 +2288,7 @@ function sdrTaskRowHtml(t,showDate){
     '<label class="sdr-task-check"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleSdrTarefa(\''+t._key+'\',this.checked)"><span class="sdr-check-mark"></span></label>'+
     '<div class="sdr-task-icon"><i class="ti '+(t.icon||'ti-checkbox')+'"></i></div>'+
     '<div class="sdr-task-info">'+
-      '<div class="sdr-task-lead">'+(t.nome||'(sem nome)')+'</div>'+
+      '<div class="sdr-task-lead">'+_chEscSafe(_leadDisplayName({_key:(t.leadKey||t.telefone),nome:t.nome,telefone:t.telefone,empresa:t.empresa,instagram:t.instagram}))+'</div>'+
       '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(t.telefone?' &middot; '+t.telefone:'')+'</div>'+
     '</div>'+
     (showDate?'<div class="sdr-task-date">'+fmtDateBR(t.dataISO)+'</div>':'')+
@@ -2353,7 +2353,7 @@ function renderDesempenhoSDR(){
   var byLead={};
   all.forEach(function(t){
     var k=t.leadKey;
-    if(!byLead[k]) byLead[k]={nome:t.nome,telefone:t.telefone,faturamento:t.faturamento,total:0,done:0,atrasadas:0};
+    if(!byLead[k]) byLead[k]={nome:_leadDisplayName({_key:(t.leadKey||k||t.telefone),nome:t.nome,telefone:t.telefone,empresa:t.empresa,instagram:t.instagram}),telefone:t.telefone,faturamento:t.faturamento,total:0,done:0,atrasadas:0};
     byLead[k].total++;
     if(t.done) byLead[k].done++;
     else if(t.dataISO<hojeISO) byLead[k].atrasadas++;
