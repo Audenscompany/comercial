@@ -29353,9 +29353,9 @@ function chRenderPreview(){
   _chFontsCss();
   if(!_chState.slides.length){wrap.innerHTML='';return;}
   var total=_chState.slides.length, SC=0.30;
-  var head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;"><div style="font-size:12px;color:var(--muted);"><i class="ti ti-edit"></i> Edite os textos e adicione as fotos de cada slide</div><button onclick="chExportZIP()" style="padding:9px 16px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:10px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;"><i class="ti ti-download"></i> Baixar ZIP ('+total+' PNGs)</button></div>'+
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;"><div style="font-size:12px;color:var(--muted);"><i class="ti ti-edit"></i> Edite os textos e adicione as fotos de cada slide</div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button onclick="chExportZIP()" style="padding:9px 16px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:10px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;"><i class="ti ti-download"></i> Baixar ZIP</button><button onclick="chEnviarCalendario()" style="padding:9px 16px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:10px;color:#fff;font-weight:800;font-size:12px;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Agendar</button></div></div>'+
   '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:11px;color:var(--muted);"><i class="ti ti-photo"></i> Fotos de fundo (full-bleed):</span><button onclick="chGenAllImgs()" style="padding:7px 12px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">🎨 Gerar imagens de todos (IA)</button><button onclick="chCopyImgPrompt()" style="padding:7px 12px;background:var(--bg);border:1px solid var(--purple3);border-radius:8px;color:#a78bfa;font-weight:700;font-size:11px;cursor:pointer;">📋 Prompt p/ ChatGPT</button><span style="font-size:10.5px;color:var(--muted);">ou adicione foto slide a slide abaixo</span><span id="ch-imgall-status" style="font-size:11px;color:var(--muted);flex-basis:100%;"></span></div>'+
-  '<div id="ch-zip-status" style="font-size:11.5px;color:var(--muted);margin-bottom:10px;min-height:14px;"></div>';
+  '<div id="ch-zip-status" style="font-size:11.5px;color:var(--muted);margin-bottom:10px;min-height:14px;"></div>'+'<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;">'+'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;"><span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);"><i class="ti ti-message-2"></i> Legenda do post</span><button id="ch-leg-btn" onclick="chGerarLegenda()" style="padding:7px 12px;background:linear-gradient(135deg,#8B5CF6,#7C3AED 60%);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">\u2728 Gerar legenda com IA</button></div>'+'<textarea id="ch-legenda" oninput="_chState.legenda=this.value" placeholder="Legenda do carrossel (gere com IA ou escreva)..." style="width:100%;min-height:90px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--white);font-size:12px;padding:10px 12px;outline:none;resize:vertical;box-sizing:border-box;">'+_chEsc(_chState.legenda||'')+'</textarea>'+'<div id="ch-leg-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:13px;"></div>'+'</div>';
   var grid='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax('+Math.round(1080*SC)+'px,1fr));gap:18px;">';
   for(var i=0;i<total;i++){
     grid+='<div><div style="position:relative;width:'+Math.round(1080*SC)+'px;height:'+Math.round(1350*SC)+'px;border-radius:12px;overflow:hidden;border:1px solid var(--border);"><div id="ch-slide-'+i+'" class="ch-slide" data-idx="'+i+'" style="transform:scale('+SC+');transform-origin:top left;">'+chSlideHTML(_chState.slides[i],i,total)+'</div></div>'+chSlideEditor(i)+'</div>';
@@ -29551,6 +29551,70 @@ function chAdjustImg(i){
 }
 function chAdjReset(){var a=window._chAdj;if(!a)return;a.st.X=50;a.st.Y=50;a.st.Z=1;var img=document.getElementById('ch-adj-img');if(img){img.style.objectPosition='50% 50%';img.style.transform='scale(1)';}var z=document.getElementById('ch-adj-zoom');if(z)z.value=1;}
 function chAdjApply(){var a=window._chAdj;if(!a)return;var sl=_chState.slides[a.i];sl.imgX=a.st.X;sl.imgY=a.st.Y;sl.imgZoom=a.st.Z;var m=document.getElementById('ch-adj-modal');if(m)m.remove();chRenderPreview();}
+async function chGerarLegenda(){
+  var key=localStorage.getItem('audens_claude_key');
+  var st=document.getElementById('ch-leg-status'), btn=document.getElementById('ch-leg-btn');
+  if(!key){ if(st){st.style.color='#ff5c7a';st.textContent='Configure a Claude API Key em ⚙ Configurações do Jarvis.';} return; }
+  if(!_chState.slides.length){ if(st){st.textContent='Gere os slides primeiro.';} return; }
+  if(btn){btn.disabled=true;btn.dataset._t=btn.innerHTML;btn.innerHTML='<i class="ti ti-loader-2"></i> Gerando...';}
+  var h=_CH_HISTORIAS[_chState.story]||{};
+  var conteudo=_chState.slides.map(function(sl,i){return '['+(i===0?'Capa':(sl.tipo==='cta'?'CTA':'Slide '+(i+1)))+'] '+_chStripMk(sl.h1||'')+(sl.support?' — '+_chStripMk(sl.support):'');}).join('\n');
+  var sys='Você é o copywriter da Audens Company (marketing para food service/delivery), escrevendo no perfil do Lucas — dono de hamburgueria que virou referência. Escreva a LEGENDA de um carrossel de Instagram de AUTORIDADE contando uma história real de um negócio do setor alimentício. Tom dono pra dono, direto, storytelling curto e envolvente. Estrutura: 1a linha um gancho forte; desenvolvimento conectando a história a uma LIÇÃO prática pro dono de delivery/hamburgueria travado; CTA final pedindo pra comentar uma PALAVRA. Use quebras de linha entre blocos. Termine com 4 a 6 hashtags do nicho (#delivery #hamburgueria #foodservice #restaurante). NUNCA invente números fora da história.';
+  var userMsg='HISTÓRIA: '+(h.empresa||'')+' — '+(h.historia||'')+' ('+(h.numeros||'')+')\n\nSLIDES DO CARROSSEL:\n'+conteudo+'\n\nEscreva a legenda completa.';
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1400,system:sys,messages:[{role:'user',content:userMsg}]})});
+    if(!resp.ok)throw new Error('Claude API '+resp.status);
+    var data=await resp.json();
+    var text=((data.content&&data.content[0]&&data.content[0].text)||'').trim();
+    _chState.legenda=text; var leg=document.getElementById('ch-legenda'); if(leg)leg.value=text;
+    if(st){st.style.color='#39d98a';st.textContent='Legenda pronta! Revise e agende.';}
+  }catch(e){ if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;} }
+  if(btn){btn.disabled=false;btn.innerHTML=btn.dataset._t||'\u2728 Gerar legenda com IA';}
+}
+function chEnviarCalendario(){
+  if(!_chState.slides.length){alert('Gere os slides primeiro.');return;}
+  var leg=(document.getElementById('ch-legenda')||{}).value||_chState.legenda||'';
+  var def=new Date(Date.now()+86400000); def.setHours(20,0,0,0); var defStr=def.toISOString().slice(0,16);
+  var ex=document.getElementById('_chCalModal'); if(ex)ex.remove();
+  var mh='<div id="_chCalModal" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;">'+
+    '<div style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:min(400px,92vw);padding:26px;">'+
+      '<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px;">Agendar no Calendário</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:18px;">'+_chState.slides.length+' slides · '+(leg.length?_chEsc(leg.substring(0,50))+'...':'Sem legenda ainda')+'</div>'+
+      '<label style="display:block;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Data e hora de postagem</label>'+
+      '<input id="_chCalDt" type="datetime-local" value="'+defStr+'" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#fff;font-size:13px;padding:10px 12px;outline:none;box-sizing:border-box;margin-bottom:20px;">'+
+      '<div style="display:flex;gap:10px;"><button onclick="var m=document.getElementById(\'_chCalModal\');if(m)m.remove();" style="flex:1;padding:11px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--muted);cursor:pointer;font-size:12px;">Cancelar</button><button id="_chCalBtn" onclick="_chConfirmarCalendario()" style="flex:2;padding:11px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:10px;color:#fff;font-weight:700;cursor:pointer;font-size:12px;"><i class="ti ti-calendar-plus"></i> Agendar</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',mh);
+}
+async function _chConfirmarCalendario(){
+  var dtEl=document.getElementById('_chCalDt'); if(!dtEl||!dtEl.value){alert('Escolha uma data.');return;}
+  var dt=dtEl.value; var btn=document.getElementById('_chCalBtn');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Renderizando...';}
+  try{
+    if(!(typeof fbDb!=='undefined'&&fbDb)&&typeof initFirebase==='function')initFirebase();
+    await new Promise(function(res){chEnsureExportLibs(res);});
+    if(document.fonts&&document.fonts.ready){try{await document.fonts.load('400 88px "Archivo Black"');await document.fonts.load('400 88px Anton');await document.fonts.ready;}catch(e){}}
+    var total=_chState.slides.length, blobs=[];
+    for(var i=0;i<total;i++){
+      if(btn)btn.innerHTML='<i class="ti ti-loader"></i> Slide '+(i+1)+'/'+total;
+      var host=document.createElement('div');host.style.cssText='position:fixed;left:-99999px;top:0;width:1080px;height:1350px;';
+      var slide=document.createElement('div');slide.className='ch-slide';slide.style.width='1080px';slide.style.height='1350px';
+      slide.innerHTML=chSlideHTML(_chState.slides[i],i,total);
+      host.appendChild(slide);document.body.appendChild(host);
+      var canvas=await html2canvas(slide,{width:1080,height:1350,scale:2,backgroundColor:'#0B0910',useCORS:true,logging:false});
+      var blob=await new Promise(function(res){canvas.toBlob(res,'image/png');});
+      blobs.push(blob); document.body.removeChild(host);
+    }
+    var leg=(document.getElementById('ch-legenda')||{}).value||_chState.legenda||'';
+    var ref=fbDb.ref('instagram/calendario').push(); var eventId=ref.key;
+    await ref.set({dataHora:dt,tipo:'carrossel',status:'rascunho',legenda:leg,slidesCount:blobs.length,slideTitles:_chState.slides.map(function(sl){return _chStripMk(sl.h1||'').slice(0,60);}),origem:'historias',localKey:eventId,resultado:{},erro:''});
+    if(typeof _carSaveIDB==='function')await _carSaveIDB(eventId,blobs,leg);
+    var m=document.getElementById('_chCalModal');if(m)m.remove();
+    var dtFmt=new Date(dt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    alert('✅ Agendado para '+dtFmt+'! Abrindo calendário...');
+    setTimeout(function(){ if(typeof showPage==='function')showPage('cal-conteudo'); },1000);
+  }catch(e){ alert('Erro ao agendar: '+e.message); if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Agendar';} }
+}
 function chEnsureExportLibs(cb){
   _chFontsCss();
   function step2(){ if(window.JSZip)return cb(); var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=cb;document.head.appendChild(s); }
