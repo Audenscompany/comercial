@@ -25265,8 +25265,9 @@ function piRenderResults(){
               (L.telefone?'<span style="font-size:11px;color:var(--white);">'+L.telefone+'</span>':'')+
               (wa?'<a href="https://wa.me/55'+wa+'" target="_blank" style="font-size:11px;color:#25d366;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
               (L.site?'<a href="'+L.site+'" target="_blank" style="font-size:11px;color:var(--purple3);text-decoration:none;">site</a>':'')+
-              '<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ BDR</button>'+
+              '<button onclick="piAcharCnpj(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-brand-google"></i> Achar CNPJ</button>'+'<button onclick="piCnpjLead(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-building"></i> CNPJ + sócio</button>'+'<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ BDR</button>'+
             '</div>'+
+            '<div id="cnpj-card-'+L.placeId+'"></div>'+
           '</div>'+
         '</div>'+
       '</div>';
@@ -25356,18 +25357,42 @@ function _cnpjCard(d){
     '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:12px 0 4px;">Quadro de sócios</div>'+soc+
   '</div>';
 }
+async function _cnpjFetch(raw){
+  raw=String(raw||'').replace(/\D/g,''); if(raw.length!==14)return null; var d=null;
+  try{ var r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+raw); if(r.ok) d=_cnpjNormBrasil(await r.json()); }catch(e){}
+  if(!d){ try{ var r2=await fetch('https://publica.cnpj.ws/cnpj/'+raw); if(r2.ok) d=_cnpjNormWs(await r2.json()); }catch(e){} }
+  return d;
+}
 async function cnpjConsultar(){
   var raw=((document.getElementById('cnpj-in')||{}).value||'').replace(/\D/g,'');
   var st=document.getElementById('cnpj-st'), out=document.getElementById('cnpj-out');
   if(out)out.innerHTML='';
   if(raw.length!==14){ if(st){st.style.color='#ff5c7a';st.textContent='Digite um CNPJ com 14 dígitos.';} return; }
   if(st){st.style.color='var(--cyan)';st.textContent='Consultando...';}
-  var d=null;
-  try{ var r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+raw); if(r.ok) d=_cnpjNormBrasil(await r.json()); }catch(e){}
-  if(!d){ try{ var r2=await fetch('https://publica.cnpj.ws/cnpj/'+raw); if(r2.ok) d=_cnpjNormWs(await r2.json()); }catch(e){} }
+  var d=await _cnpjFetch(raw);
   if(!d){ if(st){st.style.color='#ff5c7a';st.textContent='Não encontrei esse CNPJ (ou o limite de consultas por minuto foi atingido — tente de novo em 1 min).';} return; }
   if(st)st.textContent='';
   if(out)out.innerHTML=_cnpjCard(d);
+}
+function piAcharCnpj(pid){ var L=(_piState.leads||[]).find(function(x){return x.placeId===pid;}); if(!L)return; window.open('https://www.google.com/search?q='+encodeURIComponent(L.nome_estabelecimento+' '+(L.cidade||'')+' CNPJ'),'_blank'); }
+async function piCnpjLead(pid){
+  var L=(_piState.leads||[]).find(function(x){return x.placeId===pid;}); if(!L)return;
+  var out=document.getElementById('cnpj-card-'+pid);
+  var raw=String(L.cnpj||'').replace(/\D/g,'');
+  if(raw.length!==14){ raw=(prompt('Cole o CNPJ de "'+L.nome_estabelecimento+'" (use \'Achar CNPJ\' se ainda não tiver):')||'').replace(/\D/g,''); if(raw.length!==14){ if(out)out.innerHTML='<div style="font-size:11px;color:#ff5c7a;">CNPJ inválido.</div>'; return; } L.cnpj=raw; }
+  if(out)out.innerHTML='<div style="font-size:11px;color:var(--cyan);margin-top:6px;">Consultando CNPJ...</div>';
+  var d=await _cnpjFetch(raw);
+  if(!d){ if(out)out.innerHTML='<div style="font-size:11px;color:#ff5c7a;margin-top:6px;">Não achei esse CNPJ (ou limite por minuto). Tente de novo em 1 min.</div>'; return; }
+  var cidade=L.cidade||d.cidade||'';
+  var socio=(d.socios&&d.socios[0])||null;
+  var socioHtml=socio?('<b style="color:var(--white);">'+esc(socio.nome)+'</b>'+(socio.qual?' <span style="color:var(--muted);">('+esc(socio.qual)+')</span>':'')+' <a href="https://www.google.com/search?q='+encodeURIComponent(socio.nome+' '+cidade)+'" target="_blank" style="color:#6ea8fe;text-decoration:none;"><i class="ti ti-brand-google"></i> pesquisar sócio</a>'):'<span style="color:var(--muted);">sem sócio na base</span>';
+  var tels=(d.tels||[]).filter(Boolean).map(_cnpjTelHtml).join(' &nbsp; ')||'<span style="color:var(--muted);">sem telefone na base</span>';
+  if(out)out.innerHTML='<div style="background:var(--bg2);border:1px solid rgba(56,204,242,0.25);border-radius:9px;padding:9px 11px;margin-top:8px;font-size:11.5px;line-height:1.8;">'+
+    '<div><b style="color:var(--white);">'+esc(d.nome||'')+'</b>'+(d.situacao?' · <span style="color:'+(/ativ/i.test(d.situacao)?'#22c55e':'var(--amber)')+';">'+esc(d.situacao)+'</span>':'')+'</div>'+
+    '<div>\uD83D\uDCDE '+tels+'</div>'+
+    (d.email?'<div>\u2709 '+esc(d.email)+'</div>':'')+
+    '<div>\uD83D\uDC64 Sócio principal: '+socioHtml+'</div>'+
+  '</div>';
 }
 function renderBDR(){
   var mapsKey=localStorage.getItem('audens_maps_key')||'';
