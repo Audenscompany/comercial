@@ -880,6 +880,9 @@ function startRealtimeSync(){
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
   fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
+  try{ loadAdNamesCache(); }catch(e){}
+  // backfill automatico dos nomes de anuncio (uma vez, se o Meta estiver conectado)
+  setTimeout(function(){ try{ if(typeof isMetaConnected==='function'&&isMetaConnected()) resolveAllAdNames(); }catch(e){} }, 6000);
 
   // ===== STORIES LAB: listeners + coletor automático (boot) =====
   try{ storiesStartListeners(); }catch(e){ console.error('storiesStartListeners',e); }
@@ -12145,7 +12148,7 @@ function renderAnaliseAds(){
               'style="background:transparent;border:none;color:var(--white);font-family:\'Bebas Neue\',sans-serif;font-size:18px;outline:none;width:90px;padding:0;">'+
           '</div>';
         })()+
-        '<button class="btn btn-primary" onclick="applyAdsDateRange()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+
+        '<button class="btn btn-primary" onclick="applyAdsDateRange()" style="font-size:12px;padding:10px 18px;letter-spacing:2px;"><i class="ti ti-refresh"></i> ANALISAR</button>'+'<button id="ads-resolve-btn" class="btn btn-outline" onclick="resolveAllAdNames({alert:true})" style="font-size:12px;padding:10px 14px;" title="Buscar no Meta o nome real de cada anuncio (ad_id -> nome) e salvar em cache"><i class="ti ti-tag"></i> Resolver nomes dos anúncios</button>'+
       '</div>'+
     '</div>'+
     '<div id="ads-loading" style="text-align:center;padding:80px;color:var(--muted);font-family:Barlow Condensed,sans-serif;font-size:14px;letter-spacing:2px;text-transform:uppercase;display:none;">'+
@@ -12980,9 +12983,70 @@ function _adDisplayName(v){
   if(/^\d{6,}$/.test(s)){
     var m=window._metaAdNameById||{};
     if(m[s])return m[s];
-    return 'Ad #'+s.slice(-6); // fallback amigavel quando o Meta nao resolve o nome
+    _queueAdNameResolve(s); // resolve o nome real via Graph em segundo plano
+    return 'Ad #'+s.slice(-6); // fallback amigavel enquanto o Meta nao resolve o nome
   }
   return s;
+}
+// ===== Resolução de nome de anúncio (ad_id -> ad_name) via Graph API, com cache no Firebase =====
+window._metaAdNameById=window._metaAdNameById||{};
+var _adNameQueue={}, _adNameTimer=null, _adNameFailed={};
+function loadAdNamesCache(){
+  if(!fbDb && !initFirebase()) return;
+  try{ fbDb.ref('adNames').on('value',function(snap){ var v=snap.val()||{}; window._metaAdNameById=window._metaAdNameById||{}; Object.keys(v).forEach(function(id){ if(v[id]) window._metaAdNameById[id]=v[id]; }); }); }catch(e){}
+}
+async function resolveAdName(adId){
+  adId=String(adId||'').trim();
+  if(!/^\d{6,}$/.test(adId)) return null;
+  window._metaAdNameById=window._metaAdNameById||{};
+  if(window._metaAdNameById[adId]) return window._metaAdNameById[adId];
+  if(!isMetaConnected()) return null;
+  try{
+    var url='https://graph.facebook.com/v20.0/'+adId+'?fields=name&access_token='+encodeURIComponent(metaToken.access_token);
+    var r=await fetch(url); var d=await r.json();
+    if(d && d.name){
+      window._metaAdNameById[adId]=d.name;
+      try{ if(fbDb||initFirebase()) fbDb.ref('adNames/'+adId).set(d.name); }catch(e){}
+      return d.name;
+    }
+    _adNameFailed[adId]=1; // node inexistente/sem acesso — nao insiste
+  }catch(e){}
+  return null;
+}
+function _queueAdNameResolve(id){
+  id=String(id||'').trim();
+  if(!/^\d{6,}$/.test(id)) return;
+  if((window._metaAdNameById&&window._metaAdNameById[id])||_adNameFailed[id]) return;
+  if(!isMetaConnected()) return;
+  _adNameQueue[id]=1;
+  if(_adNameTimer) return;
+  _adNameTimer=setTimeout(function(){
+    _adNameTimer=null;
+    var ids=Object.keys(_adNameQueue); _adNameQueue={};
+    if(!ids.length||!isMetaConnected()) return;
+    (async function(){
+      var any=false;
+      for(var i=0;i<ids.length;i++){ var nm=await resolveAdName(ids[i]); if(nm)any=true; await new Promise(function(r){setTimeout(r,120);}); }
+      if(any){ var area=document.getElementById('content'); var pg=area?area.getAttribute('data-page'):null; if(pg&&typeof showPage==='function'){ try{showPage(pg);}catch(e){} } }
+    })();
+  },800);
+}
+async function resolveAllAdNames(opts){
+  opts=opts||{};
+  if(!isMetaConnected()){ if(opts.alert)alert('Conecte o Meta Ads primeiro (aba Meta Ads Center / Configurações).'); return 0; }
+  var ids={};
+  function add(v){ var x=String(v||'').trim(); if(/^\d{6,}$/.test(x)) ids[x]=1; }
+  try{ Object.keys(kanbanData||{}).forEach(function(k){ add(kanbanData[k]&&kanbanData[k].ad); }); }catch(e){}
+  try{ Object.keys(meetings||{}).forEach(function(k){ add(meetings[k]&&meetings[k].ad); }); }catch(e){}
+  try{ (allLeads||[]).forEach(function(l){ add(l&&(l.ad||l.Ad)); }); }catch(e){}
+  var list=Object.keys(ids).filter(function(id){ return !(window._metaAdNameById&&window._metaAdNameById[id]); });
+  var ok=0, btn=document.getElementById('ads-resolve-btn');
+  if(btn){btn.disabled=true;btn.dataset._t=btn.innerHTML;btn.innerHTML='<i class="ti ti-loader-2"></i> Resolvendo...';}
+  for(var i=0;i<list.length;i++){ if(btn)btn.innerHTML='<i class="ti ti-loader-2"></i> '+(i+1)+'/'+list.length; var nm=await resolveAdName(list[i]); if(nm)ok++; await new Promise(function(r){setTimeout(r,120);}); }
+  if(btn){btn.disabled=false;btn.innerHTML=btn.dataset._t||'<i class="ti ti-tag"></i> Resolver nomes dos anúncios';}
+  if(opts.alert)alert('Nomes resolvidos: '+ok+' de '+list.length+' anúncios distintos.');
+  var area=document.getElementById('content'); var pg=area?area.getAttribute('data-page'):null; if(pg&&typeof showPage==='function'){ try{showPage(pg);}catch(e){} }
+  return ok;
 }
 async function refreshAnaliseAds(){
   var loading=document.getElementById('ads-loading');
