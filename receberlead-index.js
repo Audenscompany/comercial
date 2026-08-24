@@ -629,7 +629,32 @@ async function handleQuizAgendou(req, res) {
   // Feedback imediato: move o card p/ "Reunião Agendada" + atribui o closer.
   // O horário exato, os lembretes e a confirmação no WhatsApp vêm pelo webhook do
   // Calendly (/calendly-webhook), que traz a data/hora reais do agendamento.
-  try { await db.ref("kanban/" + key).update({ status: "reuniao", statusAt: Date.now(), responsavel: responsavel, _aguardandoWebhook: true }); } catch (e) { console.error("quiz-agendou kanban:", e); }
+  // Hidrata o card com os dados do lead (nome, faturamento, telefone, ad, instagram...) —
+  // o board lê /kanban, então sem isso o card fica "pelado" (sem nome/faturamento/WhatsApp).
+  var kanbanUpd = { status: "reuniao", statusAt: Date.now(), responsavel: responsavel, _aguardandoWebhook: true };
+  try {
+    var leadSnap = await db.ref("leads/" + key).once("value");
+    var L = leadSnap.val() || {};
+    var _set = function (campo, valor) { var v = (valor != null ? String(valor) : ""); if (v && v.trim() !== "") kanbanUpd[campo] = v; };
+    _set("nome", nome || L.nome);
+    _set("telefone", tel);
+    _set("faturamento", L.faturamento);
+    _set("faixa", faixa || L.faixa);
+    _set("empresa", L.empresa);
+    _set("email", L.email);
+    _set("cidade", L.cidade);
+    _set("instagram", L.instagram);
+    _set("ad", L.ad);
+    _set("campanha", L.campanha);
+    _set("conjunto", L.conjunto);
+    _set("segmento", L.segmento);
+    _set("canal", L.canal);
+    _set("desafio", L.desafio);
+    _set("investimento", L.investimento);
+    _set("ja_investiu", L.ja_investiu);
+    if (L._createdAt) kanbanUpd._createdAt = L._createdAt;
+  } catch (e) { console.error("quiz-agendou hidratar lead:", e); }
+  try { await db.ref("kanban/" + key).update(kanbanUpd); } catch (e) { console.error("quiz-agendou kanban:", e); }
   try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadReatStop(key, "meeting_scheduled"); } catch (e) {}
