@@ -13435,10 +13435,11 @@ function buildAnaliseAdsHTML(data){
     var rTel=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
     if(rTel.length>9) rTel=rTel.slice(-9);
     var adInfo=rTel?telAdMap[rTel]:null;
-    if(!adInfo||!adInfo.ad) return;
-    _step3Phones.add(rTel);
-    var adKey=adInfo.ad;
-    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:adInfo.campanha,conjunto:adInfo.conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    if(rTel) _step3Phones.add(rTel);
+    // Trafego sem anuncio identificado vai para o balde "(sem ad)" para o total bater com a aba Vendas
+    var adKey=(adInfo&&adInfo.ad)?adInfo.ad:'(sem ad)';
+    var _camp=(adInfo&&adInfo.campanha)||'', _conj=(adInfo&&adInfo.conjunto)||'';
+    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:_camp,conjunto:_conj,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     // Dedup: se já contamos esta reunião (mesmo telefone) para este ad, pula
     if(rTel){if(!_adTelSeen[adKey])_adTelSeen[adKey]=new Set();if(_adTelSeen[adKey].has(rTel))return;_adTelSeen[adKey].add(rTel);}
