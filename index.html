@@ -25265,7 +25265,7 @@ function piRenderResults(){
               (L.telefone?'<span style="font-size:11px;color:var(--white);">'+L.telefone+'</span>':'')+
               (wa?'<a href="https://wa.me/55'+wa+'" target="_blank" style="font-size:11px;color:#25d366;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
               (L.site?'<a href="'+L.site+'" target="_blank" style="font-size:11px;color:var(--purple3);text-decoration:none;">site</a>':'')+
-              '<button onclick="piAcharCnpj(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-brand-google"></i> Achar CNPJ</button>'+'<button onclick="piCnpjLead(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-building"></i> CNPJ + sócio</button>'+'<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ BDR</button>'+
+              '<button onclick="piAcharCnpj(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-brand-google"></i> Achar CNPJ</button>'+'<button onclick="piTelefoneLoja(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.18);border:1px solid rgba(56,204,242,0.4);border-radius:6px;color:var(--cyan);font-weight:700;padding:3px 10px;cursor:pointer;"><i class="ti ti-phone-plus"></i> Buscar telefone</button>'+'<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ BDR</button>'+
             '</div>'+
             '<div id="cnpj-card-'+L.placeId+'"></div>'+
           '</div>'+
@@ -25373,6 +25373,27 @@ async function cnpjConsultar(){
   if(!d){ if(st){st.style.color='#ff5c7a';st.textContent='Não encontrei esse CNPJ (ou o limite de consultas por minuto foi atingido — tente de novo em 1 min).';} return; }
   if(st)st.textContent='';
   if(out)out.innerHTML=_cnpjCard(d);
+}
+async function piTelefoneLoja(pid){
+  var L=(_piState.leads||[]).find(function(x){return x.placeId===pid;}); if(!L)return;
+  var out=document.getElementById('cnpj-card-'+pid);
+  if(out)out.innerHTML='<div style="font-size:11px;color:var(--cyan);margin-top:6px;"><i class="ti ti-loader-2"></i> Buscando CNPJ e telefone pelo nome...</div>';
+  try{
+    var u=RECEBERLEAD_URL+'/cnpj-por-nome?nome='+encodeURIComponent(L.nome_estabelecimento||'')+'&uf='+encodeURIComponent(L.estado||'')+'&cidade='+encodeURIComponent(L.cidade||'');
+    var r=await fetch(u); var d=await r.json();
+    if(!d||!d.ok){ if(out)out.innerHTML='<div style="font-size:11px;color:#ff5c7a;margin-top:6px;">Não achei o CNPJ pelo nome'+((d&&d.error)?(' ('+esc(d.error)+')'):'')+'. Use \'Achar CNPJ\' no Google e depois cole.</div>'; return; }
+    L.cnpj=d.cnpj;
+    var cidade=L.cidade||d.cidade||'';
+    var socio=(d.socios&&d.socios[0])||null;
+    var socioHtml=socio?('<b style="color:var(--white);">'+esc(socio.nome)+'</b>'+(socio.qualificacao?' <span style="color:var(--muted);">('+esc(socio.qualificacao)+')</span>':'')+' <a href="https://www.google.com/search?q='+encodeURIComponent(socio.nome+' '+cidade)+'" target="_blank" style="color:#6ea8fe;text-decoration:none;"><i class="ti ti-brand-google"></i> pesquisar sócio</a>'):'<span style="color:var(--muted);">sem sócio na base</span>';
+    var tels=(d.telefones||[]).filter(Boolean).map(_cnpjTelHtml).join(' &nbsp; ')||'<span style="color:var(--muted);">sem telefone na base</span>';
+    if(out)out.innerHTML='<div style="background:var(--bg2);border:1px solid rgba(56,204,242,0.25);border-radius:9px;padding:9px 11px;margin-top:8px;font-size:11.5px;line-height:1.8;">'+
+      '<div><b style="color:var(--white);">'+esc(d.razao_social||'')+'</b>'+(d.cnpj?' <span style="color:var(--muted);">· '+d.cnpj+'</span>':'')+(d.situacao?' · <span style="color:'+(/ativ/i.test(d.situacao)?'#22c55e':'var(--amber)')+';">'+esc(d.situacao)+'</span>':'')+'</div>'+
+      '<div>\uD83D\uDCDE '+tels+'</div>'+
+      (d.email?'<div>\u2709 '+esc(d.email)+'</div>':'')+
+      '<div>\uD83D\uDC64 Sócio principal: '+socioHtml+'</div>'+
+    '</div>';
+  }catch(e){ if(out)out.innerHTML='<div style="font-size:11px;color:#ff5c7a;margin-top:6px;">Erro: '+esc(e.message)+'</div>'; }
 }
 function piAcharCnpj(pid){ var L=(_piState.leads||[]).find(function(x){return x.placeId===pid;}); if(!L)return; window.open('https://www.google.com/search?q='+encodeURIComponent(L.nome_estabelecimento+' '+(L.cidade||'')+' CNPJ'),'_blank'); }
 async function piCnpjLead(pid){

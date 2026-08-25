@@ -665,6 +665,43 @@ async function handleQuizAgendou(req, res) {
 // Uso: abrir no navegador
 //   https://<cloud-run>/setup-calendly-webhook?secret=<WEBHOOK_SECRET>&token=<PAT_DO_CALENDLY>
 // A função (que roda no Cloud Run e alcança o Calendly) cria a assinatura apontando p/ /calendly-webhook.
+// ===== Rota /cnpj-por-nome: consultor de CNPJ próprio (grátis) =====
+// nome da loja -> CNPJ (Casa dos Dados, público) -> dados/telefone/sócios (cnpj.ws público)
+async function handleCnpjPorNome(req, res) {
+  const q = req.query || {}, b = req.body || {};
+  const nome = String(q.nome || b.nome || "").trim();
+  const uf = String(q.uf || b.uf || "").trim().toUpperCase();
+  const cidade = String(q.cidade || b.cidade || "").trim();
+  if (!nome) return res.status(400).json({ ok: false, error: "nome obrigatório" });
+  let cnpj = null;
+  try {
+    const r = await fetch("https://api.casadosdados.com.br/v2/public/cnpj/search", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: { termo: [nome], atividade_principal: [], natureza_juridica: [], uf: uf ? [uf] : [], municipio: cidade ? [cidade.toUpperCase()] : [], situacao_cadastral: "ATIVA" }, extras: {}, page: 1 })
+    });
+    const d = await r.json();
+    let arr = (d && d.data && (d.data.cnpj || d.data)) || d.cnpj || d.results || [];
+    if (!Array.isArray(arr) && arr && arr.cnpj) arr = arr.cnpj;
+    if (Array.isArray(arr) && arr.length) {
+      const f = arr[0];
+      cnpj = String((f && (f.cnpj || f.cnpj_completo || f.numero)) || f || "").replace(/\D/g, "");
+    }
+  } catch (e) { console.error("cnpj-por-nome busca:", e); }
+  if (!cnpj || cnpj.length !== 14) return res.status(200).json({ ok: false, error: "CNPJ não encontrado pelo nome" });
+  try {
+    const r2 = await fetch("https://publica.cnpj.ws/cnpj/" + cnpj, { headers: { "User-Agent": "audens-crm/1.0" } });
+    const j = await r2.json();
+    const e = j.estabelecimento || {};
+    const tel = (dd, t) => { t = String(t || "").trim(); return t ? ((dd ? "(" + dd + ") " : "") + t) : ""; };
+    return res.status(200).json({ ok: true, cnpj,
+      razao_social: j.razao_social || "", nome_fantasia: e.nome_fantasia || "",
+      situacao: e.situacao_cadastral || "", email: e.email || "",
+      telefones: [tel(e.ddd1, e.telefone1), tel(e.ddd2, e.telefone2)].filter(Boolean),
+      socios: (j.socios || []).map((sc) => ({ nome: sc.nome || "", qualificacao: (sc.qualificacao_socio && sc.qualificacao_socio.descricao) || "" })),
+      cidade: (e.cidade && e.cidade.nome) || "", uf: (e.estado && e.estado.sigla) || "" });
+  } catch (e) { console.error("cnpj-por-nome dados:", e); return res.status(200).json({ ok: false, cnpj, error: "achei o CNPJ mas falhou ao consultar os dados" }); }
+}
+
 async function handleSetupCalendlyWebhook(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   const token = (req.query && req.query.token) || (req.body && req.body.token) || "";
@@ -3140,6 +3177,9 @@ http('receberLead', async (req, res) => {
 
     if (path === "/agendar") {
       return await handleAgendar(req, res);
+    }
+    if (path === "/cnpj-por-nome") {
+      return await handleCnpjPorNome(req, res);
     }
     if (path === "/quiz-agendou") {
       return await handleQuizAgendou(req, res);
