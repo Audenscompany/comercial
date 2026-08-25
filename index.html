@@ -13205,7 +13205,7 @@ function buildAnaliseAdsHTML(data){
       var tel=_ph((m&&m.tel)||fu.tel); if(tel)_cliPh[tel]=1;
       var nome=fu.nome||(m&&m.nome)||''; if(nome)_cliNm[_nn(nome)]=1;
       var ts=0; if(fu.data){var dd=parseBRDate(fu.data);ts=dd?dd.getTime():0;} if(!ts&&m)ts=m.scheduledAt||0;
-      _crmCli.push({'CLIENTE':nome,'EMPRESA':fu.empresa||(kb&&kb.empresa)||'','DATA DE INICIO':_fmt(ts),'ORIGEM':(m&&m.origem)||(kb&&kb.origem)||'Tráfego','VALOR CONTRATO/MÊS':String(fu.mensalidade||fu.mrr||''),'VALOR VENDIDO DO CONTRATO':String(fu.contrato||''),'PLANO':fu.plano||'','_crm':1});
+      _crmCli.push({'CLIENTE':nome,'EMPRESA':fu.empresa||(kb&&kb.empresa)||'','DATA DE INICIO':_fmt(ts),'ORIGEM':(kb&&kb.origem)||(m&&m.origem)||'Tráfego','VALOR CONTRATO/MÊS':String(fu.mensalidade||fu.mrr||''),'VALOR VENDIDO DO CONTRATO':String(fu.contrato||''),'PLANO':fu.plano||'','_crm':1});
     });
     var _shCli=((_orig.clientes&&_orig.clientes.rows)||[]).filter(function(c){
       var t=_ph(col(c,['Telefone','TELEFONE','telefone'])); if(t&&_cliPh[t]) return false;
@@ -26657,8 +26657,7 @@ function renderVendas(){
     var m=meetings[fu.meetingId]||meetings[fid];
     // Origem: meeting > kanban lead > fallback
     var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
-    // Origem: o lead no kanban (vindo da LP) e a fonte de verdade; followup/meeting entram so como fallback
-    var origemRaw=(ke&&ke.origem)||fu.origem||(m&&m.origem)||'';
+    var origemRaw=fu.origem||(m&&m.origem)||(ke&&ke.origem)||'';
     todasVendas.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
   });
 
@@ -26749,6 +26748,24 @@ function renderVendas(){
     });
   }
 
+  // Correcao de origem CRM-first: se o LEAD no kanban (fonte da LP) veio de trafego (tem anuncio
+  // ou origem=trafego), a venda e Trafego Pago. Nao mexe em Recuperacao/Social Selling/Organico/Indicacao legitimos.
+  (function(){
+    var _koByPhone={};
+    Object.keys(kanbanData||{}).forEach(function(kk){
+      var k=kanbanData[kk]; if(!k) return;
+      var t=(k.telefone||'').replace(/\D/g,''); if(!t) return;
+      var _ad=String(k.ad||'').trim();
+      var isTraf=(categorizeOrigem(k.origem||'')==='Trafego Pago')||(!!_ad&&_ad!=='-'&&_ad!=='(sem ad)');
+      var info={traf:isTraf};
+      _koByPhone[t.slice(-11)]=info;_koByPhone[t.slice(-10)]=info;_koByPhone[t.slice(-9)]=info;
+    });
+    todasVendas.forEach(function(v){
+      var t=((v.m&&v.m.tel)||(v.fu&&v.fu.tel)||'').replace(/\D/g,''); if(!t) return;
+      var ko=_koByPhone[t.slice(-11)]||_koByPhone[t.slice(-10)]||_koByPhone[t.slice(-9)];
+      if(ko&&ko.traf){ v.origemRaw='Tráfego'; v.origemCat='Trafego Pago'; }
+    });
+  })();
   // Exclusão manual: vendas removidas pelo usuário (por fid, estável em qualquer fonte)
   todasVendas=todasVendas.filter(function(v){
     if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
