@@ -13155,18 +13155,32 @@ function buildAnaliseAdsHTML(data){
     function _ph(t){t=(t||'').replace(/\D/g,'');return t.length>9?t.slice(-9):t;}
     function _fmt(ts){if(!ts)return'';var d=new Date(ts);if(isNaN(d.getTime()))return'';return d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();}
     function _nn(s){return(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
-    // ---- LEADS: kanban com anuncio preenchido ----
+    // Data de entrada do lead: se kanban.createdAt vazio, usa a data da 1a reuniao vinculada, depois statusAt
+    var _meetByKanban={};
+    Object.keys(meetings||{}).forEach(function(mid){var m=meetings[mid];if(!m||m._hidden||!m.kanbanKey||!m.scheduledAt)return;if(!_meetByKanban[m.kanbanKey]||m.scheduledAt<_meetByKanban[m.kanbanKey])_meetByKanban[m.kanbanKey]=m.scheduledAt;});
+    // Fallback de anuncio: muitos leads antigos tem o Ad so na planilha (nao no kanban) -> mapa telefone->ad
+    var _planAdByPhone={};
+    ((_orig.leads&&_orig.leads.rows)||[]).forEach(function(r){
+      var a=(col(r,['Ad','AD','ad'])||'').trim(); if(!a||a==='-'||a==='(sem ad)') return;
+      var t=_ph(col(r,['Telefone','TELEFONE','telefone'])); if(!t) return;
+      if(!_planAdByPhone[t]) _planAdByPhone[t]={ad:a,campanha:(col(r,['Campanha','CAMPANHA','campanha'])||'').trim(),conjunto:(col(r,['Conjunto','CONJUNTO','conjunto'])||'').trim()};
+    });
+    // ---- LEADS: kanban (Ad do kanban ou, na falta, da planilha por telefone) ----
     var _crmLeads=[], _leadPh={};
     Object.keys(kanbanData||{}).forEach(function(kk){
       var k=kanbanData[kk]; if(!k) return;
-      var ad=(k.ad||'').trim(); if(!ad||ad==='-'||ad==='(sem ad)') return;
-      var tel=_ph(k.telefone); if(tel)_leadPh[tel]=1;
-      _crmLeads.push({'Data':_fmt(k.createdAt),'Ad':ad,'Campanha':k.campanha||'','Conjunto':k.conjunto||'','Telefone':k.telefone||'','Faturamento':k.faturamento||'','Nome':k.nome||'','Empresa':k.empresa||'','Origem':k.origem||'Tráfego','_crm':1});
+      var tel=_ph(k.telefone);
+      var ad=(k.ad||'').trim(), campanha=k.campanha||'', conjunto=k.conjunto||'';
+      if((!ad||ad==='-'||ad==='(sem ad)') && tel && _planAdByPhone[tel]){ ad=_planAdByPhone[tel].ad; campanha=campanha||_planAdByPhone[tel].campanha; conjunto=conjunto||_planAdByPhone[tel].conjunto; }
+      if(!ad||ad==='-'||ad==='(sem ad)') return;
+      if(tel)_leadPh[tel]=1;
+      var lts=k.createdAt||_meetByKanban[kk]||k.statusAt||0;
+      _crmLeads.push({'Data':_fmt(lts),'Ad':ad,'Campanha':campanha,'Conjunto':conjunto,'Telefone':k.telefone||'','Faturamento':k.faturamento||'','Nome':k.nome||'','Empresa':k.empresa||'','Origem':k.origem||'Tráfego','_crm':1});
     });
     var _shLeads=((_orig.leads&&_orig.leads.rows)||[]).filter(function(r){var t=_ph(col(r,['Telefone','TELEFONE','telefone']));return !t || !_leadPh[t];});
     // ---- REUNIOES: meetings do CRM ----
     var _fuByMeet={};
-    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&fu.resultado==='venda')_fuByMeet[fu.meetingId||fid]=fu;});
+    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;if(_vendasExcluidas&&_vendasExcluidas[fid])return;var _sg=(typeof _vendaSig==='function')?_vendaSig(fu,meetings[fu.meetingId||fid]):'';if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return;_fuByMeet[fu.meetingId||fid]=fu;});
     var _crmReun=[], _reunPh={};
     Object.keys(meetings||{}).forEach(function(mid){
       var m=meetings[mid]; if(!m||m._hidden) return;
@@ -13183,6 +13197,10 @@ function buildAnaliseAdsHTML(data){
     Object.keys(followups||{}).forEach(function(fid){
       var fu=followups[fid]; if(!fu||fu.resultado!=='venda') return;
       var m=meetings[fu.meetingId||fid]||null;
+      // Respeita as exclusoes feitas na aba Vendas (por id e por assinatura tel+nome+valor)
+      if(_vendasExcluidas&&_vendasExcluidas[fid]) return;
+      var _sg=(typeof _vendaSig==='function')?_vendaSig(fu,m):'';
+      if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg]) return;
       var kb=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
       var tel=_ph((m&&m.tel)||fu.tel); if(tel)_cliPh[tel]=1;
       var nome=fu.nome||(m&&m.nome)||''; if(nome)_cliNm[_nn(nome)]=1;
@@ -13377,8 +13395,14 @@ function buildAnaliseAdsHTML(data){
   var phoneFuMap={};
   Object.keys(followups||{}).forEach(function(fid){
     var fu=followups[fid]; if(!fu) return;
-    var raw=fu.tel||'';
-    if(!raw){ var _mm=meetings[fu.meetingId||fid]; if(_mm) raw=_mm.tel||''; }
+    var _mm=meetings[fu.meetingId||fid];
+    // respeita exclusoes da aba Vendas (venda de trafego excluida some do ranking)
+    if(fu.resultado==='venda'){
+      if(_vendasExcluidas&&_vendasExcluidas[fid]) return;
+      var _sg=(typeof _vendaSig==='function')?_vendaSig(fu,_mm):'';
+      if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg]) return;
+    }
+    var raw=fu.tel||''; if(!raw&&_mm) raw=_mm.tel||'';
     var fuTel=(raw||'').replace(/\D/g,'');
     if(fuTel.length>9) fuTel=fuTel.slice(-9);
     if(fuTel && !phoneFuMap[fuTel]) phoneFuMap[fuTel]=fu;
@@ -13388,8 +13412,12 @@ function buildAnaliseAdsHTML(data){
   var phoneMeetFuMap={};
   Object.keys(meetings||{}).forEach(function(mid){
     var mm=meetings[mid]; if(!mm) return;
-    var fu=followups[mid]||followups[mm.id];
+    var _fid=followups[mid]?mid:(mm.id&&followups[mm.id]?mm.id:null);
+    var fu=_fid?followups[_fid]:null;
     if(!fu||fu.resultado!=='venda') return;
+    if(_vendasExcluidas&&_vendasExcluidas[_fid]) return;
+    var _sg=(typeof _vendaSig==='function')?_vendaSig(fu,mm):'';
+    if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg]) return;
     var t=(mm.tel||'').replace(/\D/g,''); if(t.length>9) t=t.slice(-9);
     if(t) phoneMeetFuMap[t]=fu;
   });
@@ -13477,9 +13505,10 @@ function buildAnaliseAdsHTML(data){
     entry.reunioes++;
     var mst=(m.status||'').toLowerCase();
     if(mst==='done'||mst==='noshow') entry.realizadas++;
-    // Verifica fechamento via followup
+    // Verifica fechamento via followup (respeita exclusoes da aba Vendas)
     var fu=followups[m.id];
-    if(fu&&fu.resultado==='venda'){
+    var _fuExcl=fu&&((_vendasExcluidas&&_vendasExcluidas[m.id])||(function(){var _sg=(typeof _vendaSig==='function')?_vendaSig(fu,m):'';return _sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg];})());
+    if(fu&&fu.resultado==='venda'&&!_fuExcl){
       if(!entry.vendasList) entry.vendasList=[];
       entry.vendasList.push({nome:m.nome||'—',empresa:(m.kanbanKey&&kanbanData[m.kanbanKey]&&kanbanData[m.kanbanKey].empresa)||'',data:bd?bd.toLocaleDateString('pt-BR'):'—',motivo:'Followup Firebase'});
       entry.fechamentos++;
