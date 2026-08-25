@@ -13321,12 +13321,25 @@ function buildAnaliseAdsHTML(data){
   });
 
   // Mapa phone → followup (para pegar vendas registradas no Firebase mesmo que planilha mostre REALIZADA)
+  // Usa fu.tel; se vazio, resolve o telefone pela reunião amarrada (fu.meetingId -> meetings[mid].tel)
   var phoneFuMap={};
-  Object.values(followups).forEach(function(fu){
-    if(!fu||!fu.tel) return;
-    var fuTel=(fu.tel||'').replace(/\D/g,'');
+  Object.keys(followups||{}).forEach(function(fid){
+    var fu=followups[fid]; if(!fu) return;
+    var raw=fu.tel||'';
+    if(!raw){ var _mm=meetings[fu.meetingId||fid]; if(_mm) raw=_mm.tel||''; }
+    var fuTel=(raw||'').replace(/\D/g,'');
     if(fuTel.length>9) fuTel=fuTel.slice(-9);
-    if(fuTel) phoneFuMap[fuTel]=fu;
+    if(fuTel && !phoneFuMap[fuTel]) phoneFuMap[fuTel]=fu;
+  });
+  // Mapa phone -> followup de VENDA amarrado a uma reunião (meetingId), independente de ter fu.tel
+  // Recupera fechamentos que ficavam de fora quando o followup foi salvo so pelo meetingId
+  var phoneMeetFuMap={};
+  Object.keys(meetings||{}).forEach(function(mid){
+    var mm=meetings[mid]; if(!mm) return;
+    var fu=followups[mid]||followups[mm.id];
+    if(!fu||fu.resultado!=='venda') return;
+    var t=(mm.tel||'').replace(/\D/g,''); if(t.length>9) t=t.slice(-9);
+    if(t) phoneMeetFuMap[t]=fu;
   });
 
   // Step 3a: attribute sheet reuniões to ads via phone→telAdMap
@@ -13354,7 +13367,7 @@ function buildAnaliseAdsHTML(data){
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
     // Verifica fechamento cruzando reuniões.EMPRESA → clientes (planilha operacional)
     // Prioridade: coluna EMPRESA da reunião (empresa que fechou), depois CLIENTE (nome da pessoa)
-    var fuMatch=rTel?phoneFuMap[rTel]:null;
+    var fuMatch=rTel?(phoneFuMap[rTel]||phoneMeetFuMap[rTel]):null;
     var empresaRaw=col(r,['EMPRESA','Empresa','empresa','NOME DA EMPRESA','Nome da Empresa'])||'';
     var nomeRaw=col(r,['CLIENTE','Cliente','cliente'])||'';
     // Tenta empresa primeiro (mais preciso), depois nome da pessoa
