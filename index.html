@@ -802,7 +802,7 @@ function startRealtimeSync(){
     if(JSON.stringify(bdrLeads)!==prev){
       localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
       var area=document.getElementById('content');
-      if(area&&area.getAttribute('data-page')==='bdr'){
+      if(area&&area.getAttribute('data-page')==='busca-ia'){
         var ll=document.getElementById('bdr-leads-list');
         if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
       }
@@ -4495,8 +4495,7 @@ function buildNav(){
     {id:'audens-day',icon:'ti-star',label:'Audens Day'},
     {id:'audens-command',icon:'ti-brain',label:'Audens Command'},
     {id:'intel',icon:'ti-sparkles',label:'Inteligência Comercial'},
-    {id:'busca-ia',icon:'ti-radar',label:'Busca Inteligente'},
-    {id:'bdr',icon:'ti-building-store',label:'BDR'},
+    {id:'busca-ia',icon:'ti-building-store',label:'BDR Inteligente'},
     {id:'avaliacoes',icon:'ti-chart-radar',label:'Avaliacao Closers'},
     {id:'config-sdr',icon:'ti-robot',label:'IA | SDR'},
     {id:'cadencia-painel',icon:'ti-activity-heartbeat',label:'Painel Cadência'},
@@ -4597,7 +4596,7 @@ function buildNav(){
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
       {group:'Cold Call',icon:'ti-phone-call',items:['ligar','leads','historico','dashboard']}
     ];
-    var _topLevel=['visao-geral','tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','vendas','reunioes','calendario','meu-hist','audens-day','bdr','avaliacoes'];
+    var _topLevel=['visao-geral','tarefas','ligar','minhas-tarefas','dash-comercial','analise-ads','vendas','reunioes','calendario','meu-hist','audens-day','busca-ia','avaliacoes'];
     def=[];
     // Primeiro itens de topo nível permitidos
     _topLevel.forEach(function(id){
@@ -15111,7 +15110,7 @@ var _ALL_PAGES=[
   {id:'reunioes',label:'Reuniões',icon:'ti-calendar-check',grupo:'Geral'},
   {id:'calendario',label:'Calendário',icon:'ti-calendar',grupo:'Geral'},
   {id:'audens-day',label:'Audens Day',icon:'ti-star',grupo:'Geral'},
-  {id:'bdr',label:'BDR',icon:'ti-building-store',grupo:'Geral'},
+  {id:'busca-ia',label:'BDR Inteligente',icon:'ti-building-store',grupo:'Geral'},
   {id:'avaliacoes',label:'Avaliação Closers',icon:'ti-chart-radar',grupo:'Geral'},
   {id:'ligar',label:'Leads de Hoje',icon:'ti-phone',grupo:'Closer'},
   {id:'meu-hist',label:'Meu Histórico',icon:'ti-list-check',grupo:'Closer'},
@@ -15154,7 +15153,7 @@ function renderNavPermissionsPanel(){
           // Se não tem permissão customizada, considera que tem tudo (padrão do role)
           var defaultPages=u.funcao==='sdr'
             ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
-            :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr','prospeccao'];
+            :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','busca-ia','prospeccao'];
           // Usa estado temporário se houver alterações não salvas
           var currentAllowed=(_navPermTemp[email]!==undefined?_navPermTemp[email]:(allowed||defaultPages));
 
@@ -15206,7 +15205,7 @@ function navPermToggle(email, pageId, labelEl){
     var allowed=_navPermissions[email];
     var defaultPages=USERS[email]&&USERS[email].funcao==='sdr'
       ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','followup','kanban','reativacao','audens-day','plano-carreira']
-      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr','prospeccao'];
+      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','busca-ia','prospeccao'];
     _navPermTemp[email]=(allowed||defaultPages).slice();
   }
   var idx=_navPermTemp[email].indexOf(pageId);
@@ -15242,7 +15241,7 @@ function saveNavPermissions(email){
   if(!toSave){
     var def=_navPermissions[email]||(USERS[email]&&USERS[email].funcao==='sdr'
       ?['minhas-tarefas','dash-comercial','sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','audens-day','plano-carreira','prospeccao']
-      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','bdr','prospeccao']);
+      :['ligar','tarefas','dash-comercial','followup','meu-hist','reunioes','assinaturas','plano-carreira','audens-day','busca-ia','prospeccao']);
     toSave=def;
   }
   _navPermissions[email]=toSave;
@@ -25265,7 +25264,7 @@ function piRenderResults(){
               (L.telefone?'<span style="font-size:11px;color:var(--white);">'+L.telefone+'</span>':'')+
               (wa?'<a href="https://wa.me/55'+wa+'" target="_blank" style="font-size:11px;color:#25d366;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> WhatsApp</a>':'')+
               (L.site?'<a href="'+L.site+'" target="_blank" style="font-size:11px;color:var(--purple3);text-decoration:none;">site</a>':'')+
-              '<button onclick="piAcharCnpj(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-brand-google"></i> Achar CNPJ</button>'+'<button onclick="piTelefoneLoja(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.18);border:1px solid rgba(56,204,242,0.4);border-radius:6px;color:var(--cyan);font-weight:700;padding:3px 10px;cursor:pointer;"><i class="ti ti-phone-plus"></i> Buscar telefone</button>'+'<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ BDR</button>'+
+              '<button onclick="piAcharCnpj(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.12);border:1px solid rgba(56,204,242,0.3);border-radius:6px;color:var(--cyan);padding:3px 10px;cursor:pointer;"><i class="ti ti-brand-google"></i> Achar CNPJ</button>'+'<button onclick="piTelefoneLoja(\''+L.placeId+'\')" style="font-size:11px;background:rgba(56,204,242,0.18);border:1px solid rgba(56,204,242,0.4);border-radius:6px;color:var(--cyan);font-weight:700;padding:3px 10px;cursor:pointer;"><i class="ti ti-phone-plus"></i> Buscar telefone</button>'+'<button onclick="piEnviarBDR(\''+L.placeId+'\')" style="margin-left:auto;font-size:11px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);padding:3px 10px;cursor:pointer;"><i class="ti ti-plus"></i> Enviar p/ Meus Leads</button>'+
             '</div>'+
             '<div id="cnpj-card-'+L.placeId+'"></div>'+
           '</div>'+
@@ -25284,12 +25283,15 @@ function piEnviarBDR(placeId){
 }
 
 function renderBuscaIA(){
+  var _biTab=window._biTab||'buscar';
+  var _biTabs='<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;">'+[['buscar','ti-radar','Buscar'],['leads','ti-users','Meus Leads']].map(function(t){var a=_biTab===t[0];return '<button onclick="window._biTab=\''+t[0]+'\';showPage(\'busca-ia\')" style="background:none;border:none;border-bottom:'+(a?'2px solid var(--cyan)':'2px solid transparent')+';color:'+(a?'var(--white)':'var(--muted)')+';padding:10px 18px;font-size:12px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:1px;font-family:Barlow Condensed,sans-serif;"><i class="ti '+t[1]+'"></i> '+t[2]+'</button>';}).join('')+'</div>';
+  if(_biTab==='leads'){ return '<div class="page active">'+_biTabs+renderBDR().replace('<div class="page active">',''); }
   var mapsKey=localStorage.getItem('audens_maps_key')||'';
   var cnpjUrl=localStorage.getItem('audens_cnpj_search_url')||'';
   return '<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title"><i class="ti ti-radar" style="color:var(--cyan);margin-right:8px;"></i>Busca Inteligente</div>'+
-    '<div class="page-sub">Encontra, filtra, enriquece e rankeia os melhores leads de hamburgueria/pizzaria</div></div></div>'+
-    (!mapsKey?'<div class="warn-note" style="margin-bottom:14px;"><i class="ti ti-key"></i> Configure a Google Maps API Key na aba <b>BDR</b> primeiro.</div>':'')+
+    '<div class="page-header"><div><div class="page-title"><i class="ti ti-radar" style="color:var(--cyan);margin-right:8px;"></i>BDR Inteligente</div>'+
+    '<div class="page-sub">Encontra, filtra, enriquece e rankeia os melhores leads de hamburgueria/pizzaria</div></div></div>'+_biTabs+
+    (!mapsKey?'<div class="warn-note" style="margin-bottom:14px;"><i class="ti ti-key"></i> Configure a Google Maps API Key na sub-aba <b>Meus Leads</b> primeiro.</div>':'')+
     '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">'+
       '<div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">'+
         '<div><label class="f-label">Cidade</label><input class="f-input" id="pi-cidade" placeholder="ex: Campinas" style="margin-bottom:0;"></div>'+
@@ -25555,7 +25557,7 @@ function bdrSalvarKey(){
   localStorage.setItem('audens_maps_key',k.trim());
   if(fbDb||initFirebase()) fbDb.ref('config/maps_key').set(k.trim());
   showSheetToast('Google Maps API Key salva!',false);
-  showPage('bdr');
+  (window._biTab='leads',showPage('busca-ia'));
 }
 
 async function bdrBuscar(){
@@ -25665,7 +25667,7 @@ function bdrAdicionarLead(idx,tipo,cidade){
   if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
   // Atualiza contador
   var pg=document.querySelector('.page-title');
-  if(pg&&pg.textContent.includes('BDR')) showPage('bdr');
+  if(pg&&pg.textContent.includes('BDR')) (window._biTab='leads',showPage('busca-ia'));
 }
 
 function bdrUpdateSelCount(){
@@ -25727,7 +25729,7 @@ function bdrAdicionarSelecionados(tipo,cidade){
 }
 function bdrFiltrar(status){
   _bdrFilter=status;
-  showPage('bdr');
+  (window._biTab='leads',showPage('busca-ia'));
 }
 
 function bdrTempoEspera(l){
@@ -25823,7 +25825,7 @@ function bdrAtualizarStatus(id,status){
   localStorage.setItem(_bdrLsKey(),JSON.stringify(bdrLeads));
   // Update dot color inline
   var area=document.getElementById('content');
-  if(area&&area.getAttribute('data-page')==='bdr'){
+  if(area&&area.getAttribute('data-page')==='busca-ia'){
     var ll=document.getElementById('bdr-leads-list');
     if(ll) ll.innerHTML=bdrRenderLeads(_bdrFilter);
   }
