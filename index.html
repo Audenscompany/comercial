@@ -13148,6 +13148,58 @@ function _showAdVendasModal(adKey){
 }
 
 function buildAnaliseAdsHTML(data){
+  // ===== FONTE CRM-FIRST (Firebase) — planilha entra so como complemento historico =====
+  // Reconstroi leads/reunioes/clientes a partir do CRM; linhas da planilha cujo telefone
+  // ja existe no CRM sao descartadas (evita duplicidade). Fonte primaria: kanban/meetings/followups.
+  data=(function(_orig){
+    function _ph(t){t=(t||'').replace(/\D/g,'');return t.length>9?t.slice(-9):t;}
+    function _fmt(ts){if(!ts)return'';var d=new Date(ts);if(isNaN(d.getTime()))return'';return d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();}
+    function _nn(s){return(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
+    // ---- LEADS: kanban com anuncio preenchido ----
+    var _crmLeads=[], _leadPh={};
+    Object.keys(kanbanData||{}).forEach(function(kk){
+      var k=kanbanData[kk]; if(!k) return;
+      var ad=(k.ad||'').trim(); if(!ad||ad==='-'||ad==='(sem ad)') return;
+      var tel=_ph(k.telefone); if(tel)_leadPh[tel]=1;
+      _crmLeads.push({'Data':_fmt(k.createdAt),'Ad':ad,'Campanha':k.campanha||'','Conjunto':k.conjunto||'','Telefone':k.telefone||'','Faturamento':k.faturamento||'','Nome':k.nome||'','Empresa':k.empresa||'','Origem':k.origem||'Tráfego','_crm':1});
+    });
+    var _shLeads=((_orig.leads&&_orig.leads.rows)||[]).filter(function(r){var t=_ph(col(r,['Telefone','TELEFONE','telefone']));return !t || !_leadPh[t];});
+    // ---- REUNIOES: meetings do CRM ----
+    var _fuByMeet={};
+    Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(fu&&fu.resultado==='venda')_fuByMeet[fu.meetingId||fid]=fu;});
+    var _crmReun=[], _reunPh={};
+    Object.keys(meetings||{}).forEach(function(mid){
+      var m=meetings[mid]; if(!m||m._hidden) return;
+      var ts=m.scheduledAt||0; if(!ts) return;
+      var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+      var venda=_fuByMeet[m.id]||_fuByMeet[mid];
+      var st=venda?'VENDA':(m.status==='done'?'REALIZADA':(m.status==='noshow'?'NO-SHOW':'AGENDADA'));
+      var tel=_ph(m.tel); if(tel)_reunPh[tel]=1;
+      _crmReun.push({'DATA':_fmt(ts),'TELEFONE':m.tel||'','ORIGEM':m.origem||(kb&&kb.origem)||'Tráfego','STATUS REUNIÃO':st,'CLIENTE':m.nome||'','EMPRESA':(kb&&kb.empresa)||'','_crm':1});
+    });
+    var _shReun=((_orig.reunioes&&_orig.reunioes.rows)||[]).filter(function(r){var t=_ph(col(r,['TELEFONE','Telefone','telefone']));return !t || !_reunPh[t];});
+    // ---- CLIENTES/VENDAS: followups com resultado=venda ----
+    var _crmCli=[], _cliPh={}, _cliNm={};
+    Object.keys(followups||{}).forEach(function(fid){
+      var fu=followups[fid]; if(!fu||fu.resultado!=='venda') return;
+      var m=meetings[fu.meetingId||fid]||null;
+      var kb=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
+      var tel=_ph((m&&m.tel)||fu.tel); if(tel)_cliPh[tel]=1;
+      var nome=fu.nome||(m&&m.nome)||''; if(nome)_cliNm[_nn(nome)]=1;
+      var ts=0; if(fu.data){var dd=parseBRDate(fu.data);ts=dd?dd.getTime():0;} if(!ts&&m)ts=m.scheduledAt||0;
+      _crmCli.push({'CLIENTE':nome,'EMPRESA':fu.empresa||(kb&&kb.empresa)||'','DATA DE INICIO':_fmt(ts),'ORIGEM':(m&&m.origem)||(kb&&kb.origem)||'Tráfego','VALOR CONTRATO/MÊS':String(fu.mensalidade||fu.mrr||''),'VALOR VENDIDO DO CONTRATO':String(fu.contrato||''),'PLANO':fu.plano||'','_crm':1});
+    });
+    var _shCli=((_orig.clientes&&_orig.clientes.rows)||[]).filter(function(c){
+      var t=_ph(col(c,['Telefone','TELEFONE','telefone'])); if(t&&_cliPh[t]) return false;
+      var nm=_nn(col(c,['CLIENTE','Cliente','cliente'])); if(nm&&_cliNm[nm]) return false;
+      return true;
+    });
+    return Object.assign({},_orig,{
+      leads:Object.assign({},_orig.leads,{rows:_crmLeads.concat(_shLeads)}),
+      reunioes:Object.assign({},_orig.reunioes,{rows:_crmReun.concat(_shReun)}),
+      clientes:Object.assign({},_orig.clientes,{rows:_crmCli.concat(_shCli)})
+    });
+  })(data);
   var period=_adsPeriod||getCurrentPeriod();
   function inAdsRange(d){
     if(!d) return false;
