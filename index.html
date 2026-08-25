@@ -13189,7 +13189,7 @@ function buildAnaliseAdsHTML(data){
       var venda=_fuByMeet[m.id]||_fuByMeet[mid];
       var st=venda?'VENDA':(m.status==='done'?'REALIZADA':(m.status==='noshow'?'NO-SHOW':'AGENDADA'));
       var tel=_ph(m.tel); if(tel)_reunPh[tel]=1;
-      _crmReun.push({'DATA':_fmt(ts),'TELEFONE':m.tel||'','ORIGEM':m.origem||(kb&&kb.origem)||'Tráfego','STATUS REUNIÃO':st,'CLIENTE':m.nome||'','EMPRESA':(kb&&kb.empresa)||'','_crm':1});
+      _crmReun.push({'DATA':_fmt(ts),'TELEFONE':m.tel||'','ORIGEM':(kb&&kb.origem)||m.origem||'Tráfego','STATUS REUNIÃO':st,'CLIENTE':m.nome||'','EMPRESA':(kb&&kb.empresa)||'','_crm':1});
     });
     var _shReun=((_orig.reunioes&&_orig.reunioes.rows)||[]).filter(function(r){var t=_ph(col(r,['TELEFONE','Telefone','telefone']));return !t || !_reunPh[t];});
     // ---- CLIENTES/VENDAS: followups com resultado=venda ----
@@ -13462,9 +13462,13 @@ function buildAnaliseAdsHTML(data){
       // Cliente assinou após reunião ou até 3 dias antes (não 7, para ser mais preciso)
       cliMatchInPeriod=!!cliD&&diffMs>=-(3*24*60*60*1000);
     }
-    var isVenda=status==='VENDA'
+    // Exclusao por assinatura (tel+nome) — mesma da aba Vendas — cobre TODOS os caminhos (status, followup e match cliente)
+    var _rowTelFull=(col(r,['TELEFONE','Telefone','telefone'])||'').replace(/\D/g,'');
+    var _rowSig=(typeof _vendaSig==='function')?_vendaSig({tel:_rowTelFull,nome:nomeRaw},null):'';
+    var _rowExcl=!!(_rowSig&&_vendasExcluidasSig&&_vendasExcluidasSig[_rowSig]);
+    var isVenda=(!_rowExcl)&&(status==='VENDA'
       ||(fuMatch&&fuMatch.resultado==='venda')
-      ||cliMatchInPeriod;
+      ||cliMatchInPeriod);
     if(isVenda){
       var motivo=status==='VENDA'?'STATUS=VENDA':(fuMatch&&fuMatch.resultado==='venda'?'Followup Firebase':(cliMatchInPeriod?'Match cliente: '+(empresaRaw||nomeRaw):'?'));
       if(!entry.vendasList) entry.vendasList=[];
@@ -26653,7 +26657,8 @@ function renderVendas(){
     var m=meetings[fu.meetingId]||meetings[fid];
     // Origem: meeting > kanban lead > fallback
     var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
-    var origemRaw=fu.origem||(m&&m.origem)||(ke&&ke.origem)||'';
+    // Origem: o lead no kanban (vindo da LP) e a fonte de verdade; followup/meeting entram so como fallback
+    var origemRaw=(ke&&ke.origem)||fu.origem||(m&&m.origem)||'';
     todasVendas.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
   });
 
