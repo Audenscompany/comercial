@@ -13619,11 +13619,11 @@ function buildAnaliseAdsHTML(data){
   var _prevTotL=_prevLeads.length;
   var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;}).length;
   var _prevReal=(data.reunioes&&data.reunioes.rows||[]).filter(function(r){
-    var d=parseBRDate(col(r,['DATA DE AGENDAMENTO','Data de Agendamento']));
+    var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
     if(!inPrevAR(d))return false;
     var ori=(col(r,['ORIGEM','Origem','origem'])||'').toLowerCase();
     return ori.includes('tr')||ori.includes('trafego');
-  }).filter(function(r){return isRealizada(col(r,['STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
+  }).filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
   var _prevFech=(data.clientes&&data.clientes.rows||[]).filter(function(c){
     var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INICIO','Data de Inicio','Data Inicio']));
     if(!inPrevAR(d))return false;
