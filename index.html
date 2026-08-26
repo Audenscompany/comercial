@@ -13213,6 +13213,8 @@ function buildAnaliseAdsHTML(data){
   // Reconstroi leads/reunioes/clientes a partir do CRM; linhas da planilha cujo telefone
   // ja existe no CRM sao descartadas (evita duplicidade). Fonte primaria: kanban/meetings/followups.
   data=(function(_orig){
+    // Regras: campanha (minuscula) -> nome de anuncio quando o ad_id nao veio na URL da LP
+    var _CAMP_AD_RULES={'igbio':'igbio'};
     function _ph(t){t=(t||'').replace(/\D/g,'');return t.length>9?t.slice(-9):t;}
     function _fmt(ts){if(!ts)return'';var d=new Date(ts);if(isNaN(d.getTime()))return'';return d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();}
     function _nn(s){return(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
@@ -13233,6 +13235,8 @@ function buildAnaliseAdsHTML(data){
       var tel=_ph(k.telefone);
       var ad=(k.ad||'').trim(), campanha=k.campanha||'', conjunto=k.conjunto||'';
       if((!ad||ad==='-'||ad==='(sem ad)') && tel && _planAdByPhone[tel]){ ad=_planAdByPhone[tel].ad; campanha=campanha||_planAdByPhone[tel].campanha; conjunto=conjunto||_planAdByPhone[tel].conjunto; }
+      // Regra: sem ad_id mas com campanha mapeada (ex.: 'igbio') -> usa o nome da campanha como anuncio
+      if(!ad||ad==='-'||ad==='(sem ad)'){ var _cr=(campanha||'').toLowerCase().trim(); if(_CAMP_AD_RULES[_cr]) ad=_CAMP_AD_RULES[_cr]; }
       if(!ad||ad==='-'||ad==='(sem ad)') return;
       if(tel)_leadPh[tel]=1;
       var lts=k.createdAt||_meetByKanban[kk]||k.statusAt||0;
@@ -13464,10 +13468,12 @@ function buildAnaliseAdsHTML(data){
   }
   Object.values(kanbanData||{}).forEach(function(k){ if(!k)return; _regInfo(k.telefone,(k.ad||'').trim(),(k.campanha||'').trim(),(k.conjunto||'').trim(),k.nome,k.empresa); });
   (typeof allLeads!=='undefined'&&allLeads?allLeads:[]).forEach(function(l){ if(!l)return; _regInfo(l.telefone,String(l.ad||l.Ad||'').trim(),String(l.campanha||l.Campanha||'').trim(),String(l.conjunto||l.Conjunto||'').trim(),l.nome,l.empresa); });
+  function _provavelAdListRaw(camp,conj){
+    var k=_ck(camp,conj); var m=_campToAds[k]; if(!m)return [];
+    var ads=Object.keys(m); ads.sort(function(a,b){return m[b]-m[a];}); return ads;
+  }
   function _provavelAd(camp,conj){
-    var k=_ck(camp,conj); var m=_campToAds[k]; if(!m)return '';
-    var ads=Object.keys(m); if(!ads.length)return '';
-    ads.sort(function(a,b){return m[b]-m[a];});
+    var ads=_provavelAdListRaw(camp,conj); if(!ads.length)return '';
     return ads.slice(0,3).map(function(a){return (typeof _adDisplayName==='function'?_adDisplayName(a):a);}).join(', ');
   }
 
@@ -13520,6 +13526,8 @@ function buildAnaliseAdsHTML(data){
     // Trafego sem anuncio identificado vai para o balde "(sem ad)" para o total bater com a aba Vendas
     var adKey=(adInfo&&adInfo.ad)?adInfo.ad:'(sem ad)';
     var _camp=(adInfo&&adInfo.campanha)||'', _conj=(adInfo&&adInfo.conjunto)||'';
+    if(adKey==='(sem ad)'){ var _piC=rTel?(_phoneInfoMap[rTel]||{}):{}; var _cc=((_camp||_piC.campanha||'')).toLowerCase().trim(); if(_cc==='igbio'){ adKey='igbio'; _camp=_camp||_piC.campanha||'igbio'; } }
+    if(adKey==='(sem ad)'){ var _piC3=rTel?(_phoneInfoMap[rTel]||{}):{}; var _pl=_provavelAdListRaw(_camp||_piC3.campanha||'', _conj||_piC3.conjunto||''); if(_pl.length===1){ adKey=_pl[0]; _camp=_camp||_piC3.campanha||''; _conj=_conj||_piC3.conjunto||''; } }
     if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:_camp,conjunto:_conj,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     // Dedup: se já contamos esta reunião (mesmo telefone) para este ad, pula
