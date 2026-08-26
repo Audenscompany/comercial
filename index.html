@@ -13156,6 +13156,58 @@ function _showAdVendasModal(adKey){
   document.body.insertAdjacentHTML('beforeend',html);
 }
 
+function _showAdLeadsModal(adKey){
+  var leads=window._adLeadsMap&&window._adLeadsMap[adKey]?window._adLeadsMap[adKey]:[];
+  var existing=document.getElementById('_adLeadsModal');if(existing)existing.remove();
+  var isSemAd=(adKey==='(sem ad)');
+  var titulo=isSemAd?'Investigar reuniões SEM anúncio':'Reuniões do anúncio';
+  var nome=(typeof _adDisplayName==='function'?_adDisplayName(adKey):adKey);
+  function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var rows=leads.length?leads.map(function(v){
+    var tel=(v.tel||'').replace(/\D/g,'');
+    var waLink=tel?('<a href="https://wa.me/55'+tel+'" target="_blank" style="color:#25d366;text-decoration:none;">'+esc(v.tel)+'</a>'):'—';
+    var prov=v.provavel?('<span style="color:#a78bfa;font-weight:600;">'+esc(v.provavel)+'</span>'):'<span style="color:var(--muted);">—</span>';
+    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<td style="padding:9px 12px;font-size:13px;color:var(--white);font-weight:600;">'+esc(v.nome||'—')+(v.venda?' <span style="color:#4ade80;font-size:10px;">● VENDA</span>':'')+'</td>'+
+      '<td style="padding:9px 12px;font-size:12px;">'+waLink+'</td>'+
+      '<td style="padding:9px 12px;font-size:12px;color:var(--muted);">'+esc(v.empresa||'—')+'</td>'+
+      '<td style="padding:9px 12px;font-size:12px;color:var(--muted);">'+esc(v.data||'—')+'</td>'+
+      '<td style="padding:9px 12px;font-size:12px;color:var(--cyan);">'+esc(v.campanha||'—')+'</td>'+
+      '<td style="padding:9px 12px;font-size:12px;color:var(--amber);">'+esc(v.conjunto||'—')+'</td>'+
+      (isSemAd?('<td style="padding:9px 12px;font-size:12px;">'+prov+'</td>'):'')+
+    '</tr>';
+  }).join(''):'<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--muted);">Sem reuniões neste período.</td></tr>';
+  var nVend=leads.filter(function(v){return v.venda;}).length;
+  var html='<div id="_adLeadsModal" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;">'+
+    '<div style="background:var(--bg2,#14121c);border:1px solid rgba(123,47,255,0.4);border-radius:16px;max-width:920px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;">'+
+      '<div style="padding:18px 24px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">'+
+        '<div>'+
+          '<div style="font-family:Bebas Neue,sans-serif;letter-spacing:2px;color:var(--purple3,#a78bfa);font-size:13px;">'+titulo+'</div>'+
+          '<div style="font-size:19px;font-weight:800;color:#fff;">'+esc(nome)+'</div>'+
+        '</div>'+
+        '<button onclick="document.getElementById(\'_adLeadsModal\').remove()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;width:34px;height:34px;color:#fff;cursor:pointer;font-size:16px;">&times;</button>'+
+      '</div>'+
+      (isSemAd?'<div style="padding:10px 24px;font-size:11px;color:var(--muted);background:rgba(167,139,250,0.06);">Estes leads não trouxeram o <b>ad_id</b> na URL da LP. Abaixo, a <b>campanha</b> e o <b>conjunto</b> de cada um e o <b>anúncio provável</b> (outros leads da mesma campanha+conjunto que trouxeram anúncio). Cruze com o Gerenciador do Meta para confirmar.</div>':'')+
+      '<div style="overflow-y:auto;flex:1;">'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+          '<thead><tr style="background:rgba(255,255,255,0.03);position:sticky;top:0;">'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Lead</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">WhatsApp</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Empresa</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Data</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Campanha</th>'+
+            '<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">Conjunto</th>'+
+            (isSemAd?'<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#a78bfa;">Anúncio provável</th>':'')+
+          '</tr></thead>'+
+          '<tbody>'+rows+'</tbody>'+
+        '</table>'+
+      '</div>'+
+      '<div style="padding:12px 24px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:var(--muted);">'+leads.length+' reunião(ões) · '+nVend+' venda(s) · Clique fora para fechar</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
 function buildAnaliseAdsHTML(data){
   // ===== FONTE CRM-FIRST (Firebase) — planilha entra so como complemento historico =====
   // Reconstroi leads/reunioes/clientes a partir do CRM; linhas da planilha cujo telefone
@@ -13399,6 +13451,26 @@ function buildAnaliseAdsHTML(data){
     telAdMap[tel]={ad:ad,campanha:campanha,conjunto:conjunto};
   });
 
+  // Investigacao "(sem ad)": mapa telefone -> {campanha,conjunto,ad,nome,empresa} (kanban + leads/ da LP),
+  // e indice campanha+conjunto -> anuncios, para sugerir o anuncio provavel de um lead sem ad_id.
+  var _phoneInfoMap={}, _campToAds={};
+  function _ck(camp,conj){return ((camp||'')+'||'+(conj||'')).toLowerCase().replace(/\s+/g,' ').trim();}
+  function _regInfo(tel,ad,camp,conj,nome,emp){
+    tel=(tel||'').replace(/\D/g,''); if(tel.length>9)tel=tel.slice(-9); if(!tel)return;
+    var hasAd=ad&&ad!=='-'&&ad!=='(sem ad)';
+    var cur=_phoneInfoMap[tel]||{};
+    _phoneInfoMap[tel]={ad:cur.ad||(hasAd?ad:''),campanha:cur.campanha||camp||'',conjunto:cur.conjunto||conj||'',nome:cur.nome||nome||'',empresa:cur.empresa||emp||''};
+    if(hasAd&&(camp||conj)){var k=_ck(camp,conj);if(!_campToAds[k])_campToAds[k]={};_campToAds[k][ad]=(_campToAds[k][ad]||0)+1;}
+  }
+  Object.values(kanbanData||{}).forEach(function(k){ if(!k)return; _regInfo(k.telefone,(k.ad||'').trim(),(k.campanha||'').trim(),(k.conjunto||'').trim(),k.nome,k.empresa); });
+  (typeof allLeads!=='undefined'&&allLeads?allLeads:[]).forEach(function(l){ if(!l)return; _regInfo(l.telefone,String(l.ad||l.Ad||'').trim(),String(l.campanha||l.Campanha||'').trim(),String(l.conjunto||l.Conjunto||'').trim(),l.nome,l.empresa); });
+  function _provavelAd(camp,conj){
+    var k=_ck(camp,conj); var m=_campToAds[k]; if(!m)return '';
+    var ads=Object.keys(m); if(!ads.length)return '';
+    ads.sort(function(a,b){return m[b]-m[a];});
+    return ads.slice(0,3).map(function(a){return (typeof _adDisplayName==='function'?_adDisplayName(a):a);}).join(', ');
+  }
+
   // Mapa phone → followup (para pegar vendas registradas no Firebase mesmo que planilha mostre REALIZADA)
   // Usa fu.tel; se vazio, resolve o telefone pela reunião amarrada (fu.meetingId -> meetings[mid].tel)
   var phoneFuMap={};
@@ -13460,6 +13532,12 @@ function buildAnaliseAdsHTML(data){
     var fuMatch=rTel?(phoneFuMap[rTel]||phoneMeetFuMap[rTel]):null;
     var empresaRaw=col(r,['EMPRESA','Empresa','empresa','NOME DA EMPRESA','Nome da Empresa'])||'';
     var nomeRaw=col(r,['CLIENTE','Cliente','cliente'])||'';
+    // Registra o lead desta reuniao para a investigacao do ranking (principalmente "(sem ad)")
+    if(!entry.leadsList) entry.leadsList=[];
+    var _pi=rTel?(_phoneInfoMap[rTel]||{}):{};
+    var _camp2=_camp||_pi.campanha||'', _conj2=_conj||_pi.conjunto||'';
+    entry.leadsList.push({nome:nomeRaw||_pi.nome||'—',tel:rTel||'',empresa:empresaRaw||_pi.empresa||'',data:d?d.toLocaleDateString('pt-BR'):'—',campanha:_camp2,conjunto:_conj2,provavel:(adKey==='(sem ad)')?_provavelAd(_camp2,_conj2):'',venda:false});
+    var _llIdx=entry.leadsList.length-1;
     // Tenta empresa primeiro (mais preciso), depois nome da pessoa
     var cliMatch=empresaRaw?cliLookup(empresaRaw):(nomeRaw?cliLookup(nomeRaw):null);
     // cliMatchInPeriod: só conta se reunião foi REALIZADA E cliente assinou após a reunião
@@ -13483,6 +13561,7 @@ function buildAnaliseAdsHTML(data){
       var motivo=status==='VENDA'?'STATUS=VENDA':(fuMatch&&fuMatch.resultado==='venda'?'Followup Firebase':(cliMatchInPeriod?'Match cliente: '+(empresaRaw||nomeRaw):'?'));
       if(!entry.vendasList) entry.vendasList=[];
       entry.vendasList.push({nome:nomeRaw||'—',empresa:empresaRaw||'',data:d?d.toLocaleDateString('pt-BR'):'—',motivo:motivo});
+      if(entry.leadsList&&entry.leadsList[_llIdx])entry.leadsList[_llIdx].venda=true;
       entry.fechamentos++;
       var mrrVal=0;
       if(fuMatch){var _rawMrr=fuMatch.mensalidade||fuMatch.mrr||0;mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));}
@@ -13517,6 +13596,10 @@ function buildAnaliseAdsHTML(data){
     if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:kb.campanha||'',conjunto:kb.conjunto||'',leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     entry.reunioes++;
+    if(!entry.leadsList) entry.leadsList=[];
+    var _pi3=(_phoneInfoMap[mTel]||{});
+    entry.leadsList.push({nome:m.nome||_pi3.nome||'—',tel:mTel||'',empresa:(kb&&kb.empresa)||_pi3.empresa||'',data:bd?bd.toLocaleDateString('pt-BR'):'—',campanha:(kb.campanha||_pi3.campanha||''),conjunto:(kb.conjunto||_pi3.conjunto||''),provavel:'',venda:false});
+    var _llIdx3=entry.leadsList.length-1;
     var mst=(m.status||'').toLowerCase();
     if(mst==='done'||mst==='noshow') entry.realizadas++;
     // Verifica fechamento via followup (respeita exclusoes da aba Vendas)
@@ -13525,6 +13608,7 @@ function buildAnaliseAdsHTML(data){
     if(fu&&fu.resultado==='venda'&&!_fuExcl){
       if(!entry.vendasList) entry.vendasList=[];
       entry.vendasList.push({nome:m.nome||'—',empresa:(m.kanbanKey&&kanbanData[m.kanbanKey]&&kanbanData[m.kanbanKey].empresa)||'',data:bd?bd.toLocaleDateString('pt-BR'):'—',motivo:'Followup Firebase'});
+      if(entry.leadsList&&entry.leadsList[_llIdx3])entry.leadsList[_llIdx3].venda=true;
       entry.fechamentos++;
       var _rawMrr=fu.mensalidade||fu.mrr||0;
       var mrrVal=typeof _rawMrr==='number'?_rawMrr:parseMoney(String(_rawMrr));
@@ -13551,6 +13635,7 @@ function buildAnaliseAdsHTML(data){
         ['leads','qualif','reunioes','realizadas','fechamentos','mrr'].forEach(function(f){t[f]=(t[f]||0)+(a[f]||0);});
         t._spend=(t._spend||0)+sp;
         if(a.vendasList)t.vendasList=(t.vendasList||[]).concat(a.vendasList);
+        if(a.leadsList)t.leadsList=(t.leadsList||[]).concat(a.leadsList);
         if(a.fats)t.fats=(t.fats||[]).concat(a.fats);
         if(/^\d{6,}$/.test(String(t.ad))&&!/^\d{6,}$/.test(String(a.ad)))t.ad=a.ad;
       }
@@ -13559,6 +13644,7 @@ function buildAnaliseAdsHTML(data){
   })();
   // Salva mapa global para popup de detalhes
   window._adVendasMap={};ads.forEach(function(a){window._adVendasMap[a.ad]=a.vendasList||[];});
+  window._adLeadsMap={};ads.forEach(function(a){window._adLeadsMap[a.ad]=a.leadsList||[];});
   if(ads.length===0) return '<div class="empty-st"><i class="ti ti-ad-2"></i><p>Nenhum lead de anúncio encontrado no período</p></div>';
 
 
@@ -13790,7 +13876,7 @@ function buildAnaliseAdsHTML(data){
       '</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:var(--white);">'+a.leads+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:13px;color:var(--cyan);">'+a.qualif+'</td>'+
-      '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:'+((a.realizadas||0)>0?'var(--amber)':'var(--muted)')+';">'+(a.realizadas||0)+'</td>'+
+      '<td data-adkey="'+String(a.ad).replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey)_showAdLeadsModal(this.dataset.adkey)" title="Ver reuniões e rastrear o anúncio" style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;color:'+((a.realizadas||0)>0?'var(--amber)':'var(--muted)')+';">'+(a.realizadas||0)+'</td>'+
       '<td data-adkey="'+a.ad.replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey)_showAdVendasModal(this.dataset.adkey)" style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;cursor:'+(a.fechamentos>0?'pointer':'default')+';color:'+(a.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(a.fechamentos>0?'<span title=\"Ver vendas deste ad\">'+a.fechamentos+'</span>':'—')+'</td>'+
       '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+qCol+';">'+q+'%</td>'+
       (function(){
