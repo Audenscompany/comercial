@@ -4719,7 +4719,7 @@ function showPage(id){
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
     if(id==='contratos') setTimeout(loadContratosPage,50);
-    if(id==='audens-day') setTimeout(loadAudensBlitz,50);
+    if(id==='audens-day') setTimeout(adDayInit,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
@@ -21230,37 +21230,200 @@ async function triggerSDRCalc(mode){
 var _audensIndicacoes = {}; // cache local de indicações
 var _audensIndListener = null;
 
+// ============================ AUDENS DAY (v2) — CAMPANHAS + PAINEL ============================
+var _adDay = { tab:'painel', campanhas:{}, sel:null, filtroMsg:'', filtroAd:'' };
+
 function renderAudensDay(){
   return '<div class="page active">'+
     '<div class="page-header"><div>'+
-      '<div class="page-title" style="display:flex;align-items:center;gap:10px;">'+
-        '<i class="ti ti-star" style="color:#fde047;"></i> Audens Day'+
-      '</div>'+
-      '<div class="page-sub">Sales Blitz · Indicações de clientes</div>'+
-    '</div>'+
-    '<div style="display:flex;align-items:center;gap:8px;">'+
-      '<span style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;letter-spacing:1px;text-transform:uppercase;">Janela:</span>'+
-      '<select id="ad-duracao" onchange="adMudarDuracao(this.value)" style="background:var(--bg2);border:1px solid rgba(255,255,255,0.12);border-radius:7px;padding:6px 12px;color:var(--white);font-size:13px;font-family:\'Barlow Condensed\',sans-serif;font-weight:700;letter-spacing:1px;cursor:pointer;outline:none;">'+
-        '<option value="30">Últimos 30 dias</option>'+
-        '<option value="60">Últimos 60 dias</option>'+
-        '<option value="90">Últimos 90 dias</option>'+
-        '<option value="jan2026" selected>Desde Jan 2026</option>'+
-        '<option value="180">Últimos 180 dias</option>'+
-        '<option value="365">Último ano</option>'+
-      '</select>'+
-    '</div>'+
-    '</div>'+
-    // Tabs
+      '<div class="page-title" style="display:flex;align-items:center;gap:10px;"><i class="ti ti-star" style="color:#fde047;"></i> Audens Day</div>'+
+      '<div class="page-sub">Campanhas de reativação/oferta · impacto, agendamentos, origem e vendas</div>'+
+    '</div></div>'+
     '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;">'+
-      '<button id="adtab-blitz" onclick="adShowTab(\'blitz\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;">'+
-        '<i class="ti ti-bolt" style="color:var(--amber);"></i> Sales Blitz</button>'+
-      '<button id="adtab-ind" onclick="adShowTab(\'ind\')" style="padding:10px 22px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;">'+
-        '<i class="ti ti-heart-handshake"></i> Indicações</button>'+
+      '<button id="adtab-painel" onclick="adDayTab(\'painel\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;"><i class="ti ti-chart-histogram"></i> Painel</button>'+
+      '<button id="adtab-camp" onclick="adDayTab(\'camp\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;"><i class="ti ti-calendar-plus"></i> Campanhas</button>'+
     '</div>'+
-    '<div id="ad-tab-blitz"><div id="audens-blitz-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando Sales Blitz...</div></div>'+
-    '<div id="ad-tab-ind" style="display:none;"><div id="audens-ind-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando indicações...</div></div>'+
+    '<div id="ad2-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando...</div>'+
   '</div>';
 }
+
+function adDayTab(t){
+  _adDay.tab=t;
+  ['painel','camp'].forEach(function(x){var b=document.getElementById('adtab-'+x);if(b){b.style.borderBottomColor=(x===t)?'var(--purple)':'transparent';b.style.color=(x===t)?'var(--purple3)':'var(--muted)';}});
+  if(t==='camp') adDayRenderCampanhas(); else adDayPainel();
+}
+
+async function adDayInit(){
+  try{
+    if(!fbDb && typeof initFirebase==='function') initFirebase();
+    var c = await fbGet('audensday_campanhas'); _adDay.campanhas = c||{};
+    if(!Object.keys(_adDay.campanhas).length){ await adDaySeedVirada(); }
+    if(!_adDay.sel) _adDay.sel = Object.keys(_adDay.campanhas)[0];
+    adDayTab(_adDay.tab);
+  }catch(e){ var el=document.getElementById('ad2-content'); if(el) el.innerHTML='<div class="warn-note">Erro: '+e.message+'</div>'; }
+}
+
+async function adDaySeedVirada(){
+  var ini=new Date();ini.setDate(ini.getDate()+1);ini.setHours(7,0,0,0);
+  var fim=new Date(2026,8,1,23,59,0);
+  var camp={ nome:'Virada de Agosto', inicio:ini.getTime(), fim:fim.getTime(), trilha:'cadencia_camp', status:'ativa', createdAt:Date.now() };
+  _adDay.campanhas['virada-ago']=camp;
+  if(fbDb) await fbDb.ref('audensday_campanhas/virada-ago').set(camp);
+}
+
+// ---------- CAMPANHAS ----------
+function _adFmtDate(ts){ if(!ts)return''; var d=new Date(ts); return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
+function _adToInput(ts){ if(!ts)return''; var d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function adDayRenderCampanhas(){
+  var el=document.getElementById('ad2-content'); if(!el)return;
+  var ids=Object.keys(_adDay.campanhas);
+  var rows=ids.map(function(id){
+    var c=_adDay.campanhas[id];
+    var ativa=(id===_adDay.sel);
+    return '<div style="background:var(--bg2);border:1px solid '+(ativa?'var(--purple3)':'var(--border)')+';border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
+      '<div><div style="font-weight:800;color:var(--white);font-size:15px;">'+(c.nome||id)+'</div>'+
+        '<div style="font-size:12px;color:var(--muted);">'+_adFmtDate(c.inicio)+' → '+_adFmtDate(c.fim)+' · <span style="color:var(--cyan);">'+(c.status||'')+'</span> · trilha '+(c.trilha||'cadencia_camp')+'</div></div>'+
+      '<div style="display:flex;gap:6px;">'+
+        '<input type="date" id="adc-ini-'+id+'" value="'+_adToInput(c.inicio)+'" style="background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:12px;padding:6px 8px;">'+
+        '<input type="date" id="adc-fim-'+id+'" value="'+_adToInput(c.fim)+'" style="background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:12px;padding:6px 8px;">'+
+        '<button onclick="adDaySalvarDatas(\''+id+'\')" class="btn btn-outline" style="padding:6px 10px;font-size:11px;"><i class="ti ti-device-floppy"></i></button>'+
+        '<button onclick="adDaySelecionar(\''+id+'\')" class="btn" style="padding:6px 12px;font-size:11px;background:var(--purple);border:1px solid var(--purple);color:#fff;">Ver painel</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  el.innerHTML=
+    '<div class="cb" style="margin-bottom:18px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-plus" style="color:var(--purple3);margin-right:6px;"></i>Nova campanha (Audens Day)</div></div>'+
+    '<div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'+
+      '<div><label style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;">Nome</label><input id="adc-novo-nome" placeholder="Ex.: Virada de Setembro" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 12px;"></div>'+
+      '<div><label style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;">Início</label><input type="date" id="adc-novo-ini" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 12px;"></div>'+
+      '<div><label style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;">Fim</label><input type="date" id="adc-novo-fim" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 12px;"></div>'+
+      '<button onclick="adDayCriarCampanha()" class="btn btn-primary" style="padding:9px 16px;"><i class="ti ti-plus"></i> Criar</button>'+
+    '</div></div>'+
+    '<div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Campanhas</div>'+rows;
+}
+function adDayCriarCampanha(){
+  var nome=(document.getElementById('adc-novo-nome')||{}).value||'';
+  var ini=(document.getElementById('adc-novo-ini')||{}).value||'';
+  var fim=(document.getElementById('adc-novo-fim')||{}).value||'';
+  if(!nome||!ini){alert('Preencha nome e data de início.');return;}
+  var id=nome.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+Date.now().toString(36).slice(-4);
+  var camp={nome:nome,inicio:new Date(ini+'T07:00:00').getTime(),fim:fim?new Date(fim+'T23:59:00').getTime():0,trilha:'cadencia_camp',status:'agendada',createdAt:Date.now()};
+  _adDay.campanhas[id]=camp;
+  if(fbDb) fbDb.ref('audensday_campanhas/'+id).set(camp);
+  adDayRenderCampanhas();
+}
+function adDaySalvarDatas(id){
+  var ini=(document.getElementById('adc-ini-'+id)||{}).value; var fim=(document.getElementById('adc-fim-'+id)||{}).value;
+  var c=_adDay.campanhas[id]; if(!c)return;
+  if(ini)c.inicio=new Date(ini+'T07:00:00').getTime(); if(fim)c.fim=new Date(fim+'T23:59:00').getTime();
+  if(fbDb) fbDb.ref('audensday_campanhas/'+id).update({inicio:c.inicio,fim:c.fim});
+  showSheetToast&&showSheetToast('Datas salvas',false);
+  adDayRenderCampanhas();
+}
+function adDaySelecionar(id){ _adDay.sel=id; _adDay.filtroMsg=''; _adDay.filtroAd=''; adDayTab('painel'); }
+
+// ---------- PAINEL ----------
+async function adDayPainel(){
+  var el=document.getElementById('ad2-content'); if(!el)return;
+  var id=_adDay.sel; var camp=_adDay.campanhas[id];
+  if(!camp){ el.innerHTML='<div style="padding:20px;color:var(--muted);">Nenhuma campanha selecionada. Vá em Campanhas.</div>'; return; }
+  el.innerHTML='<div style="color:var(--muted);font-size:12px;"><i class="ti ti-loader ti-spin"></i> Calculando painel de '+(camp.nome||id)+'...</div>';
+  try{
+    var ativos = await fbGet('cadencia_camp_ativos') || {};
+    var eventos = await fbGet('cadencia_camp_events') || {};
+    var d = _adDayCalc(id, camp, ativos, eventos);
+    el.innerHTML = _adDayRenderPainel(id, camp, d);
+  }catch(e){ el.innerHTML='<div class="warn-note">Erro no painel: '+e.message+'</div>'; }
+}
+
+function _adDayCalc(id, camp, ativos, eventos){
+  var ini=camp.inicio||0;
+  // telefone -> meetings / venda / ad
+  var meetByPhone={}, vendaByPhone={}, adByPhone={};
+  Object.keys(meetings||{}).forEach(function(mid){var m=meetings[mid];if(!m||m._hidden)return;var t=_campNorm(m.tel);if(!t)return;(meetByPhone[t]=meetByPhone[t]||[]).push(m);});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId||fid];var t=_campNorm((fu.tel)||(m&&m.tel));if(!t)return;var val=parseFloat(fu.mensalidade||fu.mrr||fu.contrato||0)||0;var dt=fu.data?(parseBRDate(fu.data)||null):(m&&m.scheduledAt?new Date(m.scheduledAt):null);vendaByPhone[t]={val:val,contrato:parseFloat(fu.contrato||0)||0,data:dt?dt.getTime():0,plano:fu.plano||''};});
+  Object.keys(kanbanData||{}).forEach(function(kk){var k=kanbanData[kk];if(!k)return;var t=_campNorm(k.telefone);if(!t)return;var ad=(k.ad||'').trim();if(ad&&ad!=='-'&&ad!=='(sem ad)')adByPhone[t]=(typeof _adDisplayName==='function'?_adDisplayName(ad):ad);});
+  // eventos: telefone -> lista de {templateId, at}
+  var evByPhone={};
+  Object.keys(eventos).forEach(function(k){var e=eventos[k];if(!e)return;if(e.campaignId&&e.campaignId!==id)return;var t=_campNorm(e.tel||e.leadKey);if(!t)return;(evByPhone[t]=evByPhone[t]||[]).push({tpl:e.templateId||'',at:e.at||0});});
+  // leads inscritos nesta campanha
+  var leads=[];
+  Object.keys(ativos).forEach(function(key){
+    var a=ativos[key]; if(!a)return;
+    if(a.campaignId && a.campaignId!==id) return;
+    if(!a.campaignId && id!=='virada-ago') return; // registros sem tag só contam na virada
+    var t=_campNorm(a.tel||key);
+    var evs=(evByPhone[t]||[]).sort(function(x,y){return x.at-y.at;});
+    var impactado = evs.length>0; // recebeu ao menos 1 msg
+    var mts=(meetByPhone[t]||[]).filter(function(m){return (m.scheduledAt|| (m.createdAt||0))>= (ini-3*864e5);});
+    var agendou = mts.length>0;
+    var bookAt = agendou ? Math.min.apply(null, mts.map(function(m){return m.createdAt||m.scheduledAt||0;}).filter(Boolean)) : 0;
+    // qual mensagem agendou = último evento antes do agendamento
+    var msgAgendou='';
+    if(agendou && evs.length){ var pre=evs.filter(function(e){return !bookAt||e.at<=bookAt+864e5;}); msgAgendou=(pre.length?pre[pre.length-1]:evs[evs.length-1]).tpl; }
+    var venda=vendaByPhone[t]||null;
+    var vendeu = !!(venda && venda.data>= (ini-3*864e5));
+    leads.push({ tel:t, telFull:a.tel||key, nome:a.nome||'', empresa:a.empresa||'', esp:a.especialista||'', variant:a.variant||'', impactado:impactado, agendou:agendou, msg:msgAgendou, ad:adByPhone[t]||'', vendeu:vendeu, valor:vendeu?(venda.contrato||venda.val||0):0, mrr:vendeu?(venda.val||0):0 });
+  });
+  var tot=leads.length;
+  var impact=leads.filter(function(l){return l.impactado;}).length;
+  var agend=leads.filter(function(l){return l.agendou;}).length;
+  var vend=leads.filter(function(l){return l.vendeu;}).length;
+  var receita=leads.reduce(function(s,l){return s+(l.vendeu?l.mrr:0);},0);
+  var porMsg={}, porAd={};
+  leads.forEach(function(l){ if(l.agendou){var m=l.msg||'(sem registro)';porMsg[m]=(porMsg[m]||0)+1;} var a=l.ad||'(sem anúncio)';porAd[a]=porAd[a]||{leads:0,agend:0,vend:0};porAd[a].leads++;if(l.agendou)porAd[a].agend++;if(l.vendeu)porAd[a].vend++; });
+  return { leads:leads, tot:tot, impact:impact, agend:agend, vend:vend, receita:receita, porMsg:porMsg, porAd:porAd };
+}
+
+function _adKpi(t,v,c,sub){ return '<div style="flex:1;min-width:130px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+t+'</div><div style="font-size:28px;font-weight:800;color:'+(c||'var(--white)')+';line-height:1.1;">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>':'')+'</div>'; }
+function _adDayRenderPainel(id, camp, d){
+  function pct(a,b){return b>0?Math.round(a/b*100)+'%':'0%';}
+  var msgRows=Object.keys(d.porMsg).sort(function(a,b){return d.porMsg[b]-d.porMsg[a];}).map(function(m){
+    var n=d.porMsg[m]; var w=d.agend>0?Math.round(n/d.agend*100):0;
+    var act=(_adDay.filtroMsg===m)?'var(--purple3)':'var(--border)';
+    return '<div onclick="_adDayFiltro(\'msg\',\''+m.replace(/'/g,"")+'\')" style="cursor:pointer;background:var(--bg);border:1px solid '+act+';border-radius:8px;padding:8px 12px;margin-bottom:6px;"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--white);"><span>'+m+'</span><b>'+n+' ('+w+'%)</b></div><div style="height:4px;background:rgba(255,255,255,0.07);border-radius:2px;margin-top:5px;"><div style="height:4px;width:'+w+'%;background:var(--purple3);border-radius:2px;"></div></div></div>';
+  }).join('')||'<div style="font-size:12px;color:var(--muted);">Aguardando dados de disparo (o motor ainda não registrou mensagens).</div>';
+  var adRows=Object.keys(d.porAd).sort(function(a,b){return d.porAd[b].leads-d.porAd[a].leads;}).map(function(a){
+    var o=d.porAd[a]; var act=(_adDay.filtroAd===a)?'var(--purple3)':'var(--border)';
+    return '<div onclick="_adDayFiltro(\'ad\',\''+a.replace(/'/g,"")+'\')" style="cursor:pointer;background:var(--bg);border:1px solid '+act+';border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;justify-content:space-between;font-size:12px;color:var(--white);"><span>'+a+'</span><span style="color:var(--muted);">'+o.leads+' leads · <b style="color:var(--amber);">'+o.agend+'</b> ag · <b style="color:#4ade80;">'+o.vend+'</b> venda</span></div>';
+  }).join('')||'<div style="font-size:12px;color:var(--muted);">Sem dados.</div>';
+  var rows=d.leads.filter(function(l){ if(_adDay.filtroMsg&&(l.msg||'(sem registro)')!==_adDay.filtroMsg)return false; if(_adDay.filtroAd&&(l.ad||'(sem anúncio)')!==_adDay.filtroAd)return false; return true; })
+    .sort(function(a,b){return (b.vendeu?2:b.agendou?1:0)-(a.vendeu?2:a.agendou?1:0);})
+    .map(function(l){
+      var tel=(l.telFull||'').replace(/\D/g,'');
+      return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
+        '<td style="padding:8px 10px;font-size:12px;color:var(--white);font-weight:600;">'+(l.nome||'—')+'</td>'+
+        '<td style="padding:8px 10px;font-size:12px;">'+(tel?'<a href="https://wa.me/55'+tel+'" target="_blank" style="color:#25d366;text-decoration:none;">'+l.telFull+'</a>':'—')+'</td>'+
+        '<td style="padding:8px 10px;font-size:11px;color:var(--muted);">'+(l.variant==='reuniu'?'reuniu':'nunca')+'</td>'+
+        '<td style="padding:8px 10px;font-size:12px;">'+(l.agendou?'<span style="color:var(--amber);">✔ agendou</span>':'—')+'</td>'+
+        '<td style="padding:8px 10px;font-size:11px;color:var(--cyan);">'+(l.msg||'—')+'</td>'+
+        '<td style="padding:8px 10px;font-size:11px;color:var(--purple3);">'+(l.ad||'—')+'</td>'+
+        '<td style="padding:8px 10px;font-size:12px;">'+(l.vendeu?'<span style="color:#4ade80;">R$ '+Math.round(l.mrr).toLocaleString("pt-BR")+'</span>':'—')+'</td>'+
+      '</tr>';
+    }).join('');
+  return ''+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'+
+      '<div style="font-size:18px;font-weight:800;color:var(--white);">'+(camp.nome||id)+' <span style="font-size:12px;color:var(--muted);font-weight:400;">'+_adFmtDate(camp.inicio)+' → '+_adFmtDate(camp.fim)+'</span></div>'+
+      '<button onclick="adDayPainel()" class="btn btn-outline" style="padding:6px 12px;font-size:12px;"><i class="ti ti-refresh"></i> Atualizar</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'+
+      _adKpi('Inscritos',d.tot,'var(--white)')+
+      _adKpi('Impactados',d.impact,'#38bdf8',pct(d.impact,d.tot)+' da base')+
+      _adKpi('Agendaram',d.agend,'#fbbf24',pct(d.agend,d.impact||d.tot)+' dos impactados')+
+      _adKpi('Vendas',d.vend,'#4ade80',pct(d.vend,d.agend)+' dos agendados')+
+      _adKpi('Receita (MRR)','R$ '+Math.round(d.receita).toLocaleString('pt-BR'),'#4ade80')+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'+
+      '<div class="cb"><div class="cb-hd"><div class="cb-title">Qual mensagem agendou</div></div><div style="padding:14px;">'+msgRows+'</div></div>'+
+      '<div class="cb"><div class="cb-hd"><div class="cb-title">Origem por anúncio</div></div><div style="padding:14px;">'+adRows+'</div></div>'+
+    '</div>'+
+    (_adDay.filtroMsg||_adDay.filtroAd?'<div style="margin-bottom:8px;font-size:12px;color:var(--amber);">Filtro ativo — <a onclick="_adDay.filtroMsg=\'\';_adDay.filtroAd=\'\';adDayPainel();" style="cursor:pointer;color:var(--purple3);">limpar</a></div>':'')+
+    '<div class="cb"><div class="cb-hd"><div class="cb-title">Leads da campanha</div></div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:rgba(255,255,255,0.03);">'+
+      ['Lead','WhatsApp','Base','Agendou','Mensagem','Anúncio','Venda'].map(function(h){return '<th style="padding:8px 10px;text-align:left;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+h+'</th>';}).join('')+
+      '</tr></thead><tbody>'+(rows||'<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--muted);">Sem leads inscritos ainda.</td></tr>')+'</tbody></table></div></div>';
+}
+function _adDayFiltro(tipo,val){ if(tipo==='msg')_adDay.filtroMsg=(_adDay.filtroMsg===val?'':val); else _adDay.filtroAd=(_adDay.filtroAd===val?'':val); adDayPainel(); }
+
 
 function adShowTab(tab){
   var blitzEl = document.getElementById('ad-tab-blitz');
@@ -30259,7 +30422,7 @@ function campViradaInscrever(){
   var updates={};
   all.forEach(function(x){
     var key=(x.telFull||x.tel).replace(/[.#$\[\]]/g,'_'); if(!key)return;
-    updates['cadencia_camp_ativos/'+key]={startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};
+    updates['cadencia_camp_ativos/'+key]={campaignId:'virada-ago',startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};
   });
   fbDb.ref().update(updates).then(function(){
     fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now()});
