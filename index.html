@@ -30404,7 +30404,7 @@ function _campViradaLista(){
     // "até X / menos de / abaixo / no máximo" = TETO: só entra se o teto for MAIOR que o corte
     var _isTeto=/at[eé]\s|at[eé]$|menos de|menos que|abaixo|no m[aá]ximo/.test(_fatStr);
     if(_isTeto ? (fat<=_cut) : (fat<_cut)){out.excl.fat++;return;}
-    if(clientePhone[t]||o.status==='fechado'){out.excl.cliente++;return;}
+    if(clientePhone[t]||(window._campClienteExtraPhones&&window._campClienteExtraPhones[t])||o.status==='fechado'){out.excl.cliente++;return;}
     var mts=meetByPhone[t]||[];
     var futura=mts.some(function(m){var st=(m.status||'').toLowerCase();return (m.scheduledAt||0)>=now && st!=='done'&&st!=='noshow'&&st!=='cancelado'&&st!=='cancelled'&&st!=='reagendado';});
     if(futura||o.status==='reuniao'||o.status==='proposta'){out.excl.agendado++;return;}
@@ -30417,10 +30417,16 @@ function _campViradaLista(){
   return out;
 }
 function _campFmtK(n){return n>=1000?('R$'+(n/1000).toFixed(0)+'k'):('R$'+n);}
+async function _campLoadClientesExtra(){
+  var set={};
+  try{ var ctr=(typeof loadContratos==='function')?await loadContratos():[]; (ctr||[]).forEach(function(c){ if(!c||c.ativo===false)return; var t=_campNorm(c.telefone||c.tel||c.kanbanKey||''); if(t)set[t]=1; }); }catch(e){}
+  try{ var asn=window._assinaturasVendasCache||(typeof fbGet==='function'?await fbGet('assinaturas'):null)||{}; Object.keys(asn).forEach(function(k){ var r=asn[k]; if(!r||r.status!=='assinado')return; var t=_campNorm(r.telefone||''); if(t)set[t]=1; }); }catch(e){}
+  window._campClienteExtraPhones=set;
+}
 function campViradaMontar(){
   var el=document.getElementById('camp-virada-res'); if(!el)return;
   el.innerHTML='<div style="color:var(--muted);font-size:12px;"><i class="ti ti-loader ti-spin"></i> Montando lista...</div>';
-  setTimeout(function(){
+  _campLoadClientesExtra().then(function(){
     var r=_campViradaLista();
     var all=r.reuniu.concat(r.nunca);
     var total=all.length;
@@ -30444,7 +30450,7 @@ function campViradaMontar(){
       '</div>'+
       '<div style="font-size:11px;color:var(--amber);margin-top:10px;">Inscrever só grava a lista na trilha da campanha. O disparo depende do backend + validação em modo teste. Nada sai pra base sem seu OK.</div>';
     el.innerHTML=html;
-  },20);
+  });
 }
 function campViradaBaixarCSV(){
   var r=window._campViradaCache; if(!r){campViradaMontar();return;}
