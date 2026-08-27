@@ -2367,6 +2367,7 @@ async function handleCadenciaBuild(req, res) {
   var today = cadBRT(Date.now()).date;
   var dow = cadBRT(Date.now()).dow;
   var out = { period: period, today: today, enabled: cfg.enabled, totals: { candidates: 0, eligible: 0, queued: 0 }, skips: {} };
+  try { out.camp = await campBuildCore(period); } catch (e) { console.error("campBuild:", e); }
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA (config/cadencia/enabled=false)"; return res.status(200).json(out); }
   if (dow === 0) { out.note = "domingo: sem envio"; return res.status(200).json(out); }
   var ativos = (await db.ref("cadencia_ativos").once("value")).val() || {};
@@ -2404,6 +2405,7 @@ async function handleCadenciaDrain(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var cfg = await cadCfg();
   var out = { enabled: cfg.enabled, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
+  try { out.camp = await campDrainCore(); } catch (e) { console.error("campDrain:", e); }
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
   var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
   if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
@@ -3158,6 +3160,174 @@ async function handleCadenciaStop(req, res) {
 }
 // =================== FIM CADÊNCIA AUTOMÁTICA ===================
 
+// ======================= CADENCIA DE CAMPANHA (Audens Day) =======================
+// Trilha propria (cadencia_camp_*). Liga so com config/cadencia/campEnabled=true.
+// Reusa o slot global (CAD_SENDER_ID) -> respeita o intervalo de 300s entre TODOS os disparos.
+const CAD_CAMP_STOP_STATUS = { reuniao: 1, proposta: 1, fechado: 1, cliente: 1, ganho: 1 };
+const CAD_CAMP_TEMPLATES = {
+  reuniu: {
+    d1_manha: { text: "Oi, {{primeiroNome}}! Aqui é o {{especialistaNome}}, da Audens. A gente chegou a conversar e não rolou seguir na época — sem problema. Voltei porque abrimos uma condição de virada de mês: fecha até 31/08 e leva mês grátis (fecha 3, leva 4). Faz sentido a gente retomar rapidinho?", media: [] },
+    d1_tarde: { text: "{{primeiroNome}}, e olha esse caso: O Santo Burger já tinha agência (que nunca vendeu um hambúrguer) e, com a gente, cresceu +40% em 30 dias. Vale 15 min pra reavaliar com números novos?", media: [] },
+    d2_manha: { text: "Bom dia, {{primeiroNome}}! Sobre a virada: quem fecha até 31 leva 1 mês por nossa conta (fecha 3 leva 4 · fecha 6 leva 7). É o empurrão pra já começar no acelerador. Bora marcar 20 min?", media: [] },
+    d2_tarde: { text: "{{primeiroNome}}, só abrimos 10 vagas nessa condição de virada e a agenda tá enchendo rápido. Como a gente já se conhece, quero priorizar seu encaixe. Manhã ou tarde?", media: [] },
+    d3_manha: { text: "Bom dia, {{primeiroNome}}! Essa semana: Burguerhein saiu de R$35 mil pra R$50 mil, +44%, com 51% mais pedidos. Dá pra fazer parecido com a {{empresa}}. Ainda dá tempo de pegar a virada — quer os horários de hoje?", media: [] },
+    d3_tarde: { text: "{{primeiroNome}}, consigo te atender no fim de semana ou na segunda pra você reavaliar com calma — a condição encerra 31/08. Me diz um horário que eu travo pra você.", media: [] },
+    d4_manha: { text: "Bom dia, {{primeiroNome}}! A condição vira amanhã (31). Consigo abrir uma última reunião pra você garantir o mês grátis. Topa? Me responde que eu já mando o horário.", media: [] },
+    d4_tarde: { text: "{{primeiroNome}}, reta final: a virada encerra amanhã à noite. Se quer entrar com o mês grátis, é agora. Me chama que a gente resolve rápido.", media: [] },
+    d5_manha: { text: "{{primeiroNome}}, hoje é o último dia da condição de virada. Consigo uma última reunião ainda hoje pra você travar o mês grátis. Quer que eu segure um horário?", media: [] },
+    d5_tarde: { text: "{{primeiroNome}}, essa é a última mensagem sobre a virada — depois de hoje a condição sai do ar. Se fizer sentido, me responde nas próximas horas. Se não, tudo certo, sigo à disposição. 🙏", media: [] },
+    d6_manha: { text: "{{primeiroNome}}, a condição fechou ontem, mas consegui reabrir só até hoje pra alguns casos e lembrei de você. É de verdade a última janela pro mês grátis. Quer que eu segure uma vaga?", media: [] }
+  },
+  nunca: {
+    d1_manha: { text: "Oi, {{primeiroNome}}! Aqui é o {{especialistaNome}}, da Audens (marketing pra food service). Você chegou até a gente mas não chegamos a conversar. Abrimos uma condição de virada de mês — fecha até 31/08 e leva mês grátis — e queria muito te mostrar. Posso?", media: [] },
+    d1_tarde: { text: "{{primeiroNome}}, em 1 linha: a gente enche o delivery e o salão com tráfego + gestão que dão retorno. O Gerrá saiu de R$37 mil pra +R$120 mil/mês com a gente. Vale 15 min pra ver se faz sentido pra {{empresa}}?", media: [] },
+    d2_manha: { text: "Bom dia, {{primeiroNome}}! A virada dá mês grátis pra quem começa até 31 (fecha 3, leva 4). É a melhor janela do mês pra dar o primeiro passo sem peso — e só temos 10 vagas. Bora marcar uma call rápida?", media: [] },
+    d3_manha: { text: "Bom dia, {{primeiroNome}}! Naliati's: de R$37 mil pra R$73 mil em 60 dias com o método Audens. Ainda dá tempo de pegar a virada — quer que eu te mande os horários de hoje?", media: [] },
+    d4_manha: { text: "{{primeiroNome}}, a condição vira amanhã (31). Consigo abrir uma reunião pra você garantir o mês grátis. Topa? Te mando o horário.", media: [] },
+    d5_manha: { text: "{{primeiroNome}}, hoje é o último dia da virada. Última janela pra começar com o mês grátis. Quer que eu segure uma vaga?", media: [] },
+    d5_tarde: { text: "{{primeiroNome}}, última mensagem sobre a virada. Se fizer sentido, me responde hoje que eu te encaixo. Se não, tudo certo — sigo à disposição. 🙏", media: [] },
+    d6_manha: { text: "{{primeiroNome}}, reabri a condição só até hoje pra quem não conseguiu responder a tempo. Última chance do mês grátis. Quer que eu veja um horário?", media: [] }
+  }
+};
+
+function campTouchFor(ativo, period, todayDate) {
+  if (!ativo || (ativo.status && ativo.status !== "active") || !ativo.startedAt) return null;
+  var sd = cadBRT(ativo.startedAt).date;
+  var day = cadDaysBetween(sd, todayDate) + 1;
+  if (day < 1 || day > 6) return null;
+  var id = "d" + day + "_" + period;
+  var set = CAD_CAMP_TEMPLATES[ativo.variant] || CAD_CAMP_TEMPLATES.nunca;
+  var tpl = set[id];
+  if (!tpl) return null;
+  return { templateId: id, day: day, period: period };
+}
+async function campScheduledSet() {
+  // telefones (last9) com reuniao futura/ativa -> auto-stop
+  var set = {};
+  try {
+    var ms = (await db.ref("meetings").once("value")).val() || {};
+    var now = Date.now();
+    Object.keys(ms).forEach(function (mid) {
+      var m = ms[mid]; if (!m || m._hidden) return;
+      var st = String(m.status || "").toLowerCase();
+      var t = String(m.tel || "").replace(/\D/g, ""); if (t.length > 9) t = t.slice(-9); if (!t) return;
+      if ((m.scheduledAt || 0) >= now && st !== "done" && st !== "noshow" && st !== "cancelado" && st !== "cancelled" && st !== "reagendado") set[t] = 1;
+    });
+  } catch (e) {}
+  return set;
+}
+async function campValidate(key, period, todayDate, fromDrain, sched) {
+  var ativo = (await db.ref("cadencia_camp_ativos/" + key).once("value")).val();
+  if (!ativo) return { eligible: false, reason: "not_found" };
+  if (ativo.status && ativo.status !== "active") return { eligible: false, reason: "not_active" };
+  var tel = String(ativo.tel || "").replace(/\D/g, ""); if (tel.length < 10) return { eligible: false, reason: "invalid_phone" };
+  var last9 = tel.length > 9 ? tel.slice(-9) : tel;
+  if (sched && sched[last9]) { return { eligible: false, reason: "meeting_scheduled" }; }
+  var kb = (await db.ref("kanban/" + key).once("value")).val() || {};
+  if (CAD_CAMP_STOP_STATUS[kb.status || ""]) return { eligible: false, reason: (kb.status === "reuniao" ? "meeting_scheduled" : "closed_or_won") };
+  var opt = (await db.ref("whatsapp_optout/" + key).once("value")).val(); if (opt && opt.optOut) return { eligible: false, reason: "opt_out" };
+  var touch = campTouchFor(ativo, period, todayDate); if (!touch) return { eligible: false, reason: "outside_cadence" };
+  var already = (await db.ref("cadencia_camp_msg/" + key + "/" + touch.templateId).once("value")).val();
+  if (already && already.status === "sent") return { eligible: false, reason: "already_sent" };
+  if (!fromDrain && already && (already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status };
+  var esp = ativo.especialista || (typeof cadResolveEsp === "function" ? cadResolveEsp(ativo.fat).nome : "");
+  var lead = { nome: ativo.nome || "", telefone: tel, especialistaNome: esp, empresa: ativo.empresa || "" };
+  return { eligible: true, ativo: ativo, touch: touch, lead: lead };
+}
+// ROTA /camp-build?secret=...&period=manha|tarde
+async function handleCampBuild(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var period = (req.query.period || "").toLowerCase();
+  if (period !== "manha" && period !== "tarde") return res.status(400).json({ ok: false, error: "period deve ser manha|tarde" });
+  return res.status(200).json(await campBuildCore(period));
+}
+async function campBuildCore(period) {
+  var cfg = await cadCfg();
+  var campOn = (await db.ref("config/cadencia/campEnabled").once("value")).val();
+  var today = cadBRT(Date.now()).date, dow = cadBRT(Date.now()).dow;
+  var out = { camp: true, period: period, today: today, campEnabled: !!campOn, totals: { candidates: 0, eligible: 0, queued: 0 }, skips: {} };
+  if (!campOn) { out.note = "campanha DESLIGADA (config/cadencia/campEnabled=false)"; return res.status(200).json(out); }
+  var ativos = (await db.ref("cadencia_camp_ativos").once("value")).val() || {};
+  var keys = Object.keys(ativos); out.totals.candidates = keys.length;
+  var sched = await campScheduledSet();
+  var batchId = "camp_" + period + "_" + today.replace(/-/g, "") + "_" + Date.now();
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var v = await campValidate(key, period, today, false, sched);
+    if (!v.eligible) {
+      out.skips[v.reason] = (out.skips[v.reason] || 0) + 1;
+      if (v.reason === "meeting_scheduled" || v.reason === "closed_or_won" || v.reason === "opt_out") { try { await db.ref("cadencia_camp_ativos/" + key + "/status").set("stopped"); } catch (e) {} }
+      continue;
+    }
+    out.totals.eligible++;
+    var itemRef = db.ref("cadencia_camp_fila/" + key + "_" + v.touch.templateId);
+    var created = false;
+    await itemRef.transaction(function (cur) { if (cur) return; created = true; return { leadKey: key, campaignId: v.ativo.campaignId || "virada-ago", templateId: v.touch.templateId, day: v.touch.day, period: period, variant: v.ativo.variant || "nunca", status: "queued", batchId: batchId, scheduledAt: 0, createdAt: Date.now() }; });
+    if (!created) { out.skips["already_queued"] = (out.skips["already_queued"] || 0) + 1; continue; }
+    var scheduledAt = await cadReserveSlot(cfg.intervalSeconds);
+    await itemRef.update({ scheduledAt: scheduledAt });
+    await db.ref("cadencia_camp_msg/" + key + "/" + v.touch.templateId).update({ status: "queued", templateId: v.touch.templateId, scheduledAt: scheduledAt, batchId: batchId });
+    out.totals.queued++;
+  }
+  await db.ref("cadencia_camp_batches/" + batchId).set({ period: period, date: today, createdAt: Date.now(), totals: out.totals, skips: out.skips });
+  return out;
+}
+// ROTA /camp-drain?secret=...
+async function handleCampDrain(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  return res.status(200).json(await campDrainCore());
+}
+async function campDrainCore() {
+  var cfg = await cadCfg();
+  var campOn = (await db.ref("config/cadencia/campEnabled").once("value")).val();
+  var out = { camp: true, campEnabled: !!campOn, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
+  if (!campOn) { out.note = "campanha DESLIGADA"; return res.status(200).json(out); }
+  var fila = (await db.ref("cadencia_camp_fila").once("value")).val() || {};
+  var now = Date.now(), today = cadBRT(now).date;
+  var sched = await campScheduledSet();
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  ids.sort(function (a, b) { return (fila[a].scheduledAt || 0) - (fila[b].scheduledAt || 0); });
+  ids = ids.slice(0, 15);
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i]; var itemRef = db.ref("cadencia_camp_fila/" + id);
+    var locked = false;
+    await itemRef.transaction(function (cur) { if (!cur || cur.status !== "queued") return cur; cur.status = "processing"; cur.processingAt = Date.now(); locked = true; return cur; });
+    if (!locked) continue;
+    out.processed++;
+    var item = (await itemRef.once("value")).val(); var key = item.leadKey;
+    var v = await campValidate(key, item.period, today, true, sched);
+    var msgRef = db.ref("cadencia_camp_msg/" + key + "/" + item.templateId);
+    if (!v.eligible) {
+      await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
+      await msgRef.update({ status: "cancelled_before_send", reason: v.reason });
+      if (v.reason === "meeting_scheduled" || v.reason === "closed_or_won" || v.reason === "opt_out") { try { await db.ref("cadencia_camp_ativos/" + key + "/status").set("stopped"); } catch (e) {} }
+      out.cancelled++; continue;
+    }
+    var set = CAD_CAMP_TEMPLATES[v.ativo.variant] || CAD_CAMP_TEMPLATES.nunca;
+    var tpl = set[item.templateId];
+    if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
+    var lead = v.lead;
+    var r = cadRender(tpl.text, lead);
+    if (r.missing.length) { await itemRef.update({ status: "blocked", reason: "missing_variable" }); await msgRef.update({ status: "blocked" }); out.failed++; continue; }
+    var leadPhone = String(lead.telefone || "").replace(/\D/g, "");
+    var targetPhone = cfg.testPhone ? cfg.testPhone : leadPhone;
+    var body = cfg.testPhone ? ("[TESTE camp → lead " + cadMask(leadPhone) + " · " + item.templateId + "]\n\n" + r.text) : r.text;
+    try {
+      await enviarMensagemWhatsapp(targetPhone, body);
+      if (tpl.media && tpl.media.length) { for (var mi = 0; mi < tpl.media.length; mi++) { var md = tpl.media[mi]; if (!md || !md.url) continue; try { await enviarImagemWhatsapp(targetPhone, md.url, cadRender(md.caption || "", lead).text); } catch (e) {} } }
+      await itemRef.update({ status: "sent", sentAt: Date.now() });
+      await msgRef.update({ status: "sent", sentAt: Date.now(), zapiTo: cadMask(targetPhone) });
+      await db.ref("cadencia_camp_events").push({ type: "message_sent", campaignId: item.campaignId || "virada-ago", tel: leadPhone, leadKey: key, templateId: item.templateId, specialist: lead.especialistaNome || "", at: Date.now() });
+      out.sent++;
+    } catch (e) {
+      var att = (item.attemptCount || 0) + 1;
+      if (att >= 3) { await itemRef.update({ status: "failed", attemptCount: att, lastError: String(e && e.message || e) }); await msgRef.update({ status: "failed" }); out.failed++; }
+      else { await itemRef.update({ status: "queued", attemptCount: att, scheduledAt: Date.now() + 5 * 60000 }); }
+    }
+  }
+  return out;
+}
+
 http('receberLead', async (req, res) => {
   // CORS: o CRM (index.html) chama /agendar via fetch POST com
   // Content-Type: application/json, o que faz o navegador disparar um
@@ -3228,6 +3398,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/cadencia-drain") {
       return await handleCadenciaDrain(req, res);
+    }
+    if (path === "/camp-build") {
+      return await handleCampBuild(req, res);
+    }
+    if (path === "/camp-drain") {
+      return await handleCampDrain(req, res);
     }
     if (path === "/cadencia-stop") {
       return await handleCadenciaStop(req, res);
