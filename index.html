@@ -30376,6 +30376,14 @@ function _csdrCard(t){ return '<div style="background:var(--bg2);border:1px soli
 function _campNorm(t){t=(t||'').replace(/\D/g,'');return t.length>9?t.slice(-9):t;}
 function _campEntrouAgosto(ts){if(!ts)return false;var d=new Date(ts);return d.getFullYear()===2026&&d.getMonth()===7;}
 function _campCutVal(){ var e=document.getElementById('camp-cut'); return e?(parseInt(e.value)||15000):15000; }
+function _campDateRange(){
+  var de=(document.getElementById('camp-de')||{}).value;
+  var ate=(document.getElementById('camp-ate')||{}).value;
+  var from=de?new Date(de+'T00:00:00').getTime():new Date(2026,7,1).getTime();
+  var to=ate?new Date(ate+'T23:59:59').getTime():new Date(2026,7,31,23,59,59).getTime();
+  return {from:from,to:to};
+}
+function _campInRange(ts){ if(!ts)return false; var r=_campDateRange(); return ts>=r.from && ts<=r.to; }
 function _campViradaLista(){
   var now=Date.now();
   var meetByPhone={};
@@ -30389,7 +30397,7 @@ function _campViradaLista(){
   Object.keys(byPhone).forEach(function(t){
     var o=byPhone[t];
     if(!o.tel){out.excl.semtel++;return;}
-    if(!_campEntrouAgosto(o.createdAt)){out.excl.data++;return;}
+    if(!_campInRange(o.createdAt)){out.excl.data++;return;}
     var _fatStr=String(o.faturamento||'').toLowerCase();
     var _cut=_campCutVal();
     var fat=parseFaturamento(_fatStr);
@@ -30429,7 +30437,7 @@ function campViradaMontar(){
         box('Base do Lucas (≥40k)',lucas,'#a78bfa')+
         box('Base do João (<40k)',joao,'#a78bfa')+
       '</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Excluídos: '+r.excl.data+' fora de agosto · '+r.excl.fat+' &lt;'+Math.round(_campCutVal()/1000)+'k · '+r.excl.agendado+' com reunião agendada · '+r.excl.cliente+' já clientes · '+r.excl.semtel+' sem telefone.</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Excluídos: '+r.excl.data+' fora do período · '+r.excl.fat+' &lt;'+Math.round(_campCutVal()/1000)+'k · '+r.excl.agendado+' com reunião agendada · '+r.excl.cliente+' já clientes · '+r.excl.semtel+' sem telefone.</div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
         '<button onclick="campViradaBaixarCSV()" class="btn btn-outline" style="padding:8px 14px;font-size:12px;"><i class="ti ti-download"></i> Baixar lista (CSV) pra conferir</button>'+
         '<button onclick="campViradaInscrever()" class="btn" style="padding:8px 16px;font-size:12px;background:var(--purple);border:1px solid var(--purple);color:#fff;font-weight:700;"><i class="ti ti-user-plus"></i> Inscrever '+total+' na Virada (não dispara ainda)</button>'+
@@ -30472,7 +30480,8 @@ function campViradaInscrever(){
 function renderCampViradaCard(){
   return _csdrCard(
     '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:8px;"><i class="ti ti-rocket" style="color:#fbbf24;margin-right:6px;"></i>Campanha Virada de Agosto</div>'+
-    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Público: entrou em <b>agosto/2026</b> + faturamento <b>acima do corte selecionado</b> + <b>sem reunião agendada</b> + não-cliente. Especialista: ≥40k → Lucas · &lt;40k → João. Trilha própria (<code>cadencia_camp</code>) — não mexe na cadência do João.</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Público: entrou <b>no período escolhido</b> + faturamento <b>acima do corte selecionado</b> + <b>sem reunião agendada</b> + não-cliente. Especialista: ≥40k → Lucas · &lt;40k → João. Trilha própria (<code>cadencia_camp</code>) — não mexe na cadência do João.</div>'+
+    '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><label style="font-size:11px;color:var(--muted);margin-right:4px;text-transform:uppercase;letter-spacing:1px;">Entrou entre:</label><input type="date" id="camp-de" value="2026-08-01" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"><span style="color:var(--muted);font-size:12px;">até</span><input type="date" id="camp-ate" value="2026-08-31" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"></div>'+
     '<div style="margin-bottom:12px;"><label style="font-size:11px;color:var(--muted);margin-right:8px;text-transform:uppercase;letter-spacing:1px;">Corte mínimo de faturamento:</label><select id="camp-cut" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;"><option value="10000">≥ 10k</option><option value="15000" selected>≥ 15k</option><option value="20000">≥ 20k</option><option value="25000">≥ 25k</option><option value="40000">≥ 40k</option></select></div>'+
     '<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button>'+
     '<div id="camp-virada-res" style="margin-top:14px;"></div>'
