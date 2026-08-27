@@ -21242,6 +21242,7 @@ function renderAudensDay(){
     '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;">'+
       '<button id="adtab-painel" onclick="adDayTab(\'painel\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;"><i class="ti ti-chart-histogram"></i> Painel</button>'+
       '<button id="adtab-camp" onclick="adDayTab(\'camp\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;"><i class="ti ti-calendar-plus"></i> Campanhas</button>'+
+      '<button id="adtab-disparos" onclick="adDayTab(\'disparos\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;"><i class="ti ti-bulb"></i> Disparos</button>'+
     '</div>'+
     '<div id="ad2-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando...</div>'+
   '</div>';
@@ -21249,15 +21250,15 @@ function renderAudensDay(){
 
 function adDayTab(t){
   _adDay.tab=t;
-  ['painel','camp'].forEach(function(x){var b=document.getElementById('adtab-'+x);if(b){b.style.borderBottomColor=(x===t)?'var(--purple)':'transparent';b.style.color=(x===t)?'var(--purple3)':'var(--muted)';}});
-  if(t==='camp') adDayRenderCampanhas(); else adDayPainel();
+  ['painel','camp','disparos'].forEach(function(x){var b=document.getElementById('adtab-'+x);if(b){b.style.borderBottomColor=(x===t)?'var(--purple)':'transparent';b.style.color=(x===t)?'var(--purple3)':'var(--muted)';}});
+  if(t==='camp') adDayRenderCampanhas(); else if(t==='disparos') adDayRenderDisparos(); else adDayPainel();
 }
 
 async function adDayInit(){
   try{
     if(!fbDb && typeof initFirebase==='function') initFirebase();
     var c = await fbGet('audensday_campanhas'); _adDay.campanhas = c||{};
-    try{ _adDay.campEnabled = await fbGet('config/cadencia/campEnabled'); _adDay.testPhone = await fbGet('config/cadencia/testPhone'); }catch(e){}
+    try{ var _cf = await fbGet('config/cadencia')||{}; _adDay.flags={enabled:_cf.enabled===true,reatEnabled:_cf.reatEnabled===true,campEnabled:_cf.campEnabled===true}; _adDay.campEnabled=_cf.campEnabled===true; }catch(e){ _adDay.flags={}; }
     if(!Object.keys(_adDay.campanhas).length){ await adDaySeedVirada(); }
     if(!_adDay.sel) _adDay.sel = Object.keys(_adDay.campanhas)[0];
     adDayTab(_adDay.tab);
@@ -21292,13 +21293,7 @@ function adDayRenderCampanhas(){
       '</div>'+
     '</div>';
   }).join('');
-  var _tp=_adDay.testPhone||''; var _on=!!_adDay.campEnabled;
-  var disparo='<div class="cb" style="margin-bottom:18px;border-color:'+(_on?'rgba(34,197,94,0.4)':'rgba(245,158,11,0.35)')+';"><div style="padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
-    '<div><label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--white);font-weight:700;"><input type="checkbox" id="adcamp-enabled" '+(_on?'checked':'')+' onchange="adDayToggleDisparo(this.checked)" style="width:18px;height:18px;accent-color:#22c55e;"> Disparo automático da campanha</label>'+
-    '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;">'+(_tp?('🧪 MODO TESTE — tudo vai só para <b>'+_tp+'</b>'):'🔴 AO VIVO — enviará para os leads reais (sem número de teste)')+' · intervalo de 300s · para sozinho quando o lead agenda. Número de teste em <b>IA | SDR</b>.</div></div>'+
-    '<span style="font-size:12px;font-weight:800;color:'+(_on?'#4ade80':'#fbbf24')+';">'+(_on?'LIGADO':'DESLIGADO')+'</span>'+
-  '</div></div>';
-  el.innerHTML= disparo+
+  el.innerHTML=
     '<div class="cb" style="margin-bottom:18px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-calendar-plus" style="color:var(--purple3);margin-right:6px;"></i>Nova campanha (Audens Day)</div></div>'+
     '<div style="padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'+
       '<div><label style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px;">Nome</label><input id="adc-novo-nome" placeholder="Ex.: Virada de Setembro" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 12px;"></div>'+
@@ -21328,11 +21323,34 @@ function adDaySalvarDatas(id){
   adDayRenderCampanhas();
 }
 function adDaySelecionar(id){ _adDay.sel=id; _adDay.filtroMsg=''; _adDay.filtroAd=''; adDayTab('painel'); }
-function adDayToggleDisparo(on){
-  if(on){ var tp=_adDay.testPhone||''; if(!confirm(tp?('LIGAR disparo em MODO TESTE (tudo vai só para '+tp+')?'):'ATENÇÃO: não há número de teste configurado. LIGAR vai enviar para os LEADS REAIS. Confirmar?')){ var cb=document.getElementById('adcamp-enabled'); if(cb)cb.checked=false; return; } }
-  _adDay.campEnabled=!!on;
-  if(fbDb) fbDb.ref('config/cadencia/campEnabled').set(!!on);
-  adDayRenderCampanhas();
+function _adSwitch(flag,on,titulo,desc,cor){
+  return '<div style="background:var(--bg2);border:1px solid '+(on?cor:'var(--border)')+';border-radius:14px;padding:18px 20px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;">'+
+    '<div style="flex:1;"><div style="font-size:15px;font-weight:800;color:var(--white);">'+titulo+' <span style="font-size:12px;font-weight:800;color:'+(on?'#4ade80':'var(--muted)')+';margin-left:6px;">'+(on?'● LIGADO':'○ DESLIGADO')+'</span></div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+desc+'</div></div>'+
+    '<label style="position:relative;display:inline-block;width:62px;height:34px;flex-shrink:0;cursor:pointer;">'+
+      '<input type="checkbox" '+(on?'checked':'')+' onchange="adDayToggleFlag(\''+flag+'\',this.checked)" style="opacity:0;width:0;height:0;">'+
+      '<span style="position:absolute;inset:0;background:'+(on?'#22c55e':'#4b5563')+';border-radius:34px;transition:.2s;box-shadow:inset 0 1px 3px rgba(0,0,0,.4);"></span>'+
+      '<span style="position:absolute;top:4px;left:'+(on?'32px':'4px')+';width:26px;height:26px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.4);"></span>'+
+    '</label>'+
+  '</div>';
+}
+function adDayRenderDisparos(){
+  var el=document.getElementById('ad2-content'); if(!el)return;
+  var f=_adDay.flags||{};
+  el.innerHTML=
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;"><i class="ti ti-bulb" style="color:#fbbf24;"></i> Liga/desliga de cada motor de disparo. Todos respeitam o intervalo de <b>300s</b> e param sozinhos quando o lead agenda. Ao ligar, envia para os <b>leads reais</b>.</div>'+
+    _adSwitch('campEnabled',!!f.campEnabled,'Campanha Virada (Audens Day)','Dispara as sequências da campanha para os leads inscritos (trilha cadencia_camp).','rgba(34,197,94,0.45)')+
+    _adSwitch('enabled',!!f.enabled,'Cadência do João (entrada + no-show)','Cadência automática de novos leads qualificados e recuperação de no-show.','rgba(56,189,248,0.45)')+
+    _adSwitch('reatEnabled',!!f.reatEnabled,'Reativação da base','Leads +30 dias parados · 1 msg a cada 15 dias · a partir das 17h.','rgba(167,139,250,0.45)')+
+    '<div style="font-size:11px;color:var(--muted);margin-top:6px;">As mensagens e o número da Cadência do João continuam configuráveis em <b>IA | SDR</b>.</div>';
+}
+function adDayToggleFlag(flag,on){
+  if(on && flag==='campEnabled'){ if(!confirm('Ligar o disparo da Campanha Virada? As mensagens vão para os LEADS REAIS inscritos, 1 a cada 300s.')){ adDayRenderDisparos(); return; } }
+  if(on && flag==='enabled'){ if(!confirm('Ligar a Cadência do João? Vai enviar automaticamente para os leads reais.')){ adDayRenderDisparos(); return; } }
+  _adDay.flags=_adDay.flags||{}; _adDay.flags[flag]=!!on;
+  if(flag==='campEnabled')_adDay.campEnabled=!!on;
+  if(fbDb) fbDb.ref('config/cadencia/'+flag).set(!!on);
+  adDayRenderDisparos();
 }
 
 // ---------- PAINEL ----------
