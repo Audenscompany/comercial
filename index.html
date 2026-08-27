@@ -30176,11 +30176,112 @@ function renderMotivacional(){
 var CAD_TPL_DEFAULT = [{"id": "d1_manha", "day": 1, "period": "manha", "cond": false, "intake": true, "text": "Oi, {{primeiroNome}}! Tudo bem? 👋\n\nAqui é o João, da Audens 🙂 Vi seu cadastro agora.\n\nEu sou o responsável por fazer esse primeiro contato e tentar conseguir um horário seu com o {{especialistaNome}}, que é um dos nossos especialistas.\n\nQueria entender rapidinho seu momento.\n\nHoje você consegue falar por alguns minutos?", "media": []}, {"id": "d1_tarde", "day": 1, "period": "tarde", "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}! João aqui de novo 👊\n\nDei uma olhada no seu cadastro e, pelo seu momento, quero tentar te colocar para conversar direto com o {{especialistaNome}}.\n\nEle também é dono de operação de delivery e vive isso na prática 🍔\n\nPara você costuma ser melhor falar de manhã ou à tarde?", "media": []}, {"id": "d2_manha", "day": 2, "period": "manha", "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nUma pergunta rápida antes de eu olhar a agenda do {{especialistaNome}}:\n\nHoje, qual é o principal ponto que você gostaria de melhorar no seu delivery? 📈\n\nPode me responder bem resumido mesmo.", "media": []}, {"id": "d2_tarde", "day": 2, "period": "tarde", "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nTe perguntei porque aqui na Audens quem conversa com você não é alguém que conhece delivery só na teoria.\n\nO {{especialistaNome}} também vive operação no dia a dia 🔥\n\nSe fizer sentido, eu consigo olhar alguns horários na agenda dele para vocês conversarem.\n\nQuer que eu veja? 📅", "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Resultado real de um cliente com um delivery parecido com o seu 🚀 Hoje vende mais de 140 mil/mês com o Método Audens. É esse tipo de virada que o {{especialistaNome}} pode te ajudar a construir."}]}, {"id": "d3_manha", "day": 3, "period": "manha", "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou organizando alguns horários com o {{especialistaNome}} e lembrei do seu cadastro.\n\nSe eu conseguir encaixar vocês, qual período seria mais tranquilo para você?\n\nManhã ou tarde? 🕐", "media": []}, {"id": "d3_tarde", "day": 3, "period": "tarde", "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSó para te dar um pouco mais de contexto: a Audens foi criada por gente que também é dona de delivery 🍔\n\nO Lucas e o Gustavo têm operação própria e vivem na prática os desafios de gestão e crescimento desse mercado.\n\nPor isso achei válido tentar colocar você para falar com o {{especialistaNome}}.\n\nQuer que eu procure um horário? 📅", "media": []}, {"id": "d4_manha", "day": 4, "period": "manha", "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nQueria só entender uma coisa para eu não ficar te chamando sem necessidade 🙏\n\nVocê ainda quer conversar sobre como melhorar os resultados do seu delivery?\n\nSe sim, eu vejo um horário com o {{especialistaNome}} para você.", "media": []}, {"id": "d4_tarde", "day": 4, "period": "tarde", "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nPra facilitar, já olhei a agenda do {{especialistaNome}} e separei alguns horários pra vocês conversarem 👇\n\n{{horarios}}\n\nMe responde qual fica melhor pra você que eu já confirmo com ele 👍", "media": []}, {"id": "d5_manha", "day": 5, "period": "manha", "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou fechando meus acompanhamentos e seu contato ainda ficou aqui comigo.\n\nAntes de encerrar, queria tentar uma última vez te colocar para conversar com o {{especialistaNome}}.\n\nSe ainda fizer sentido para você, me responde \"sim\" que eu já olho a agenda dele 👍", "media": []}, {"id": "d5_tarde", "day": 5, "period": "tarde", "cond": false, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nVou encerrar meus contatos por aqui para não ficar insistindo com você 🙂\n\nSe quiser conversar com o {{especialistaNome}} depois, pode responder essa mensagem que eu mesmo vejo um horário para vocês.\n\nAbraço,\nJoão 👊", "media": []}];
 var _csdrTpl = {}; // {id:{text,version,...}} carregado do Firebase
 function _csdrCard(t){ return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;">'+t+'</div>'; }
+// ===================== CAMPANHA "VIRADA DE AGOSTO" =====================
+// Filtro do publico (frontend) + inscricao na trilha nova cadencia_camp.
+// Publico: entrou em agosto/2026 + faturamento >=20k + SEM reuniao agendada + nao-cliente.
+// Variante: 'reuniu' (tem reuniao passada, inclui no-show) vs 'nunca' (nunca reuniu).
+// Especialista: >=40k -> Lucas ; senao -> Joao.
+function _campNorm(t){t=(t||'').replace(/\D/g,'');return t.length>9?t.slice(-9):t;}
+function _campEntrouAgosto(ts){if(!ts)return false;var d=new Date(ts);return d.getFullYear()===2026&&d.getMonth()===7;}
+function _campViradaLista(){
+  var now=Date.now();
+  var meetByPhone={};
+  Object.keys(meetings||{}).forEach(function(mid){var m=meetings[mid];if(!m||m._hidden)return;var t=_campNorm(m.tel);if(!t)return;(meetByPhone[t]=meetByPhone[t]||[]).push(m);});
+  var clientePhone={};
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId||fid];var t=_campNorm((fu.tel)||(m&&m.tel));if(t)clientePhone[t]=1;});
+  var byPhone={};
+  Object.keys(kanbanData||{}).forEach(function(kk){var k=kanbanData[kk];if(!k)return;var t=_campNorm(k.telefone);if(!t)return;var o=byPhone[t]=byPhone[t]||{};o.tel=o.tel||k.telefone;o.nome=k.nome||o.nome;o.empresa=k.empresa||o.empresa;o.faturamento=k.faturamento||o.faturamento;o.status=k.status||o.status;o.createdAt=o.createdAt||k.createdAt;o.kkey=kk;});
+  (typeof allLeads!=='undefined'&&allLeads?allLeads:[]).forEach(function(l){if(!l)return;var t=_campNorm(l.telefone);if(!t)return;var o=byPhone[t]=byPhone[t]||{};o.tel=o.tel||l.telefone;o.nome=o.nome||l.nome;o.empresa=o.empresa||l.empresa;o.faturamento=o.faturamento||l.faturamento;o.createdAt=o.createdAt||l._createdAt;});
+  var out={reuniu:[],nunca:[],excl:{data:0,fat:0,agendado:0,cliente:0,semtel:0}};
+  Object.keys(byPhone).forEach(function(t){
+    var o=byPhone[t];
+    if(!o.tel){out.excl.semtel++;return;}
+    if(!_campEntrouAgosto(o.createdAt)){out.excl.data++;return;}
+    var fat=parseFaturamento(String(o.faturamento||''));
+    if(fat<20000){out.excl.fat++;return;}
+    if(clientePhone[t]||o.status==='fechado'){out.excl.cliente++;return;}
+    var mts=meetByPhone[t]||[];
+    var futura=mts.some(function(m){var st=(m.status||'').toLowerCase();return (m.scheduledAt||0)>=now && st!=='done'&&st!=='noshow'&&st!=='cancelado'&&st!=='cancelled'&&st!=='reagendado';});
+    if(futura||o.status==='reuniao'||o.status==='proposta'){out.excl.agendado++;return;}
+    var passada=mts.length>0;
+    var esp=fat>=40000?'Lucas':'João';
+    var rec={tel:t,telFull:(o.tel||'').replace(/\D/g,''),nome:o.nome||'',empresa:o.empresa||'',fat:fat,esp:esp,variant:passada?'reuniu':'nunca',kkey:o.kkey||''};
+    (passada?out.reuniu:out.nunca).push(rec);
+  });
+  window._campViradaCache=out;
+  return out;
+}
+function _campFmtK(n){return n>=1000?('R$'+(n/1000).toFixed(0)+'k'):('R$'+n);}
+function campViradaMontar(){
+  var el=document.getElementById('camp-virada-res'); if(!el)return;
+  el.innerHTML='<div style="color:var(--muted);font-size:12px;"><i class="ti ti-loader ti-spin"></i> Montando lista...</div>';
+  setTimeout(function(){
+    var r=_campViradaLista();
+    var all=r.reuniu.concat(r.nunca);
+    var total=all.length;
+    var lucas=all.filter(function(x){return x.esp==='Lucas';}).length;
+    var joao=total-lucas;
+    var box=function(t,v,c){return '<div style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+t+'</div><div style="font-size:26px;font-weight:800;color:'+(c||'var(--white)')+';line-height:1.1;">'+v+'</div></div>';};
+    var html=''+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
+        box('Total elegível',total,'#4ade80')+
+        box('Reuniu / não fechou',r.reuniu.length,'#fbbf24')+
+        box('Nunca reuniu',r.nunca.length,'#38bdf8')+
+      '</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
+        box('Base do Lucas (≥40k)',lucas,'#a78bfa')+
+        box('Base do João (<40k)',joao,'#a78bfa')+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Excluídos: '+r.excl.data+' fora de agosto · '+r.excl.fat+' &lt;20k · '+r.excl.agendado+' com reunião agendada · '+r.excl.cliente+' já clientes · '+r.excl.semtel+' sem telefone.</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+        '<button onclick="campViradaBaixarCSV()" class="btn btn-outline" style="padding:8px 14px;font-size:12px;"><i class="ti ti-download"></i> Baixar lista (CSV) pra conferir</button>'+
+        '<button onclick="campViradaInscrever()" class="btn" style="padding:8px 16px;font-size:12px;background:var(--purple);border:1px solid var(--purple);color:#fff;font-weight:700;"><i class="ti ti-user-plus"></i> Inscrever '+total+' na Virada (não dispara ainda)</button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--amber);margin-top:10px;">Inscrever só grava a lista na trilha da campanha. O disparo depende do backend + validação em modo teste. Nada sai pra base sem seu OK.</div>';
+    el.innerHTML=html;
+  },20);
+}
+function campViradaBaixarCSV(){
+  var r=window._campViradaCache; if(!r){campViradaMontar();return;}
+  var rows=[['nome','telefone','empresa','faturamento','variante','especialista']];
+  r.reuniu.concat(r.nunca).forEach(function(x){rows.push([x.nome,x.telFull,x.empresa,x.fat,x.variant,x.esp]);});
+  var csv=rows.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='virada_lista.csv';a.click();
+}
+function campViradaInscrever(){
+  var r=window._campViradaCache; if(!r){alert('Monte a lista primeiro.');return;}
+  var all=r.reuniu.concat(r.nunca);
+  if(!all.length){alert('Lista vazia.');return;}
+  if(!confirm('Inscrever '+all.length+' leads na Campanha Virada?\n\nIsso só grava a lista (cadencia_camp). NÃO dispara mensagem — o envio só acontece depois do backend + teste.'))return;
+  if(!fbDb&&typeof initFirebase==='function')initFirebase();
+  // startedAt = amanhã 07:00
+  var d=new Date();d.setDate(d.getDate()+1);d.setHours(7,0,0,0);var startedAt=d.getTime();
+  var updates={};
+  all.forEach(function(x){
+    var key=(x.telFull||x.tel).replace(/[.#$\[\]]/g,'_'); if(!key)return;
+    updates['cadencia_camp_ativos/'+key]={startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};
+  });
+  fbDb.ref().update(updates).then(function(){
+    fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now()});
+    var el=document.getElementById('camp-virada-res');
+    if(el)el.insertAdjacentHTML('afterbegin','<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;"><b>'+all.length+' leads inscritos</b> na Virada (start amanhã 07h). Falta: backend + teste antes de disparar.</div>');
+  }).catch(function(e){alert('Erro ao inscrever: '+e.message);});
+}
+function renderCampViradaCard(){
+  return _csdrCard(
+    '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:8px;"><i class="ti ti-rocket" style="color:#fbbf24;margin-right:6px;"></i>Campanha Virada de Agosto</div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Público: entrou em <b>agosto/2026</b> + faturamento <b>≥20k</b> + <b>sem reunião agendada</b> + não-cliente. Especialista: ≥40k → Lucas · &lt;40k → João. Trilha própria (<code>cadencia_camp</code>) — não mexe na cadência do João.</div>'+
+    '<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button>'+
+    '<div id="camp-virada-res" style="margin-top:14px;"></div>'
+  );
+}
+
 function renderConfigSDR(){
   var inp='width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:13px;padding:10px 12px;outline:none;box-sizing:border-box;';
   var lbl='display:block;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;';
   var H='<div class="page active" id="pg-config-sdr" style="max-width:820px;">'+
     '<div class="page-header"><div><div class="page-title">IA | SDR</div><div class="page-sub">Cadência automática do João · mensagens, número de teste e disparo</div></div></div>'+
+    renderCampViradaCard()+
     _csdrCard(
       '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:14px;"><i class="ti ti-robot" style="color:var(--purple3);margin-right:6px;"></i>Configuração da cadência</div>'+
       '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--white);margin-bottom:16px;"><input type="checkbox" id="csdr-enabled" style="width:18px;height:18px;accent-color:#22c55e;"> <b>Cadência ligada</b> <span id="csdr-enabled-tag" style="font-size:11px;color:var(--muted);"></span></label>'+
