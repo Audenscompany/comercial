@@ -21242,7 +21242,6 @@ function renderAudensDay(){
     '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;">'+
       '<button id="adtab-painel" onclick="adDayTab(\'painel\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid var(--purple);color:var(--purple3);background:transparent;"><i class="ti ti-chart-histogram"></i> Painel</button>'+
       '<button id="adtab-camp" onclick="adDayTab(\'camp\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;"><i class="ti ti-calendar-plus"></i> Campanhas</button>'+
-      '<button id="adtab-disparos" onclick="adDayTab(\'disparos\')" class="ad2-tab" style="padding:10px 22px;font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:none;border-bottom:2px solid transparent;color:var(--muted);background:transparent;"><i class="ti ti-bulb"></i> Disparos</button>'+
     '</div>'+
     '<div id="ad2-content" style="color:var(--muted);font-family:var(--font-bc),sans-serif;"><i class="ti ti-loader ti-spin"></i> Carregando...</div>'+
   '</div>';
@@ -21250,8 +21249,8 @@ function renderAudensDay(){
 
 function adDayTab(t){
   _adDay.tab=t;
-  ['painel','camp','disparos'].forEach(function(x){var b=document.getElementById('adtab-'+x);if(b){b.style.borderBottomColor=(x===t)?'var(--purple)':'transparent';b.style.color=(x===t)?'var(--purple3)':'var(--muted)';}});
-  if(t==='camp') adDayRenderCampanhas(); else if(t==='disparos') adDayRenderDisparos(); else adDayPainel();
+  ['painel','camp'].forEach(function(x){var b=document.getElementById('adtab-'+x);if(b){b.style.borderBottomColor=(x===t)?'var(--purple)':'transparent';b.style.color=(x===t)?'var(--purple3)':'var(--muted)';}});
+  if(t==='camp') adDayRenderCampanhas(); else adDayPainel();
 }
 
 async function adDayInit(){
@@ -21328,29 +21327,28 @@ function _adSwitch(flag,on,titulo,desc,cor){
     '<div style="flex:1;"><div style="font-size:15px;font-weight:800;color:var(--white);">'+titulo+' <span style="font-size:12px;font-weight:800;color:'+(on?'#4ade80':'var(--muted)')+';margin-left:6px;">'+(on?'● LIGADO':'○ DESLIGADO')+'</span></div>'+
     '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+desc+'</div></div>'+
     '<label style="position:relative;display:inline-block;width:62px;height:34px;flex-shrink:0;cursor:pointer;">'+
-      '<input type="checkbox" '+(on?'checked':'')+' onchange="adDayToggleFlag(\''+flag+'\',this.checked)" style="opacity:0;width:0;height:0;">'+
+      '<input type="checkbox" '+(on?'checked':'')+' onchange="disparosToggle(\''+flag+'\',this.checked)" style="opacity:0;width:0;height:0;">'+
       '<span style="position:absolute;inset:0;background:'+(on?'#22c55e':'#4b5563')+';border-radius:34px;transition:.2s;box-shadow:inset 0 1px 3px rgba(0,0,0,.4);"></span>'+
       '<span style="position:absolute;top:4px;left:'+(on?'32px':'4px')+';width:26px;height:26px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.4);"></span>'+
     '</label>'+
   '</div>';
 }
-function adDayRenderDisparos(){
-  var el=document.getElementById('ad2-content'); if(!el)return;
-  var f=_adDay.flags||{};
+function disparosRender(cfg){
+  window._disparosCfg = cfg || window._disparosCfg || {};
+  var f = window._disparosCfg;
+  var el=document.getElementById('disparos-panel'); if(!el)return;
   el.innerHTML=
     '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;"><i class="ti ti-bulb" style="color:#fbbf24;"></i> Liga/desliga de cada motor de disparo. Todos respeitam o intervalo de <b>300s</b> e param sozinhos quando o lead agenda. Ao ligar, envia para os <b>leads reais</b>.</div>'+
-    _adSwitch('campEnabled',!!f.campEnabled,'Campanha Virada (Audens Day)','Dispara as sequências da campanha para os leads inscritos (trilha cadencia_camp).','rgba(34,197,94,0.45)')+
-    _adSwitch('enabled',!!f.enabled,'Cadência do João (entrada + no-show)','Cadência automática de novos leads qualificados e recuperação de no-show.','rgba(56,189,248,0.45)')+
-    _adSwitch('reatEnabled',!!f.reatEnabled,'Reativação da base','Leads +30 dias parados · 1 msg a cada 15 dias · a partir das 17h.','rgba(167,139,250,0.45)')+
-    '<div style="font-size:11px;color:var(--muted);margin-top:6px;">As mensagens e o número da Cadência do João continuam configuráveis em <b>IA | SDR</b>.</div>';
+    _adSwitch('campEnabled',f.campEnabled===true,'Campanha Virada (Audens Day)','Dispara as sequências da campanha para os leads inscritos (trilha cadencia_camp).','rgba(34,197,94,0.45)')+
+    _adSwitch('enabled',f.enabled===true,'Cadência do João (entrada + no-show)','Cadência automática de novos leads qualificados e recuperação de no-show.','rgba(56,189,248,0.45)')+
+    _adSwitch('reatEnabled',f.reatEnabled===true,'Reativação da base','Leads +30 dias parados · 1 msg a cada 15 dias · a partir das 17h.','rgba(167,139,250,0.45)');
 }
-function adDayToggleFlag(flag,on){
-  if(on && flag==='campEnabled'){ if(!confirm('Ligar o disparo da Campanha Virada? As mensagens vão para os LEADS REAIS inscritos, 1 a cada 300s.')){ adDayRenderDisparos(); return; } }
-  if(on && flag==='enabled'){ if(!confirm('Ligar a Cadência do João? Vai enviar automaticamente para os leads reais.')){ adDayRenderDisparos(); return; } }
-  _adDay.flags=_adDay.flags||{}; _adDay.flags[flag]=!!on;
-  if(flag==='campEnabled')_adDay.campEnabled=!!on;
+function disparosToggle(flag,on){
+  if(on && flag==='campEnabled'){ if(!confirm('Ligar o disparo da Campanha Virada? As mensagens vão para os LEADS REAIS inscritos, 1 a cada 300s.')){ disparosRender(); return; } }
+  if(on && flag==='enabled'){ if(!confirm('Ligar a Cadência do João? Vai enviar automaticamente para os leads reais.')){ disparosRender(); return; } }
+  window._disparosCfg = window._disparosCfg || {}; window._disparosCfg[flag]=!!on;
   if(fbDb) fbDb.ref('config/cadencia/'+flag).set(!!on);
-  adDayRenderDisparos();
+  disparosRender();
 }
 
 // ---------- PAINEL ----------
@@ -30477,6 +30475,10 @@ function renderConfigSDR(){
     '<div class="page-header"><div><div class="page-title">IA | SDR</div><div class="page-sub">Cadência automática do João · mensagens, número de teste e disparo</div></div></div>'+
     renderCampViradaCard()+
     _csdrCard(
+      '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:6px;"><i class="ti ti-bulb" style="color:#fbbf24;margin-right:6px;"></i>Disparos automáticos (liga/desliga)</div>'+
+      '<div id="disparos-panel"><i class="ti ti-loader ti-spin"></i> Carregando...</div>'
+    )+
+    _csdrCard(
       '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:14px;"><i class="ti ti-robot" style="color:var(--purple3);margin-right:6px;"></i>Configuração da cadência</div>'+
       '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--white);margin-bottom:16px;"><input type="checkbox" id="csdr-enabled" style="width:18px;height:18px;accent-color:#22c55e;"> <b>Cadência ligada</b> <span id="csdr-enabled-tag" style="font-size:11px;color:var(--muted);"></span></label>'+
       '<div class="modal-grid2" style="margin-bottom:14px;">'+
@@ -30512,6 +30514,7 @@ function csdrInit(){
   var g=function(id){return document.getElementById(id);};
   // carrega config
   fbGet('config/cadencia').then(function(cfg){
+    try{ disparosRender(cfg||{}); }catch(e){}
     cfg=cfg||{};
     if(g('csdr-enabled'))g('csdr-enabled').checked=cfg.enabled===true;
     if(g('csdr-enabled-tag'))g('csdr-enabled-tag').textContent=cfg.enabled===true?'(disparando)':'(desligada)';
