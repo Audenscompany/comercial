@@ -20587,6 +20587,20 @@ function _lastNMonths(n){
   }
   return result;
 }
+function _vendasExcluidasIdent(){
+  var names={}, phones={};
+  function norm(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');}
+  try{ Object.keys(followups||{}).forEach(function(fid){
+    var fu=followups[fid]; if(!fu||fu.resultado!=='venda')return;
+    var m=meetings[fu.meetingId]||meetings[fid];
+    var excl=!!(_vendasExcluidas&&_vendasExcluidas[fid]);
+    if(!excl){ var sg=(typeof _vendaSig==='function')?_vendaSig(fu,m):''; if(sg&&_vendasExcluidasSig&&_vendasExcluidasSig[sg])excl=true; }
+    if(!excl)return;
+    var nome=fu.nome||(m&&m.nome)||''; if(nome)names[norm(nome)]=1;
+    var tel=String((fu.tel)||(m&&m.tel)||'').replace(/\D/g,''); if(tel.length>9)tel=tel.slice(-9); if(tel)phones[tel]=1;
+  }); }catch(e){}
+  return {names:names,phones:phones,norm:norm};
+}
 async function calcCloserMetaHistory(nivelIdx){
   var lv=CLOSER_LEVELS[nivelIdx];
   if(!lv||lv.promoMeses===0) return null;
@@ -20601,9 +20615,13 @@ async function calcCloserMetaHistory(nivelIdx){
       var iCloser=ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
       var iSDR=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h.includes('SDR');});
       var iOri=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
+      var iCli=ch.findIndex(function(h){return h.includes('CLIENTE');});
+      var _exI=_vendasExcluidasIdent();
       cliRows.slice(1).forEach(function(row){
         var closer=normCloserName((row[iCloser]||'').trim());
         if(closer!=='Gustavo') return;
+        // pula vendas apagadas na aba Vendas (casa por nome)
+        var _cliN=_exI.norm(iCli>=0?(row[iCli]||''):''); if(_cliN&&_exI.names[_cliN]) return;
         var sdr=normCloserName((iSDR>=0?row[iSDR]||'':'').trim());
         var ori=(iOri>=0?row[iOri]||'':'').toLowerCase();
         if(sdr==='Gustavo'&&(ori.includes('cold')||ori.includes('call'))) return;
