@@ -19872,6 +19872,14 @@ async function calcCloserFromSheets(nivelIdx, month){
       }catch(e3){console.warn('calcCloserFromSheets step3 contratos:',e3);}
       window._todasVendasCache=_todasVC;
     }
+    // Respeita as EXCLUSOES manuais da aba Vendas (por id e por assinatura tel+nome+valor)
+    // — venda apagada em Vendas some tambem do Plano de Carreira. (nao muta o cache global)
+    _todasVC=(_todasVC||[]).filter(function(v){
+      if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
+      var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
+      if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+      return true;
+    });
     // Coleta candidatos do mês para dedup por tel/empresa
     var _ccCand=[];
     _todasVC.filter(function(v){
@@ -20204,6 +20212,13 @@ async function calcSDRFromSheets(nivelIdx, month){
       }catch(e3){console.warn('calcSDRFromSheets step3 contratos:',e3);}
       window._todasVendasCache=_todasV;
     }
+    // Respeita as EXCLUSOES manuais da aba Vendas (por id e por assinatura tel+nome+valor)
+    _todasV=(_todasV||[]).filter(function(v){
+      if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
+      var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
+      if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+      return true;
+    });
     // Filtra pelo mês e pelo SDR = João, coleta candidatos
     var _sdrCand=[];
     _todasV.filter(function(v){
