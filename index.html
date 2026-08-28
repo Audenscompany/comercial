@@ -880,6 +880,7 @@ function startRealtimeSync(){
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
   fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
+  fbDb.ref('vendas_excluidas_nome').on('value',function(s){_vendasExcluidasNome=s.val()||{};});
   try{ loadAdNamesCache(); }catch(e){}
   // backfill automatico dos nomes de anuncio (uma vez, se o Meta estiver conectado)
   setTimeout(function(){ try{ if(typeof isMetaConnected==='function'&&isMetaConnected()) resolveAllAdNames(); }catch(e){} }, 6000);
@@ -19530,6 +19531,8 @@ var _contratosCache = null;
 var _cancelledContratoKeys = new Set();
 var _vendasExcluidas = {}; // fids removidos manualmente na tela de Vendas
 var _vendasExcluidasSig = {}; // exclusões por identidade (tel+nome+valor) — matam a venda em qualquer fonte
+var _vendasExcluidasNome = {}; // exclusão por NOME normalizado — mata a venda em QUALQUER forma (followup/contrato/assinatura)
+function _vnNorm(sx){return String(sx||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');}
 function _vendaSig(fu,m){
   var tel=String((fu&&fu.tel)||(m&&m.tel)||'').replace(/\D/g,'').slice(-11);
   var nome=String((fu&&fu.nome)||(m&&m.nome)||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,16);
@@ -19878,6 +19881,7 @@ async function calcCloserFromSheets(nivelIdx, month){
       if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
       var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
       if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+      var _vnnm=_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||''); if(_vnnm&&_vendasExcluidasNome&&_vendasExcluidasNome[_vnnm])return false;
       return true;
     });
     // Coleta candidatos do mês para dedup por tel/empresa
@@ -20217,6 +20221,7 @@ async function calcSDRFromSheets(nivelIdx, month){
       if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
       var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
       if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+      var _vnnm=_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||''); if(_vnnm&&_vendasExcluidasNome&&_vendasExcluidasNome[_vnnm])return false;
       return true;
     });
     // Filtra pelo mês e pelo SDR = João, coleta candidatos
@@ -20612,6 +20617,7 @@ async function calcCloserMetaHistory(nivelIdx){
     if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
     var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
     if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+    var _vnnm=_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||''); if(_vnnm&&_vendasExcluidasNome&&_vendasExcluidasNome[_vnnm])return false;
     return true;
   });
   var counts={};
@@ -27113,11 +27119,19 @@ function renderVendas(){
       if(ko&&ko.traf){ v.origemRaw='Tráfego'; v.origemCat='Trafego Pago'; }
     });
   })();
-  // Exclusão manual: vendas removidas pelo usuário (por fid, estável em qualquer fonte)
+  // Exclusão manual: vendas removidas pelo usuário (por fid/sig/nome — estável em qualquer fonte)
   todasVendas=todasVendas.filter(function(v){
-    if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
     var _sg=_vendaSig(v.fu,v.m);
-    if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+    var _vnnm=_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||'');
+    var _byId=!!(_vendasExcluidas&&_vendasExcluidas[v.fid]);
+    var _bySig=!!(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg]);
+    var _byNome=!!(_vnnm&&_vendasExcluidasNome&&_vendasExcluidasNome[_vnnm]);
+    if(_byId||_bySig||_byNome){
+      // Backfill: se foi excluida por id/sig mas o NOME ainda nao esta marcado, marca —
+      // assim a mesma venda some tambem no Plano de Carreira (que pode ve-la em outra forma).
+      if(_vnnm && !_byNome){ _vendasExcluidasNome[_vnnm]=true; if(fbDb){try{fbDb.ref('vendas_excluidas_nome/'+_vnnm).set(true);}catch(e){}} }
+      return false;
+    }
     return true;
   });
   // Dedup por telefone — preferir followup real sobre sintético (_assinaturaSync/_contratoSync)
@@ -27860,6 +27874,8 @@ async function removerVenda(fid){
     _vendasExcluidas[fid]=true;
     if(fbDb)await fbDb.ref('vendas_excluidas/'+fid).set(true);
     if(_sig){ _vendasExcluidasSig[_sig]=true; if(fbDb)await fbDb.ref('vendas_excluidas_sig/'+_sig).set(true); }
+    var _nnDel=_vnNorm((_fu&&_fu.nome)||(_m&&_m.nome)||'');
+    if(_nnDel){ _vendasExcluidasNome[_nnDel]=true; if(fbDb)await fbDb.ref('vendas_excluidas_nome/'+_nnDel).set(true); }
     // Marca a fonte (assinatura) pra parar de recriar a venda
     var _aid=(_fu&&_fu._fromContrato)||(fid.indexOf('assin_')===0?fid.slice(6):null);
     if(_aid&&fbDb){ try{await fbDb.ref('assinaturas/'+_aid).update({_vendaExcluida:true});}catch(e){} }
