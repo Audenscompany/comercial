@@ -20605,33 +20605,46 @@ async function calcCloserMetaHistory(nivelIdx){
   var lv=CLOSER_LEVELS[nivelIdx];
   if(!lv||lv.promoMeses===0) return null;
   var meses=_lastNMonths(lv.promoJanela);
+  // Conta EXATAMENTE como o card "Contratos Fechados": fonte = _todasVendasCache (CRM),
+  // mesma dedup e respeitando as exclusoes manuais da aba Vendas. Nada da planilha.
+  var _todas=(window._todasVendasCache||[]).filter(function(v){
+    if(!v||!v.fu)return false;
+    if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
+    var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
+    if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return false;
+    return true;
+  });
   var counts={};
-  meses.forEach(function(ms){counts[ms]=0;});
-  try{
-    var cliRows=await fetchSheetCached(SHEETS_IDS.clientes,SHEETS_GIDS.clientes,'clientes');
-    if(cliRows&&cliRows.length>1){
-      var ch=cliRows[0].map(function(h){return(h||'').trim().toUpperCase();});
-      var iData=ch.findIndex(function(h){return h.includes('DATA')&&h.includes('IN');});
-      var iCloser=ch.findIndex(function(h){return h==='CLOSER'||h.includes('CLOSER');});
-      var iSDR=ch.findIndex(function(h){return h==='SDR'||h==='BDR'||h.includes('SDR');});
-      var iOri=ch.findIndex(function(h){return h==='ORIGEM'||h.includes('ORIGEM');});
-      var iCli=ch.findIndex(function(h){return h.includes('CLIENTE');});
-      var _exI=_vendasExcluidasIdent();
-      cliRows.slice(1).forEach(function(row){
-        var closer=normCloserName((row[iCloser]||'').trim());
-        if(closer!=='Gustavo') return;
-        // pula vendas apagadas na aba Vendas (casa por nome)
-        var _cliN=_exI.norm(iCli>=0?(row[iCli]||''):''); if(_cliN&&_exI.names[_cliN]) return;
-        var sdr=normCloserName((iSDR>=0?row[iSDR]||'':'').trim());
-        var ori=(iOri>=0?row[iOri]||'':'').toLowerCase();
-        if(sdr==='Gustavo'&&(ori.includes('cold')||ori.includes('call'))) return;
-        var dt=parseBRDate(row[iData]||'');
-        var ms=dateToMonthStr(dt);
-        if(counts.hasOwnProperty(ms)) counts[ms]++;
-      });
-    }
-  }catch(e){console.warn('metaHistory closer',e);}
+  meses.forEach(function(ms){var pp=ms.split('-');counts[ms]=_countCloserContratosMes(_todas,parseInt(pp[0]),parseInt(pp[1])-1);});
   return meses.map(function(ms){var c=counts[ms];return{ms:ms,label:_msLabel(ms),count:c,hit:c>=lv.meta,meta:lv.meta};});
+}
+// Conta contratos do Gustavo (closer) num mes, replicando a dedup do card "Contratos Fechados"
+function _countCloserContratosMes(todasVC, year, month0){
+  var cand=[];
+  (todasVC||[]).forEach(function(v){
+    var fu=v.fu,m2=v.m;
+    var dt=(typeof _vendaDate==='function')?_vendaDate(fu,m2):null;
+    if(!dt||dt.getMonth()!==month0||dt.getFullYear()!==year)return;
+    var telRawC=fu.tel||(m2&&m2.tel)||''; if(!telRawC&&v.fid){var _fmc=v.fid.match(/km_(\d{8,})/);if(_fmc)telRawC=_fmc[1];}
+    var tel=(telRawC||'').replace(/\D/g,'').slice(-10);
+    var empresaKey=((fu.empresa||(m2&&m2.empresa))||'').toLowerCase().replace(/\s+/g,'').trim();
+    var nomeKey=((fu.nome||(m2&&m2.nome))||'').toLowerCase().trim();
+    var nomeFirstKey=nomeKey.split(' ')[0]||'';
+    var midKey=fu.meetingId||'';
+    var closerRaw=(m2&&m2.responsavel)||fu.closerNome||fu.closer||fu.responsavel||'';
+    var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
+    var mrr=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+    cand.push({tel:tel,empresaKey:empresaKey,nomeKey:nomeKey,nomeFirstKey:nomeFirstKey,midKey:midKey,fid:v.fid,closerRaw:closerRaw,mrr:mrr});
+  });
+  cand.sort(function(a,b){return b.mrr-a.mrr;});
+  var dT={},dE={},dN={},dNF={},dMID={},dFID={},count=0;
+  cand.forEach(function(cv){
+    if(cv.fid&&dFID[cv.fid])return; if(cv.midKey&&dMID[cv.midKey])return; if(cv.tel&&dT[cv.tel])return; if(cv.empresaKey&&dE[cv.empresaKey])return; if(cv.nomeKey&&dN[cv.nomeKey])return; if(cv.nomeFirstKey&&cv.nomeFirstKey.length>3&&dNF[cv.nomeFirstKey])return;
+    if(cv.fid)dFID[cv.fid]=1; if(cv.midKey)dMID[cv.midKey]=1; if(cv.tel)dT[cv.tel]=1; if(cv.empresaKey)dE[cv.empresaKey]=1; if(cv.nomeKey)dN[cv.nomeKey]=1; if(cv.nomeFirstKey&&cv.nomeFirstKey.length>3)dNF[cv.nomeFirstKey]=1;
+    if(normCloserName(cv.closerRaw)!=='Gustavo')return;
+    count++;
+  });
+  return count;
 }
 async function calcSDRMetaHistory(nivelIdx){
   var lv=SDR_LEVELS[nivelIdx];
