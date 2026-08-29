@@ -10337,7 +10337,9 @@ function renderReunioes(){
     +'</div></div>';
 
   // Sub-tabs
-  var tabDefs=[{id:'hoje',ic:'ti-calendar-day',lbl:'Reuniões de Hoje'},{id:'mes',ic:'ti-list',lbl:'Lista do Mês'},{id:'analytics',ic:'ti-chart-bar',lbl:'Analytics'}];
+  var _retTodos=Object.values(meetings).filter(function(m){return m._retorno&&m.dtISO;});
+  var _retPend=_retTodos.filter(function(m){var _f=followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;});return !((m.status||'')==='done'||(_f&&_f.comparecimento));}).length;
+  var tabDefs=[{id:'hoje',ic:'ti-calendar-day',lbl:'Reuniões de Hoje'},{id:'mes',ic:'ti-list',lbl:'Lista do Mês'},{id:'retornos',ic:'ti-arrow-back-up',lbl:'Retornos'+(_retPend?' ('+_retPend+')':'')},{id:'analytics',ic:'ti-chart-bar',lbl:'Analytics'}];
   H+='<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:18px;">';
   tabDefs.forEach(function(t){
     var a=tab===t.id;
@@ -10493,6 +10495,100 @@ function renderReunioes(){
       H+='</tr>';
     });
     H+='</tbody></table></div></div>';
+  }
+
+  // ═══ TAB: RETORNOS ══════════════════════════════════════════════════════════
+  else if(tab==='retornos'){
+    function _retFu(m){return followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;})||null;}
+    function _retState(m){
+      var f=_retFu(m);
+      var dt=m.dtISO?new Date(m.dtISO):null;
+      if((m.status||'')==='done'||(f&&f.comparecimento)){
+        if(f&&f.resultado==='venda')return {k:'venda',lbl:'🏆 Fechou',col:'#22c55e'};
+        if(f&&f.resultado==='retorno')return {k:'retorno',lbl:'↻ Novo retorno',col:'#a78bfa'};
+        if(f&&f.comparecimento==='nao')return {k:'noshow',lbl:'No-show',col:'#ef4444'};
+        return {k:'feito',lbl:'✓ Concluído',col:'#9ca3af'};
+      }
+      if(dt){
+        var hoje=dt.getDate()===now.getDate()&&dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();
+        if(hoje)return {k:'hoje',lbl:'📞 Hoje',col:'#f59e0b'};
+        if(dt<now)return {k:'atrasado',lbl:'⚠ Atrasado',col:'#ef4444'};
+        return {k:'agendado',lbl:'Agendado',col:'#9333ea'};
+      }
+      return {k:'agendado',lbl:'Agendado',col:'#9333ea'};
+    }
+    var _rets=_retTodos.slice().map(function(m){return {m:m,st:_retState(m),dt:m.dtISO?new Date(m.dtISO):null};});
+    var _pend=_rets.filter(function(r){return r.st.k==='hoje'||r.st.k==='atrasado'||r.st.k==='agendado';}).sort(function(a,b){return(a.m.dtISO||'').localeCompare(b.m.dtISO||'');});
+    var _conc=_rets.filter(function(r){return !(r.st.k==='hoje'||r.st.k==='atrasado'||r.st.k==='agendado');}).sort(function(a,b){return(b.m.dtISO||'').localeCompare(a.m.dtISO||'');});
+    var _nHoje=_rets.filter(function(r){return r.st.k==='hoje';}).length;
+    var _nAtr=_rets.filter(function(r){return r.st.k==='atrasado';}).length;
+    var _nAg=_rets.filter(function(r){return r.st.k==='agendado';}).length;
+    var _nVend=_rets.filter(function(r){return r.st.k==='venda';}).length;
+
+    // KPIs
+    H+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">';
+    function _rKpi(ic,col,lbl,val,sub){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;"><div style="width:40px;height:40px;border-radius:10px;background:'+col.replace('#','rgba(').slice(0,-1)+',0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+ic+'" style="font-size:18px;color:'+col+';"></i></div><div><div style="font-family:Bebas Neue,sans-serif;font-size:28px;line-height:1;color:'+col+';">'+val+'</div><div style="font-size:10px;color:var(--muted);margin-top:1px;">'+lbl+'</div><div style="font-size:10px;color:var(--muted);">'+sub+'</div></div></div>';}
+    H+=_rKpi('ti-phone-call','#f59e0b','Retornos hoje',_nHoje,_nHoje>0?'Ligar/registrar hoje':'Nada para hoje');
+    H+=_rKpi('ti-alert-triangle','#ef4444','Atrasados',_nAtr,_nAtr>0?'Passaram da data':'Em dia ✓');
+    H+=_rKpi('ti-calendar-up','#9333ea','Agendados',_nAg,_nAg>0?'Próximos retornos':'—');
+    H+=_rKpi('ti-cash-register','#22c55e','Viraram venda',_nVend,_nVend>0?'Retornos que fecharam':'—');
+    H+='</div>';
+
+    function _retRow(r){
+      var m=r.m,st=r.st;
+      var closer=normCloserName(m.responsavel||'')||'—';
+      var sdr=(m.sdrName||m.sdr||'—');
+      var tel=(m.tel||m.telefone||'');
+      var f=_retFu(m);
+      var done=(st.k==='venda'||st.k==='retorno'||st.k==='noshow'||st.k==='feito');
+      H+='<div style="background:var(--card);border:1px solid '+st.col+';border-left:3px solid '+st.col+';border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
+      H+='<div style="min-width:56px;text-align:center;"><div style="font-family:Bebas Neue,sans-serif;font-size:20px;color:var(--white);line-height:1;">'+fmtDt(m.dtISO)+'</div><div style="font-size:9px;color:var(--muted);">'+fmtTime(m.dtISO)+'</div></div>';
+      H+='<div style="width:1px;height:38px;background:var(--border);flex-shrink:0;"></div>';
+      H+='<div style="flex:1;min-width:150px;">'
+        +'<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;">'+_chEscSafe(_meetLeadName(m))+'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+        +(m.origem?'<span style="font-size:10px;background:'+canalColor(normCanal(m.origem)).replace('#','rgba(').slice(0,-1)+',0.15);color:'+canalColor(normCanal(m.origem))+';padding:1px 7px;border-radius:10px;">'+normCanal(m.origem)+'</span>':'')
+        +(tel?'<span style="font-size:10px;color:var(--muted);cursor:pointer;" onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+tel.replace(/\D/g,'')+'\');this.innerHTML=\'<i class=\\\'ti ti-check\\\'></i> copiado\';" title="Copiar telefone"><i class="ti ti-phone" style="font-size:9px;"></i> '+tel+'</span>':'')
+        +'</div></div>';
+      H+='<div style="display:flex;align-items:center;gap:6px;">'
+        +'<div style="text-align:center;"><div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px;">SDR</div>'+av(sdr,24)+'<div style="font-size:9px;color:var(--muted);margin-top:2px;">'+sdr+'</div></div>'
+        +'<i class="ti ti-arrow-right" style="font-size:12px;color:var(--muted);"></i>'
+        +'<div style="text-align:center;"><div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px;">Closer</div>'+av(closer,24)+'<div style="font-size:9px;color:var(--muted);margin-top:2px;">'+closer+'</div></div>'
+        +'</div>';
+      H+='<div><span style="background:'+st.col.replace('#','rgba(').slice(0,-1)+',0.15);color:'+st.col+';border-radius:20px;padding:3px 11px;font-size:10px;font-weight:700;">'+st.lbl+'</span></div>';
+      H+='<div style="display:flex;gap:6px;flex-shrink:0;">';
+      if(!done){
+        H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],false);" style="background:var(--purple3);border:none;border-radius:8px;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"><i class="ti ti-clipboard-check" style="font-size:12px;"></i> Registrar</button>';
+      } else {
+        H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;white-space:nowrap;"><i class="ti ti-pencil" style="font-size:12px;"></i> Editar</button>';
+      }
+      H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 10px;font-size:12px;cursor:pointer;" title="Editar retorno"><i class="ti ti-settings"></i></button>';
+      H+='</div>';
+      H+='</div>';
+    }
+
+    if(!_rets.length){
+      H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:60px;text-align:center;color:var(--muted);">'
+        +'<i class="ti ti-arrow-back-up" style="font-size:48px;display:block;margin-bottom:14px;color:rgba(147,51,234,0.3);"></i>'
+        +'<div style="font-size:14px;font-weight:600;margin-bottom:6px;">Nenhum retorno agendado</div>'
+        +'<div style="font-size:12px;">Quando um follow-up é marcado como "Retorno", ele aparece aqui com a data combinada.</div>'
+        +'</div>';
+    } else {
+      H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin:4px 0 10px;">Retornos agendados ('+_pend.length+')</div>';
+      if(!_pend.length){
+        H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;text-align:center;color:var(--muted);font-size:12px;margin-bottom:18px;">Nenhum retorno pendente. Tudo em dia ✓</div>';
+      } else {
+        H+='<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:22px;">';
+        _pend.forEach(_retRow);
+        H+='</div>';
+      }
+      if(_conc.length){
+        H+='<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin:4px 0 10px;">Histórico de retornos ('+_conc.length+')</div>';
+        H+='<div style="display:flex;flex-direction:column;gap:10px;">';
+        _conc.forEach(_retRow);
+        H+='</div>';
+      }
+    }
   }
 
   // ═══ TAB: ANALYTICS ═════════════════════════════════════════════════════════
