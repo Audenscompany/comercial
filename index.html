@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-tarefa-nome";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-contrato-cnpj";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -9053,7 +9053,7 @@ function renderFollowupBody(){
         '<button class="btn" id="fu-perdida" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'perdida\')">Venda Perdida</button>'+
       '</div></div>'+
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
-        '<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
+        '<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+_cnpjLimpo((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;" onchange="fuOnPlanoChange()">'+
             '<option value="starter">Starter</option>'+
@@ -9520,6 +9520,22 @@ async function reenviarAssinaturaContrato(btn){
     alert('Erro: '+e.message);
   }
 }
+// Sanitiza CNPJ para o contrato: extrai um CNPJ valido (14 digitos) ou retorna vazio.
+// Evita que texto colado por engano (ex.: descricao do evento do Google Agenda/Meet) vá pro contrato.
+function _cnpjLimpo(v){
+  v=String(v||'');
+  var m=v.match(/\d{2}[.\s]?\d{3}[.\s]?\d{3}[\/\s]?\d{4}[-\s]?\d{2}/);
+  if(m) return m[0].replace(/\s+/g,'');
+  var d=v.replace(/\D/g,'');
+  if(d.length===14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3.$4-$5');
+  return '';
+}
+// Limpa o nome do cliente de lixo de agenda/meet (corta a partir de marcadores conhecidos).
+function _nomeContratoLimpo(v){
+  v=String(v||'').trim();
+  v=v.split(/\s*(?:Reuni[aã]o\s+Audens|Fuso\s+hor[aá]rio|Como\s+participar|Link\s+da\s+videochamada|meet\.google\.com|https?:\/\/)/i)[0];
+  return v.replace(/[\s\-–·,]+$/,'').trim();
+}
 async function generateContratoDocx(dados){
   try{
     var url=CONTRATO_TEMPLATES[dados.plano];
@@ -9585,8 +9601,8 @@ async function generateContratoDocx(dados){
     if(adicTxt && !_hasStructAdic) formaPagamento+=adicTxt;
 
     doc.render({
-      nome_cliente:dados.nomeCliente||'',
-      cnpj_cliente:dados.cnpjCliente||'',
+      nome_cliente:_nomeContratoLimpo(dados.nomeCliente)||'',
+      cnpj_cliente:_cnpjLimpo(dados.cnpjCliente)||'_____________________',
       duracao_meses:_isStarter?'45 dias':String(dados.duracaoMeses||''),
       data_inicio:fmtDataBR(dataInicio),
       data_fim:fmtDataBR(dataFim),
