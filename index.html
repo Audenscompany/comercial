@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-contrato-adic";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-venda-adic-modal";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -27700,10 +27700,13 @@ function _renderVendasTabela(){
       // Normalizar para display
       function _nOrig(s){if(!s)return'Indicação';var l=s.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'Tráfego Pago';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('cold'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('recupera'))return'Recuperação';if(l.includes('bdr'))return'BDR';return s.slice(0,20);}
       var origLabel=_nOrig(_rawOrig);
+      var _adL=(fu.adicionais&&fu.adicionais.length)?fu.adicionais:[];
+      var _adV=fu.adicionaisValor||0;
+      var _adChip=(_adL.length||_adV>0)?('<span title="Serviços adicionais" style="margin-left:5px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.14);color:#34d399;white-space:nowrap;">+'+(_adL.length||'')+' adic</span>'):'';
       // Ícone e cor baseados na origem real (não só na categoria)
       var origIcon=origLabel==='Tráfego Pago'?'🎯':origLabel==='Orgânico'?'🌱':origLabel==='Social Selling'?'📲':origLabel==='Cold Call'?'📞':origLabel==='Recuperação'?'🔄':'🤝';
       var origColor=origLabel==='Tráfego Pago'?'#f472b6':origLabel==='Orgânico'?'#34d399':origLabel==='Social Selling'?'#22d3ee':origLabel==='Cold Call'?'#fbbf24':origLabel==='Recuperação'?'#f97316':'#60a5fa';
-      return'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+      return'<tr onclick="_showVendaDetalhe(\''+fid+'\')" style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'transparent\'">'+
         '<td style="padding:10px 12px;font-weight:600;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+cliente+'</td>'+
         '<td style="padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.5);white-space:nowrap;">'+dtLabel+'</td>'+
         '<td style="padding:10px 12px;">'+
@@ -27713,7 +27716,7 @@ function _renderVendasTabela(){
             '<div style="font-size:10px;color:rgba(255,255,255,0.35);">'+sdr+'</div></div>'+
           '</div>'+
         '</td>'+
-        '<td style="padding:10px 12px;"><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:rgba(167,139,250,0.12);color:#a78bfa;">'+plano+'</span></td>'+
+        '<td style="padding:10px 12px;"><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:rgba(167,139,250,0.12);color:#a78bfa;">'+plano+'</span>'+_adChip+'</td>'+
         '<td style="padding:10px 12px;font-size:15px;font-weight:700;color:#4ade80;font-family:\'Bebas Neue\',sans-serif;">'+fmtV(val)+'</td>'+
         '<td style="padding:10px 12px;"><span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;background:'+tipoCol+'18;color:'+tipoCol+';">'+tipo+'</span></td>'+
         '<td style="padding:10px 12px;font-size:11px;color:rgba(255,255,255,0.45);">'+vigencia+'</td>'+
@@ -27725,7 +27728,7 @@ function _renderVendasTabela(){
             '<span style="width:6px;height:6px;border-radius:50%;background:'+sc.color+';flex-shrink:0;"></span>'+sc.label+
           '</span>'+
         '</td>'+
-        '<td style="padding:10px 12px;">'+
+        '<td style="padding:10px 12px;" onclick="event.stopPropagation()">'+
           '<div style="position:relative;display:inline-block;">'+
             '<button onclick="toggleVendasMenu(\'menu-'+fid+'\')" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:4px 10px;color:var(--white);cursor:pointer;font-size:14px;line-height:1;">•••</button>'+
             '<div id="menu-'+fid+'" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:#1a1a2e;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;z-index:100;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,0.5);">'+
@@ -27822,6 +27825,46 @@ function toggleVendasMenu(id){
 }
 document.addEventListener('click',function(e){if(!e.target.closest||!e.target.closest('[id^="menu-"]')&&!e.target.textContent.includes('•••'))document.querySelectorAll('[id^="menu-"]').forEach(function(m){m.style.display='none';});});
 
+function _showVendaDetalhe(fid){
+  var fu=followups[fid];if(!fu){return;}
+  var m=meetings[fu.meetingId]||meetings[fid]||null;
+  var cliente=(typeof _empresaCliente==='function')?_empresaCliente(fu,m):(fu.nome||(m&&m.nome)||'Cliente');
+  var closer=(m&&m.responsavel)||fu.closer||fu.responsavel||'—';
+  var sdr=(normCloserName((m&&(m.sdrName||m.sdr))||fu.sdr||fu.sdrName||''))||'—';
+  var planoLabels={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium',elite:'Elite'};
+  var plano=planoLabels[fu.plano]||fu.plano||'—';
+  var dt=_vendaDate(fu,m);
+  var dtLabel=dt?(String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear()):'—';
+  var adL=(fu.adicionais&&fu.adicionais.length)?fu.adicionais:[];
+  var adV=fu.adicionaisValor||0;
+  var fmtR=function(v){return 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});};
+  var adicHtml;
+  if(adL.length){
+    adicHtml=adL.map(function(a){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border-radius:8px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.15);margin-bottom:6px;"><span style="font-size:13px;color:var(--white);">'+(a.nome||'Adicional')+'</span><span style="font-size:12px;font-weight:700;color:#34d399;white-space:nowrap;">'+fmtR(a.valor)+'/mês</span></div>';}).join('')
+      +'<div style="display:flex;justify-content:space-between;padding:9px 11px;margin-top:2px;border-top:1px solid rgba(255,255,255,0.08);"><span style="font-size:12px;color:var(--muted);">Total dos adicionais</span><span style="font-size:13px;font-weight:800;color:#34d399;">'+fmtR(adV||adL.reduce(function(x,a){return x+(a.valor||0);},0))+'/mês</span></div>';
+  } else if(adV>0){
+    adicHtml='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border-radius:8px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.15);"><span style="font-size:13px;color:var(--white);">Serviços adicionais (valor combinado)</span><span style="font-size:12px;font-weight:700;color:#34d399;white-space:nowrap;">'+fmtR(adV)+'/mês</span></div>';
+  } else {
+    adicHtml='<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px;">Nenhum serviço adicional nesta venda.</div>';
+  }
+  var html='<div class="modal-ov active" id="modal-venda-det" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:440px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-receipt-2"></i> '+cliente+'</div>'+
+        '<button class="modal-close" onclick="document.getElementById(\'modal-venda-det\').remove()">×</button></div>'+
+      '<div class="modal-body">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:16px;">'+
+          '<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:2px;">Plano</div><div style="font-size:13px;color:var(--white);font-weight:600;">'+plano+'</div></div>'+
+          '<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:2px;">Data</div><div style="font-size:13px;color:var(--white);">'+dtLabel+'</div></div>'+
+          '<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:2px;">Closer</div><div style="font-size:13px;color:#a78bfa;font-weight:600;">'+closer+'</div></div>'+
+          '<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:2px;">SDR</div><div style="font-size:13px;color:var(--white);">'+sdr+'</div></div>'+
+        '</div>'+
+        '<div style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Serviços adicionais</div>'+
+        adicHtml+
+      '</div>'+
+      '<div class="modal-footer"><button class="btn btn-outline" onclick="document.getElementById(\'modal-venda-det\').remove();abrirEditarVenda(\''+fid+'\');"><i class="ti ti-edit"></i> Editar venda</button><button class="btn btn-primary" onclick="document.getElementById(\'modal-venda-det\').remove()">Fechar</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
 function alterarStatusVenda(fid){
   var fu=followups[fid];if(!fu)return;
   var statusConfig={ativa:'Ativa',aguardando:'Aguardando início',implantacao:'Implantação',pagamento_pendente:'Pagamento pendente',cancelada:'Cancelada',renovacao_proxima:'Renovação próxima'};
