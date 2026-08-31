@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-setembro-conteudo";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-agenda-filtro-mes";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -29052,11 +29052,13 @@ var _planPilarDia={0:'p6',1:'p1',2:'p3',3:'p2',4:'p5',5:'p1',6:'p4'};
 var _planReelDia={0:'📈 Resultado de cliente',1:'🎬 Rotina: planejamento/reunião',2:'💡 Dica rápida',3:'📈 Resultado de cliente',4:'🎬 Rotina: operação real',5:'💡 Dica rápida',6:'🎬 Rotina: sábado de pico'};
 var _planStoryDia={0:'"Fechamento da semana" + enquete',1:'Meta da semana + enquete',2:'Quiz numérico + bastidor',3:'Antes/depois do case',4:'Caixinha temática',5:'Responde-caixinha + prep do pico',6:'Cobertura do pico com números ao vivo'};
 var _ccView='agenda';
+var _ccFiltroMes=''; // '' = todos; senão 'YYYY-MM' para filtrar a Agenda por mês
 var _planPilarNome={p1:'Como eu faria do zero',p2:'Erros e verdades',p3:'Números e margem',p4:'Case de cliente',p5:'Gestão e rotina',p6:'Opinião quente'};
 function _planFaseDe(iso){for(var i=0;i<_planFases.length;i++){if(iso>=_planFases[i].ini&&iso<=_planFases[i].fim)return _planFases[i];}return null;}
 function _planPickUnused(titulos,used){used=used||[];for(var i=0;i<titulos.length;i++){if(used.indexOf(titulos[i])<0)return titulos[i];}return titulos[0]||'';}
 function ccWeekStartISO(iso){var d=new Date((''+iso).slice(0,10)+'T12:00:00');d.setDate(d.getDate()-d.getDay());return d.toISOString().slice(0,10);}
 function ccFmtDate(iso){var p=(''+iso).slice(0,10).split('-');return (p[2]||'')+'/'+(p[1]||'');}
+function _ccMesLabel(ym){var p=(''+ym).split('-');var mn=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];var mi=parseInt(p[1],10)-1;return (mn[mi]||'')+'/'+(p[0]||'');}
 function ccWeekday(iso){var d=new Date((''+iso).slice(0,10)+'T12:00:00');return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()];}
 function ccKpi(val,label,cor){
   return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;">'+
@@ -29219,9 +29221,28 @@ function renderContentCalendar(){
     '<div style="display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--border);">'+
       '<div id="cc-tab-agenda" onclick="ccSwitchView(\'agenda\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='agenda'?'#e1306c':'transparent')+';color:'+(_ccView==='agenda'?'#fff':'var(--muted)')+';"><i class="ti ti-calendar-event" style="margin-right:5px;"></i>Agenda</div>'+
       '<div id="cc-tab-plano" onclick="ccSwitchView(\'plano\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='plano'?'#e1306c':'transparent')+';color:'+(_ccView==='plano'?'#fff':'var(--muted)')+';"><i class="ti ti-map-2" style="margin-right:5px;"></i>Plano 90 Dias</div>'+
+      (_ccView==='agenda'?('<div style="margin-left:auto;display:flex;align-items:center;gap:6px;padding-bottom:6px;">'+
+        '<i class="ti ti-filter" style="font-size:13px;color:var(--muted);"></i>'+
+        '<input type="month" id="cc-filtro-mes" value="'+(_ccFiltroMes||'')+'" onchange="ccSetFiltroMes(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:12px;padding:5px 8px;outline:none;cursor:pointer;">'+
+        (_ccFiltroMes?'<button onclick="ccSetFiltroMes(\'\')" title="Mostrar todos" style="background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;font-size:11px;font-weight:700;padding:5px 9px;cursor:pointer;">Todos</button>':'')+
+      '</div>'):'')+
     '</div>'+
     '<div id="cc-body"><div style="color:var(--muted);padding:40px;text-align:center;font-size:13px;">Carregando programação...</div></div>'+
   '</div>';
+}
+function ccSetFiltroMes(v){
+  _ccFiltroMes=v||'';
+  // re-renderiza o cabeçalho (para o botão Todos aparecer/sumir) + o corpo
+  var pg=document.querySelector('[data-page]');
+  renderContentCalendarBody();
+  var inp=document.getElementById('cc-filtro-mes'); // mantém foco/valor
+  var btnWrap=inp&&inp.parentElement;
+  if(btnWrap){
+    var hasBtn=btnWrap.querySelector('button');
+    if(_ccFiltroMes&&!hasBtn){
+      btnWrap.insertAdjacentHTML('beforeend','<button onclick="ccSetFiltroMes(\'\')" title="Mostrar todos" style="background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;font-size:11px;font-weight:700;padding:5px 9px;cursor:pointer;">Todos</button>');
+    } else if(!_ccFiltroMes&&hasBtn){ hasBtn.remove(); if(inp)inp.value=''; }
+  }
 }
 function ccSwitchView(v){
   _ccView=v;
@@ -29346,6 +29367,11 @@ function renderContentCalendarBody(){
   var reels=(_dicaProg||[]).map(function(s){return {kind:'reel',data:(''+s.data).slice(0,10),titulo:s.titulo||'',legenda:s.legenda||'',status:s.status||'vazio'};});
   var cars=[];
   Object.keys(_igCalendario||{}).forEach(function(id){var ev=_igCalendario[id];if(!ev||!ev.dataHora)return;cars.push({kind:'carrossel',id:id,data:(''+ev.dataHora).slice(0,10),titulo:(ev.slideTitles&&ev.slideTitles[0])||'',legenda:ev.legenda||'',status:ev.status||'rascunho',localKey:ev.localKey||id});});
+  // Filtro por mês (YYYY-MM) — Agenda mostra só o mês selecionado
+  if(_ccFiltroMes){
+    reels=reels.filter(function(r){return (''+r.data).slice(0,7)===_ccFiltroMes;});
+    cars=cars.filter(function(c){return (''+c.data).slice(0,7)===_ccFiltroMes;});
+  }
   // KPIs
   var totReel=reels.filter(function(r){return r.status!=='vazio';}).length;
   var totCar=cars.length;
@@ -29365,7 +29391,10 @@ function renderContentCalendarBody(){
     ccKpi(post,'Postados','#10b981')+
   '</div>';
   if(!weeks.length){
-    html+='<div style="color:var(--muted);padding:30px;text-align:center;font-size:13px;">Nada agendado ainda. Agende Reels no <b>Reels 10S</b> ou Carrosséis no <b>Carrossel</b>.</div>';
+    var _msgVazio=_ccFiltroMes
+      ? 'Nada agendado em '+_ccMesLabel(_ccFiltroMes)+'. Troque o mês ou clique em <b>Todos</b>.'
+      : 'Nada agendado ainda. Agende Reels no <b>Reels 10S</b> ou Carrosséis no <b>Carrossel</b>.';
+    html+='<div style="color:var(--muted);padding:30px;text-align:center;font-size:13px;">'+_msgVazio+'</div>';
     box.innerHTML=html;return;
   }
   weeks.forEach(function(w,wi){
