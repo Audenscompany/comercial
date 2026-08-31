@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-agenda-filtro-mes";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-agenda-editar-data";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -29084,6 +29084,21 @@ function ccSetCarStatus(id,val){
   if(_igCalendario&&_igCalendario[id])_igCalendario[id].status=val;
   renderContentCalendarBody();
 }
+function ccSetReelData(oldISO,newISO){
+  if(!newISO)return;
+  var s=(_dicaProg||[]).find(function(x){return (''+x.data).slice(0,10)===oldISO;});
+  if(s){s.data=newISO; if(typeof _dicaSalvaProg==='function')_dicaSalvaProg();}
+  renderContentCalendarBody();
+}
+function ccSetCarData(id,newISO){
+  if(!newISO||!_igCalendario||!_igCalendario[id])return;
+  var old=''+(_igCalendario[id].dataHora||'');
+  var timePart=(old.indexOf('T')>=0)?old.slice(old.indexOf('T')):'T20:00';
+  var novo=newISO+timePart;
+  _igCalendario[id].dataHora=novo;
+  try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/calendario/'+id+'/dataHora').set(novo);}catch(e){}
+  renderContentCalendarBody();
+}
 function ccDelCar(id){
   if(!confirm('Remover este carrossel do calendário?'))return;
   try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/calendario/'+id).remove();}catch(e){}
@@ -29261,6 +29276,7 @@ function ccReelCard(it,idx){
     '<button onclick="ccCopy('+idx+',\'titulo\')" title="Copiar título" style="padding:6px 9px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Título</button>'+
     '<button onclick="ccCopy('+idx+',\'legenda\')" title="Copiar legenda" style="padding:6px 9px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Legenda</button>'
   );
+  var dtInput='<input type="date" value="'+it.data+'" onchange="ccSetReelData(\''+it.data+'\',this.value)" title="Mudar data" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:11px;padding:4px 6px;outline:none;cursor:pointer;">';
   return '<div style="display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;">'+
     '<div style="min-width:78px;flex-shrink:0;">'+
       '<div style="font-size:13px;font-weight:800;color:var(--white);">'+ccWeekday(it.data)+' '+ccFmtDate(it.data)+'</div>'+
@@ -29270,7 +29286,7 @@ function ccReelCard(it,idx){
       '<span style="font-size:9px;font-weight:800;color:#7c3aed;background:rgba(124,58,237,0.15);padding:2px 6px;border-radius:5px;margin-right:8px;">REEL</span>'+
       (isLivre?'— slot livre —':it.titulo)+
     '</div>'+
-    '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+actions+sel+'</div>'+
+    '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+actions+dtInput+sel+'</div>'+
   '</div>';
 }
 function ccCarCard(it,idx){
@@ -29278,6 +29294,7 @@ function ccCarCard(it,idx){
   var titulo=it.titulo||(it.legenda?it.legenda.replace(/\s+/g,' ').slice(0,60):'(sem legenda)');
   var sel='<select onchange="ccSetCarStatus(\''+it.id+'\',this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:11px;padding:5px 8px;outline:none;cursor:pointer;">'+
     ['rascunho','pronto','publicado'].map(function(s){return '<option value="'+s+'"'+(it.status===s?' selected':'')+'>'+({rascunho:'Rascunho',pronto:'Pronto',publicado:'Postado'}[s])+'</option>';}).join('')+'</select>';
+  var dtInput='<input type="date" value="'+it.data+'" onchange="ccSetCarData(\''+it.id+'\',this.value)" title="Mudar data" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:11px;padding:4px 6px;outline:none;cursor:pointer;">';
   return '<div style="display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid rgba(225,48,108,0.25);border-radius:12px;padding:12px 16px;margin-bottom:8px;">'+
     '<div style="min-width:78px;flex-shrink:0;">'+
       '<div style="font-size:13px;font-weight:800;color:var(--white);">'+ccWeekday(it.data)+' '+ccFmtDate(it.data)+'</div>'+
@@ -29289,7 +29306,7 @@ function ccCarCard(it,idx){
     '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+
       '<button onclick="igDownloadCarZip(\''+(it.localKey||it.id)+'\')" title="Baixar ZIP dos slides" style="padding:6px 9px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-download"></i> ZIP</button>'+
       '<button onclick="ccCopy('+idx+',\'legenda\')" title="Copiar legenda" style="padding:6px 9px;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Legenda</button>'+
-      sel+
+      dtInput+sel+
       '<button onclick="ccDelCar(\''+it.id+'\')" title="Remover" style="padding:6px 8px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-size:11px;"><i class="ti ti-trash"></i></button>'+
     '</div>'+
   '</div>';
