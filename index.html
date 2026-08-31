@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-joao-closer";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-tarefa-nome";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -2288,13 +2288,28 @@ function fmtDateBR(iso){
   var p=iso.split('-');
   return p[2]+'/'+p[1]+'/'+p[0];
 }
+// Resolve nome/telefone da tarefa de cadência mesmo quando o registro veio vazio:
+// tenta a propria tarefa -> cadencia_ativos[leadKey] -> kanban -> leadKey como telefone.
+function _sdrTaskLead(t){
+  t=t||{};
+  var lk=t.leadKey||t.telefone||'';
+  var ca=(typeof cadenciaAtivos!=='undefined'&&cadenciaAtivos&&cadenciaAtivos[lk])||null;
+  var kb=(typeof kanbanData!=='undefined'&&kanbanData&&kanbanData[lk])||null;
+  var nome=t.nome||(ca&&(ca.nome||ca.primeiroNome))||(kb&&kb.nome)||'';
+  var telefone=t.telefone||(ca&&(ca.telefone||ca.phone))||(kb&&kb.telefone)||'';
+  if(!telefone){var _d=String(lk).replace(/\D/g,'');if(_d.length>=8)telefone=_d;}
+  var empresa=t.empresa||(ca&&ca.empresa)||(kb&&kb.empresa)||'';
+  var instagram=t.instagram||(ca&&ca.instagram)||(kb&&kb.instagram)||'';
+  return {nome:nome,telefone:telefone,empresa:empresa,instagram:instagram,leadKey:lk};
+}
 function sdrTaskRowHtml(t,showDate){
+  var _tl=_sdrTaskLead(t);
   return '<div class="sdr-task-row'+(t.done?' done':'')+'">'+
     '<label class="sdr-task-check"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleSdrTarefa(\''+t._key+'\',this.checked)"><span class="sdr-check-mark"></span></label>'+
     '<div class="sdr-task-icon"><i class="ti '+(t.icon||'ti-checkbox')+'"></i></div>'+
     '<div class="sdr-task-info">'+
-      '<div class="sdr-task-lead">'+_chEscSafe(_leadDisplayName({_key:(t.leadKey||t.telefone),nome:t.nome,telefone:t.telefone,empresa:t.empresa,instagram:t.instagram}))+'</div>'+
-      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(t.telefone?' &middot; '+t.telefone:'')+'</div>'+
+      '<div class="sdr-task-lead">'+_chEscSafe(_leadDisplayName({_key:(_tl.leadKey||_tl.telefone),nome:_tl.nome,telefone:_tl.telefone,empresa:_tl.empresa,instagram:_tl.instagram}))+'</div>'+
+      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(_tl.telefone?' &middot; '+_tl.telefone:'')+'</div>'+
     '</div>'+
     (showDate?'<div class="sdr-task-date">'+fmtDateBR(t.dataISO)+'</div>':'')+
   '</div>';
@@ -2557,7 +2572,8 @@ function syncJoaoCallTasks(){
     var hasCall=Object.keys(sdrTarefas||{}).some(function(tk){var t=sdrTarefas[tk];return t&&t.leadKey===leadKey&&_isLigacaoTask(tk,t);});
     if(hasCall) return;
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[leadKey])||{};
-    generateCadenciaTasks({nome:kb.nome||'',telefone:kb.telefone||'',empresa:kb.empresa||'',faturamento:kb.faturamento||''},leadKey,true);
+    var ca=(cadenciaAtivos&&cadenciaAtivos[leadKey])||{};
+    generateCadenciaTasks({nome:kb.nome||ca.nome||ca.primeiroNome||'',telefone:kb.telefone||ca.telefone||ca.phone||'',empresa:kb.empresa||ca.empresa||'',faturamento:kb.faturamento||ca.faturamento||''},leadKey,true);
   });
 }
 // Marca/desmarca uma tarefa de cadencia como concluida
