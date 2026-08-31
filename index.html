@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-recover2";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-adicionais";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -9157,6 +9157,17 @@ function fuOnPlanoChange(){
     }
     toggleMensalidadeField();
   }
+  // Adicionais são exclusivos dos planos Starter e Premium
+  var _adicWrap=document.getElementById('fu-adic-wrap');
+  if(_adicWrap){
+    var _adicOK=(plano==='starter'||plano==='premium');
+    _adicWrap.style.display=_adicOK?'':'none';
+    if(!_adicOK){
+      (ADICIONAIS_CATALOGO||[]).forEach(function(a){var el=document.getElementById('fu-adic-'+a.id);if(el)el.checked=false;});
+      var _av=document.getElementById('fu-adic-valor');if(_av){_av.value='';try{delete _av.dataset.userEdited;}catch(e){}}
+      if(typeof fuUpdateAdicionais==='function')try{fuUpdateAdicionais('fu');}catch(e){}
+    }
+  }
   updateBonusPreview();
 }
 function toggleMensalidadeField(){
@@ -9247,8 +9258,8 @@ function fuAdicionaisHTML(prefix){
       '<span style="font-size:12px;font-weight:700;color:var(--purple3);white-space:nowrap;">R$ '+a.valor.toLocaleString('pt-BR')+'/mês</span>'+
     '</label>';
   }).join('');
-  return '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
-    '<label class="f-label" style="margin-bottom:10px;display:block;">Serviços adicionais (opcional)</label>'+
+  return '<div id="'+prefix+'-adic-wrap" style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">'+
+    '<label class="f-label" style="margin-bottom:10px;display:block;">Serviços adicionais (só Starter e Premium)</label>'+
     rows+
     '<div id="'+prefix+'-adic-sugestao" style="font-size:11px;color:var(--muted);font-family:\'Barlow Condensed\',sans-serif;margin:8px 0 6px;">Nenhum adicional selecionado</div>'+
     '<label class="f-label">Valor combinado dos adicionais (R$/mês)</label>'+
@@ -9536,8 +9547,10 @@ async function generateContratoDocx(dados){
       var nomes=dados.adicionais.map(function(a){return a.nome;});
       var listaTxt=nomes.length>1?(nomes.slice(0,-1).join(', ')+' e '+nomes[nomes.length-1]):nomes[0];
       adicTxt=' Serviços adicionais contratados: '+listaTxt+(dados.adicionaisValor?', no valor combinado de R$ '+fmtMoeda(dados.adicionaisValor)+' mensais, já incluído no valor total acima':'')+'.';
-      formaPagamento+=adicTxt;
+    } else if(dados.adicionaisValor){
+      adicTxt=' Serviços adicionais contratados no valor combinado de R$ '+fmtMoeda(dados.adicionaisValor)+' mensais, já incluído no valor total acima.';
     }
+    if(adicTxt) formaPagamento+=adicTxt;
 
     doc.render({
       nome_cliente:dados.nomeCliente||'',
@@ -9677,9 +9690,10 @@ function saveFollowup(){
   var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
-  // Serviços adicionais — soma no valor da venda
-  var adicionais=venda?fuAdicionaisSelecionados('fu'):[];
-  var adicValor=venda?(parseFloat((document.getElementById('fu-adic-valor')||{}).value)||0):0;
+  // Serviços adicionais — exclusivos de Starter e Premium; somam no valor da venda
+  var _adicPermitido=(plano==='starter'||plano==='premium');
+  var adicionais=(venda&&_adicPermitido)?fuAdicionaisSelecionados('fu'):[];
+  var adicValor=(venda&&_adicPermitido)?(parseFloat((document.getElementById('fu-adic-valor')||{}).value)||0):0;
   if(venda&&adicValor>0){
     if(tipoValor==='mmr'){mensalidade+=adicValor;contrato+=adicValor*(duracao||1);}
     else{contrato+=adicValor*(duracao||1);}
