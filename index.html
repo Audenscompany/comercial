@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-venda-adic-modal";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-editar-adic";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -27996,6 +27996,7 @@ function abrirEditarVenda(fid){
         '<div><label class="f-label">Contrato total (R$)</label><input class="f-input" type="number" id="ev-contrato" value="'+(fu.contrato||'')+'" placeholder="0"></div>'+
         '<div id="ev-duracao-wrap">'+_buildEvDuracao(fu.plano, fu.duracao||1)+'</div>'+
         '<div><label class="f-label">Data de início</label><input class="f-input" type="date" id="ev-data-inicio" value="'+(fu.dataInicio||'')+'"></div>'+
+        fuAdicionaisHTML('ev')+
       '</div>'+
       '<div class="modal-footer">'+
         '<button class="btn btn-primary" onclick="salvarEdicaoVenda()"><i class="ti ti-check"></i> Salvar</button>'+
@@ -28003,6 +28004,15 @@ function abrirEditarVenda(fid){
       '</div>'+
     '</div></div>';
   document.body.insertAdjacentHTML('beforeend',html);
+  // Restaura adicionais ja salvos nesta venda + aplica visibilidade por plano
+  try{
+    var _evAd=(fu.adicionais&&fu.adicionais.length)?fu.adicionais:[];
+    _evAd.forEach(function(a){var el=document.getElementById('ev-adic-'+a.id);if(el)el.checked=true;});
+    var _evVal=document.getElementById('ev-adic-valor');
+    if(_evVal&&fu.adicionaisValor){_evVal.value=fu.adicionaisValor;_evVal.dataset.userEdited='1';}
+    if(typeof fuUpdateAdicionais==='function')fuUpdateAdicionais('ev');
+    evOnPlanoChange();
+  }catch(e){}
 }
 function _buildEvDuracao(plano, val){
   if(plano==='starter'){
@@ -28021,6 +28031,16 @@ function evOnPlanoChange(){
   var tipoEl=document.getElementById('ev-tipo');
   var mensWrap=document.getElementById('ev-mens-wrap');
   if(plano==='starter'){if(tipoEl)tipoEl.value='tcv';if(mensWrap)mensWrap.style.display='none';}
+  var _adWrap=document.getElementById('ev-adic-wrap');
+  if(_adWrap){
+    var _ok=(plano==='starter'||plano==='premium');
+    _adWrap.style.display=_ok?'':'none';
+    if(!_ok){
+      (ADICIONAIS_CATALOGO||[]).forEach(function(a){var el=document.getElementById('ev-adic-'+a.id);if(el)el.checked=false;});
+      var _v=document.getElementById('ev-adic-valor');if(_v){_v.value='';try{delete _v.dataset.userEdited;}catch(e){}}
+      if(typeof fuUpdateAdicionais==='function')try{fuUpdateAdicionais('ev');}catch(e){}
+    }
+  }
 }
 function toggleEvTipo(){
   var t=document.getElementById('ev-tipo');
@@ -28045,8 +28065,12 @@ async function salvarEdicaoVenda(){
   var dataInicio=document.getElementById('ev-data-inicio').value;
   var origem=document.getElementById('ev-origem').value;
   var sdr=(document.getElementById('ev-sdr').value||'').trim();
+  var _adicOK=(plano==='starter'||plano==='premium');
+  var adicionais=_adicOK?fuAdicionaisSelecionados('ev'):[];
+  var adicValor=_adicOK?(parseFloat((document.getElementById('ev-adic-valor')||{}).value)||0):0;
   fu.plano=plano;fu.tipoValor=tipo;fu.mensalidade=mensalidade;fu.contrato=contrato;
   fu.duracao=duracao;fu.dataInicio=dataInicio;
+  fu.adicionais=adicionais;fu.adicionaisValor=adicValor;
   if(origem)fu.origem=origem;
   if(sdr)fu.sdr=sdr; else delete fu.sdr;
   if(cliente)fu.nome=cliente;
@@ -28076,6 +28100,7 @@ async function salvarEdicaoVenda(){
     followups[fid].plano=plano;followups[fid].tipoValor=tipo;
     followups[fid].mensalidade=mensalidade;followups[fid].contrato=contrato;
     followups[fid].duracao=duracao;followups[fid].dataInicio=dataInicio;
+    followups[fid].adicionais=adicionais;followups[fid].adicionaisValor=adicValor;
     if(origem)followups[fid].origem=origem;
     if(sdr)followups[fid].sdr=sdr; else delete followups[fid].sdr;
     if(cliente)followups[fid].nome=cliente;
