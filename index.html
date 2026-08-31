@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-adicionais";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-08-31-contrato-adic";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -9541,16 +9541,32 @@ async function generateContratoDocx(dados){
         formaPagamento+='.';
       }
     }
+    // Detecta se o modelo usa placeholders ESTRUTURADOS de adicionais (ex.: Premium)
+    var _docXml=''; try{ _docXml=zip.file('word/document.xml').asText(); }catch(e){}
+    var _hasStructAdic=_docXml.indexOf('temAdicionais')>=0;
+
     // Serviços adicionais contratados
+    var _adicList=(dados.adicionais&&dados.adicionais.length)?dados.adicionais:[];
+    var _adicVal=dados.adicionaisValor||0;
+    var _temAdic=(_adicList.length>0)||(_adicVal>0);
+    // Lista para modelos estruturados: loop {#adicionaisSel}{linha}{/adicionaisSel}
+    var _adicSel;
+    if(_adicList.length){
+      _adicSel=_adicList.map(function(a,i){return {linha:'\n'+String.fromCharCode(97+i)+') '+a.nome+' — R$ '+fmtMoeda(a.valor)+'/mês;'};});
+    } else if(_adicVal>0){
+      _adicSel=[{linha:'\nServiços adicionais no valor combinado de R$ '+fmtMoeda(_adicVal)+'/mês;'}];
+    } else { _adicSel=[]; }
+    // Texto corrido para modelos SEM placeholders estruturados (Starter/Marketplaces/Elite)
     var adicTxt='';
-    if(dados.adicionais&&dados.adicionais.length){
-      var nomes=dados.adicionais.map(function(a){return a.nome;});
+    if(_adicList.length){
+      var nomes=_adicList.map(function(a){return a.nome;});
       var listaTxt=nomes.length>1?(nomes.slice(0,-1).join(', ')+' e '+nomes[nomes.length-1]):nomes[0];
-      adicTxt=' Serviços adicionais contratados: '+listaTxt+(dados.adicionaisValor?', no valor combinado de R$ '+fmtMoeda(dados.adicionaisValor)+' mensais, já incluído no valor total acima':'')+'.';
-    } else if(dados.adicionaisValor){
-      adicTxt=' Serviços adicionais contratados no valor combinado de R$ '+fmtMoeda(dados.adicionaisValor)+' mensais, já incluído no valor total acima.';
+      adicTxt=' Serviços adicionais contratados: '+listaTxt+(_adicVal?', no valor combinado de R$ '+fmtMoeda(_adicVal)+' mensais, já incluído no valor total acima':'')+'.';
+    } else if(_adicVal>0){
+      adicTxt=' Serviços adicionais contratados no valor combinado de R$ '+fmtMoeda(_adicVal)+' mensais, já incluído no valor total acima.';
     }
-    if(adicTxt) formaPagamento+=adicTxt;
+    // Só concatena no forma_pagamento se o modelo NÃO tiver a cláusula estruturada (evita duplicar)
+    if(adicTxt && !_hasStructAdic) formaPagamento+=adicTxt;
 
     doc.render({
       nome_cliente:dados.nomeCliente||'',
@@ -9560,6 +9576,9 @@ async function generateContratoDocx(dados){
       data_fim:fmtDataBR(dataFim),
       forma_pagamento:formaPagamento,
       adicionais:(adicTxt||'').trim(),
+      temAdicionais:_temAdic,
+      adicionaisSel:_adicSel,
+      clausulaMidia:_temAdic?'1.3':'1.2',
       mmr:dados.tipoValor==='mmr'
     });
 
