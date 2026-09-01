@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-kpi-reun-fech";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-reunioes-dedup";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14267,17 +14267,32 @@ function buildAnaliseAdsHTML(data){
   // Reuniões de tráfego contadas EXATAMENTE como a aba Reuniões: fonte = meetings,
   // data = m.dtISO, realizada via followup/status. (A soma do ranking duplicava o mesmo
   // telefone entre ads diferentes, gerando um número absurdo.)
-  function _aacFu(m){return followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;})||null;}
+  // getFu com a MESMA prioridade da aba Reuniões (venda por telefone prevalece)
+  function _aacFu(m){
+    var _mt9=((m.tel||m.telefone||'')).replace(/\D/g,'').slice(-9);
+    var _direct=followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;})||null;
+    if(_mt9.length>=8 && (!_direct||_direct.resultado!=='venda')){
+      var _vfu=Object.values(followups).find(function(f){return f.resultado==='venda'&&(f.tel||'').replace(/\D/g,'').slice(-9)===_mt9;});
+      if(_vfu)return _vfu;
+    }
+    return _direct;
+  }
   function _aacRealMeet(m){var fu=_aacFu(m);return fu?(fu.comparecimento==='sim'||fu.resultado==='venda'):isRealizada(m.status);}
-  function _aacTrafMeet(m){var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;var o=((m.origem||(kb&&kb.origem)||'')+'').toLowerCase();var hasAd=kb&&kb.ad&&kb.ad!=='-'&&kb.ad!=='(sem ad)';return o.indexOf('tr')>-1||o.indexOf('tráfego')>-1||o.indexOf('trafego')>-1||o.indexOf('traffic')>-1||!!hasAd;}
+  function _aacNsMeet(m){var fu=_aacFu(m);var st=(m.status||'').toLowerCase();return fu?fu.comparecimento==='nao':(st.indexOf('noshow')>-1||st.indexOf('no-show')>-1||st==='no_show');}
+  function _aacDedup(arr){var seen={},out=[];arr.forEach(function(m){var k=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();if(!k)return;if(!seen[k]){seen[k]=m;out.push(m);}else if(_aacNsMeet(seen[k])&&_aacRealMeet(m)){out[out.indexOf(seen[k])]=m;seen[k]=m;}});return out;}
+  // Tráfego preciso (categorizeOrigem, não substring 'tr' que casa "Outros") OU tem anúncio
+  function _aacTrafMeet(m){var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;var o=(m.origem||(kb&&kb.origem)||'');var hasAd=kb&&kb.ad&&kb.ad!=='-'&&kb.ad!=='(sem ad)';return categorizeOrigem(o)==='Trafego Pago'||!!hasAd;}
   var _mTraf=Object.values(meetings||{}).filter(function(m){
     if(!m||m._retorno||m._hidden)return false;
     if(m.status==='reagendado'&&m.reagendamentos>0)return false;
     if(!m.dtISO)return false; var _d=new Date(m.dtISO); if(isNaN(_d.getTime()))return false;
     if(!inAdsRange(_d))return false; return _aacTrafMeet(m);
   });
-  funilAgend=_mTraf.length;
-  funilReal=_mTraf.filter(_aacRealMeet).length;
+  // Igual à aba Reuniões: só reuniões que aconteceram (realizada ou no-show), deduplicadas
+  var _mElig=_mTraf.filter(function(m){return _aacRealMeet(m)||_aacNsMeet(m);});
+  var _mDedup=_aacDedup(_mElig);
+  funilReal=_mDedup.filter(_aacRealMeet).length;
+  funilAgend=_mDedup.length;
   totReun=funilAgend;
   var totQualif=_allLeadsTrafego.filter(function(r){
     return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
