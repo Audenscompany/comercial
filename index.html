@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-progressao-nivel-periodo";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-cac-vendas-trafego";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14258,6 +14258,11 @@ function buildAnaliseAdsHTML(data){
   // Aliases usados nas taxas de conversão abaixo
   var totReun=funilAgend;
   var totReal=funilReal;
+  // Fechamentos do funil e CAC = MESMO total do ranking de ads (soma de ads.fechamentos,
+  // ja inclui o balde "(sem ad)") — que bate com a aba Vendas. Corrige subcontagem que
+  // inflava o CAC (ex.: 18k/9 = 2.010 em vez de 18k/13 = 1.384).
+  var _totFechAds=ads.reduce(function(s,a){return s+(a.fechamentos||0);},0);
+  if(_totFechAds>0) funilFech=_totFechAds;
   var totFech=funilFech;
   var totQualif=_allLeadsTrafego.filter(function(r){
     return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
