@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-funil-aac-instant";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-funil-aac-fb-snapshot";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -880,6 +880,7 @@ function startRealtimeSync(){
   fbDb.ref('instagram/cache').on('value',function(s){if(s.val())_igCache=s.val();});
   fbDb.ref('instagram/analises').on('value',function(s){_igAnalises=s.val()||{};});
   fbDb.ref('instagram/calendario').on('value',function(s){_igCalendario=s.val()||{};});
+  fbDb.ref('meta_aac/snapshot').on('value',function(s){var v=s.val()||{};try{Object.keys(v).forEach(function(pk){if(v[pk]&&v[pk].camps){if(!_aacCache[pk]||(v[pk].ts||0)>=(_aacCache[pk].ts||0)){_aacCache[pk]=v[pk];}}});if(document.getElementById('funil-aac-page')&&typeof _renderAACContent==='function'){var _cur=_aacCache[_aacPeriod];var _el=document.getElementById('aac-content');if(_cur&&_cur.camps&&_el&&!window._aacLiveShown){_el.innerHTML=_renderAACContent(_aacSnapToData(_cur));}}}catch(e){}});
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
@@ -12431,6 +12432,7 @@ function _aacSaveSnap(pk,data){
     var pack={camps:data.camps,ads:data.ads,audiences:data.audiences,period:data.period,range:data.range,ts:Date.now()};
     _aacCache[pk]=pack;
     localStorage.setItem(_aacSnapKey(pk),JSON.stringify(pack));
+    if(typeof fbDb!=='undefined'&&(fbDb||initFirebase())){try{fbDb.ref('meta_aac/snapshot/'+pk).set(pack);}catch(e2){}}
   }catch(e){}
 }
 function _aacLoadSnap(pk){
@@ -12508,6 +12510,7 @@ function renderFunilAAC(){
   if(_snap&&_snap.camps){ H+=_renderAACContent(_aacSnapToData(_snap)); }
   else { H+='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:36px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Lendo a retenção no Meta...</div></div>'; }
   H+='</div></div></div>';
+  window._aacLiveShown=false;
   // Stale-while-revalidate: pinta o snapshot na hora e revalida em segundo plano + auto a cada 5 min
   setTimeout(function(){refreshFunilAAC(false);_aacStartAuto();},80);
   return H;
@@ -12538,6 +12541,7 @@ async function refreshFunilAAC(force){
   if(el&&force)el.innerHTML='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:32px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Lendo a retenção no Meta...</div></div>';
   var data=await fetchFunilAAC(force);
   window._aacLastData=data;
+  if(data&&!data.error)window._aacLiveShown=true;
   el=document.getElementById('aac-content');if(!el)return;
   if(data.error){
     if(data.error==='token_expired')el.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted);"><i class="ti ti-alert-triangle" style="font-size:40px;color:#ef4444;display:block;margin-bottom:12px;"></i><div style="font-size:14px;font-weight:600;color:#ef4444;">Token Meta expirado</div><div style="font-size:12px;margin-top:8px;">Reconecte em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Configurações</a></div></div>';
