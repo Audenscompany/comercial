@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-funil-aac-fb-snapshot";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-progressao-nivel-periodo";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -21175,6 +21175,10 @@ async function calcCloserMetaHistory(nivelIdx){
   var lv=CLOSER_LEVELS[nivelIdx];
   if(!lv||lv.promoMeses===0) return null;
   var meses=_lastNMonths(lv.promoJanela);
+  // Só conta meses DENTRO do nível atual: exclui os anteriores ao início do nível
+  // (o mês em que subiu de nível zera a contagem do nível novo).
+  var since=_careerLevelSince.gustavo||null;
+  if(since) meses=meses.filter(function(ms){return ms>=since;});
   // Conta EXATAMENTE como o card "Contratos Fechados": fonte = _todasVendasCache (CRM),
   // mesma dedup e respeitando as exclusoes manuais da aba Vendas. Nada da planilha.
   var _todas=(window._todasVendasCache||[]).filter(function(v){
