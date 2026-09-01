@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-08-31-agenda-editar-data";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-funil-aac";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -4522,6 +4522,7 @@ function buildNav(){
       {id:'analise-lp',icon:'ti-browser-check',label:'Análise de LP'}
     ]},
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
+    {id:'funil-aac',icon:'ti-filter',label:'Funil AAC'},
     {group:'Instagram',icon:'ti-brand-instagram',items:[
       {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
       {id:'carrossel-hist',icon:'ti-books',label:'Carrossel Histórias'},
@@ -4627,6 +4628,7 @@ function buildNav(){
       'analise-ads':{id:'analise-ads',icon:'ti-ad-2',label:'Análise de Ads'},
       'analise-lp':{id:'analise-lp',icon:'ti-browser-check',label:'Análise de LP'},
       'meta-ads':{id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
+      'funil-aac':{id:'funil-aac',icon:'ti-filter',label:'Funil AAC'},
       'reunioes':{id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
       'reunioes-noshow':{id:'reunioes-noshow',icon:'ti-user-off',label:'No-show'},
       'calendario':{id:'calendario',icon:'ti-calendar',label:'Calendario'},
@@ -4766,7 +4768,7 @@ function showPage(id){
   var map={
     'visao-geral':renderVisaoGeral,dashboard:renderDashboard,leads:renderLeads,ligar:renderLigar,tarefas:renderTarefas,
     historico:renderHistorico,'meu-hist':renderMeuHist,reunioes:renderReunioes,
-    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'analise-lp':renderAnaliseLP,'meta-ads':renderMetaAds,'criativos':renderCriativos,'carrossel':renderCarrossel,'carrossel-hist':renderCarHist,'motivacional':renderMotivacional,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,'cal-conteudo':renderContentCalendar,
+    bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'analise-lp':renderAnaliseLP,'meta-ads':renderMetaAds,'funil-aac':renderFunilAAC,'criativos':renderCriativos,'carrossel':renderCarrossel,'carrossel-hist':renderCarHist,'motivacional':renderMotivacional,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,'cal-conteudo':renderContentCalendar,
     calendario:renderCalendario,config:renderConfig,'config-sdr':renderConfigSDR,'cadencia-painel':renderCadenciaPainel,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
     'reativacao':renderReativacao,'kanban':renderKanban,
@@ -12410,6 +12412,315 @@ function renderAnaliseAds(){
 
   setTimeout(refreshAnaliseAds, 80);
   return html;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNIL AAC — Aquisição · Aquecimento · Conversão (Máquina de Audiência FC)
+// Painel ao vivo de RETENÇÃO. Lê o Meta (mesmo token do Meta Ads Center) e
+// organiza as campanhas nas 3 etapas do funil. Mapa claro do que olhar sempre.
+// ═══════════════════════════════════════════════════════════════════════════
+window._aacPeriod = window._aacPeriod || 'today';
+window._aacLastData = window._aacLastData || null;
+
+// Classifica uma campanha numa etapa do funil pelo nome (sobrevive à troca de mês)
+function _aacStageOf(name){
+  var n=(name||'').toUpperCase();
+  if(n.indexOf('AQUISI')>-1) return 'aq';
+  if(n.indexOf('AQUECIMENTO')>-1) return 'aw';
+  if(n.indexOf('CONVERS')>-1) return 'cv';
+  return null;
+}
+// Soma valores de um campo de vídeo do Meta (vem como número, {value} ou [{value}])
+function _aacNum(v){
+  if(v==null) return 0;
+  if(typeof v==='number') return v;
+  if(typeof v==='string'){var f=parseFloat(v);return isNaN(f)?0:f;}
+  if(Array.isArray(v)){var s=0;v.forEach(function(x){s+=parseFloat(x&&x.value)||0;});return s;}
+  if(typeof v==='object'&&v.value!=null) return parseFloat(v.value)||0;
+  return 0;
+}
+// Soma ações cujo action_type casa com um teste
+function _aacAct(actions,test){
+  if(!Array.isArray(actions)) return 0;
+  var s=0;actions.forEach(function(a){if(a&&test(String(a.action_type||'')))s+=parseFloat(a.value)||0;});
+  return s;
+}
+function _aacBRL(n){n=n||0;return 'R$'+n.toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function _aacInt(n){n=Math.round(n||0);return n.toLocaleString('pt-BR');}
+function _aacPct(a,b){return b>0?Math.round(a/b*100):0;}
+
+// Janela de datas do período selecionado
+function _aacRange(){
+  var now=new Date(),until=now.toISOString().slice(0,10),since=until;
+  if(_aacPeriod==='7d'){var d=new Date(now);d.setDate(d.getDate()-6);since=d.toISOString().slice(0,10);}
+  else if(_aacPeriod==='month'){since=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);}
+  return {since:since,until:until};
+}
+
+// METAS (valores ideais) — ajuste aqui à vontade. Baseadas na estratégia da
+// Máquina de Audiência + benchmarks de Reels/food service no BR.
+var AAC_METAS={
+  aq:{cpThru:0.05, ret75:0.45, freq:2.5},   // frio: ThruPlay barato, retém forte, freq baixa
+  aw:{cpThru:0.10, ret75:0.40, freq:3.5},   // morno: um pouco mais caro, aguenta mais freq
+  cv:{cpm:40, cpLP:1.00, cpLead:20}          // quente: CPM alto é normal; custo por LP/lead
+};
+function _aacMetaLine(txt,ok){
+  var col=ok===true?'#22c55e':(ok===false?'#f59e0b':'var(--muted)');
+  var mk=ok===true?'✓ ':(ok===false?'! ':'');
+  return '<div style="font-size:8.5px;margin-top:3px;color:'+col+';font-weight:600;line-height:1.2;">'+mk+txt+'</div>';
+}
+
+function renderFunilAAC(){
+  var H='<div class="page active" id="funil-aac-page">';
+  H+=_aacHeader();
+  H+='<div style="padding:0 16px 28px;">';
+  H+='<div id="aac-content" style="margin-top:14px;">';
+  H+='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:36px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Lendo a retenção no Meta...</div></div>';
+  H+='</div></div></div>';
+  setTimeout(function(){refreshFunilAAC(false);},80);
+  return H;
+}
+
+function _aacHeader(){
+  var connected=(typeof isMetaConnected==='function')&&isMetaConnected();
+  var st=connected
+    ?'<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#22c55e;font-weight:600;background:rgba(34,197,94,0.08);padding:5px 12px;border-radius:20px;border:1px solid rgba(34,197,94,0.25);"><i class="ti ti-brand-meta"></i>Meta conectado</span>'
+    :'<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#ef4444;font-weight:600;background:rgba(239,68,68,0.08);padding:5px 12px;border-radius:20px;border:1px solid rgba(239,68,68,0.25);"><i class="ti ti-brand-meta"></i>Desconectado</span>';
+  function pill(id,lbl){var a=_aacPeriod===id;return '<button onclick="_aacPeriod=\''+id+'\';refreshFunilAAC(true);" style="background:'+(a?'var(--purple)':'var(--card)')+';border:1px solid '+(a?'var(--purple)':'var(--border2)')+';border-radius:8px;color:'+(a?'#fff':'var(--muted)')+';padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;">'+lbl+'</button>';}
+  return '<div style="padding:20px 16px 0;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px;">'
+    +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:28px;letter-spacing:2px;color:var(--white);line-height:1;">Funil AAC</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:3px;">Aquisição → Aquecimento → Conversão · a Máquina de Audiência, otimizada por retenção</div></div>'
+    +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+    +pill('today','Hoje')+pill('7d','7 dias')+pill('month','Mês')
+    +'<button onclick="refreshFunilAAC(true)" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;"><i class="ti ti-refresh"></i></button>'
+    +st+'<span id="aac-last-upd" style="font-size:10px;color:var(--muted);"></span>'
+    +'</div></div>';
+}
+
+async function refreshFunilAAC(force){
+  var el=document.getElementById('aac-content');
+  if(!((typeof isMetaConnected==='function')&&isMetaConnected())){
+    if(el)el.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted);"><i class="ti ti-brand-meta" style="font-size:48px;display:block;margin-bottom:16px;color:var(--purple3);"></i><div style="font-size:14px;font-weight:600;">Meta Ads não conectado</div><div style="font-size:12px;margin-top:8px;">Configure o token em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Configurações</a></div></div>';
+    return;
+  }
+  if(el&&force)el.innerHTML='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:32px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Lendo a retenção no Meta...</div></div>';
+  var data=await fetchFunilAAC(force);
+  window._aacLastData=data;
+  el=document.getElementById('aac-content');if(!el)return;
+  if(data.error){
+    if(data.error==='token_expired')el.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted);"><i class="ti ti-alert-triangle" style="font-size:40px;color:#ef4444;display:block;margin-bottom:12px;"></i><div style="font-size:14px;font-weight:600;color:#ef4444;">Token Meta expirado</div><div style="font-size:12px;margin-top:8px;">Reconecte em <a onclick="showPage(\'config\')" style="color:var(--purple3);cursor:pointer;">Configurações</a></div></div>';
+    else el.innerHTML='<div style="padding:30px;color:#ef4444;font-size:13px;">Erro: '+data.error+'</div>';
+    return;
+  }
+  var lu=document.getElementById('aac-last-upd');
+  if(lu)lu.textContent='Atualizado às '+data.updatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  el.innerHTML=_renderAACContent(data);
+}
+
+async function fetchFunilAAC(force){
+  if(!isMetaConnected()||!metaAccountId) return {error:'not_connected'};
+  var r=_aacRange();
+  var tr=encodeURIComponent(JSON.stringify({since:r.since,until:r.until}));
+  var vidFields='spend,reach,frequency,impressions,cpm,clicks,inline_link_clicks,actions,video_thruplay_watched_actions,video_play_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_avg_time_watched_actions';
+  var ids=metaAccountId.split(',').map(function(s){return s.trim().replace(/^act_/,'');}).filter(Boolean);
+  var camps=[],ads=[],audiences=[];
+  for(var i=0;i<ids.length;i++){
+    var accId=ids[i];
+    try{
+      // Campanhas (totais por etapa, com reach/freq/cpm corretos por campanha)
+      var cu='https://graph.facebook.com/v20.0/act_'+accId+'/insights?level=campaign&fields=campaign_id,campaign_name,'+vidFields+'&time_range='+tr+'&limit=300&access_token='+metaToken.access_token;
+      var cr=await fetch(cu);var cd=await cr.json();
+      if(cd.error){if(cd.error.code===190)return{error:'token_expired'};console.error('AAC camps',cd.error);}
+      (cd.data||[]).forEach(function(c){if(_aacStageOf(c.campaign_name)){c._accId=accId;camps.push(c);}});
+      // Anúncios (quebra por criativo dentro de cada etapa)
+      var au='https://graph.facebook.com/v20.0/act_'+accId+'/insights?level=ad&fields=campaign_name,adset_name,ad_name,'+vidFields+'&time_range='+tr+'&limit=500&access_token='+metaToken.access_token;
+      var ar=await fetch(au);var ad=await ar.json();
+      if(!ad.error)(ad.data||[]).forEach(function(a){if(_aacStageOf(a.campaign_name)){a._accId=accId;ads.push(a);}});
+      // Públicos de retenção (a métrica-mãe) — best effort
+      try{
+        var pu='https://graph.facebook.com/v20.0/act_'+accId+'/customaudiences?fields=name,approximate_count_lower_bound,approximate_count_upper_bound,time_updated&limit=200&access_token='+metaToken.access_token;
+        var pr=await fetch(pu);var pd=await pr.json();
+        if(!pd.error)(pd.data||[]).forEach(function(p){
+          var nm=(p.name||'').toUpperCase();
+          if((nm.indexOf('VÍDEO')>-1||nm.indexOf('VIDEO')>-1)&&(nm.indexOf('75')>-1||nm.indexOf('95')>-1)){
+            var cnt=_aacNum(p.approximate_count_upper_bound);
+            if(!(cnt>0))cnt=_aacNum(p.approximate_count_lower_bound);
+            audiences.push({name:p.name,count:cnt,pct:(nm.indexOf('95')>-1?95:75)});
+          }
+        });
+      }catch(e2){}
+    }catch(e){console.error('fetchFunilAAC acc '+accId,e);}
+  }
+  var result={camps:camps,ads:ads,audiences:audiences,period:_aacPeriod,range:r,updatedAt:new Date()};
+  return result;
+}
+
+// Agrega uma lista de linhas de insight num objeto de totais
+function _aacAgg(rows){
+  var t={spend:0,impressions:0,reach:0,clicks:0,linkClicks:0,plays:0,thru:0,p25:0,p50:0,p75:0,p95:0,lpv:0,leads:0,freqW:0};
+  rows.forEach(function(r){
+    var sp=parseFloat(r.spend)||0, im=parseFloat(r.impressions)||0, rc=parseFloat(r.reach)||0;
+    t.spend+=sp; t.impressions+=im; t.reach+=rc;
+    t.clicks+=parseFloat(r.clicks)||0; t.linkClicks+=parseFloat(r.inline_link_clicks)||0;
+    t.plays+=_aacNum(r.video_play_actions);
+    t.thru+=_aacNum(r.video_thruplay_watched_actions);
+    t.p25+=_aacNum(r.video_p25_watched_actions);
+    t.p50+=_aacNum(r.video_p50_watched_actions);
+    t.p75+=_aacNum(r.video_p75_watched_actions);
+    t.p95+=_aacNum(r.video_p95_watched_actions);
+    t.lpv+=_aacAct(r.actions,function(x){return x.indexOf('landing_page_view')>-1;});
+    t.leads+=_aacAct(r.actions,function(x){return x.toLowerCase().indexOf('lead')>-1;});
+  });
+  t.cpThru=t.thru>0?t.spend/t.thru:0;
+  t.ret75=t.plays>0?t.p75/t.plays:0;
+  t.ret95=t.plays>0?t.p95/t.plays:0;
+  t.freq=t.reach>0?t.impressions/t.reach:0;
+  t.cpm=t.impressions>0?t.spend/t.impressions*1000:0;
+  return t;
+}
+
+function _renderAACContent(data){
+  var byStage={aq:[],aw:[],cv:[]};
+  (data.camps||[]).forEach(function(c){var s=_aacStageOf(c.campaign_name);if(byStage[s])byStage[s].push(c);});
+  var adsByStage={aq:[],aw:[],cv:[]};
+  (data.ads||[]).forEach(function(a){var s=_aacStageOf(a.campaign_name);if(adsByStage[s])adsByStage[s].push(a);});
+  var AQ=_aacAgg(byStage.aq),AW=_aacAgg(byStage.aw),CV=_aacAgg(byStage.cv);
+
+  var H='';
+
+  // ── MÉTRICA-MÃE (topo) ──────────────────────────────────────────────
+  var a75=null,a95=null;
+  (data.audiences||[]).forEach(function(x){if(x.pct===95&&(!a95||x.count>a95))a95=x.count;if(x.pct===75&&(!a75||x.count>a75))a75=x.count;});
+  var perLbl={today:'hoje','7d':'últimos 7 dias',month:'este mês'}[data.period];
+  H+='<div style="background:linear-gradient(135deg,rgba(123,47,255,0.18),rgba(123,47,255,0.04));border:1px solid var(--border2);border-radius:16px;padding:18px 18px 16px;margin-bottom:16px;">';
+  H+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><i class="ti ti-diamond" style="color:var(--purple3);font-size:18px;"></i><span style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--purple3);">A Métrica-Mãe · o ativo que você constrói</span></div>';
+  H+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">';
+  function heroCell(big,lbl,sub,col){return '<div><div style="font-family:Bebas Neue,sans-serif;font-size:34px;line-height:1;color:'+(col||'var(--white)')+';">'+big+'</div><div style="font-size:11px;color:var(--white);font-weight:600;margin-top:3px;">'+lbl+'</div><div style="font-size:10px;color:var(--muted);margin-top:1px;">'+sub+'</div>'+_aacMetaLine('ideal: subir toda semana',null)+'</div>';}
+  if(a75!=null||a95!=null){
+    H+=heroCell(a75!=null?_aacInt(a75):'—','Público VÍDEO 75%','donos que assistem fundo','#22c55e');
+    H+=heroCell(a95!=null?_aacInt(a95):'—','Público VÍDEO 95%','os mais quentes','var(--purple3)');
+  }
+  H+=heroCell(_aacInt(AQ.p75),'Entraram a 75%+ ('+perLbl+')','novos donos retidos pela Aquisição','#22c55e');
+  H+=heroCell(_aacInt(AQ.p95),'Entraram a 95% ('+perLbl+')','fundo de retenção','var(--purple3)');
+  H+='</div>';
+  H+='<div style="font-size:10px;color:var(--muted);margin-top:12px;border-top:1px solid var(--border);padding-top:8px;line-height:1.5;"><b style="color:var(--white);">Como ler:</b> se estes números crescem semana a semana, a máquina funciona e o comercial da Audens fica mais fácil. É o patrimônio — acima de like, alcance ou clique.'+(a75==null?' <span style="color:var(--amber);">(Tamanho dos públicos indisponível na API agora — usando a entrada do período como referência.)</span>':'')+'</div>';
+  H+='</div>';
+
+  // ── AS 3 ETAPAS ─────────────────────────────────────────────────────
+  H+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:16px;align-items:start;">';
+  H+=_aacStageCard('aq',AQ,adsByStage.aq);
+  H+=_aacStageCard('aw',AW,adsByStage.aw);
+  H+=_aacStageCard('cv',CV,adsByStage.cv);
+  H+='</div>';
+
+  // ── CRIATIVOS POR ETAPA (retenção real, quem segura e quem sufoca) ───
+  H+=_aacCreativesBlock('aq','Aquisição',adsByStage.aq,AQ);
+  H+=_aacCreativesBlock('aw','Aquecimento',adsByStage.aw,AW);
+  H+=_aacCreativesBlock('cv','Conversão',adsByStage.cv,CV);
+
+  if(!byStage.aq.length&&!byStage.aw.length&&!byStage.cv.length){
+    H='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-filter-off" style="font-size:44px;display:block;margin-bottom:14px;color:var(--purple3);"></i><div style="font-size:14px;font-weight:600;color:var(--white);">Nenhuma campanha do funil AAC com dados em '+perLbl+'</div><div style="font-size:12px;margin-top:8px;line-height:1.5;">O funil lê campanhas com <b>AQUISIÇÃO</b>, <b>AQUECIMENTO</b> ou <b>CONVERSÃO</b> no nome.<br>Se acabou de ativar, os dados aparecem em alguns minutos.</div></div>';
+  }
+  return H;
+}
+
+var _AAC_META={
+  aq:{label:'Aquisição',sub:'Público FRIO · encher o ativo',icon:'ti-users-plus',col:'#22c55e',watch:'Skip nos 3s e custo por ThruPlay. Criativo que retém acima da média merece verba; quem tá caro depois de 3-4 dias, corta.'},
+  aw:{label:'Aquecimento',sub:'Público MORNO · relacionamento',icon:'ti-flame',col:'#f59e0b',watch:'Retenção e frequência. Passou de ~2,5-3, renova criativo. Aqui constrói autoridade, não vende.'},
+  cv:{label:'Conversão',sub:'Público QUENTE · a colheita',icon:'ti-target-arrow',col:'#a855f7',watch:'Custo por lead / LP e CPM. Só colher com o público quente cheio — senão é verba cara à toa.'}
+};
+
+function _aacStageCard(key,t,ads){
+  var m=_AAC_META[key];
+  // status simples por etapa
+  var status;
+  if(t.spend<=0){status={txt:'Sem gasto',col:'#6b7280'};}
+  else if(key==='cv'){status=t.leads>0?{txt:'Colhendo',col:'#22c55e'}:{txt:'Sem resultado ainda',col:'#f59e0b'};}
+  else {status=t.cpThru>0&&t.cpThru<=0.10?{txt:'Custo de elite',col:'#22c55e'}:(t.cpThru<=0.30?{txt:'Saudável',col:'#22c55e'}:{txt:'ThruPlay caro',col:'#f59e0b'});}
+
+  var M=AAC_METAS[key]||{};
+  // v=valor, l=rótulo, col=cor do valor, meta=texto da meta, ok=true/false/null
+  function kv(v,l,col,meta,ok){return '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:9px 10px;"><div style="font-family:Bebas Neue,sans-serif;font-size:22px;line-height:1;color:'+(col||'var(--white)')+';">'+v+'</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;">'+l+'</div>'+(meta!=null?_aacMetaLine(meta,ok):'')+'</div>';}
+
+  var H='<div style="background:var(--card);border:1px solid var(--border);border-top:3px solid '+m.col+';border-radius:14px;padding:16px;">';
+  H+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">';
+  H+='<div style="display:flex;align-items:center;gap:8px;"><i class="ti '+m.icon+'" style="color:'+m.col+';font-size:18px;"></i><span style="font-family:Bebas Neue,sans-serif;font-size:20px;letter-spacing:1px;color:var(--white);">'+m.label+'</span></div>';
+  H+='<span style="font-size:9px;font-weight:700;color:'+status.col+';background:'+status.col.replace('#','rgba(').slice(0,-1)+',0.12);padding:3px 8px;border-radius:20px;white-space:nowrap;">'+status.txt+'</span>';
+  H+='</div>';
+  H+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">'+m.sub+'</div>';
+
+  H+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
+  if(key==='cv'){
+    var cpLP=t.lpv>0?t.spend/t.lpv:0, cpLead=t.leads>0?t.spend/t.leads:0;
+    H+=kv(_aacBRL(t.spend),'Investido',null,'ver custo por resultado →',null);
+    H+=kv(t.cpm?_aacBRL(t.cpm):'—','CPM','var(--white)','ideal ≤ '+_aacBRL(M.cpm),t.cpm>0?t.cpm<=M.cpm:null);
+    H+=kv(_aacInt(t.linkClicks||t.clicks),'Cliques no link',null,'quanto mais, melhor',null);
+    H+=kv(_aacInt(t.lpv),'Views de LP',null,'quanto mais, melhor',null);
+    H+=kv(cpLP>0?_aacBRL(cpLP):'—','Custo por LP',cpLP>0&&cpLP<=M.cpLP?'#22c55e':'var(--white)','ideal ≤ '+_aacBRL(M.cpLP),cpLP>0?cpLP<=M.cpLP:null);
+    H+=kv(t.leads>0?_aacInt(t.leads):'0','Leads',t.leads>0?'#22c55e':'var(--muted)','a colheita real',null);
+    H+=kv(cpLead>0?_aacBRL(cpLead):'—','Custo por Lead',cpLead>0&&cpLead<=M.cpLead?'#22c55e':'var(--white)',t.leads>0?('ideal ≤ '+_aacBRL(M.cpLead)):('ideal ≤ '+_aacBRL(M.cpLead)+' · sem lead ainda'),t.leads>0?cpLead<=M.cpLead:null);
+    H+=kv(_aacInt(t.impressions),'Impressões',null,null,null);
+  }else{
+    H+=kv(_aacBRL(t.spend),'Investido',null,null,null);
+    H+=kv(_aacInt(t.impressions),'Impressões',null,'quanto mais, melhor',null);
+    H+=kv(_aacInt(t.thru),'ThruPlays',null,'ideal: subir sempre',null);
+    H+=kv(_aacBRL(t.cpThru),'Custo/ThruPlay',t.cpThru>0&&t.cpThru<=M.cpThru?'#22c55e':(t.cpThru>M.cpThru*3?'#f59e0b':'var(--white)'),'ideal ≤ '+_aacBRL(M.cpThru),t.cpThru>0?t.cpThru<=M.cpThru:null);
+    H+=kv(_aacPct(t.p75,t.plays)+'%','Retenção 75%',t.ret75>=M.ret75?'#22c55e':(t.ret75>=M.ret75*0.7?'#f59e0b':'#ef4444'),'ideal ≥ '+Math.round(M.ret75*100)+'%',t.plays>0?t.ret75>=M.ret75:null);
+    H+=kv(t.freq?t.freq.toFixed(2):'—','Frequência',t.freq>=M.freq?'#ef4444':'var(--white)','ideal ≤ '+M.freq.toFixed(1).replace('.',','),t.freq>0?t.freq<=M.freq:null);
+  }
+  H+='</div>';
+
+  H+='<div style="font-size:10px;color:var(--muted);line-height:1.5;background:rgba(255,255,255,0.02);border-radius:8px;padding:8px 10px;"><b style="color:'+m.col+';">O que olhar: </b>'+m.watch+'</div>';
+  H+='</div>';
+  return H;
+}
+
+function _aacCreativesBlock(key,label,ads,stageTot){
+  if(!ads||!ads.length) return '';
+  // agrega por criativo (ad_name)
+  var map={};
+  ads.forEach(function(a){
+    var k=a.ad_name||'—';
+    if(!map[k])map[k]={name:k,spend:0,plays:0,p75:0,p95:0,thru:0};
+    map[k].spend+=parseFloat(a.spend)||0;
+    map[k].plays+=_aacNum(a.video_play_actions);
+    map[k].p75+=_aacNum(a.video_p75_watched_actions);
+    map[k].p95+=_aacNum(a.video_p95_watched_actions);
+    map[k].thru+=_aacNum(a.video_thruplay_watched_actions);
+  });
+  var list=Object.keys(map).map(function(k){var c=map[k];c.ret75=c.plays>0?c.p75/c.plays:0;c.ret95=c.plays>0?c.p95/c.plays:0;c.cpThru=c.thru>0?c.spend/c.thru:0;return c;});
+  list.sort(function(a,b){return b.ret75-a.ret75;});
+  var m=_AAC_META[key];
+
+  var H='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 14px 6px;margin-bottom:12px;">';
+  H+='<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;"><i class="ti '+m.icon+'" style="color:'+m.col+';font-size:15px;"></i><span style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Criativos · '+label+'</span></div>';
+  H+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:440px;">';
+  H+='<thead><tr style="color:var(--muted);text-align:right;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;">'
+    +'<th style="text-align:left;padding:6px 8px;font-weight:700;">Criativo</th>'
+    +'<th style="padding:6px 8px;font-weight:700;">Investido</th>'
+    +'<th style="padding:6px 8px;font-weight:700;">Reteve 75%</th>'
+    +'<th style="padding:6px 8px;font-weight:700;">Reteve 95%</th>'
+    +'<th style="padding:6px 8px;font-weight:700;">R$/ThruPlay</th>'
+    +'<th style="padding:6px 8px;font-weight:700;">Sinal</th></tr></thead><tbody>';
+  list.forEach(function(c){
+    var col75=c.ret75>=0.5?'#22c55e':(c.ret75>=0.3?'#f59e0b':'#ef4444');
+    // sufocado: retém bem mas quase não recebeu verba
+    var starved=(c.plays>30&&c.ret75>=0.45&&stageTot.spend>0&&c.spend<stageTot.spend*0.10);
+    var greedy=(c.cpThru>0.30&&c.spend>=stageTot.spend*0.15);
+    var sig=starved?'<span style="color:#38bdf8;font-weight:700;">↑ destravar verba</span>':(greedy?'<span style="color:#f59e0b;font-weight:700;">⚠ caro</span>':(c.ret75>=0.5?'<span style="color:#22c55e;font-weight:700;">✓ segura</span>':'<span style="color:var(--muted);">—</span>'));
+    H+='<tr style="border-top:1px solid var(--border);text-align:right;">'
+      +'<td style="text-align:left;padding:7px 8px;color:var(--white);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+c.name+'</td>'
+      +'<td style="padding:7px 8px;color:var(--muted);">'+_aacBRL(c.spend)+'</td>'
+      +'<td style="padding:7px 8px;color:'+col75+';font-weight:700;">'+Math.round(c.ret75*100)+'%</td>'
+      +'<td style="padding:7px 8px;color:var(--white);">'+Math.round(c.ret95*100)+'%</td>'
+      +'<td style="padding:7px 8px;color:var(--muted);">'+(c.thru>0?_aacBRL(c.cpThru):'—')+'</td>'
+      +'<td style="padding:7px 8px;">'+sig+'</td></tr>';
+  });
+  H+='</tbody></table></div>';
+  H+='<div style="font-size:9px;color:var(--muted);padding:8px 8px 6px;line-height:1.5;"><span style="color:#38bdf8;">↑ destravar verba</span> = retém bem mas recebeu pouco (o CBO está sufocando). <span style="color:#f59e0b;">⚠ caro</span> = leva verba com ThruPlay caro.</div>';
+  H+='</div>';
+  return H;
 }
 
 
