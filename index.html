@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-funil-aac";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-funil-aac-instant";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -12421,6 +12421,34 @@ function renderAnaliseAds(){
 // organiza as campanhas nas 3 etapas do funil. Mapa claro do que olhar sempre.
 // ═══════════════════════════════════════════════════════════════════════════
 window._aacPeriod = window._aacPeriod || 'today';
+// ===== Snapshot instantaneo + auto-refresh (spec Funil AAC §5, versao client-side) =====
+var _aacCache={};            // {periodo:{data,ts}} em memoria
+var _aacTimer=null;          // interval de auto-refresh enquanto a aba esta aberta
+var _AAC_TTL=5*60*1000;      // 5 min: dentro disso usa cache; fora, revalida
+function _aacSnapKey(pk){return 'aac_snap_'+pk;}
+function _aacSaveSnap(pk,data){
+  try{
+    var pack={camps:data.camps,ads:data.ads,audiences:data.audiences,period:data.period,range:data.range,ts:Date.now()};
+    _aacCache[pk]=pack;
+    localStorage.setItem(_aacSnapKey(pk),JSON.stringify(pack));
+  }catch(e){}
+}
+function _aacLoadSnap(pk){
+  if(_aacCache[pk])return _aacCache[pk];
+  try{var raw=localStorage.getItem(_aacSnapKey(pk));if(raw){var o=JSON.parse(raw);_aacCache[pk]=o;return o;}}catch(e){}
+  return null;
+}
+function _aacSnapToData(pack){
+  return {camps:pack.camps||[],ads:pack.ads||[],audiences:pack.audiences||[],period:pack.period,range:pack.range,updatedAt:new Date(pack.ts||Date.now())};
+}
+function _aacStartAuto(){
+  if(_aacTimer)clearInterval(_aacTimer);
+  _aacTimer=setInterval(function(){
+    var pg=document.getElementById('funil-aac-page');
+    if(!pg||!document.body.contains(pg)){clearInterval(_aacTimer);_aacTimer=null;return;}
+    refreshFunilAAC(true); // revalida a cada 5 min enquanto a aba estiver aberta
+  },_AAC_TTL);
+}
 window._aacLastData = window._aacLastData || null;
 
 // Classifica uma campanha numa etapa do funil pelo nome (sobrevive à troca de mês)
@@ -12476,9 +12504,12 @@ function renderFunilAAC(){
   H+=_aacHeader();
   H+='<div style="padding:0 16px 28px;">';
   H+='<div id="aac-content" style="margin-top:14px;">';
-  H+='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:36px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Lendo a retenção no Meta...</div></div>';
+  var _snap=_aacLoadSnap(_aacPeriod);
+  if(_snap&&_snap.camps){ H+=_renderAACContent(_aacSnapToData(_snap)); }
+  else { H+='<div style="text-align:center;padding:60px 20px;color:var(--muted);"><i class="ti ti-loader-2" style="font-size:36px;display:block;margin-bottom:12px;color:var(--purple3);animation:spin 1s linear infinite;"></i><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;">Lendo a retenção no Meta...</div></div>'; }
   H+='</div></div></div>';
-  setTimeout(function(){refreshFunilAAC(false);},80);
+  // Stale-while-revalidate: pinta o snapshot na hora e revalida em segundo plano + auto a cada 5 min
+  setTimeout(function(){refreshFunilAAC(false);_aacStartAuto();},80);
   return H;
 }
 
@@ -12520,6 +12551,8 @@ async function refreshFunilAAC(force){
 
 async function fetchFunilAAC(force){
   if(!isMetaConnected()||!metaAccountId) return {error:'not_connected'};
+  var _pk=_aacPeriod;
+  if(!force){ var _c=_aacLoadSnap(_pk); if(_c&&_c.camps&&(Date.now()-(_c.ts||0))<_AAC_TTL) return _aacSnapToData(_c); }
   var r=_aacRange();
   var tr=encodeURIComponent(JSON.stringify({since:r.since,until:r.until}));
   var vidFields='spend,reach,frequency,impressions,cpm,clicks,inline_link_clicks,actions,video_thruplay_watched_actions,video_play_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_avg_time_watched_actions';
@@ -12553,6 +12586,7 @@ async function fetchFunilAAC(force){
     }catch(e){console.error('fetchFunilAAC acc '+accId,e);}
   }
   var result={camps:camps,ads:ads,audiences:audiences,period:_aacPeriod,range:r,updatedAt:new Date()};
+  _aacSaveSnap(_aacPeriod,result);
   return result;
 }
 
