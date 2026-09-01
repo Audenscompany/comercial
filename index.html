@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-cac-vendas-trafego";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-custo-reuniao";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14264,6 +14264,11 @@ function buildAnaliseAdsHTML(data){
   var _totFechAds=ads.reduce(function(s,a){return s+(a.fechamentos||0);},0);
   if(_totFechAds>0) funilFech=_totFechAds;
   var totFech=funilFech;
+  // Reuniões de tráfego = total do ranking (CRM, agendadas). Usado no Custo/Reunião
+  // para bater com o número de reuniões que a aba/CRM mostra (antes dividia por
+  // realizadas da planilha, dando custo/reunião mais alto que investimento÷reuniões).
+  var _totReunAds=ads.reduce(function(s,a){return s+(a.reunioes||0);},0);
+  if(_totReunAds>0){ funilAgend=_totReunAds; totReun=_totReunAds; }
   var totQualif=_allLeadsTrafego.filter(function(r){
     return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
   }).length;
@@ -14283,12 +14288,13 @@ function buildAnaliseAdsHTML(data){
   });
   var _prevTotL=_prevLeads.length;
   var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;}).length;
-  var _prevReal=(data.reunioes&&data.reunioes.rows||[]).filter(function(r){
+  var _prevReunTraf=(data.reunioes&&data.reunioes.rows||[]).filter(function(r){
     var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
     if(!inPrevAR(d))return false;
     var ori=(col(r,['ORIGEM','Origem','origem'])||'').toLowerCase();
     return ori.includes('tr')||ori.includes('trafego');
-  }).filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
+  });
+  var _prevReal=_prevReunTraf.length; // reuniões agendadas de tráfego (mês anterior) — base do custo/reunião
   var _prevFech=(data.clientes&&data.clientes.rows||[]).filter(function(c){
     var d=parseBRDate(col(c,['DATA DE INICIO','DATA DE INICIO','Data de Inicio','Data Inicio']));
     if(!inPrevAR(d))return false;
@@ -14296,7 +14302,7 @@ function buildAnaliseAdsHTML(data){
   }).length;
   var _prevGastoAds=(_investidoMes&&_prevPer)?(_investidoMes[_prevPer]||0):0;
   var _cpl2=gastoAds>0&&totLeads>0?gastoAds/totLeads:0;
-  var _cpr2=gastoAds>0&&funilReal>0?gastoAds/funilReal:0;
+  var _cpr2=gastoAds>0&&_totReunAds>0?gastoAds/_totReunAds:0;
   var _cac2=gastoAds>0&&funilFech>0?gastoAds/funilFech:0;
   var _prevCpl2=_prevGastoAds>0&&_prevTotL>0?_prevGastoAds/_prevTotL:0;
   var _prevCpr2=_prevGastoAds>0&&_prevReal>0?_prevGastoAds/_prevReal:0;
