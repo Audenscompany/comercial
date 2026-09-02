@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-rank-campanhas";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-gasto-copia";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -13592,18 +13592,26 @@ function _adDisplayName(v){
 }
 // Gasto do Meta para um anúncio, tolerante a traços (—/–/-) e espaços diferentes
 // entre o nome guardado no lead e o nome que o Meta retorna (ex.: "— Cópia" vs "– Cópia").
-function _metaSpendNrm(x){return (''+(x||'')).toLowerCase().replace(/[—–]/g,'-').replace(/\s*-\s*/g,'-').replace(/\s+/g,' ').trim();}
+function _metaSpendNrm(x){return (''+(x||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[—–]/g,'-').replace(/\s*-\s*/g,'-').replace(/\s+/g,' ').trim();}
+// Remove sufixo de cópia (— cópia / - copy / (cópia)) para casar com o anúncio-base no Meta
+function _metaSpendBase(nk){return nk.replace(/[-\s]*\(?(copia|copy)\)?$/,'').replace(/[-\s]+$/,'').trim();}
 function _metaSpendFor(adKey){
   var sm=window._metaAdSpendMap||{};
   if(sm[adKey]!=null) return sm[adKey];
   var dn=(typeof _adDisplayName==='function')?_adDisplayName(adKey):adKey;
   if(sm[dn]!=null) return sm[dn];
   if(window._metaSpendNormSrc!==sm){
-    window._metaSpendNorm={}; window._metaSpendNormSrc=sm;
-    Object.keys(sm).forEach(function(k){ if(/^\d{6,}$/.test(k))return; var nk=_metaSpendNrm(k); if(window._metaSpendNorm[nk]==null) window._metaSpendNorm[nk]=sm[k]; });
+    window._metaSpendNorm={}; window._metaSpendNormSrc=sm; window._metaSpendNormBase={};
+    Object.keys(sm).forEach(function(k){ if(/^\d{6,}$/.test(k))return; var nk=_metaSpendNrm(k); if(window._metaSpendNorm[nk]==null) window._metaSpendNorm[nk]=sm[k]; var bk=_metaSpendBase(nk); if(bk&&window._metaSpendNormBase[bk]==null) window._metaSpendNormBase[bk]=sm[k]; });
   }
-  var v=window._metaSpendNorm[_metaSpendNrm(dn)];
-  return v!=null?v:0;
+  var wn=_metaSpendNrm(dn);
+  var v=window._metaSpendNorm[wn];
+  if(v!=null) return v;
+  // Fallback: nome base sem o sufixo de cópia (ex.: "AD95 - AUDENS — Cópia" -> "AD95 - AUDENS")
+  var wb=_metaSpendBase(wn);
+  if(wb&&window._metaSpendNorm[wb]!=null) return window._metaSpendNorm[wb];
+  if(wb&&window._metaSpendNormBase&&window._metaSpendNormBase[wb]!=null) return window._metaSpendNormBase[wb];
+  return 0;
 }
 // ===== Resolução de nome de anúncio (ad_id -> ad_name) via Graph API, com cache no Firebase =====
 window._metaAdNameById=window._metaAdNameById||{};
