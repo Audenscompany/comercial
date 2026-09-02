@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-fech-dedup";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-origem-lp-trafego";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -2894,7 +2894,8 @@ function normalizeStr(s){
 function categorizeOrigem(o){
   if(!o)return'Indicacoes / Outros';
   var l=normalizeStr(o);
-  if(l.includes('trafego')||l.includes('pago')||l.includes('ads')||l.includes('meta')||l.includes('anun'))return'Trafego Pago';
+  // Landing pages de captação (lp-..., quiz, fv2, assessoriaaudens) = Tráfego Pago
+  if(l.includes('trafego')||l.includes('pago')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('lp-')||l.includes('quiz')||l.includes('fv2')||l.includes('fvqualifica')||l.includes('assessoriaaudens'))return'Trafego Pago';
   if(l.includes('organico')||l.includes('organic')||l.includes('organik'))return'Trafego Organico';
   return'Indicacoes / Outros';
 }
@@ -14281,7 +14282,15 @@ function buildAnaliseAdsHTML(data){
   function _aacNsMeet(m){var fu=_aacFu(m);var st=(m.status||'').toLowerCase();return fu?fu.comparecimento==='nao':(st.indexOf('noshow')>-1||st.indexOf('no-show')>-1||st==='no_show');}
   function _aacDedup(arr){var seen={},out=[];arr.forEach(function(m){var k=((m.tel||m.telefone||'').replace(/\D/g,'')||m.nome||m.id||'').toLowerCase().trim();if(!k)return;if(!seen[k]){seen[k]=m;out.push(m);}else if(_aacNsMeet(seen[k])&&_aacRealMeet(m)){out[out.indexOf(seen[k])]=m;seen[k]=m;}});return out;}
   // Tráfego preciso (categorizeOrigem, não substring 'tr' que casa "Outros") OU tem anúncio
-  function _aacTrafMeet(m){var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;var o=(m.origem||(kb&&kb.origem)||'');var hasAd=kb&&kb.ad&&kb.ad!=='-'&&kb.ad!=='(sem ad)';return categorizeOrigem(o)==='Trafego Pago'||!!hasAd;}
+  function _aacTrafMeet(m){
+    var kb=m.kanbanKey?kanbanData[m.kanbanKey]:null;
+    var o=(m.origem||(kb&&kb.origem)||'');
+    if(categorizeOrigem(o)==='Trafego Pago') return true;
+    if(kb&&kb.ad&&kb.ad!=='-'&&kb.ad!=='(sem ad)') return true;
+    var t9=(m.tel||m.telefone||(kb&&kb.telefone)||'').replace(/\D/g,'').slice(-9);
+    if(t9){ if((typeof telAdMap!=='undefined'&&telAdMap[t9])||(typeof _phoneInfoMap!=='undefined'&&_phoneInfoMap[t9]&&_phoneInfoMap[t9].ad)) return true; }
+    return false;
+  }
   var _mTraf=Object.values(meetings||{}).filter(function(m){
     if(!m||m._retorno||m._hidden)return false;
     if(m.status==='reagendado'&&m.reagendamentos>0)return false;
