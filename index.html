@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-leads-lp";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-rank-campanhas";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14217,6 +14217,38 @@ function buildAnaliseAdsHTML(data){
     }
   });
 
+  // ── VENDAS de tráfego atribuídas ao ad pela fonte confiável (mesmo cache da aba Vendas) ──
+  // Recomputa os fechamentos por ad a partir das vendas reais (evita perder venda por
+  // falha de atribuição na cadeia de reunião — ex.: Diego/AD95, origem de LP).
+  (function(){
+    var _vc=(typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache;
+    if(!_vc||!_vc.length)return;
+    Object.keys(adData).forEach(function(k){adData[k].fechamentos=0;adData[k].vendasList=[];});
+    var _seen={};
+    _vc.forEach(function(v){
+      if(!v||!v.fu)return;
+      if(_vendasExcluidas&&_vendasExcluidas[v.fid])return;
+      var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):''; if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return;
+      var _vn=(typeof _vnNorm==='function')?_vnNorm((v.fu.nome)||(v.m&&v.m.nome)||''):''; if(_vn&&_vendasExcluidasNome&&_vendasExcluidasNome[_vn])return;
+      var oc=v.origemCat||categorizeOrigem(v.origemRaw||(v.m&&v.m.origem)||v.fu.origem||''); if(oc!=='Trafego Pago')return;
+      var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null; if(!d||!inAdsRange(d))return;
+      var tel=(((v.fu.tel)||(v.m&&v.m.tel)||'')+'').replace(/\D/g,''); var t9=tel.slice(-9);
+      var dk=t9||_vn||v.fid; if(_seen[dk])return; _seen[dk]=1;
+      var kb=(v.m&&v.m.kanbanKey)?kanbanData[v.m.kanbanKey]:null;
+      var ad=(((kb&&kb.ad)||v.fu.ad||'')+'').trim();
+      if((!ad||ad==='-'||ad==='(sem ad)')&&t9){ var pm=telAdMap[t9]||_phoneInfoMap[t9]; if(pm&&pm.ad)ad=pm.ad; }
+      if(!ad||ad==='-')ad='(sem ad)';
+      var camp=((kb&&kb.campanha)||(t9&&_phoneInfoMap[t9]&&_phoneInfoMap[t9].campanha)||'');
+      if(!adData[ad])adData[ad]={ad:ad,campanha:camp,conjunto:'',leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+      if(!adData[ad].campanha&&camp)adData[ad].campanha=camp;
+      adData[ad].fechamentos++;
+      if(!adData[ad].vendasList)adData[ad].vendasList=[];
+      adData[ad].vendasList.push({nome:(v.fu.nome)||(v.m&&v.m.nome)||'—',empresa:v.fu.empresa||'',data:d.toLocaleDateString('pt-BR'),motivo:'Aba Vendas'});
+      var _mrr=(v.fu.tipoValor==='tcv')?(parseFloat(v.fu.contrato)||0):(parseFloat(v.fu.mensalidade)||parseFloat(v.fu.contrato)||0);
+      adData[ad].mrr=(adData[ad].mrr||0)+_mrr;
+    });
+  })();
+
   var ads=Object.values(adData).sort(function(a,b){return b.leads-a.leads;});
   // Mescla anúncios que resolvem para o MESMO nome (ID do Meta + nome amigável viram uma linha só)
   (function(){
@@ -14619,6 +14651,47 @@ function buildAnaliseAdsHTML(data){
   });
   html+='</tr></tbody></table></div>';
   html+='</div>';
+
+  // ===== RANKING DE CAMPANHAS =====
+  (function(){
+    var _campAgg={};
+    ads.forEach(function(a){
+      var c=((a.campanha||'')+'').trim()||'(sem campanha)';
+      if(!_campAgg[c])_campAgg[c]={campanha:c,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,spend:0};
+      var t=_campAgg[c];
+      ['leads','qualif','reunioes','realizadas','fechamentos','mrr'].forEach(function(f){t[f]+=(a[f]||0);});
+      t.spend+=(a._spend||0);
+    });
+    var _cl=Object.values(_campAgg).sort(function(x,y){return (y.fechamentos-x.fechamentos)||(y.realizadas-x.realizadas)||(y.leads-x.leads);});
+    if(!_cl.length)return;
+    function _rk(n){return n>0?('R$'+(n>=1000?(n/1000).toFixed(1).replace('.0','')+'k':Math.round(n))):'—';}
+    html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:20px;">'+
+      '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">'+
+        '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--white);">Ranking de Campanhas</span>'+
+        '<span style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">'+_cl.length+' campanhas</span>'+
+      '</div>'+
+      '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'+
+        '<thead><tr style="border-bottom:1px solid var(--border);">'+
+          ['Campanha','Leads','Qualif.','Reun.','Vendas','Gasto','CPL','Custo/Reun.','CAC'].map(function(h,i){var col=(h==='Vendas'||h==='CAC')?'var(--green)':(h==='Custo/Reun.'?'var(--amber)':'var(--muted)');return '<th style="padding:10px 8px;text-align:'+(i===0?'left':'right')+';font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:'+col+';white-space:nowrap;">'+h+'</th>';}).join('')+
+        '</tr></thead><tbody>';
+    _cl.forEach(function(c){
+      var cpl=(c.leads>0&&c.spend>0)?(c.spend/c.leads):0;
+      var cpr=(c.realizadas>0&&c.spend>0)?(c.spend/c.realizadas):0;
+      var cac=(c.fechamentos>0&&c.spend>0)?(c.spend/c.fechamentos):0;
+      html+='<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'+
+        '<td style="padding:10px 12px;font-size:12px;font-weight:600;color:var(--white);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+((''+c.campanha).replace(/"/g,'&quot;'))+'">'+(''+c.campanha)+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:var(--white);">'+c.leads+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:13px;color:var(--cyan);">'+c.qualif+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:13px;color:var(--amber);">'+c.realizadas+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:13px;font-weight:700;color:'+(c.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(c.fechamentos||'—')+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:var(--white);">'+_rk(c.spend)+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:12px;color:var(--muted);">'+_rk(cpl)+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:var(--amber);">'+_rk(cpr)+'</td>'+
+        '<td style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:'+(cac>0?'var(--green)':'var(--muted)')+';">'+_rk(cac)+'</td>'+
+      '</tr>';
+    });
+    html+='</tbody></table></div></div>';
+  })();
 
   // ===== SECTION 4: 2-col --- Mapa de Performance | Insights e Acoes =====
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">';
