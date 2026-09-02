@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-gasto-match";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-fech-vendas";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14318,16 +14318,10 @@ function buildAnaliseAdsHTML(data){
   funilReal=_mDedup.filter(_aacRealMeet).length;
   funilAgend=_mDedup.length;
   totReun=funilAgend;
-  // Fechamentos de tráfego = vendas entre as reuniões deduplicadas (não a soma do ranking,
-  // que duplicava a mesma venda entre ads/paths). Respeita as exclusões da aba Vendas.
-  funilFech=_mDedup.filter(function(m){
-    var fu=_aacFu(m); if(!fu||fu.resultado!=='venda') return false;
-    var _vs=(typeof _vendaSig==='function')?_vendaSig(fu,m):'';
-    if(_vs&&_vendasExcluidasSig&&_vendasExcluidasSig[_vs]) return false;
-    var _vn=(typeof _vnNorm==='function')?_vnNorm(fu.nome||m.nome||''):'';
-    if(_vn&&_vendasExcluidasNome&&_vendasExcluidasNome[_vn]) return false;
-    return true;
-  }).length;
+  // Fechamentos de tráfego = MESMA contagem da aba Vendas: vendas com origem Tráfego pela
+  // DATA DE INÍCIO do contrato (não pela data da reunião). Assim bate com o total de vendas
+  // de tráfego (ex.: agosto = 13), incluindo vendas cuja reunião foi em outro mês / sem reunião.
+  funilFech=_clientesTrafegoPeriodo.length;
   totFech=funilFech;
   var totQualif=_allLeadsTrafego.filter(function(r){
     return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
