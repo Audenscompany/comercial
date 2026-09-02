@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-cache-auto";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-cli-data-robusta";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -13852,7 +13852,12 @@ function buildAnaliseAdsHTML(data){
       var kb=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
       var tel=_ph((m&&m.tel)||fu.tel); if(tel)_cliPh[tel]=1;
       var nome=fu.nome||(m&&m.nome)||''; if(nome)_cliNm[_nn(nome)]=1;
-      var ts=0; if(fu.data){var dd=parseBRDate(fu.data);ts=dd?dd.getTime():0;} if(!ts&&m)ts=m.scheduledAt||0;
+      // Data de início robusta (igual _vendaDate): dataInicio do contrato -> dt do followup -> data da reunião
+      var ts=0;
+      if(fu.dataInicio){var _di=new Date(fu.dataInicio+'T12:00:00');if(!isNaN(_di.getTime()))ts=_di.getTime();}
+      if(!ts&&fu.dt){var _dd=parseBRDate(fu.dt);ts=_dd?_dd.getTime():0;}
+      if(!ts&&fu.data){var _dd2=parseBRDate(fu.data);ts=_dd2?_dd2.getTime():0;}
+      if(!ts&&m){ts=m.scheduledAt||(m.dtISO?(new Date(m.dtISO).getTime()||0):0)||0;}
       _crmCli.push({'CLIENTE':nome,'EMPRESA':fu.empresa||(kb&&kb.empresa)||'','DATA DE INICIO':_fmt(ts),'ORIGEM':(kb&&kb.origem)||(m&&m.origem)||'Tráfego','VALOR CONTRATO/MÊS':String(fu.mensalidade||fu.mrr||''),'VALOR VENDIDO DO CONTRATO':String(fu.contrato||''),'PLANO':fu.plano||'','_crm':1});
     });
     var _shCli=((_orig.clientes&&_orig.clientes.rows)||[]).filter(function(c){
