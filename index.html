@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-fech-cache-vendas";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-cache-auto";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -4494,6 +4494,7 @@ function showMain(){
       }
     }).catch(function(){});
     startRealtimeSync();
+    setTimeout(function(){try{if(typeof ensureVendasCache==='function')ensureVendasCache();}catch(e){}},2000);
   }).catch(function(){
     startRealtimeSync();
   });
@@ -14323,7 +14324,7 @@ function buildAnaliseAdsHTML(data){
   // telefone/nome. Assim bate exatamente com a aba Vendas (ex.: agosto=13, e pega a venda
   // do Diego em setembro). Fallback: _clientesTrafegoPeriodo se o cache ainda não existir.
   (function(){
-    var _vc=window._todasVendasCache;
+    var _vc=(typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache;
     if(!_vc||!_vc.length){ funilFech=_clientesTrafegoPeriodo.length; totFech=funilFech; return; }
     var _seen={},_n=0;
     _vc.forEach(function(v){
@@ -27642,6 +27643,25 @@ async function loadVendasSheets(){
       if(badge)badge.textContent=finalCount;
     }
   }catch(e){console.warn('[loadVendasSheets]',e);}
+}
+// Monta o cache de vendas (window._todasVendasCache) a partir dos followups=venda, sem
+// precisar abrir a aba Vendas. Só constrói se ainda não existir (a aba Vendas monta a
+// versão completa com assinaturas/contratos e sobrescreve esta).
+function ensureVendasCache(){
+  try{
+    if(window._todasVendasCache && window._todasVendasCache.length) return window._todasVendasCache;
+    var arr=[];
+    Object.keys(followups||{}).forEach(function(fid){
+      var fu=followups[fid]; if(!fu||fu.resultado!=='venda') return;
+      if(typeof isVendaCancelada==='function' && isVendaCancelada(fu)) return;
+      var m=meetings[fu.meetingId]||meetings[fid]||null;
+      var ke=m&&m.kanbanKey?kanbanData[m.kanbanKey]:null;
+      var origemRaw=fu.origem||(m&&m.origem)||(ke&&ke.origem)||'';
+      arr.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
+    });
+    if(arr.length) window._todasVendasCache=arr;
+    return window._todasVendasCache||arr;
+  }catch(e){ return window._todasVendasCache||[]; }
 }
 function renderVendas(){
   var now=new Date();
