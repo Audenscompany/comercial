@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-cli-data-robusta";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-leads-lp";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14271,10 +14271,10 @@ function buildAnaliseAdsHTML(data){
   var _allLeadsTrafego=data.leads.rows.filter(function(r){
     var d=parseBRDate(col(r,['Data','DATA','data']));
     if(!inAdsRange(d)) return false;
-    var orig=(col(r,['Origem','ORIGEM','origem'])||'').toLowerCase();
+    var orig=col(r,['Origem','ORIGEM','origem'])||'';
     var ad=(col(r,['Ad','AD','ad'])||'').trim();
-    // Conta como tráfego se tem origem explícita OU se tem campo 'ad' preenchido (vem de anúncio)
-    return orig.includes('tr')||orig.includes('traffic')||orig.includes('tráfego')||orig.includes('trafego')||(ad&&ad!=='-'&&ad!=='(sem ad)');
+    // Tráfego = origem classificada como Tráfego Pago (inclui LP) OU tem anúncio atribuído
+    return categorizeOrigem(orig)==='Trafego Pago'||(ad&&ad!=='-'&&ad!=='(sem ad)');
   });
   var totLeads=_allLeadsTrafego.length;
   // Aliases usados nas taxas de conversão abaixo
@@ -14362,9 +14362,9 @@ function buildAnaliseAdsHTML(data){
   var _prevLeads=(data.leads&&data.leads.rows||[]).filter(function(r){
     var d=parseBRDate(col(r,['Data','DATA','data']));
     if(!inPrevAR(d))return false;
-    var orig=(col(r,['Origem','ORIGEM','origem'])||'').toLowerCase();
+    var orig=col(r,['Origem','ORIGEM','origem'])||'';
     var ad2=(col(r,['Ad','AD','ad'])||'').trim();
-    return orig.includes('tr')||orig.includes('trafego')||(ad2&&ad2!=='-'&&ad2!=='(sem ad)');
+    return categorizeOrigem(orig)==='Trafego Pago'||(ad2&&ad2!=='-'&&ad2!=='(sem ad)');
   });
   var _prevTotL=_prevLeads.length;
   var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;}).length;
