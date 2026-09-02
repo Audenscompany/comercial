@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-fech-vendas";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-fech-cache-vendas";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -14318,11 +14318,31 @@ function buildAnaliseAdsHTML(data){
   funilReal=_mDedup.filter(_aacRealMeet).length;
   funilAgend=_mDedup.length;
   totReun=funilAgend;
-  // Fechamentos de tráfego = MESMA contagem da aba Vendas: vendas com origem Tráfego pela
-  // DATA DE INÍCIO do contrato (não pela data da reunião). Assim bate com o total de vendas
-  // de tráfego (ex.: agosto = 13), incluindo vendas cuja reunião foi em outro mês / sem reunião.
-  funilFech=_clientesTrafegoPeriodo.length;
-  totFech=funilFech;
+  // Fechamentos de tráfego = MESMA fonte da aba Vendas (_todasVendasCache): por _vendaDate
+  // (dataInicio->dt->reunião), origem = Tráfego, exclusões respeitadas, deduplicado por
+  // telefone/nome. Assim bate exatamente com a aba Vendas (ex.: agosto=13, e pega a venda
+  // do Diego em setembro). Fallback: _clientesTrafegoPeriodo se o cache ainda não existir.
+  (function(){
+    var _vc=window._todasVendasCache;
+    if(!_vc||!_vc.length){ funilFech=_clientesTrafegoPeriodo.length; totFech=funilFech; return; }
+    var _seen={},_n=0;
+    _vc.forEach(function(v){
+      if(!v||!v.fu)return;
+      if(_vendasExcluidas&&_vendasExcluidas[v.fid])return;
+      var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):'';
+      if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return;
+      var _vn=(typeof _vnNorm==='function')?_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||''):'';
+      if(_vn&&_vendasExcluidasNome&&_vendasExcluidasNome[_vn])return;
+      var oc=v.origemCat||categorizeOrigem(v.origemRaw||(v.m&&v.m.origem)||(v.fu&&v.fu.origem)||'');
+      if(oc!=='Trafego Pago')return;
+      var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;
+      if(!d||!inAdsRange(d))return;
+      var tel=(((v.fu&&v.fu.tel)||(v.m&&v.m.tel)||'')+'').replace(/\D/g,'').slice(-10);
+      var k=tel||_vn||v.fid||('_'+_n);
+      if(_seen[k])return; _seen[k]=1; _n++;
+    });
+    funilFech=_n; totFech=funilFech;
+  })();
   var totQualif=_allLeadsTrafego.filter(function(r){
     return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
   }).length;
