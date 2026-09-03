@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-camp-nome";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-cache-full-flag";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -20565,7 +20565,7 @@ async function calcCloserFromSheets(nivelIdx, month){
     var _mParts=month.split('-');
     var _mY=parseInt(_mParts[0]),_mM=parseInt(_mParts[1])-1;
     var _todasVC=window._todasVendasCache;
-    if(!_todasVC){
+    if(!_todasVC||!window._todasVendasCacheFull){
       _todasVC=[];
       // Step 1: todos os followups (igual ao loop do renderVendas, inclui assin_*)
       Object.keys(followups||{}).forEach(function(fid){
@@ -20628,7 +20628,7 @@ async function calcCloserFromSheets(nivelIdx, month){
           _todasVC.push({fu:synFuC,m:synMC,fid:'contrato_'+c.id,origemRaw:c.origem||''});
         });
       }catch(e3){console.warn('calcCloserFromSheets step3 contratos:',e3);}
-      window._todasVendasCache=_todasVC;
+      window._todasVendasCache=_todasVC; window._todasVendasCacheFull=true;
     }
     // Respeita as EXCLUSOES manuais da aba Vendas (por id e por assinatura tel+nome+valor)
     // — venda apagada em Vendas some tambem do Plano de Carreira. (nao muta o cache global)
@@ -20907,7 +20907,7 @@ async function calcSDRFromSheets(nivelIdx, month){
     var _sMY=parseInt(_sMParts[0]),_sMM=parseInt(_sMParts[1])-1;
     // Garante que o cache existe (aba Vendas pode não ter sido visitada)
     var _todasV=window._todasVendasCache;
-    if(!_todasV){
+    if(!_todasV||!window._todasVendasCacheFull){
       _todasV=[];
       // Step 1: todos os followups (igual ao loop do renderVendas, inclui assin_*)
       Object.keys(followups||{}).forEach(function(fid){
@@ -20969,7 +20969,7 @@ async function calcSDRFromSheets(nivelIdx, month){
           _todasV.push({fu:synFuC,m:synMC,fid:'contrato_'+c.id,origemRaw:c.origem||''});
         });
       }catch(e3){console.warn('calcSDRFromSheets step3 contratos:',e3);}
-      window._todasVendasCache=_todasV;
+      window._todasVendasCache=_todasV; window._todasVendasCacheFull=true;
     }
     // Respeita as EXCLUSOES manuais da aba Vendas (por id e por assinatura tel+nome+valor)
     _todasV=(_todasV||[]).filter(function(v){
@@ -27762,7 +27762,7 @@ function ensureVendasCache(){
       var origemRaw=fu.origem||(m&&m.origem)||(ke&&ke.origem)||'';
       arr.push({fu:fu,m:m,fid:fid,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
     });
-    if(arr.length) window._todasVendasCache=arr;
+    if(arr.length){ window._todasVendasCache=arr; window._todasVendasCacheFull=false; }
     return window._todasVendasCache||arr;
   }catch(e){ return window._todasVendasCache||[]; }
 }
@@ -27934,7 +27934,7 @@ function renderVendas(){
   todasVendas=_todasDedup;
 
   // Cache global — fonte de dados para cálculos de comissão
-  window._todasVendasCache=todasVendas;
+  window._todasVendasCache=todasVendas; window._todasVendasCacheFull=true;
 
   // Meses disponíveis
   var mesKeys={};
