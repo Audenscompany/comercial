@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-gasto-copia";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-camp-nome";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -3592,20 +3592,29 @@ async function fetchMetaAdSpendMap(period, sinceOv, untilOv){
   for(var i=0;i<ids.length;i++){
     try{
       var url='https://graph.facebook.com/v20.0/act_'+ids[i]+'/insights'
-        +'?fields=ad_id,ad_name,spend'
+        +'?fields=ad_id,ad_name,campaign_id,campaign_name,spend'
         +'&time_range='+encodeURIComponent('{"since":"'+since+'","until":"'+until+'"}')
         +'&level=ad&limit=500'
         +'&access_token='+metaToken.access_token;
       var resp=await fetch(url);var data=await resp.json();
       if(data.error){console.error('fetchMetaAdSpendMap',data.error);continue;}
       window._metaAdNameById=window._metaAdNameById||{};
+      window._metaCampNameById=window._metaCampNameById||{};
       (data.data||[]).forEach(function(row){
         var n=(row.ad_name||'').trim();
         var sp=parseFloat(row.spend)||0;
         map[n]=(map[n]||0)+sp;
         // permite achar o gasto tambem quando o lead guardou o ID do ad (nao o nome)
         if(row.ad_id){var idk=String(row.ad_id);map[idk]=sp;if(n)window._metaAdNameById[idk]=n;}
+        if(row.campaign_id&&row.campaign_name){window._metaCampNameById[String(row.campaign_id)]=row.campaign_name;}
       });
+      // Fetch dedicado de campanhas (pega o nome mesmo de campanha sem gasto no periodo)
+      try{
+        var cu2='https://graph.facebook.com/v20.0/act_'+ids[i]+'/campaigns?fields=id,name&limit=500&access_token='+metaToken.access_token;
+        var cr2=await fetch(cu2);var cd2=await cr2.json();
+        if(!cd2.error)(cd2.data||[]).forEach(function(c){if(c.id&&c.name)window._metaCampNameById[String(c.id)]=c.name;});
+        if(typeof fbDb!=='undefined'&&fbDb){try{fbDb.ref('campNames').update(window._metaCampNameById);}catch(e3){}}
+      }catch(e2){}
     }catch(e){console.error('fetchMetaAdSpendMap acc '+ids[i],e);}
   }
   return map;
@@ -13595,6 +13604,13 @@ function _adDisplayName(v){
 function _metaSpendNrm(x){return (''+(x||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[—–]/g,'-').replace(/\s*-\s*/g,'-').replace(/\s+/g,' ').trim();}
 // Remove sufixo de cópia (— cópia / - copy / (cópia)) para casar com o anúncio-base no Meta
 function _metaSpendBase(nk){return nk.replace(/[-\s]*\(?(copia|copy)\)?$/,'').replace(/[-\s]+$/,'').trim();}
+// Nome da campanha: resolve ID numerico -> nome via Meta (mesma ideia do _adDisplayName)
+window._metaCampNameById=window._metaCampNameById||{};
+function _campDisplayName(v){
+  var s=(''+(v||'')).trim();
+  if(/^\d{6,}$/.test(s)){ var m=window._metaCampNameById||{}; return m[s]||s; }
+  return s;
+}
 function _metaSpendFor(adKey){
   var sm=window._metaAdSpendMap||{};
   if(sm[adKey]!=null) return sm[adKey];
@@ -13619,6 +13635,7 @@ var _adNameQueue={}, _adNameTimer=null, _adNameFailed={};
 function loadAdNamesCache(){
   if(!fbDb && !initFirebase()) return;
   try{ fbDb.ref('adNames').on('value',function(snap){ var v=snap.val()||{}; window._metaAdNameById=window._metaAdNameById||{}; Object.keys(v).forEach(function(id){ if(v[id]) window._metaAdNameById[id]=v[id]; }); }); }catch(e){}
+  try{ fbDb.ref('campNames').on('value',function(snap){ var v=snap.val()||{}; window._metaCampNameById=window._metaCampNameById||{}; Object.keys(v).forEach(function(id){ if(v[id]) window._metaCampNameById[id]=v[id]; }); }); }catch(e){}
 }
 async function resolveAdName(adId){
   adId=String(adId||'').trim();
@@ -14664,7 +14681,7 @@ function buildAnaliseAdsHTML(data){
   (function(){
     var _campAgg={};
     ads.forEach(function(a){
-      var c=((a.campanha||'')+'').trim()||'(sem campanha)';
+      var c=((typeof _campDisplayName==='function'?_campDisplayName(a.campanha):a.campanha)||'').toString().trim()||'(sem campanha)';
       if(!_campAgg[c])_campAgg[c]={campanha:c,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,spend:0};
       var t=_campAgg[c];
       ['leads','qualif','reunioes','realizadas','fechamentos','mrr'].forEach(function(f){t[f]+=(a[f]||0);});
