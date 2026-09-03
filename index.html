@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-bonus-equipe";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-equipe-fid";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -21401,9 +21401,9 @@ function _teamContratosMes(year,month0){
     if(typeof isVendaCancelada==='function'&&isVendaCancelada(v.fu))return;
     var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;
     if(!d||d.getMonth()!==month0||d.getFullYear()!==year)return;
-    var fid=v.fid, mid=(v.fu&&v.fu.meetingId)||'';
-    if(fid&&sF[fid])return; if(mid&&sM[mid])return;
-    if(fid)sF[fid]=1; if(mid)sM[mid]=1;
+    // Dedup so por fid (id unico do registro) — nao mescla por meetingId, para nao perder
+    // multi-contrato do mesmo cliente/reuniao (ex.: 2a loja). Cada venda conta 1x.
+    var fid=v.fid; if(fid&&sF[fid])return; if(fid)sF[fid]=1;
     n++;
   });
   return n;
