@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-equipe-fid";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-fix-telshort";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -20624,7 +20624,7 @@ async function calcCloserFromSheets(nivelIdx, month){
           if(_tSyncC[telC]||_tSyncC[telC.slice(-11)]||_tSyncC[telC.slice(-10)]) return; // já tem followup ou assinatura
           var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
           var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
-          _tSyncC[telC]=1;_tSyncC[telShort]=1;
+          _tSyncC[telC]=1;_tSyncC[telC.slice(-11)]=1;_tSyncC[telC.slice(-10)]=1;
           _todasVC.push({fu:synFuC,m:synMC,fid:'contrato_'+c.id,origemRaw:c.origem||''});
         });
       }catch(e3){console.warn('calcCloserFromSheets step3 contratos:',e3);}
@@ -20967,7 +20967,7 @@ async function calcSDRFromSheets(nivelIdx, month){
           if(_tSyncS[telC]||_tSyncS[telC.slice(-11)]||_tSyncS[telC.slice(-10)]) return; // já tem followup ou assinatura
           var synFuC={resultado:'venda',tipoValor:'mensalidade',mensalidade:c.valorMes||0,contrato:c.valorVendido||0,nome:c.cliente||'',plano:c.plano||'',dataInicio:c.dataInicio,dt:c.dataInicio.split('-').reverse().join('/'),_fromContrato:c.id,_contratoSync:true};
           var synMC={id:'contrato_'+c.id,tel:telC,nome:c.cliente||'',responsavel:c.closer||'',sdrName:c.sdr||'',sdr:c.sdr||'',origem:c.origem||'',dtISO:c.dataInicio+'T12:00:00Z',status:'done',_sintetico:true};
-          _tSyncS[telC]=1;_tSyncS[telShort]=1;
+          _tSyncS[telC]=1;_tSyncS[telC.slice(-11)]=1;_tSyncS[telC.slice(-10)]=1;
           _todasV.push({fu:synFuC,m:synMC,fid:'contrato_'+c.id,origemRaw:c.origem||''});
         });
       }catch(e3){console.warn('calcSDRFromSheets step3 contratos:',e3);}
