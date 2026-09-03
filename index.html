@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-cache-full-flag";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-bonus-equipe";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -20821,6 +20821,8 @@ async function calcCloserFromSheets(nivelIdx, month){
     result.comissaoColdCall=result._comCCfromContratos||0; // 25% sobre MRR normalizado (contratos)
     result.incentivColdCall=reunColdCall*30;
 
+    // Bônus de equipe: total da equipe no mês (mesma contagem para closer e SDR)
+    try{ var _teq=_teamContratosMes(_mY,_mM); if(_teq>=0) totalEquipeContratos=_teq; }catch(e){}
     // Bônus de equipe: ≥20 contratos=R$500, +R$250 a cada 5 acima de 20
     result.bonusEquipe = totalEquipeContratos>=20 ? 500+Math.floor((totalEquipeContratos-20)/5)*250 : 0;
     result.totalEquipe = totalEquipeContratos;
@@ -21323,6 +21325,7 @@ async function calcSDRFromFirebase(nivelIdx, month){
         totalEquipeContratosSDR++;
       });
     }
+    try{ var _teqS=_teamContratosMes(_sMY,_sMM); if(_teqS>=0) totalEquipeContratosSDR=_teqS; }catch(e){}
     result.bonusEquipe=totalEquipeContratosSDR>=20?500+Math.floor((totalEquipeContratosSDR-20)/5)*250:0;
     result.totalEquipe=totalEquipeContratosSDR;
     var totalBrutoSDR=result.base+result.bonusMeta+result.acelerador+result.comissaoVendas+result.bonusEquipe;
@@ -21384,6 +21387,27 @@ async function calcCloserMetaHistory(nivelIdx){
   return meses.map(function(ms){var c=counts[ms];return{ms:ms,label:_msLabel(ms),count:c,hit:c>=lv.meta,meta:lv.meta};});
 }
 // Conta contratos do Gustavo (closer) num mes, replicando a dedup do card "Contratos Fechados"
+// Contratos ATIVOS da equipe num mes (para bonus de equipe). Fonte = cache de vendas da aba
+// Vendas. Dedup so por chaves fortes (fid, meetingId, telefone) — NAO mescla por nome/empresa,
+// para nao perder multi-contratos do mesmo cliente (ex.: 2a loja). Respeita exclusoes/cancelados.
+function _teamContratosMes(year,month0){
+  var vc=(typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache; vc=vc||[];
+  var sF={},sM={},n=0;
+  vc.forEach(function(v){
+    if(!v||!v.fu)return;
+    if(_vendasExcluidas&&_vendasExcluidas[v.fid])return;
+    var sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):''; if(sg&&_vendasExcluidasSig&&_vendasExcluidasSig[sg])return;
+    var vn=(typeof _vnNorm==='function')?_vnNorm((v.fu.nome)||(v.m&&v.m.nome)||''):''; if(vn&&_vendasExcluidasNome&&_vendasExcluidasNome[vn])return;
+    if(typeof isVendaCancelada==='function'&&isVendaCancelada(v.fu))return;
+    var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;
+    if(!d||d.getMonth()!==month0||d.getFullYear()!==year)return;
+    var fid=v.fid, mid=(v.fu&&v.fu.meetingId)||'';
+    if(fid&&sF[fid])return; if(mid&&sM[mid])return;
+    if(fid)sF[fid]=1; if(mid)sM[mid]=1;
+    n++;
+  });
+  return n;
+}
 function _countCloserContratosMes(todasVC, year, month0){
   var cand=[];
   (todasVC||[]).forEach(function(v){
