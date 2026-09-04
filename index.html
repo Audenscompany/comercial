@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-margem";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-desp-filtro-cat";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -6775,6 +6775,9 @@ function renderFinDespesas(){
   '</div>';
 }
 
+var _finDespCatFiltro='';
+function finDespFiltrarCat(cat){ _finDespCatFiltro=(_finDespCatFiltro===cat?'':cat); finRenderDespesas(); }
+function finDespClearCat(){ _finDespCatFiltro=''; finRenderDespesas(); }
 async function finRenderDespesas(){
   await finLoadData();
   var period=_finPeriod||getCurrentPeriod();
@@ -6805,7 +6808,8 @@ async function finRenderDespesas(){
 
   // Table rows
   var today=new Date().toISOString().split('T')[0];
-  var sorted=despesas.slice().sort(function(a,b){return b.date.localeCompare(a.date);});
+  var despFiltradas=_finDespCatFiltro?despesas.filter(function(t){return t.category===_finDespCatFiltro;}):despesas;
+  var sorted=despFiltradas.slice().sort(function(a,b){return b.date.localeCompare(a.date);});
   var tableRows=sorted.map(function(t){
     var isConf=t.status==='confirmado'||t.status==='conciliado';
     var isPend=t.status==='pendente';
@@ -6836,8 +6840,9 @@ async function finRenderDespesas(){
         '<div class="fin-panel-body">'+
           catEntries.map(function(e){
             var pct=totalConf?Math.round(e[1]/totalConf*100):0;
-            return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'+
-              '<div style="width:100px;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(e[0])+'</div>'+
+            var _sel=_finDespCatFiltro===e[0];
+            return '<div data-cat="'+esc(e[0])+'" onclick="finDespFiltrarCat(this.dataset.cat)" title="Filtrar lista por '+esc(e[0])+'" style="display:flex;align-items:center;gap:10px;margin-bottom:4px;cursor:pointer;padding:4px 6px;border-radius:6px;transition:background .15s;'+(_sel?'background:rgba(239,68,68,.14);':'')+'" onmouseover="if(!'+(_sel?'true':'false')+')this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="if(!'+(_sel?'true':'false')+')this.style.background=\'transparent\'">'+
+              '<div style="width:100px;font-size:12px;color:'+(_sel?'var(--red)':'var(--muted)')+';font-weight:'+(_sel?'700':'400')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(e[0])+'</div>'+
               '<div style="flex:1;background:rgba(255,255,255,.07);border-radius:3px;height:5px;"><div style="width:'+pct+'%;height:100%;background:var(--red);border-radius:3px;"></div></div>'+
               '<div style="width:80px;text-align:right;font-size:12px;font-weight:700;color:var(--red);">R$ '+fmtMoeda(e[1])+'</div>'+
               '<div style="width:30px;text-align:right;font-size:11px;color:var(--muted);">'+pct+'%</div>'+
@@ -6863,11 +6868,14 @@ async function finRenderDespesas(){
       '</div>'+
     '</div>'+
     '<div class="fin-panel">'+
-      '<div class="fin-panel-hd"><div class="fin-panel-hd-title"><i class="ti ti-list" style="color:var(--red);"></i>Lista de Despesas</div>'+
-        '<span style="font-size:12px;color:var(--muted);">'+despesas.length+' lançamentos</span>'+
+      '<div class="fin-panel-hd" style="display:flex;align-items:center;justify-content:space-between;"><div class="fin-panel-hd-title"><i class="ti ti-list" style="color:var(--red);"></i>Lista de Despesas</div>'+
+        '<div style="display:flex;align-items:center;gap:10px;">'+
+          (_finDespCatFiltro?'<span style="font-size:11px;color:var(--red);background:rgba(239,68,68,.12);padding:3px 6px 3px 10px;border-radius:12px;display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-filter" style="font-size:12px;"></i>'+esc(_finDespCatFiltro)+'<span onclick="finDespClearCat()" title="Limpar filtro" style="cursor:pointer;font-weight:700;font-size:14px;line-height:1;">×</span></span>':'')+
+          '<span style="font-size:12px;color:var(--muted);">'+despFiltradas.length+' lançamento'+(despFiltradas.length===1?'':'s')+'</span>'+
+        '</div>'+
       '</div>'+
-      (despesas.length?'<div class="fin-table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>'+tableRows+'</tbody></table></div>':
-        '<div class="fin-empty"><i class="ti ti-inbox"></i>Sem despesas em '+finMesLabel(period)+'</div>')+
+      (despFiltradas.length?'<div class="fin-table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>'+tableRows+'</tbody></table></div>':
+        '<div class="fin-empty"><i class="ti ti-inbox"></i>Sem despesas'+(_finDespCatFiltro?' de '+esc(_finDespCatFiltro):'')+' em '+finMesLabel(period)+'</div>')+
     '</div>';
 }
 
