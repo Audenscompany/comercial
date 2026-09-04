@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-bonus-equipe-sdr";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-bonus-equipe-v2";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -20831,6 +20831,8 @@ async function calcCloserFromSheets(nivelIdx, month){
       }catch(e3){console.warn('calcCloserFromSheets step3 contratos:',e3);}
       window._todasVendasCache=_todasVC; window._todasVendasCacheFull=true;
     }
+    // Cache cheio (todos os vendedores) — usado no BONUS DE EQUIPE, sem depender do cache global.
+    var _teamVCfullC=(_todasVC||[]).slice();
     // Respeita as EXCLUSOES manuais da aba Vendas (por id e por assinatura tel+nome+valor)
     // — venda apagada em Vendas some tambem do Plano de Carreira. (nao muta o cache global)
     _todasVC=(_todasVC||[]).filter(function(v){
@@ -21023,7 +21025,7 @@ async function calcCloserFromSheets(nivelIdx, month){
     result.incentivColdCall=reunColdCall*30;
 
     // Bônus de equipe: total da equipe no mês (mesma contagem para closer e SDR)
-    try{ var _teq=_teamContratosMes(_mY,_mM); if(_teq>totalEquipeContratos) totalEquipeContratos=_teq; }catch(e){}
+    try{ var _teq=_teamContratosMes(_mY,_mM,_teamVCfullC); if(_teq>totalEquipeContratos) totalEquipeContratos=_teq; }catch(e){}
     // Bônus de equipe: ≥20 contratos=R$500, +R$250 a cada 5 acima de 20
     result.bonusEquipe = totalEquipeContratos>=20 ? 500+Math.floor((totalEquipeContratos-20)/5)*250 : 0;
     result.totalEquipe = totalEquipeContratos;
@@ -21175,6 +21177,9 @@ async function calcSDRFromSheets(nivelIdx, month){
       }catch(e3){console.warn('calcSDRFromSheets step3 contratos:',e3);}
       window._todasVendasCache=_todasV; window._todasVendasCacheFull=true;
     }
+    // Cache cheio (todos os vendedores) montado acima — usado para o BONUS DE EQUIPE,
+    // independente do window._todasVendasCache (que pode ter sido zerado pelo triggerSDRCalc).
+    var _teamVCfull=(_todasV||[]).slice();
     // Respeita as EXCLUSOES manuais da aba Vendas (por id e por assinatura tel+nome+valor)
     _todasV=(_todasV||[]).filter(function(v){
       if(_vendasExcluidas&&_vendasExcluidas[v.fid])return false;
@@ -21527,7 +21532,7 @@ async function calcSDRFromFirebase(nivelIdx, month){
         totalEquipeContratosSDR++;
       });
     }
-    try{ var _teqS=_teamContratosMes(_sMY,_sMM); if(_teqS>totalEquipeContratosSDR) totalEquipeContratosSDR=_teqS; }catch(e){}
+    try{ var _teqS=_teamContratosMes(_sMY,_sMM,_teamVCfull); if(_teqS>totalEquipeContratosSDR) totalEquipeContratosSDR=_teqS; }catch(e){}
     result.bonusEquipe=totalEquipeContratosSDR>=20?500+Math.floor((totalEquipeContratosSDR-20)/5)*250:0;
     result.totalEquipe=totalEquipeContratosSDR;
     var totalBrutoSDR=result.base+result.bonusMeta+result.acelerador+result.comissaoVendas+result.bonusEquipe;
@@ -21592,8 +21597,8 @@ async function calcCloserMetaHistory(nivelIdx){
 // Contratos ATIVOS da equipe num mes (para bonus de equipe). Fonte = cache de vendas da aba
 // Vendas. Dedup so por chaves fortes (fid, meetingId, telefone) — NAO mescla por nome/empresa,
 // para nao perder multi-contratos do mesmo cliente (ex.: 2a loja). Respeita exclusoes/cancelados.
-function _teamContratosMes(year,month0){
-  var vc=(typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache; vc=vc||[];
+function _teamContratosMes(year,month0,vcArg){
+  var vc=(vcArg&&vcArg.length)?vcArg:((typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache); vc=vc||[];
   var sF={},sM={},n=0;
   vc.forEach(function(v){
     if(!v||!v.fu)return;
