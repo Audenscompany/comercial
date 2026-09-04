@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-pdf-assinado-401";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-fin-categorias";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -6290,6 +6290,7 @@ async function finLoadData(force){
       var u=firebase.auth().onAuthStateChanged(function(){u();resolve();});
       setTimeout(resolve,4000);
     });
+    try{ await loadFinCats(); }catch(e){}
     var [saidasRaw,entradasRaw,recebimentosRaw,contasRaw,transacoesRaw]=await Promise.all([
       fbGet('financeiro/saidas').catch(function(){return null;}),
       fbGet('financeiro/entradas_manuais').catch(function(){return null;}),
@@ -6412,6 +6413,7 @@ function renderFinDashboard(){
         _finPeriodSel(_finPeriod,'_finPeriod=this.value;_finState.loaded=false;loadFinanceiroData();finRenderDashboard();')+
         (asaasApiKey?'<button class="btn btn-outline" style="color:var(--cyan);border-color:rgba(56,189,248,.3);" onclick="asaasSync(this)"><i class="ti ti-refresh"></i> Sync Asaas</button>':'')+
         '<button class="btn btn-outline" onclick="openModalExtrato()"><i class="ti ti-file-import"></i> Importar Extrato</button>'+
+        '<button class="btn btn-outline" onclick="openModalCategorias()"><i class="ti ti-tags"></i> Categorias</button>'+
         '<button class="btn btn-primary" onclick="finOpenNewTx()"><i class="ti ti-plus"></i> Novo Lançamento</button>'+
       '</div>'+
     '</div>'+
@@ -6763,6 +6765,7 @@ function renderFinDespesas(){
         _finPeriodSel(_finPeriod,'_finPeriod=this.value;_finState.loaded=false;loadFinanceiroData();finRenderDespesas();')+
         '<button class="btn" style="background:rgba(239,68,68,.1);color:var(--red);border-color:rgba(239,68,68,.25);" onclick="finOpenNewTx(\'despesa\')"><i class="ti ti-plus"></i> Nova Despesa</button>'+
         '<button class="btn btn-outline" onclick="openModalExtrato()"><i class="ti ti-file-import"></i> Importar Extrato</button>'+
+        '<button class="btn btn-outline" onclick="openModalCategorias()"><i class="ti ti-tags"></i> Categorias</button>'+
       '</div>'+
     '</div>'+
     _finToolbar('fin-despesas',_finPeriod)+
@@ -7196,6 +7199,7 @@ function renderFinanceiro(){
         '<select class="f-input" id="fin-period-sel" onchange="_finPeriod=this.value;loadFinanceiroData();" style="width:170px;margin-bottom:0;">'+finPeriodOptions()+'</select>'+
         (asaasApiKey?'<button class="btn btn-outline" style="white-space:nowrap;color:var(--cyan);border-color:rgba(56,189,248,0.3);" onclick="asaasSync(this)"><i class="ti ti-refresh"></i> Sync Asaas</button>':'')+
         '<button class="btn btn-outline" style="white-space:nowrap;" onclick="openModalExtrato()"><i class="ti ti-file-import"></i> Importar Extrato</button>'+
+        '<button class="btn btn-outline" style="white-space:nowrap;" onclick="openModalCategorias()"><i class="ti ti-tags"></i> Categorias</button>'+
         '<button class="btn" onclick="openModalLancamento(\'saida\')" style="background:rgba(239,68,68,0.1);color:var(--red);border-color:rgba(239,68,68,0.25);white-space:nowrap;"><i class="ti ti-arrow-up-right"></i> Despesa</button>'+
         '<button class="btn btn-primary" style="white-space:nowrap;" onclick="openModalLancamento(\'entrada\')"><i class="ti ti-arrow-down-left"></i> Entrada Manual</button>'+
       '</div>'+
@@ -7528,7 +7532,7 @@ async function loadFinanceiroData(){
 }
 function openModalLancamento(tipo){
   var isEntrada=tipo==='entrada';
-  var cats=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros'];
+  var cats=(typeof getFinCats==='function')?getFinCats():['Outros'];
   var today=new Date().toISOString().split('T')[0];
   var taxaBlock=isEntrada
     ?'<div style="margin-bottom:14px;">'+
@@ -7637,9 +7641,94 @@ async function finSalvarLancamento(){
   loadFinanceiroData();
 }
 // ===== IMPORTAR EXTRATO BANCÁRIO =====
-var FIN_CATS=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros'];
+var FIN_CATS_DEFAULT=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros'];
+var FIN_CATS=FIN_CATS_DEFAULT.slice();
 var FIN_ENTRADA_CATS=['Receita Cliente','Asaas','InfinitePay','Transferência Recebida','Reembolso','Outros'];
 var _extratoRows=[];
+function getFinCats(){ return (FIN_CATS&&FIN_CATS.length)?FIN_CATS:FIN_CATS_DEFAULT.slice(); }
+async function loadFinCats(){
+  try{
+    var raw=await fbGet('financeiro/categorias_despesa').catch(function(){return null;});
+    if(raw){
+      var arr=Array.isArray(raw)?raw.slice():Object.keys(raw).map(function(k){return raw[k];});
+      arr=arr.filter(function(c){return c&&typeof c==='string';});
+      if(arr.length) FIN_CATS=arr;
+    }
+  }catch(e){}
+  return FIN_CATS;
+}
+async function saveFinCats(arr){
+  FIN_CATS=arr.slice();
+  try{ await fbDb.ref('financeiro/categorias_despesa').set(arr); }catch(e){ console.error('[saveFinCats]',e); }
+}
+// ===== GERENCIAR CATEGORIAS DE DESPESA (CRUD) =====
+async function openModalCategorias(){
+  await loadFinCats();
+  var ex=document.getElementById('modal-categorias'); if(ex) ex.remove();
+  var html='<div class="modal-ov" id="modal-categorias" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-categorias\')">'+
+    '<div class="modal-box" style="max-width:460px;width:100%;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;">'+
+          '<div style="width:32px;height:32px;border-radius:8px;background:rgba(147,51,234,.15);display:flex;align-items:center;justify-content:center;"><i class="ti ti-tags" style="color:var(--purple)"></i></div>'+
+          '<span class="modal-title" style="margin:0;">Categorias de Despesa</span>'+
+        '</div>'+
+        '<button onclick="closeModal(\'modal-categorias\')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Usadas em Nova Despesa e na importação de extrato. Ao renomear/excluir, as despesas já lançadas são reajustadas.</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:14px;">'+
+        '<input class="f-input" id="fin-newcat" placeholder="Nova categoria..." style="margin-bottom:0;flex:1;" onkeydown="if(event.key===\'Enter\')finAddCat()">'+
+        '<button class="btn btn-primary" onclick="finAddCat()" style="white-space:nowrap;"><i class="ti ti-plus"></i> Adicionar</button>'+
+      '</div>'+
+      '<div id="fin-cat-list" style="max-height:50vh;overflow-y:auto;"></div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  finRenderCatList();
+}
+function finRenderCatList(){
+  var box=document.getElementById('fin-cat-list'); if(!box) return;
+  box.innerHTML=FIN_CATS.map(function(c,i){
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">'+
+      '<input class="f-input" id="fin-cat-'+i+'" value="'+esc(c)+'" style="margin-bottom:0;flex:1;">'+
+      '<button class="btn btn-outline" onclick="finRenameCat('+i+')" title="Salvar nome" style="padding:6px 10px;"><i class="ti ti-check"></i></button>'+
+      '<button class="btn" onclick="finDelCat('+i+')" title="Excluir" style="padding:6px 10px;background:rgba(239,68,68,.1);color:var(--red);border-color:rgba(239,68,68,.25);"><i class="ti ti-trash"></i></button>'+
+    '</div>';
+  }).join('');
+}
+async function finAddCat(){
+  var el=document.getElementById('fin-newcat'); var v=(el&&el.value||'').trim();
+  if(!v) return;
+  if(FIN_CATS.some(function(c){return c.toLowerCase()===v.toLowerCase();})){ alert('Categoria já existe.'); return; }
+  var arr=FIN_CATS.slice(); arr.push(v); await saveFinCats(arr);
+  if(el) el.value=''; finRenderCatList();
+}
+async function finRenameCat(i){
+  var oldName=FIN_CATS[i]; if(oldName===undefined) return;
+  var el=document.getElementById('fin-cat-'+i); var v=(el&&el.value||'').trim();
+  if(!v||v===oldName){ finRenderCatList(); return; }
+  if(FIN_CATS.some(function(c,j){return j!==i&&c.toLowerCase()===v.toLowerCase();})){ alert('Já existe uma categoria com esse nome.'); return; }
+  var arr=FIN_CATS.map(function(c,j){return j===i?v:c;}); await saveFinCats(arr);
+  try{
+    var raw=await fbGet('financeiro/saidas').catch(function(){return null;});
+    if(raw){ var ups={}; Object.keys(raw).forEach(function(k){ if((raw[k]&&raw[k].categoria)===oldName) ups['financeiro/saidas/'+k+'/categoria']=v; });
+      if(Object.keys(ups).length) await fbDb.ref().update(ups); }
+  }catch(e){}
+  finRenderCatList(); if(typeof loadFinanceiroData==='function') loadFinanceiroData();
+}
+async function finDelCat(i){
+  var name=FIN_CATS[i]; if(name===undefined) return;
+  if(FIN_CATS.length<=1){ alert('Mantenha ao menos uma categoria.'); return; }
+  if(!confirm('Excluir a categoria "'+name+'"?\nAs despesas já lançadas nessa categoria passam para "Outros".')) return;
+  var arr=FIN_CATS.filter(function(c,j){return j!==i;});
+  if(arr.indexOf('Outros')<0) arr.push('Outros');
+  await saveFinCats(arr);
+  try{
+    var raw=await fbGet('financeiro/saidas').catch(function(){return null;});
+    if(raw){ var ups={}; Object.keys(raw).forEach(function(k){ if((raw[k]&&raw[k].categoria)===name) ups['financeiro/saidas/'+k+'/categoria']='Outros'; });
+      if(Object.keys(ups).length) await fbDb.ref().update(ups); }
+  }catch(e){}
+  finRenderCatList(); if(typeof loadFinanceiroData==='function') loadFinanceiroData();
+}
 
 function openModalExtrato(){
   var html='<div class="modal-ov" id="modal-extrato" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'modal-extrato\')">'+
