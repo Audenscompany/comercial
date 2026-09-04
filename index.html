@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-patrimonio";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-margem";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -6443,6 +6443,7 @@ async function finRenderDashboard(){
       _finKpiCard('Recebido','R$ '+fmtMoeda(s.asaasTotal+s.manualTotal),'var(--cyan)',s.asaasTotal?'Asaas R$ '+fmtMoeda(s.asaasTotal):'Apenas manual','ti-cash',0)+
       _finKpiCard('Despesas do Mês','R$ '+fmtMoeda(s.despesaTotal),'var(--red)','vs '+finMesLabelCurto(prevP)+' R$ '+fmtMoeda(sp.despesaTotal),'ti-trending-down',sp.despesaTotal?Math.round((s.despesaTotal-sp.despesaTotal)/sp.despesaTotal*100):0)+
       _finKpiCard('Lucro / Prejuízo','R$ '+fmtMoeda(s.lucro),s.lucro>=0?'var(--purple3)':'var(--red)','Receitas − Despesas realizadas','ti-report-money',sp.lucro?Math.round((s.lucro-sp.lucro)/Math.abs(sp.lucro)*100):0)+
+      (function(){var mg=s.receitaTotal?(s.lucro/s.receitaTotal*100):0;var mgp=sp.receitaTotal?(sp.lucro/sp.receitaTotal*100):0;return _finKpiCard('Margem de Lucro',mg.toFixed(1).replace('.',',')+'%',mg>=0?'var(--green)':'var(--red)','vs '+finMesLabelCurto(prevP)+' '+mgp.toFixed(1).replace('.',',')+'%','ti-percentage',Math.round(mg-mgp));})()+
       _finKpiCard('Saldo em Contas',_finState.contas.length?'R$ '+fmtMoeda(saldoContas):'—',_finState.contas.length?'var(--white)':'var(--muted)',_finState.contas.length?'Atualizado agora':'Nenhuma conta cadastrada','ti-building-bank',0)+
     '</div>';
 
