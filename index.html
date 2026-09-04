@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-fin-categorias";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-patrimonio";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -6982,6 +6982,7 @@ function renderFinContas(){
       '<div><div class="page-title"><i class="ti ti-building-bank" style="color:var(--cyan);margin-right:8px;"></i>Contas</div>'+
       '<div class="page-sub">Gestão completa de saldos, movimentações e controle das contas</div></div>'+
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'+
+        '<button class="btn btn-outline" onclick="finOpenNewConta(\'investment\')"><i class="ti ti-trending-up"></i> Novo Investimento</button>'+
         '<button class="btn btn-primary" onclick="finOpenNewConta()"><i class="ti ti-plus"></i> Nova Conta</button>'+
       '</div>'+
     '</div>'+
@@ -6994,11 +6995,16 @@ async function finRenderContas(){
   await finLoadData();
   var contas=_finState.contas;
   var ativas=contas.filter(function(c){return c.active!==false;});
+  var _bal=function(c){return parseFloat(c.cachedBalance)||parseFloat(c.initialBalance)||0;};
   var checking=ativas.filter(function(c){return c.type==='checking'||c.type==='payments';});
   var reserve=ativas.filter(function(c){return c.type==='reserve'||c.type==='investment';});
-  var totalAll=ativas.filter(function(c){return c.includeInConsolidated!==false;}).reduce(function(s,c){return s+(parseFloat(c.cachedBalance)||parseFloat(c.initialBalance)||0);},0);
-  var totalCC=checking.reduce(function(s,c){return s+(parseFloat(c.cachedBalance)||parseFloat(c.initialBalance)||0);},0);
-  var totalRes=reserve.reduce(function(s,c){return s+(parseFloat(c.cachedBalance)||parseFloat(c.initialBalance)||0);},0);
+  var totalAll=ativas.filter(function(c){return c.includeInConsolidated!==false;}).reduce(function(s,c){return s+_bal(c);},0);
+  var totalCC=checking.reduce(function(s,c){return s+_bal(c);},0);
+  var totalRes=reserve.reduce(function(s,c){return s+_bal(c);},0);
+  var totalLiq=ativas.filter(function(c){return (c.type==='checking'||c.type==='payments'||c.type==='wallet')&&c.includeInConsolidated!==false;}).reduce(function(s,c){return s+_bal(c);},0);
+  var totalInv=ativas.filter(function(c){return (c.type==='reserve'||c.type==='investment')&&c.includeInConsolidated!==false;}).reduce(function(s,c){return s+_bal(c);},0);
+  var patrimonio=totalLiq+totalInv;
+  var _nInv=reserve.length;
   var iconMap={checking:'ti-building-bank',wallet:'ti-wallet',payments:'ti-credit-card',reserve:'ti-safe',investment:'ti-trending-up',credit:'ti-credit-card'};
   var colorMap={checking:'var(--cyan)',wallet:'var(--amber)',payments:'var(--purple3)',reserve:'var(--green)',investment:'var(--green)',credit:'var(--red)'};
   var typeLabel={checking:'Conta Corrente',wallet:'Carteira',payments:'Conta de Pagamentos',reserve:'Reserva',investment:'Aplicação',credit:'Crédito'};
@@ -7018,10 +7024,10 @@ async function finRenderContas(){
 
   bodyEl.innerHTML=
     '<div class="fin-kpi-grid-4" style="margin-bottom:16px;">'+
-      _finKpiCard('Saldo Total em Contas','R$ '+fmtMoeda(totalAll),'var(--white)',ativas.length+' contas ativas','ti-wallet',0)+
-      _finKpiCard('Conta Corrente','R$ '+fmtMoeda(totalCC),'var(--cyan)',checking.length+' conta(s)','ti-building-bank',0)+
-      _finKpiCard('Reserva / Aplicação','R$ '+fmtMoeda(totalRes),'var(--green)',reserve.length+' conta(s)','ti-safe',0)+
-      _finKpiCard('Disponível','R$ '+fmtMoeda(totalCC),'var(--purple3)','Conta corrente ativa','ti-cash',0)+
+      _finKpiCard('Patrimônio Total','R$ '+fmtMoeda(patrimonio),'var(--purple3)',ativas.length+' contas · líquido + investido','ti-diamond',0)+
+      _finKpiCard('Contas Líquidas','R$ '+fmtMoeda(totalLiq),'var(--cyan)',checking.length+' conta(s)','ti-building-bank',0)+
+      _finKpiCard('Investimentos','R$ '+fmtMoeda(totalInv),'var(--green)',_nInv+' aplicação(ões)','ti-trending-up',0)+
+      _finKpiCard('Disponível','R$ '+fmtMoeda(totalCC),'var(--amber)','Conta corrente ativa','ti-cash',0)+
     '</div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:20px;">'+
       ativas.map(function(c){
@@ -7061,7 +7067,90 @@ async function finRenderContas(){
           '</tr>';
         }).join('')+
       '</tbody></table></div>'+
+    '</div>'+
+    '<div class="fin-panel" style="margin-top:16px;">'+
+      '<div class="fin-panel-hd" style="display:flex;align-items:center;justify-content:space-between;"><div class="fin-panel-hd-title"><i class="ti ti-chart-line" style="color:var(--purple3);"></i>Evolução do Patrimônio</div>'+
+        '<button class="btn btn-outline" style="font-size:11px;padding:4px 10px;" onclick="finEditPatrimMes()"><i class="ti ti-pencil"></i> Ajustar mês</button>'+
+      '</div>'+
+      '<div class="fin-panel-body" style="height:240px;position:relative;padding:12px 16px;"><canvas id="fin-chart-patrim"></canvas></div>'+
+      '<div id="fin-patrim-table" style="padding:0 16px 14px;"></div>'+
     '</div>';
+
+  // Snapshot do patrimonio do mes atual + grafico de evolucao mensal
+  try{ await _finSnapshotPatrimonio(patrimonio,totalLiq,totalInv); }catch(e){}
+  var _hist=await _finLoadPatrimHist();
+  _finRenderPatrimEvolucao(_hist,patrimonio,totalLiq,totalInv);
+}
+
+// ============================================================
+// Patrimonio — historico mensal + grafico de evolucao
+// ============================================================
+function _finParseBR(v){var t=String(v==null?'':v).trim();if(!t)return 0;if(t.indexOf(',')>=0){t=t.replace(/\./g,'').replace(',','.');}return parseFloat(t)||0;}
+function _finMesKey(d){d=d||new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);}
+function _finMesLabel(k){var p=String(k).split('-');var mm=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];return (mm[(parseInt(p[1],10)||1)-1]||'')+'/'+String(p[0]).slice(-2);}
+async function _finSnapshotPatrimonio(patr,liq,inv){
+  if(!fbDb) return;
+  var k=_finMesKey();
+  try{ await fbDb.ref('financeiro/patrimonio_historico/'+k).update({patrimonio:Math.round(patr*100)/100,liquido:Math.round(liq*100)/100,investido:Math.round(inv*100)/100,ts:Date.now(),auto:true}); }catch(e){}
+}
+async function _finLoadPatrimHist(){
+  try{ var raw=await fbGet('financeiro/patrimonio_historico').catch(function(){return null;}); return raw||{}; }catch(e){ return {}; }
+}
+function _finRenderPatrimEvolucao(hist,patrLive,liqLive,invLive){
+  hist=hist||{};
+  var kNow=_finMesKey();
+  hist[kNow]=Object.assign({},hist[kNow],{patrimonio:Math.round(patrLive*100)/100,liquido:Math.round(liqLive*100)/100,investido:Math.round(invLive*100)/100});
+  var keys=Object.keys(hist).filter(function(k){return /^\d{4}-\d{2}$/.test(k);}).sort();
+  var labels=keys.map(_finMesLabel);
+  var dPat=keys.map(function(k){return +(hist[k].patrimonio||0);});
+  var dLiq=keys.map(function(k){return +(hist[k].liquido||0);});
+  var dInv=keys.map(function(k){return +(hist[k].investido||0);});
+  var tbl=document.getElementById('fin-patrim-table');
+  if(tbl){
+    if(keys.length<=1){
+      tbl.innerHTML='<div style="font-size:11px;color:var(--muted);text-align:center;padding:6px;">O patrimônio é registrado automaticamente a cada mês. Use "Ajustar mês" para incluir meses anteriores e montar o histórico.</div>';
+    } else {
+      var last=dPat[dPat.length-1],prev=dPat[dPat.length-2];
+      var diff=last-prev,pct=prev?(diff/prev*100):0;
+      var cl=diff>=0?'var(--green)':'var(--red)',sig=diff>=0?'+':'-';
+      tbl.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center;">'+
+        '<span>Variação vs. mês anterior: <b style="color:'+cl+';">'+sig+'R$ '+fmtMoeda(Math.abs(diff))+' ('+sig+Math.abs(pct).toFixed(1)+'%)</b></span>'+
+        '<span>Meses registrados: <b style="color:var(--white);">'+keys.length+'</b></span>'+
+      '</div>';
+    }
+  }
+  _finLoadChartJs(function(){
+    var cv=document.getElementById('fin-chart-patrim'); if(!cv||!window.Chart) return;
+    if(_finState.charts['patrim']){try{_finState.charts['patrim'].destroy();}catch(e){}}
+    _finState.charts['patrim']=new Chart(cv,{type:'line',
+      data:{labels:labels,datasets:[
+        {label:'Patrimônio',data:dPat,borderColor:'#a855f7',backgroundColor:'rgba(168,85,247,.12)',tension:.35,fill:true,pointRadius:3,borderWidth:2},
+        {label:'Líquido',data:dLiq,borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,.05)',tension:.35,fill:false,pointRadius:2,borderWidth:1.5},
+        {label:'Investido',data:dInv,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.05)',tension:.35,fill:false,pointRadius:2,borderWidth:1.5}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:true,position:'top',labels:{color:'rgba(255,255,255,.6)',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': R$ '+fmtMoeda(ctx.raw);}}}},
+        scales:{x:{ticks:{color:'rgba(255,255,255,.4)',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}},y:{ticks:{color:'rgba(255,255,255,.4)',font:{size:10},callback:function(v){return 'R$'+fmtMoeda(v);}},grid:{color:'rgba(255,255,255,.06)'}}}}
+    });
+  });
+}
+async function finEditPatrimMes(){
+  var k=prompt('Qual mês deseja ajustar? (formato AAAA-MM, ex: 2026-08)',_finMesKey());
+  if(!k) return; k=k.trim();
+  if(!/^\d{4}-\d{2}$/.test(k)){ alert('Formato inválido. Use AAAA-MM (ex: 2026-08).'); return; }
+  var hist=await _finLoadPatrimHist();
+  var atual=hist[k]||{};
+  var vp=prompt('Patrimônio total em '+_finMesLabel(k)+' (R$):',(atual.patrimonio!=null?atual.patrimonio:''));
+  if(vp===null) return;
+  var patr=_finParseBR(vp);
+  var vi=prompt('Quanto disso é investimento em '+_finMesLabel(k)+'? (R$, opcional):',(atual.investido!=null?atual.investido:''));
+  var inv=(vi===null)?(+atual.investido||0):_finParseBR(vi);
+  var liq=Math.round((patr-inv)*100)/100;
+  if(!fbDb) initFirebase();
+  try{ await fbDb.ref('financeiro/patrimonio_historico/'+k).set({patrimonio:Math.round(patr*100)/100,liquido:liq,investido:Math.round(inv*100)/100,ts:Date.now(),manual:true}); }
+  catch(e){ alert('Erro ao salvar.'); return; }
+  showSheetToast('Patrimônio de '+_finMesLabel(k)+' salvo!');
+  finRenderContas();
 }
 
 // ============================================================
@@ -7076,7 +7165,7 @@ function finOpenNewTx(tipo){
 
 function finFecharModal(id){var el=document.getElementById(id);if(el)el.remove();}
 
-function finOpenNewConta(){
+function finOpenNewConta(preTipo){
   var existing=document.getElementById('fin-conta-modal');if(existing)existing.remove();
   var html='<div class="modal-ov" id="fin-conta-modal" style="display:flex;" onclick="if(event.target===this)finFecharModal(\'fin-conta-modal\')">'+
     '<div class="modal-box" style="max-width:440px;width:100%;padding:0;overflow:hidden;">'+
@@ -7101,6 +7190,7 @@ function finOpenNewConta(){
     '</div>'+
   '</div>';
   document.body.insertAdjacentHTML('beforeend',html);
+  if(preTipo){var _t=document.getElementById('fc-tipo');if(_t)_t.value=preTipo;if(preTipo==='investment'){var _mt=document.querySelector('#fin-conta-modal .modal-title');if(_mt)_mt.textContent='Novo Investimento';}}
   setTimeout(function(){var el=document.getElementById('fc-nome');if(el)el.focus();},100);
 }
 
