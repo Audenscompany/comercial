@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-bonus-equipe-v2";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-carreira-lock-tcv";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -883,6 +883,7 @@ function startRealtimeSync(){
   fbDb.ref('meta_aac/snapshot').on('value',function(s){var v=s.val()||{};try{Object.keys(v).forEach(function(pk){if(v[pk]&&v[pk].camps){if(!_aacCache[pk]||(v[pk].ts||0)>=(_aacCache[pk].ts||0)){_aacCache[pk]=v[pk];}}});if(document.getElementById('funil-aac-page')&&typeof _renderAACContent==='function'){var _cur=_aacCache[_aacPeriod];var _el=document.getElementById('aac-content');if(_cur&&_cur.camps&&_el&&!window._aacLiveShown){_el.innerHTML=_renderAACContent(_aacSnapToData(_cur));}}}catch(e){}});
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
+  fbDb.ref('audens/config/carreiraPassHash').on('value',function(s){_carreiraPassHash=s.val()||'';});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
   fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
   fbDb.ref('vendas_excluidas_nome').on('value',function(s){_vendasExcluidasNome=s.val()||{};});
@@ -4796,6 +4797,10 @@ function showPage(id){
     if(area){area.innerHTML=finLockScreen(id);area.setAttribute('data-page',id);setTimeout(function(){var _e=document.getElementById('fin-pass-inp');if(_e)_e.focus();},60);}
     return;
   }
+  if(id==='plano-carreira'&&window.CU&&CU.role==='gestor'&&!_carreiraUnlocked){
+    if(area){area.innerHTML=carreiraLockScreen(id);area.setAttribute('data-page',id);setTimeout(function(){var _e=document.getElementById('car-pass-inp');if(_e)_e.focus();},60);}
+    return;
+  }
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
@@ -6732,6 +6737,59 @@ async function finTryUnlock(pageId){
   else{if(msg)msg.textContent='Senha incorreta.';if(inp){inp.value='';inp.focus();}}
 }
 function finLock(){_finUnlocked=false;showPage(window._currentPage||'fin-dashboard');}
+// ===== BLOQUEIO DO PLANO DE CARREIRA (senha propria, pedida na visao do gestor) =====
+var _carreiraUnlocked=false;
+var _carreiraPassHash='';
+function carreiraLockScreen(pageId){
+  var first=!_carreiraPassHash;
+  return '<div class="page active"><div style="max-width:420px;margin:56px auto;background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:34px;text-align:center;">'+
+    '<div style="width:60px;height:60px;border-radius:16px;background:rgba(147,51,234,0.14);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;"><i class="ti ti-lock" style="font-size:30px;color:var(--purple3);"></i></div>'+
+    '<div style="font-size:18px;font-weight:800;color:var(--white);margin-bottom:6px;">'+(first?'Proteger o Plano de Carreira':'Área protegida')+'</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5;">'+(first?'Crie uma senha para o Plano de Carreira. Ela será pedida sempre, mesmo com o login já feito.':'Digite a senha para acessar o Plano de Carreira.')+'</div>'+
+    '<input id="car-pass-inp" type="password" placeholder="'+(first?'Nova senha (mín. 4 caracteres)':'Senha')+'" onkeydown="if(event.key===\'Enter\')carreiraTryUnlock(\''+pageId+'\')" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-size:15px;padding:12px 14px;outline:none;box-sizing:border-box;text-align:center;letter-spacing:2px;margin-bottom:10px;">'+
+    '<div id="car-pass-msg" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:12px;"></div>'+
+    '<button class="btn btn-primary" onclick="carreiraTryUnlock(\''+pageId+'\')" style="width:100%;justify-content:center;">'+(first?'Criar senha e entrar':'Entrar')+'</button>'+
+    (first?'':'<div style="margin-top:14px;"><a onclick="carreiraChangePassModal()" style="font-size:11px;color:var(--muted);cursor:pointer;text-decoration:underline;">Alterar senha</a></div>')+
+  '</div></div>';
+}
+async function carreiraTryUnlock(pageId){
+  var inp=document.getElementById('car-pass-inp');var v=inp?inp.value:'';
+  var msg=document.getElementById('car-pass-msg');
+  if(!v){if(msg)msg.textContent='Digite a senha.';return;}
+  if(!_carreiraPassHash){
+    if(v.length<4){if(msg)msg.textContent='Mínimo 4 caracteres.';return;}
+    var nh=await _finSha(v);
+    try{await fbDb.ref('audens/config/carreiraPassHash').set(nh);}catch(e){}
+    _carreiraPassHash=nh;_carreiraUnlocked=true;showSheetToast('Senha do Plano de Carreira criada!');showPage(pageId);return;
+  }
+  var hh=await _finSha(v);
+  if(hh===_carreiraPassHash){_carreiraUnlocked=true;showPage(pageId);}
+  else{if(msg)msg.textContent='Senha incorreta.';if(inp){inp.value='';inp.focus();}}
+}
+function carreiraLock(){_carreiraUnlocked=false;showPage('plano-carreira');}
+function carreiraChangePassModal(){
+  var html='<div class="modal-ov" id="car-cp-modal" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'car-cp-modal\')">'+
+    '<div class="modal-box" style="max-width:400px;width:100%;">'+
+      '<div class="modal-title" style="margin-bottom:16px;">Alterar senha do Plano de Carreira</div>'+
+      (_carreiraPassHash?'<label class="f-label">Senha atual</label><input class="f-input" id="car-cp-old" type="password" style="margin-bottom:12px;">':'')+
+      '<label class="f-label">Nova senha (mín. 4 caracteres)</label><input class="f-input" id="car-cp-new" type="password" style="margin-bottom:12px;">'+
+      '<div id="car-cp-msg" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:8px;"></div>'+
+      '<div style="display:flex;gap:10px;"><button class="btn" onclick="closeModal(\'car-cp-modal\')" style="flex:1;">Cancelar</button><button class="btn btn-primary" onclick="carreiraSavePass()" style="flex:2;">Salvar</button></div>'+
+    '</div></div>';
+  var ex=document.getElementById('car-cp-modal');if(ex)ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function carreiraSavePass(){
+  var oldv=(document.getElementById('car-cp-old')||{}).value||'';
+  var newv=(document.getElementById('car-cp-new')||{}).value||'';
+  var msg=document.getElementById('car-cp-msg');
+  if(_carreiraPassHash){var oh=await _finSha(oldv);if(oh!==_carreiraPassHash){if(msg)msg.textContent='Senha atual incorreta.';return;}}
+  if(newv.length<4){if(msg)msg.textContent='Nova senha: mínimo 4 caracteres.';return;}
+  var nh=await _finSha(newv);
+  try{await fbDb.ref('audens/config/carreiraPassHash').set(nh);}catch(e){}
+  _carreiraPassHash=nh;
+  closeModal('car-cp-modal');showSheetToast('Senha do Plano de Carreira alterada!');
+}
 function finChangePassModal(){
   var html='<div class="modal-ov" id="fin-cp-modal" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)closeModal(\'fin-cp-modal\')">'+
     '<div class="modal-box" style="max-width:380px;width:100%;">'+
@@ -20850,7 +20908,7 @@ async function calcCloserFromSheets(nivelIdx, month){
     }).forEach(function(v){
       var fu=v.fu, m2=v.m;
       var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
-      var vFU=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      var vFU=_mrrCarreira(fu); // TCV: valor total / meses
       var telRawC=fu.tel||(m2&&m2.tel)||'';
       if(!telRawC&&v.fid){var _fmc=v.fid.match(/km_(\d{8,})/);if(_fmc)telRawC=_fmc[1];}
       var tel=telRawC.replace(/\D/g,'').slice(-10);
@@ -21199,7 +21257,7 @@ async function calcSDRFromSheets(nivelIdx, month){
       var sdrRaw=fu.sdr||(m2&&(m2.sdrName||m2.sdr))||'';
       if(normCloserName(sdrRaw)!=='João') return;
       var isTCV=(fu.tipoValor||'').toLowerCase()==='tcv';
-      var mrr=isTCV?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+      var mrr=_mrrCarreira(fu); // TCV: valor total / meses (nao o total)
       // tel: fu.tel, meeting tel, ou extraído do fid (ex: km_553194393673_ts → 3194393673)
       var telRaw=fu.tel||(m2&&m2.tel)||'';
       if(!telRaw&&v.fid){var _fm=v.fid.match(/km_(\d{8,})/);if(_fm)telRaw=_fm[1];}
@@ -21532,7 +21590,21 @@ async function calcSDRFromFirebase(nivelIdx, month){
         totalEquipeContratosSDR++;
       });
     }
-    try{ var _teqS=_teamContratosMes(_sMY,_sMM,_teamVCfull); if(_teqS>totalEquipeContratosSDR) totalEquipeContratosSDR=_teqS; }catch(e){}
+    // Contagem direta do cache cheio (a prova de dessincronizacao do cache global)
+    try{
+      var _teamDirect=0,_tdSeen={};
+      (_teamVCfull||[]).forEach(function(v){
+        if(!v||!v.fu)return;
+        if(typeof isVendaCancelada==='function'&&isVendaCancelada(v.fu))return;
+        if(_vendasExcluidas&&_vendasExcluidas[v.fid])return;
+        var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;
+        if(!d||d.getMonth()!==_sMM||d.getFullYear()!==_sMY)return;
+        if(v.fid&&_tdSeen[v.fid])return; if(v.fid)_tdSeen[v.fid]=1;
+        _teamDirect++;
+      });
+      var _teqS=_teamContratosMes(_sMY,_sMM,_teamVCfull);
+      totalEquipeContratosSDR=Math.max(totalEquipeContratosSDR||0,_teqS||0,_teamDirect||0);
+    }catch(e){}
     result.bonusEquipe=totalEquipeContratosSDR>=20?500+Math.floor((totalEquipeContratosSDR-20)/5)*250:0;
     result.totalEquipe=totalEquipeContratosSDR;
     var totalBrutoSDR=result.base+result.bonusMeta+result.acelerador+result.comissaoVendas+result.bonusEquipe;
@@ -21597,6 +21669,12 @@ async function calcCloserMetaHistory(nivelIdx){
 // Contratos ATIVOS da equipe num mes (para bonus de equipe). Fonte = cache de vendas da aba
 // Vendas. Dedup so por chaves fortes (fid, meetingId, telefone) — NAO mescla por nome/empresa,
 // para nao perder multi-contratos do mesmo cliente (ex.: 2a loja). Respeita exclusoes/cancelados.
+function _mrrCarreira(fu){
+  if(!fu)return 0;
+  var isT=(fu.tipoValor||'').toLowerCase()==='tcv';
+  if(isT){ var _m=parseInt(fu.duracao||fu.duracaoMeses||fu.meses)||0; var _c=parseFloat(fu.contrato)||0; return _m>0?Math.round(_c/_m):_c; }
+  return parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0;
+}
 function _teamContratosMes(year,month0,vcArg){
   var vc=(vcArg&&vcArg.length)?vcArg:((typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache); vc=vc||[];
   var sF={},sM={},n=0;
@@ -21634,7 +21712,7 @@ function _countCloserContratosMes(todasVC, year, month0){
     var midKey=fu.meetingId||'';
     var closerRaw=(m2&&m2.responsavel)||fu.closerNome||fu.closer||fu.responsavel||'';
     var isTCVc=(fu.tipoValor||'').toLowerCase()==='tcv';
-    var mrr=isTCVc?(parseFloat(fu.contrato)||0):(parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0);
+    var mrr=_mrrCarreira(fu); // TCV: valor total / meses
     cand.push({tel:tel,empresaKey:empresaKey,nomeKey:nomeKey,nomeFirstKey:nomeFirstKey,midKey:midKey,fid:v.fid,closerRaw:closerRaw,mrr:mrr});
   });
   cand.sort(function(a,b){return b.mrr-a.mrr;});
@@ -21907,7 +21985,9 @@ function cpSwitch(tab){
 function renderGestorCarreiras(){
   if(fbDb) loadCareerLevels(); else initFirebase();
   return '<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Planos de Carreira</div><div class="page-sub">Gestão de Níveis · Cálculo Automático</div></div></div>'+
+    '<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;"><div><div class="page-title">Planos de Carreira</div><div class="page-sub">Gestão de Níveis · Cálculo Automático</div></div>'+
+      '<button onclick="carreiraLock()" title="Bloquear Plano de Carreira" style="padding:6px 12px;border-radius:8px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.08);color:var(--red);font-size:12px;font-weight:700;cursor:pointer;"><i class="ti ti-lock"></i> Bloquear</button>'+
+    '</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:20px;background:rgba(0,0,0,0.3);border-radius:10px;padding:4px;border:1px solid var(--border);max-width:500px;">'+
       '<button id="cp-tab-closer" class="role-tab active" onclick="cpSwitch(\'closer\')"><i class="ti ti-crosshair"></i> Gustavo · Closer</button>'+
       '<button id="cp-tab-sdr" class="role-tab" onclick="cpSwitch(\'sdr\')"><i class="ti ti-messages"></i> João · SDR</button>'+
