@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-contracheque-bonus";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-bonus-sem-max";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -20826,7 +20826,7 @@ async function calcCloserFromSheets(nivelIdx, month){
     var _mY=parseInt(_mParts[0]),_mM=parseInt(_mParts[1])-1;
     var _todasVC=window._todasVendasCache;
     if(!_todasVC||!window._todasVendasCacheFull){
-      _todasVC=[]; window._teamContratosMax={};
+      _todasVC=[];
       // Step 1: todos os followups (igual ao loop do renderVendas, inclui assin_*)
       Object.keys(followups||{}).forEach(function(fid){
         var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;
@@ -21173,7 +21173,7 @@ async function calcSDRFromSheets(nivelIdx, month){
     // Garante que o cache existe (aba Vendas pode não ter sido visitada)
     var _todasV=window._todasVendasCache;
     if(!_todasV||!window._todasVendasCacheFull){
-      _todasV=[]; window._teamContratosMax={};
+      _todasV=[];
       // Step 1: todos os followups (igual ao loop do renderVendas, inclui assin_*)
       Object.keys(followups||{}).forEach(function(fid){
         var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;
@@ -21723,12 +21723,7 @@ function _teamContratosMes(year,month0,vcArg){
     var fid=v.fid; if(fid&&sF[fid])return; if(fid)sF[fid]=1;
     n++;
   });
-  // Cache de maximo por mes: evita que um calculo com cache transitoriamente
-  // vazio/parcial (0) zere o bonus de equipe. Resetado a cada rebuild do cache de vendas.
-  window._teamContratosMax=window._teamContratosMax||{};
-  var _tk=year+'-'+month0;
-  if(n>(window._teamContratosMax[_tk]||0)) window._teamContratosMax[_tk]=n;
-  return window._teamContratosMax[_tk]||0;
+  return n;
 }
 function _countCloserContratosMes(todasVC, year, month0){
   var cand=[];
