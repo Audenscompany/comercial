@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-mrr-starter-dbg";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-mrr-contrato-duracao";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -21673,14 +21673,16 @@ async function calcCloserMetaHistory(nivelIdx){
 function _mrrCarreira(fu){
   if(!fu)return 0;
   var plano=(fu.plano||'').toLowerCase();
-  var contrato=parseFloat(fu.contrato)||0;
-  var mens=parseFloat(fu.mensalidade)||0;
-  var dur=parseInt(fu.duracaoMeses||fu.duracao||fu.meses)||1;
-  // Starter = contrato de 45 dias -> normaliza para MRR mensal (30 dias)
+  var contrato=parseFloat(fu.contrato)||0;   // valor TOTAL do contrato
+  var mens=parseFloat(fu.mensalidade)||0;    // valor mensal (quando ja informado)
+  var dur=parseInt(fu.duracaoMeses||fu.duracao||fu.meses)||0; // duracao em meses
+  // Starter = contrato de 45 dias -> MRR mensal = valor / 45 * 30
   if(plano.indexOf('starter')>=0){ var base=contrato||mens; return base?Math.round(base/45*30):0; }
-  // TCV = valor total do contrato -> divide pelos meses (nunca o total cheio)
-  if((fu.tipoValor||'').toLowerCase()==='tcv'){ return dur>0?Math.round(contrato/dur):(mens||contrato); }
-  return mens||contrato;
+  // Regra geral: valor do contrato dividido pela duracao (meses) -> traz para o mes
+  if(contrato>0 && dur>0) return Math.round(contrato/dur);
+  // Fallbacks: mensalidade ja mensal, ou contrato sem duracao
+  if(mens>0) return mens;
+  return contrato;
 }
 function _teamContratosMes(year,month0,vcArg){
   var vc=(vcArg&&vcArg.length)?vcArg:((typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache); vc=vc||[];
