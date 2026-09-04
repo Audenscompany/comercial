@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-bonus-sem-max";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-bonus-exclusoes";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -21337,6 +21337,8 @@ async function calcSDRFromSheets(nivelIdx, month){
         if(!v||!v.fu)return;
         if(typeof isVendaCancelada==='function'&&isVendaCancelada(v.fu))return;
         if(_vendasExcluidas&&_vendasExcluidas[v.fid])return;
+        var _sg=(typeof _vendaSig==='function')?_vendaSig(v.fu,v.m):''; if(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg])return;
+        var _vn=(typeof _vnNorm==='function')?_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||''):''; if(_vn&&_vendasExcluidasNome&&_vendasExcluidasNome[_vn])return;
         var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;
         if(!d||d.getMonth()!==_sMM||d.getFullYear()!==_sMY)return;
         if(v.fid&&_tdSeen[v.fid])return; if(v.fid)_tdSeen[v.fid]=1;
