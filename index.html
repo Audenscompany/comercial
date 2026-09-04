@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-bonus-fromsheets";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-contracheque-bonus";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -15863,7 +15863,7 @@ function buildCCCloser(r, mesLabel, lvNome){
   var incentivReun = r.incentivReun||0;
   var comissaoColdCall = r.comissaoColdCall||0;
   var incentivColdCall = r.incentivColdCall||0;
-  var totalPadrao = base + bonusMeta + comissaoContratos + incentivReun;
+  var totalPadrao = base + bonusMeta + comissaoContratos + incentivReun + (r.bonusEquipe||0);
   var totalCC = incentivColdCall + comissaoColdCall;
   var total = r.total || (totalPadrao + totalCC);
   var meta = r.contratos||0;
@@ -15874,6 +15874,7 @@ function buildCCCloser(r, mesLabel, lvNome){
   rowsPad += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+meta+' contratos '+(bonusMeta>0?'≥ meta ✅':'— meta não atingida')+'</div></td><td>—</td><td>—</td>'+(bonusMeta>0?'<td>'+fmt(bonusMeta)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
   rowsPad += '<tr><td><div class="td-label">Comissão por Contratos</div></td><td><div class="td-detail">'+acima+' contrato(s) acima da meta × '+Math.round((r.commPct||0.12)*100)+'% do MRR</div></td><td>'+acima+'</td><td>'+Math.round((r.commPct||0.12)*100)+'%</td>'+(comissaoContratos>0?'<td>'+fmt(comissaoContratos)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
   rowsPad += '<tr><td><div class="td-label">Reuniões Realizadas</div></td><td><div class="td-detail">'+(r.reunioes||0)+' reuniões comparecidas — sem threshold</div></td><td>'+(r.reunioes||0)+'</td><td>R$ 30,00</td>'+(incentivReun>0?'<td>'+fmt(incentivReun)+'</td>':'<td class="td-zero">R$ 0,00</td>')+'</tr>';
+  if((r.bonusEquipe||0)>0) rowsPad += '<tr><td><div class="td-label">Bônus de Equipe</div></td><td><div class="td-detail">'+(r.totalEquipe||0)+' contratos da equipe no mês (≥ 20)</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusEquipe)+'</td></tr>';
   // Per-contract breakdown (non-cold-call)
   var _contratoVD = (r.vendaDetalhes||[]).filter(function(d){return d.tipo!=='Cold Call 25%';});
   if(_contratoVD.length){
@@ -15927,13 +15928,14 @@ function buildCCCloser(r, mesLabel, lvNome){
 }
 
 function buildCCSDR(r, mesLabel, lvNome){
-  var totalPadrao = r.base + (r.bonusMeta||0) + (r.acelerador||0);
+  var totalPadrao = r.base + (r.bonusMeta||0) + (r.acelerador||0) + (r.bonusEquipe||0);
   var totalSS = (r.incentivReun||0) + (r.ssIncentiv||0) + (r.ssComm||0) + (r.comissaoVendas||0);
   var total = totalPadrao + totalSS;
   var rowsPad = '';
   rowsPad += '<tr><td><div class="td-label">Salário Base <span class="td-badge badge-sdr">SDR</span></div></td><td><div class="td-detail">'+lvNome+' — fixo mensal</div></td><td>—</td><td>—</td><td>'+fmt(r.base)+'</td></tr>';
   if(r.bonusMeta>0) rowsPad += '<tr><td><div class="td-label">Bônus de Meta</div></td><td><div class="td-detail">'+(r.agendamentos||0)+' agendamentos ≥ meta</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusMeta)+'</td></tr>';
   if((r.acelerador||0)>0) rowsPad += '<tr><td><div class="td-label">Acelerador</div></td><td><div class="td-detail">Agendamentos extras acima da meta</div></td><td>'+Math.max(0,(r.agendamentos||0)-(r.metaReun||0))+'</td><td>R$ 15,00</td><td>'+fmt(r.acelerador)+'</td></tr>';
+  if((r.bonusEquipe||0)>0) rowsPad += '<tr><td><div class="td-label">Bônus de Equipe</div></td><td><div class="td-detail">'+(r.totalEquipe||0)+' contratos da equipe no mês (≥ 20)</div></td><td>—</td><td>—</td><td>'+fmt(r.bonusEquipe)+'</td></tr>';
   rowsPad += '<tr class="subtotal-row"><td colspan="4">SUBTOTAL SDR PADRÃO</td><td>'+fmt(totalPadrao)+'</td></tr>';
 
   var rowsSS = '';
