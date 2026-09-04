@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-bonus-dbg2";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-bonus-fromsheets";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -21327,7 +21327,27 @@ async function calcSDRFromSheets(nivelIdx, month){
     });
     result.ssIncentiv = result.ssReun * 30;
     result.ssTotal = result.incentivReun + result.ssIncentiv + result.ssComm;
-    var totalBrutoSDR = result.base + result.bonusMeta + result.acelerador + result.comissaoVendas;
+    // ── BONUS DE EQUIPE: total de contratos da equipe no mes (mesma contagem do closer) ──
+    var _teamTotal=0;
+    try{
+      var _tdSeen={},_teamDirect=0;
+      (_teamVCfull||[]).forEach(function(v){
+        if(!v||!v.fu)return;
+        if(typeof isVendaCancelada==='function'&&isVendaCancelada(v.fu))return;
+        if(_vendasExcluidas&&_vendasExcluidas[v.fid])return;
+        var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;
+        if(!d||d.getMonth()!==_sMM||d.getFullYear()!==_sMY)return;
+        if(v.fid&&_tdSeen[v.fid])return; if(v.fid)_tdSeen[v.fid]=1;
+        _teamDirect++;
+      });
+      var _teqS=0; try{ _teqS=_teamContratosMes(_sMY,_sMM,_teamVCfull)||0; }catch(_e){}
+      _teamTotal=Math.max(_teamDirect,_teqS);
+      result._teamDbg='d'+_teamDirect+' t'+_teqS+' n'+((_teamVCfull||[]).length);
+      try{console.log('[BONUS SDR]',{mes:month,direct:_teamDirect,teq:_teqS,cacheLen:(_teamVCfull||[]).length,final:_teamTotal});}catch(_){}
+    }catch(e){ try{console.warn('[BONUS SDR] erro',e);}catch(_){} }
+    result.totalEquipe=_teamTotal;
+    result.bonusEquipe=_teamTotal>=20?500+Math.floor((_teamTotal-20)/5)*250:0;
+    var totalBrutoSDR = result.base + result.bonusMeta + result.acelerador + result.comissaoVendas + result.bonusEquipe;
     result.totalSDR = totalBrutoSDR;
     result.grandTotal = result.totalSDR + result.ssTotal;
 
