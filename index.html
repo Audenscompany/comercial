@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-carreira-lock-tcv";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-04-mrr-starter-dbg";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -21604,6 +21604,7 @@ async function calcSDRFromFirebase(nivelIdx, month){
       });
       var _teqS=_teamContratosMes(_sMY,_sMM,_teamVCfull);
       totalEquipeContratosSDR=Math.max(totalEquipeContratosSDR||0,_teqS||0,_teamDirect||0);
+      result._teamDbg='d'+_teamDirect+' t'+_teqS+' n'+((_teamVCfull||[]).length);
     }catch(e){}
     result.bonusEquipe=totalEquipeContratosSDR>=20?500+Math.floor((totalEquipeContratosSDR-20)/5)*250:0;
     result.totalEquipe=totalEquipeContratosSDR;
@@ -21671,9 +21672,15 @@ async function calcCloserMetaHistory(nivelIdx){
 // para nao perder multi-contratos do mesmo cliente (ex.: 2a loja). Respeita exclusoes/cancelados.
 function _mrrCarreira(fu){
   if(!fu)return 0;
-  var isT=(fu.tipoValor||'').toLowerCase()==='tcv';
-  if(isT){ var _m=parseInt(fu.duracao||fu.duracaoMeses||fu.meses)||0; var _c=parseFloat(fu.contrato)||0; return _m>0?Math.round(_c/_m):_c; }
-  return parseFloat(fu.mensalidade)||parseFloat(fu.contrato)||0;
+  var plano=(fu.plano||'').toLowerCase();
+  var contrato=parseFloat(fu.contrato)||0;
+  var mens=parseFloat(fu.mensalidade)||0;
+  var dur=parseInt(fu.duracaoMeses||fu.duracao||fu.meses)||1;
+  // Starter = contrato de 45 dias -> normaliza para MRR mensal (30 dias)
+  if(plano.indexOf('starter')>=0){ var base=contrato||mens; return base?Math.round(base/45*30):0; }
+  // TCV = valor total do contrato -> divide pelos meses (nunca o total cheio)
+  if((fu.tipoValor||'').toLowerCase()==='tcv'){ return dur>0?Math.round(contrato/dur):(mens||contrato); }
+  return mens||contrato;
 }
 function _teamContratosMes(year,month0,vcArg){
   var vc=(vcArg&&vcArg.length)?vcArg:((typeof ensureVendasCache==='function')?ensureVendasCache():window._todasVendasCache); vc=vc||[];
@@ -22200,7 +22207,7 @@ async function triggerCloserCalc(mode){
       '<div style="background:var(--bg2);border:1px solid '+(r.comissaoContratos?'rgba(123,47,255,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão contratos</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoContratos?'var(--purple3)':'var(--muted)')+';">R$'+r.comissaoContratos.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+' acima × R$'+r.comissaoUnit+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.reunioes?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Reuniões realizadas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.reunioes?'var(--cyan)':'var(--muted)')+';">'+r.reunioes+'</div><div style="font-size:11px;color:var(--muted);">contagem do mês</div></div>'+
       ((r.comissaoColdCall||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px;"><div class="m-lbl">Comissão 25% Cold Call</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--amber);">R$'+(r.comissaoColdCall||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div><div style="font-size:11px;color:var(--muted);">R$'+(r.mrrColdCall||0).toLocaleString('pt-BR',{maximumFractionDigits:0})+' vendidos × 25%</div></div>':'')+
-      ((r.bonusEquipe||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.4);border-radius:8px;padding:12px;"><div class="m-lbl" style="color:#fde047;">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">R$'+(r.bonusEquipe||0).toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+' contratos equipe</div></div>':'<div style="background:var(--bg2);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px;opacity:0.5;"><div class="m-lbl">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--muted);">R$0</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+'/20 contratos</div></div>')+
+      ((r.bonusEquipe||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.4);border-radius:8px;padding:12px;"><div class="m-lbl" style="color:#fde047;">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">R$'+(r.bonusEquipe||0).toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+' contratos equipe</div></div>':'<div style="background:var(--bg2);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px;opacity:0.5;"><div class="m-lbl">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--muted);">R$0</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+'/20 contratos'+(r._teamDbg?' · '+r._teamDbg:'')+'</div></div>')+
     '</div>'+
     ((r.reunColdCall||0)>0||(r.comissaoColdCall||0)>0?
       '<div style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(245,158,11,0.03));border:1.5px solid rgba(245,158,11,0.4);border-radius:12px;padding:16px 20px;margin-bottom:14px;">'+
@@ -22312,7 +22319,7 @@ async function triggerSDRCalc(mode){
       '<div style="background:var(--bg2);border:1px solid '+(r.bonusMeta?'rgba(34,197,94,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Bônus Meta</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.bonusMeta?'#4ade80':'var(--muted)')+';">R$'+r.bonusMeta.toLocaleString('pt-BR')+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.incentivReun?'rgba(56,189,248,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Incent. Reuniões</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.incentivReun?'var(--cyan)':'var(--muted)')+';">R$'+r.incentivReun.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+acima+' acima×R$'+lv.incentivReun+'</div></div>'+
       '<div style="background:var(--bg2);border:1px solid '+(r.comissaoVendas?'rgba(123,47,255,0.3)':'rgba(255,255,255,0.1)')+';border-radius:8px;padding:12px;"><div class="m-lbl">Comissão vendas</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:'+(r.comissaoVendas?'var(--purple3)':'var(--muted)')+';">R$'+r.comissaoVendas.toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">ativa na '+lv.threshold+'ª venda</div></div>'+
-      ((r.bonusEquipe||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.4);border-radius:8px;padding:12px;"><div class="m-lbl" style="color:#fde047;">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">R$'+(r.bonusEquipe||0).toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+' contratos equipe</div></div>':'<div style="background:var(--bg2);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px;opacity:0.5;"><div class="m-lbl">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--muted);">R$0</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+'/20 contratos</div></div>')+
+      ((r.bonusEquipe||0)>0?'<div style="background:var(--bg2);border:1px solid rgba(253,224,71,0.4);border-radius:8px;padding:12px;"><div class="m-lbl" style="color:#fde047;">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:#fde047;">R$'+(r.bonusEquipe||0).toLocaleString('pt-BR')+'</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+' contratos equipe</div></div>':'<div style="background:var(--bg2);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px;opacity:0.5;"><div class="m-lbl">Bônus de Equipe</div><div style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--muted);">R$0</div><div style="font-size:11px;color:var(--muted);">'+(r.totalEquipe||0)+'/20 contratos'+(r._teamDbg?' · '+r._teamDbg:'')+'</div></div>')+
     '</div>'+
     '<div style="background:linear-gradient(135deg,rgba(56,189,248,0.1),rgba(56,189,248,0.03));border:1.5px solid rgba(56,189,248,0.3);border-radius:12px;padding:16px 20px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
       '<div><div style="font-family:\'Barlow Condensed\',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">TOTAL SDR</div>'+
