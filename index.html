@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-01-equipe-2aloja";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-01-pdf-assinado-401";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -5941,10 +5941,22 @@ async function gerarPDFAssinado(signId, btn){
     var match=(signData.pdfUrl||'').match(/\/d\/([a-zA-Z0-9_-]+)/);
     if(!match) throw new Error('URL do PDF inválida para extrair file ID.');
     var fileId=match[1];
-    var token=gcalToken&&gcalToken.access_token;
-    if(!token) throw new Error('Google não conectado. Conecte o Google e tente novamente.');
+    var _gcOk=(typeof isGcalConnected==='function')?isGcalConnected():(gcalToken&&gcalToken.access_token&&gcalToken.expires_at>Date.now());
+    if(!_gcOk){
+      if(btn){btn.disabled=false;}
+      if(confirm('Sua conexão com o Google expirou. Reconectar agora para gerar o PDF assinado?')){ if(typeof gcalConnect==='function') gcalConnect(); }
+      throw new Error('Google desconectado/expirado — reconecte e tente de novo.');
+    }
+    var token=gcalToken.access_token;
     // 1) Baixa o PDF do Drive
     var resp=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',{headers:{Authorization:'Bearer '+token}});
+    if(resp.status===401||resp.status===403){
+      // token venceu/insuficiente — limpa e oferece reconectar
+      gcalToken=null; try{localStorage.removeItem('audens_gcal_token');}catch(e){}
+      if(btn){btn.disabled=false;}
+      if(confirm('O acesso ao Google expirou (HTTP '+resp.status+'). Reconectar agora?')){ if(typeof gcalConnect==='function') gcalConnect(); }
+      throw new Error('Google expirado (HTTP '+resp.status+') — reconecte em Configurações e tente de novo.');
+    }
     if(!resp.ok) throw new Error('Erro ao baixar PDF: HTTP '+resp.status);
     var pdfBytes=await resp.arrayBuffer();
     // 2) Carrega pdf-lib
