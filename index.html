@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.68.7/build/docxtemplater.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
-<script>window.__CRM_BUILD="2026-09-04-bonus-exclusoes";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>window.__CRM_BUILD="2026-09-07-carhist-feita";console.info("CRM build:",window.__CRM_BUILD);</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
@@ -884,6 +884,7 @@ function startRealtimeSync(){
   fbDb.ref('audens/meta/seguidores').on('value',function(s){if(s.val())_igMeta=s.val();});
   fbDb.ref('audens/config/finPassHash').on('value',function(s){_finPassHash=s.val()||'';});
   fbDb.ref('audens/config/carreiraPassHash').on('value',function(s){_carreiraPassHash=s.val()||'';});
+  fbDb.ref('carrossel_historias_feitas').on('value',function(s){_chFeitas=s.val()||{}; if(document.getElementById('ch-banco'))chRenderBanco();});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
   fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
   fbDb.ref('vendas_excluidas_nome').on('value',function(s){_vendasExcluidasNome=s.val()||{};});
@@ -31140,6 +31141,16 @@ function chRenderProfile(){
 function chSetProf(f,v){var p=_chProfile();p[f]=v;chRefreshSlides();}
 function chUploadAvatar(inp){ if(!inp.files||!inp.files[0])return; var fr=new FileReader(); fr.onload=function(){var img=new Image();img.onload=function(){var p=_chProfile();p.avatar=img;chRenderProfile();chRefreshSlides();};img.src=fr.result;}; fr.readAsDataURL(inp.files[0]); inp.value=''; }
 function chRefreshSlides(){ if(!_chState.slides.length)return; for(var i=0;i<_chState.slides.length;i++){var el=document.getElementById('ch-slide-'+i);if(el)el.innerHTML=chSlideHTML(_chState.slides[i],i,_chState.slides.length);} }
+var _chFeitas={};
+function _chFeitaKey(h){return String((h&&h.empresa)||'').replace(/[.#$\[\]\/]/g,'_');}
+function chToggleFeita(ev,i){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  var h=_CH_HISTORIAS[i]; if(!h)return;
+  var k=_chFeitaKey(h);
+  if(_chFeitas[k]){ delete _chFeitas[k]; try{if(fbDb)fbDb.ref('carrossel_historias_feitas/'+k).remove();}catch(e){} }
+  else { _chFeitas[k]=true; try{if(fbDb)fbDb.ref('carrossel_historias_feitas/'+k).set(true);}catch(e){} }
+  chRenderBanco();
+}
 function chRenderBanco(){
   var el=document.getElementById('ch-banco'); if(!el)return;
   var q=(_chState.q||'').toLowerCase().trim();
@@ -31150,12 +31161,19 @@ function chRenderBanco(){
     if(q){var hay=(h.empresa+' '+h.historia+' '+h.headline+' '+h.numeros+' '+h.licao).toLowerCase();if(hay.indexOf(q)<0)return false;}
     return true;
   });
-  var cnt=document.getElementById('ch-count'); if(cnt)cnt.textContent=list.length+'/'+_CH_HISTORIAS.length;
+  var _nFeitas=Object.keys(_chFeitas||{}).length; var cnt=document.getElementById('ch-count'); if(cnt)cnt.textContent=list.length+'/'+_CH_HISTORIAS.length+(_nFeitas?' · '+_nFeitas+' ✔':'');
   if(!list.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center;">Nada encontrado.</div>';return;}
   el.innerHTML=list.map(function(o){
     var h=o.h,sel=(_chState.story===o.i);
-    return '<div onclick="chSelectStory('+o.i+')" style="cursor:pointer;background:'+(sel?'rgba(124,58,237,0.15)':'var(--bg)')+';border:1px solid '+(sel?'var(--purple3)':'var(--border)')+';border-radius:11px;padding:11px 12px;margin-bottom:8px;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px;"><span style="font-weight:800;font-size:13px;color:var(--white);">'+_chEsc(h.empresa)+'</span><span style="font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;color:#a78bfa;background:rgba(124,58,237,0.12);padding:2px 6px;border-radius:6px;white-space:nowrap;">'+(_CH_GAT[h.gat]||h.gat)+'</span></div>'+
+    var _k=_chFeitaKey(h),_feita=!!_chFeitas[_k];
+    return '<div onclick="chSelectStory('+o.i+')" style="cursor:pointer;background:'+(sel?'rgba(124,58,237,0.15)':(_feita?'rgba(34,197,94,0.06)':'var(--bg)'))+';border:1px solid '+(sel?'var(--purple3)':(_feita?'rgba(34,197,94,0.4)':'var(--border)'))+';border-radius:11px;padding:11px 12px;margin-bottom:8px;'+(_feita?'opacity:.72;':'')+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px;">'+
+        '<span style="font-weight:800;font-size:13px;color:var(--white);'+(_feita?'text-decoration:line-through;text-decoration-color:rgba(34,197,94,0.7);':'')+'">'+_chEsc(h.empresa)+'</span>'+
+        '<span style="display:flex;align-items:center;gap:6px;white-space:nowrap;">'+
+          '<span style="font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;color:#a78bfa;background:rgba(124,58,237,0.12);padding:2px 6px;border-radius:6px;">'+(_CH_GAT[h.gat]||h.gat)+'</span>'+
+          '<button onclick="chToggleFeita(event,'+o.i+')" title="'+(_feita?'Feita — clique para desmarcar':'Marcar como já fiz')+'" style="width:22px;height:22px;border-radius:6px;border:1.5px solid '+(_feita?'#22c55e':'var(--border)')+';background:'+(_feita?'#22c55e':'transparent')+';color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;padding:0;flex:none;">'+(_feita?'<i class="ti ti-check"></i>':'')+'</button>'+
+        '</span>'+
+      '</div>'+
       '<div style="font-size:11px;color:var(--muted);line-height:1.4;">'+_chEsc(h.numeros)+'</div>'+
     '</div>';
   }).join('');
