@@ -377,9 +377,9 @@ function renderQuiz(variant){
   var VVAR  = 'quiz-'+variant;
   var VNAME = variant==='fv2'?'Quiz FV2':'Quiz FV1';
   var QUAL_LBL = variant==='fv2'?'Qualificaram (acima de R$15 mil)':'Qualificaram (acima de R$20 mil)';
-  var ORDER = variant==='fv2' ? ['investiu','faturamento','disposto'] : ['segmento','faturamento','canal','desafio','investimento'];
+  var ORDER = variant==='fv2' ? ['investiu','segmento','pedidos','disposto'] : ['segmento','faturamento','canal','desafio','investimento'];
   var QLABELS = variant==='fv2'
-    ? {investiu:'1 · Já investiu?',faturamento:'2 · Faturamento',disposto:'3 · Investir R$1.500'}
+    ? {investiu:'1 · Já investiu?',segmento:'2 · Segmento',pedidos:'3 · Pedidos/mês',disposto:'4 · Investir R$1.500'}
     : {segmento:'1 · Segmento',faturamento:'2 · Faturamento',canal:'3 · Canal',desafio:'4 · Gargalo',investimento:'5 · Investir 10%'};
   setH2('funnel','Funil do quiz');
   setH2('abandono','Onde pararam (por pergunta)');
@@ -400,7 +400,7 @@ function renderQuiz(variant){
   var srcMap={};
   qsids.forEach(function(sid){ var sv=S[sid]||{}; var x=evOf(sid);
     if(x.n['quiz_start']) comecaram++;
-    if(x.p['faturamento']) respFat++;
+    if(x.p['pedidos']||x.p['faturamento']) respFat++;
     if(x.n['qualified_lead']) qualif++;
     /* lead REAL = mandou os dados; quem foi pro Vivendo (faixa baixa / não quer investir) não deixa contato após a mudança de 06/09 */
     var isLead = (x.n['lead_submit']||sv.converted) && !x.n['lp_vivendo_view'] && !x.n['lp_vivendo_redirect'];
@@ -422,7 +422,7 @@ function renderQuiz(variant){
     kpi(fmt(agendaram),'Agendaram','g') +
     kpi(pct(leadsN,vis),'Conversão','p');
   /* Funil */
-  var steps=[{n:'Visitantes',v:vis},{n:'Começaram o quiz',v:comecaram},{n:'Responderam faturamento',v:respFat},{n:QUAL_LBL,v:qualif},{n:'Mandaram os dados',v:leadsN},{n:'Agendaram reunião',v:agendaram}];
+  var steps=[{n:'Visitantes',v:vis},{n:'Começaram o quiz',v:comecaram},{n:(variant==='fv2'?'Informaram pedidos':'Responderam faturamento'),v:respFat},{n:QUAL_LBL,v:qualif},{n:'Mandaram os dados',v:leadsN},{n:'Agendaram reunião',v:agendaram}];
   var max=vis||1;
   el('funnel').innerHTML = steps.map(function(s,i){ var prev=i>0?steps[i-1].v:s.v; var drop=i>0&&prev>0?Math.round((1-s.v/prev)*100):0;
     return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,vis):'')+'</span></div><div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+(i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
