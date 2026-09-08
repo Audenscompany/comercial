@@ -495,9 +495,23 @@ function renderQuiz(variant){
   function _isQuizLead(lv){ var hay=[lv._source,lv.utm_source,lv.variante,lv.page,lv.origem,lv.lp,lv.funil].map(function(x){return String(x||'').toLowerCase();}).join(' '); if(hay.indexOf(_other)>=0) return false; return hay.indexOf(variant)>=0 || hay.indexOf('quiz')>=0; }
   var qleads=[]; for(var lk in L){ var lv=L[lk]||{}; if(!_isQuizLead(lv)) continue; var lt=lv._createdAt||0; if(lt>=cut) qleads.push(lv); }
   qleads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
-  if(qleads.length){
-    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
-      qleads.slice(0,25).map(function(l){ var src=l.utm_source||l._source||'quiz'; return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>';
+  /* sessões que QUALIFICARAM/enviaram no período mas sem cadastro correspondente em leads/ (LP não capturou nome/WhatsApp) */
+  var qsRows=[];
+  for(var sid2 in S){ var sv2=S[sid2]||{}; var t2=sv2.firstSeen||sv2.lastSeen||0; if(t2<cut) continue;
+    var isQ2=String(sv2.page||'').indexOf(VPAGE)>=0;
+    if(!isQ2){ var ev0=E[sid2]; if(ev0){ for(var z0 in ev0){ var pv0=(ev0[z0]||{}).p; if((ev0[z0]||{}).e==='lp_view'&&pv0&&pv0.variante===VVAR){isQ2=true;break;} } } }
+    if(!isQ2) continue;
+    var ev3=E[sid2]||{}, qual=false, fx='', viv=false, ag=false, sub=false;
+    for(var z3 in ev3){ var e3=ev3[z3]||{}; if(e3.e==='qualified_lead'){ qual=true; if(e3.p&&e3.p.faixa) fx=e3.p.faixa; } if(e3.e==='lead_submit') sub=true; if(e3.e==='meeting_booked') ag=true; if(e3.e==='lp_vivendo_view'||e3.e==='lp_vivendo_redirect') viv=true; }
+    if((qual||sub)&&!viv) qsRows.push({t:t2,faixa:fx,agendou:ag});
+  }
+  qsRows=qsRows.filter(function(r){ return !qleads.some(function(l){ return Math.abs((l._createdAt||0)-r.t)<600000; }); });
+  qsRows.sort(function(a,b){return b.t-a.t;});
+  var rowsHtml='';
+  qleads.slice(0,25).forEach(function(l){ var src=l.utm_source||l._source||'quiz'; rowsHtml+='<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; });
+  qsRows.slice(0,25).forEach(function(r){ rowsHtml+='<tr><td><span style="color:var(--amber)">Qualificou ('+(r.agendou?'agendou':'sem cadastro')+')</span></td><td><span style="color:var(--muted2);font-size:12px">contato não capturado</span></td><td><span class="pill">quiz-'+variant+'</span></td><td>'+esc(r.faixa||'—')+'</td><td>—</td>'+destinoCell({faixa:r.faixa})+'<td class="num">'+quando(r.t)+'</td></tr>'; });
+  if(rowsHtml){
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+(qsRows.length?('<div class="empty" style="margin-top:8px">⚠ '+qsRows.length+' qualificaram no quiz mas não deixaram nome/WhatsApp na LP (agendaram direto ou saíram antes do contato).</div>'):'');
   } else { el('leads').innerHTML = '<div class="empty">Nenhum lead do quiz no período.</div>'; }
   var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = vis===0 ? 'Ainda não há dados do '+VNAME+' neste período.' : ('Atualizado agora · '+VNAME+' ('+VPAGE+') · período: '+per);
