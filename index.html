@@ -4530,6 +4530,7 @@ function buildNav(){
   // Definições de navs com suporte a grupos
   var gestorDef=[
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
+    {id:'metas',icon:'ti-target',label:'Metas'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {group:'Análise',icon:'ti-ad-2',items:[
       {id:'analise-ads',icon:'ti-ad-2',label:'Análise de Ads'},
@@ -4790,7 +4791,7 @@ function showPage(id){
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinDashboard,'fin-dashboard':renderFinDashboard,'fin-receitas':renderFinReceitas,'fin-despesas':renderFinDespesas,'fin-lancamentos':renderFinLancamentos,'fin-contas':renderFinContas,
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
-    'avaliacoes':renderAvaliacoes,'vendas':renderVendas,
+    'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
     'followup':renderFollowup
   };
   var area=document.getElementById('content');
@@ -4824,6 +4825,7 @@ function showPage(id){
     if(id==='instagram') setTimeout(igInitPage,50);
     if(id==='stories-lab') setTimeout(storiesInitPage,50);
     if(id==='vendas'){setTimeout(loadVendasSheets,50);setTimeout(autoSyncAssinaturas,200);}
+    if(id==='metas'){setTimeout(loadMetasRealizado,50);}
     if(id==='financeiro'||id.startsWith('fin-')) setTimeout(startFinanceiroListeners,50);
     else stopFinanceiroListeners();
     if(id==='dashcom') setTimeout(startDashComListeners,50);
@@ -4834,6 +4836,125 @@ function showPage(id){
     if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
     else if(ex)ex.remove();}
 }
+
+// ===== ABA METAS (LP V2) =====
+function renderMetas(){
+  function mkCard(label,val,note,color){
+    return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:6px;">'+
+      '<span style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,0.45);">'+label+'</span>'+
+      '<div style="font-size:26px;font-weight:700;color:'+(color||'#f5f0ff')+';font-family:\'Bebas Neue\',sans-serif;line-height:1;">'+val+'</div>'+
+      '<span style="font-size:11px;color:rgba(255,255,255,0.35);">'+note+'</span>'+
+    '</div>';
+  }
+  function vital(label,val,hint){
+    return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,0.45);">'+label+'</div>'+
+      '<div style="font-size:24px;font-weight:700;color:var(--purple3);font-family:\'Bebas Neue\',sans-serif;margin-top:4px;">'+val+'</div>'+
+      '<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px;">'+hint+'</div>'+
+    '</div>';
+  }
+  var funil=[
+    ['Visitas na LP','14.250','meta de tráfego'],
+    ['Leads','506','6,7% início · 53% concluem'],
+    ['Reuniões agendadas','85','qualificados agendam'],
+    ['Reuniões realizadas','59','−31% no-show'],
+    ['Clientes fechados','19','33% de fechamento'],
+    ['MRR novo','R$38 mil','ticket R$2.000']
+  ];
+  var rowsFunil=funil.map(function(f){return mkCard(f[0],f[1],f[2]);}).join('');
+  var tbl='<table style="width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;">'+
+    '<thead><tr>'+
+      '<th style="text-align:left;padding:11px 10px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,0.45);">Métrica</th>'+
+      '<th style="text-align:right;padding:11px 10px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,0.45);">Mês</th>'+
+      '<th style="text-align:right;padding:11px 10px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,0.45);">Semana</th>'+
+      '<th style="text-align:right;padding:11px 10px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,0.45);">Dia ativo</th>'+
+    '</tr></thead><tbody>'+
+    [['Visitas na LP','14.250','~3.325','~475'],
+     ['Leads','506','~118','~17'],
+     ['Reuniões agendadas','85','~20','~2,8'],
+     ['Reuniões realizadas','59','~14','~2'],
+     ['Clientes fechados','19','~4,4','~0,6'],
+     ['MRR novo','R$38 mil','~R$8,8 mil','~R$1,3 mil']].map(function(r){
+       return '<tr>'+
+         '<td style="text-align:left;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13.5px;font-weight:600;color:var(--white);">'+r[0]+'</td>'+
+         '<td style="text-align:right;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:15px;font-weight:700;color:var(--white);font-family:\'Bebas Neue\',sans-serif;">'+r[1]+'</td>'+
+         '<td style="text-align:right;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;color:var(--muted);">'+r[2]+'</td>'+
+         '<td style="text-align:right;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;color:var(--muted);">'+r[3]+'</td>'+
+       '</tr>';
+     }).join('')+
+    '</tbody></table>';
+  var vitais=
+    vital('Início do quiz','≥ 6,7%','visita → começar')+
+    vital('Começou → lead','≥ 53%','conclusão do quiz')+
+    vital('Lead → qualificado','≥ 28%','qualidade do tráfego')+
+    vital('No-show','≤ 31%','comparecimento')+
+    vital('Fechamento','≥ 33%','realizada → cliente')+
+    vital('Ticket médio','≥ R$2 mil','mensalidade');
+  return '<div style="padding:24px 28px;max-width:1200px;margin:0 auto;">'+
+    // Header
+    '<div style="margin-bottom:18px;">'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:34px;color:var(--white);letter-spacing:.5px;line-height:1;">METAS DO MÊS</div>'+
+      '<div style="font-size:13px;color:var(--muted);margin-top:4px;">LP V2 · nível Conservador (piso) · definida em 07/09 · fechamento 33% · ticket R$2.000</div>'+
+    '</div>'+
+    // Hero
+    '<div style="background:linear-gradient(135deg,#7b2fff,#4c1d95);border-radius:16px;padding:26px 28px;margin-bottom:18px;box-shadow:0 0 30px rgba(123,47,255,.25);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:20px;">'+
+        '<div style="min-width:260px;">'+
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.75);">Meta de MRR novo / mês (piso)</div>'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:60px;line-height:.95;color:#fff;margin-top:2px;">R$ 38 mil</div>'+
+          '<div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px;" id="metas-mrr-real">Realizado este mês: carregando…</div>'+
+          '<div style="height:8px;background:rgba(255,255,255,0.18);border-radius:99px;margin-top:10px;max-width:380px;overflow:hidden;"><div id="metas-mrr-bar" style="height:100%;width:0%;background:#4ade80;border-radius:99px;transition:width .6s;"></div></div>'+
+        '</div>'+
+        '<div style="text-align:right;min-width:180px;">'+
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.75);">Clientes novos / mês</div>'+
+          '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:50px;line-height:1;color:#fff;"><span id="metas-cli-real">–</span> / 19</div>'+
+          '<div style="font-size:12px;color:rgba(255,255,255,0.7);">85 reuniões · 506 leads no mês</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+    // Funil KPIs
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">O funil da meta</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:22px;">'+rowsFunil+'</div>'+
+    // Quebra tabela
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">Quebra: mês · semana · dia</div>'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:8px 16px 4px;margin-bottom:22px;overflow-x:auto;">'+tbl+'</div>'+
+    // Sinais vitais
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">As taxas que sustentam a meta</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:22px;">'+vitais+'</div>'+
+    // Upside
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">O próximo degrau (upside)</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+      '<div style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.4);border-radius:12px;padding:18px 20px;">'+
+        '<div style="font-size:16px;font-weight:700;color:#4ade80;font-family:\'Barlow Condensed\',sans-serif;">Início do quiz 6,7% → 10% = R$58 mil/mês</div>'+
+        '<div style="font-size:13px;color:var(--muted);margin-top:5px;">Mesmo tráfego, só melhorando a 1ª tela (mudança de 06/09): 755 leads · 126 reuniões · 29 clientes. +R$20 mil sem gastar mais em anúncio.</div>'+
+      '</div>'+
+      '<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.4);border-radius:12px;padding:18px 20px;">'+
+        '<div style="font-size:16px;font-weight:700;color:#fbbf24;font-family:\'Barlow Condensed\',sans-serif;">No-show 31% → 20% = +R$8 mil/mês</div>'+
+        '<div style="font-size:13px;color:var(--muted);margin-top:5px;">Cada reunião recuperada vira cliente. No cenário Meta, leva de 29 pra 33 clientes (R$66 mil). Alavanca do time comercial.</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+window.renderMetas=renderMetas;
+function loadMetasRealizado(){
+  try{
+    if(typeof fbGet!=='function')return;
+    fbGet('clientes').then(function(cl){
+      if(!cl)return;
+      var arr=Array.isArray(cl)?cl.filter(Boolean):Object.keys(cl).map(function(k){return cl[k];});
+      var now=new Date(),mo=now.getMonth(),yr=now.getFullYear();
+      function parseNum(x){if(x==null)return 0;if(typeof x==='number')return x;var s=(''+x).replace(/[^\d,\.]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');var n=parseFloat(s);return isNaN(n)?0:n;}
+      function inMonth(c){var t=c.createdAt||c.dataInicio;if(!t)return false;var d=new Date(typeof t==='number'?(t<1e12?t*1000:t):t);return d.getMonth()===mo&&d.getFullYear()===yr;}
+      var cli=0,mrr=0;
+      arr.forEach(function(c){if(c&&inMonth(c)){cli++;mrr+=parseNum(c.valorMensalidade);}});
+      var pct=Math.round(mrr/38000*100);
+      var elM=document.getElementById('metas-mrr-real');if(elM)elM.textContent='Realizado este mês: R$'+Math.round(mrr).toLocaleString('pt-BR')+' ('+pct+'%)';
+      var barM=document.getElementById('metas-mrr-bar');if(barM)barM.style.width=Math.min(100,pct)+'%';
+      var elC=document.getElementById('metas-cli-real');if(elC)elC.textContent=cli;
+    }).catch(function(){});
+  }catch(e){}
+}
+window.loadMetasRealizado=loadMetasRealizado;
 
 // ===== HELPERS =====
 // Retorna o status real de uma reunião cruzando com followups,
