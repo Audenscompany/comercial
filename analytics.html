@@ -47,6 +47,19 @@
   .funnel .track{height:24px;background:#0c0916;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .funnel .fill{height:100%;background:linear-gradient(90deg,var(--purple),var(--purple2));border-radius:8px 0 0 8px;min-width:2px;transition:width .5s}
   .funnel .drop{font-size:11px;color:var(--red);margin-top:2px}
+  /* funil trapezoidal (real) */
+  .qf{display:flex;gap:20px;align-items:stretch;flex-wrap:wrap}
+  .qf-shape{flex:1 1 300px;min-width:240px;display:flex;flex-direction:column;gap:3px;justify-content:center}
+  .qf-seg{position:relative;height:46px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px;letter-spacing:.02em;text-shadow:0 1px 3px rgba(0,0,0,.45)}
+  .qf-legend{flex:1 1 300px;min-width:240px;display:flex;flex-direction:column;justify-content:center}
+  .qf-leg{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .qf-leg:last-child{border-bottom:none}
+  .qf-dot{width:11px;height:11px;border-radius:3px;flex:none;box-shadow:0 0 8px rgba(124,58,237,.5)}
+  .qf-leg .nm{font-size:13px;color:#fff;font-weight:600;line-height:1.2}
+  .qf-leg .sb{font-size:11px;color:var(--muted);margin-top:1px}
+  .qf-leg .vv{margin-left:auto;text-align:right;white-space:nowrap}
+  .qf-leg .vv b{font-size:16px;color:#fff;font-variant-numeric:tabular-nums}
+  .qf-leg .vv span{display:block;font-size:11px;color:var(--muted)}
   /* barras */
   .bars .row{display:grid;grid-template-columns:120px 1fr 52px;gap:10px;align-items:center;margin-bottom:9px;font-size:13px}
   .bars .row .name{color:var(--silver);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -178,6 +191,24 @@ function wppCell(l){var d=leadTel(l);if(!d)return '<span style="color:var(--mute
 function copiarWpp(btn,d){try{navigator.clipboard.writeText(d);}catch(e){var ta=document.createElement("textarea");ta.value=d;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(_){}document.body.removeChild(ta);}var old=btn.innerHTML;btn.classList.add("ok");btn.innerHTML='\u2713 Copiado';setTimeout(function(){btn.classList.remove("ok");btn.innerHTML=old;},1400);}
 function fmt(n){return (n||0).toLocaleString('pt-BR');}
 function pct(a,b){return b>0?((a/b*100).toFixed(1)+"%"):"0%";}
+var _QF_COL=['#7c3aed','#4f46e5','#14b8a6','#f59e0b','#f97316','#ef4444','#ec4899'];
+function funnelHTML(steps,total){
+  if(!steps||!steps.length) return '';
+  total = total || steps[0].v || 1;
+  var max = steps[0].v || 1;
+  var shape = steps.map(function(s,i){
+    var w = Math.max(9, s.v/max*100);
+    var wn = (i<steps.length-1) ? Math.max(6, steps[i+1].v/max*100) : Math.max(5, w*0.55);
+    var col = _QF_COL[i%_QF_COL.length];
+    var clip = 'polygon('+((100-w)/2).toFixed(1)+'% 0,'+((100+w)/2).toFixed(1)+'% 0,'+((100+wn)/2).toFixed(1)+'% 100%,'+((100-wn)/2).toFixed(1)+'% 100%)';
+    return '<div class="qf-seg" style="clip-path:'+clip+';-webkit-clip-path:'+clip+';background:linear-gradient(180deg,'+col+','+col+'cc)">'+fmt(s.v)+'</div>';
+  }).join('');
+  var legend = steps.map(function(s,i){
+    var col = _QF_COL[i%_QF_COL.length];
+    return '<div class="qf-leg"><span class="qf-dot" style="background:'+col+'"></span><div><div class="nm">'+s.n+'</div>'+(s.sub?'<div class="sb">'+s.sub+'</div>':'')+'</div><div class="vv"><b>'+fmt(s.v)+'</b><span>'+pct(s.v,total)+'</span></div></div>';
+  }).join('');
+  return '<div class="qf"><div class="qf-shape">'+shape+'</div><div class="qf-legend">'+legend+'</div></div>';
+}
 
 /* ===== Gate ===== */
 function tryGate(){
@@ -289,18 +320,11 @@ function render(){
     el('funnel').innerHTML = '<div class="empty">A LP antiga (Elementor) nunca teve o tracking próprio da Audens — o funil de visitantes → formulário só existe para a LP nova. Aqui vemos apenas os <b>leads</b> que ela gerou e a atribuição deles.</div>';
   } else {
     var steps = [
-      {n:'Visitantes', v:total},
-      {n:'Chegaram ao formulário', v:reachedForm},
-      {n:'Leads', v:(nLeads||converted)}
+      {n:'Visitantes', sub:'Acessaram a LP', v:total},
+      {n:'Chegaram ao formulário', sub:'Rolaram até o form', v:reachedForm},
+      {n:'Leads', sub:'Preencheram e enviaram', v:(nLeads||converted)}
     ];
-    var max = total||1;
-    el('funnel').innerHTML = steps.map(function(s,i){
-      var prev = i>0?steps[i-1].v:s.v;
-      var drop = i>0 && prev>0 ? Math.round((1-s.v/prev)*100) : 0;
-      return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,total):'')+'</span></div>'+
-        '<div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+
-        (i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
-    }).join('');
+    el('funnel').innerHTML = funnelHTML(steps, total);
   }
 
   /* Origem do tráfego / dos leads */
@@ -422,11 +446,9 @@ function renderQuiz(variant){
     kpi(fmt(agendaram),'Agendaram','g') +
     kpi(pct(leadsN,vis),'Conversão','p');
   /* Funil */
-  var steps=[{n:'Visitantes',v:vis},{n:'Começaram o quiz',v:comecaram},{n:(variant==='fv2'?'Informaram pedidos':'Responderam faturamento'),v:respFat},{n:QUAL_LBL,v:qualif},{n:'Mandaram os dados',v:leadsN},{n:'Agendaram reunião',v:agendaram}];
+  var steps=[{n:'Visitantes (quiz)',sub:'Acessaram a LP',v:vis},{n:'Começaram o quiz',sub:'Iniciaram o questionário',v:comecaram},{n:(variant==='fv2'?'Informaram pedidos':'Responderam faturamento'),sub:'Responderam sobre o negócio',v:respFat},{n:QUAL_LBL,sub:'Passaram no filtro de faturamento',v:qualif},{n:'Mandaram os dados',sub:'Preencheram o formulário',v:leadsN},{n:'Agendaram reunião',sub:'Entraram na agenda',v:agendaram}];
   var max=vis||1;
-  el('funnel').innerHTML = steps.map(function(s,i){ var prev=i>0?steps[i-1].v:s.v; var drop=i>0&&prev>0?Math.round((1-s.v/prev)*100):0;
-    return '<div class="step"><div class="lbl"><b>'+s.n+'</b><span class="n">'+fmt(s.v)+(i>0?' · '+pct(s.v,vis):'')+'</span></div><div class="track"><span class="fill" style="width:'+Math.max(2,(s.v/max*100))+'%"></span></div>'+(i>0&&drop>0?'<div class="drop">↓ '+drop+'% de perda vs etapa anterior</div>':'')+'</div>';
-  }).join('');
+  el('funnel').innerHTML = funnelHTML(steps, vis);
   /* Origem */
   el('sources').innerHTML = barsFrom(srcMap,'sess',vis) || '<div class="empty">Sem dados de origem ainda.</div>';
   /* Device */
