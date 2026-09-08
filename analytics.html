@@ -491,7 +491,9 @@ function renderQuiz(variant){
   var pbars = ORDER.map(function(q){ var v=perg[q]; return '<div class="row"><div class="name">'+QLABELS[q]+'</div><div class="bar"><span class="b" style="width:'+(v/qmax*100)+'%"></span></div><div class="val">'+fmt(v)+'</div></div>'; }).join('');
   el('abandono').innerHTML = pbars + '<div class="empty" style="margin-top:8px">Quantos responderam cada pergunta — mostra onde caem. '+(youtube?('<b style="color:var(--amber)">'+youtube+'</b> foram pro YouTube (não-qualificados).'):'')+'</div>';
   /* Leads recentes (quiz) */
-  var qleads=[]; for(var lk in L){ var lv=L[lk]||{}; if(String(lv._source||'').indexOf('quiz-'+variant)<0) continue; var lt=lv._createdAt||0; if(lt>=cut) qleads.push(lv); }
+  var _other = variant==='fv2'?'fv1':'fv2';
+  function _isQuizLead(lv){ var hay=[lv._source,lv.utm_source,lv.variante,lv.page,lv.origem,lv.lp,lv.funil].map(function(x){return String(x||'').toLowerCase();}).join(' '); if(hay.indexOf(_other)>=0) return false; return hay.indexOf(variant)>=0 || hay.indexOf('quiz')>=0; }
+  var qleads=[]; for(var lk in L){ var lv=L[lk]||{}; if(!_isQuizLead(lv)) continue; var lt=lv._createdAt||0; if(lt>=cut) qleads.push(lv); }
   qleads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
   if(qleads.length){
     el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
