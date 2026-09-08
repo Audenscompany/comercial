@@ -35,7 +35,7 @@
   .kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px}
   .kpi .v{font-size:24px;font-weight:800;letter-spacing:-.02em}
   .kpi .l{font-size:11.5px;color:var(--muted2);margin-top:2px}
-  .kpi .v.g{color:var(--green)} .kpi .v.p{color:var(--purple2)}
+  .kpi .v.g{color:var(--green)} .kpi .v.p{color:var(--purple2)} .kpi .v.a{color:var(--amber)}
   .kpi .ktop{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;min-height:30px}
   .kpi .ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
   .kpi .ic svg{width:16px;height:16px}
@@ -435,7 +435,7 @@ function renderQuiz(variant){
   function evOf(sid){ var o={n:{},p:{}}; var ev=E[sid]; if(ev){ for(var kk in ev){ var e=ev[kk]||{}; if(e.e) o.n[e.e]=1; if(e.e==='quiz_answer'&&e.p&&e.p.pergunta) o.p[e.p.pergunta]=1; } } return o; }
   /* agrega uma janela de tempo [a,b) — reusada p/ período atual e anterior */
   function aggWin(a,b){
-    var r={vis:0,comecaram:0,respFat:0,qualif:0,leadsN:0,agendaram:0,youtube:0,perg:{},dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{}};
+    var r={vis:0,comecaram:0,respFat:0,qualif:0,qualSemCad:0,leadsN:0,agendaram:0,youtube:0,perg:{},dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{}};
     ORDER.forEach(function(q){ r.perg[q]=0; });
     for(var sid in S){ var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<a||t>=b) continue;
       var isQuiz=String(sv.page||'').indexOf(VPAGE)>=0;
@@ -447,6 +447,7 @@ function renderQuiz(variant){
       if(x.n['qualified_lead']) r.qualif++;
       var isLead=(x.n['lead_submit']||sv.converted)&&!x.n['lp_vivendo_view']&&!x.n['lp_vivendo_redirect'];
       if(isLead) r.leadsN++;
+      if(x.n['qualified_lead']&&!isLead) r.qualSemCad++;
       if(x.n['meeting_booked']) r.agendaram++;
       if(x.n['youtube_redirect']) r.youtube++;
       ORDER.forEach(function(q){ if(x.p[q]) r.perg[q]++; });
@@ -458,7 +459,7 @@ function renderQuiz(variant){
     return r;
   }
   var C=aggWin(cut, Infinity);
-  var vis=C.vis, comecaram=C.comecaram, respFat=C.respFat, qualif=C.qualif, leadsN=C.leadsN, agendaram=C.agendaram, youtube=C.youtube, perg=C.perg, dev=C.dev, srcMap=C.srcMap;
+  var vis=C.vis, comecaram=C.comecaram, respFat=C.respFat, qualif=C.qualif, qualSemCad=C.qualSemCad, leadsN=C.leadsN, agendaram=C.agendaram, youtube=C.youtube, perg=C.perg, dev=C.dev, srcMap=C.srcMap;
   var P=null, PREVLBL='';
   if(RANGE>0 && RANGE<99999){ var _sp=RANGE*86400000; P=aggWin(cut-_sp, cut); PREVLBL='vs '+RANGE+'d ant.'; }
   else if(RANGE===0){ var _y=new Date(); _y.setHours(0,0,0,0); var _ys=_y.getTime(); P=aggWin(_ys-86400000,_ys); PREVLBL='vs ontem'; }
@@ -468,6 +469,7 @@ function renderQuiz(variant){
     kpiD(KICO.users,'#7c3aed',DL(vis,P?P.vis:null),fmt(vis),'Visitantes (quiz)') +
     kpiD(KICO.quiz,'#4f46e5',DL(comecaram,P?P.comecaram:null),fmt(comecaram),'Começaram o quiz') +
     kpiD(KICO.check,'#f59e0b',DL(qualif,P?P.qualif:null),fmt(qualif),'Qualificados','p') +
+    kpiD(KICO.id,'#F5B851',DL(qualSemCad,P?P.qualSemCad:null),fmt(qualSemCad),'Qualif. sem cadastro','a') +
     kpiD(KICO.id,'#14b8a6',DL(leadsN,P?P.leadsN:null),fmt(leadsN),'Leads (dados)') +
     kpiD(KICO.cal,'#3AD07E',DL(agendaram,P?P.agendaram:null),fmt(agendaram),'Agendaram','g') +
     kpiD(KICO.pct,'#A66BFF',DL(Math.round(leadsN/(vis||1)*1000),P?Math.round(P.leadsN/(P.vis||1)*1000):null),pct(leadsN,vis),'Conversão','p');
@@ -475,6 +477,7 @@ function renderQuiz(variant){
   var steps=[{n:'Visitantes (quiz)',sub:'Acessaram a LP',v:vis},{n:'Começaram o quiz',sub:'Iniciaram o questionário',v:comecaram},{n:(variant==='fv2'?'Informaram pedidos':'Responderam faturamento'),sub:'Responderam sobre o negócio',v:respFat},{n:QUAL_LBL,sub:'Passaram no filtro de faturamento',v:qualif},{n:'Mandaram os dados',sub:'Preencheram o formulário',v:leadsN},{n:'Agendaram reunião',sub:'Entraram na agenda',v:agendaram}];
   var max=vis||1;
   el('funnel').innerHTML = funnelHTML(steps, vis);
+  if(qualSemCad>0){ el('funnel').innerHTML += '<div style="font-size:12px;color:var(--amber);margin-top:10px;line-height:1.4">⚠️ <b>'+fmt(qualSemCad)+'</b> qualificaram mas saíram SEM deixar contato ('+pct(qualSemCad,qualif)+' dos qualificados) — recuperáveis se pedirmos o dado mais cedo.</div>'; }
   /* Origem */
   el('sources').innerHTML = barsFrom(srcMap,'sess',vis) || '<div class="empty">Sem dados de origem ainda.</div>';
   /* Device */
