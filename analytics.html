@@ -47,19 +47,21 @@
   .funnel .track{height:24px;background:#0c0916;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .funnel .fill{height:100%;background:linear-gradient(90deg,var(--purple),var(--purple2));border-radius:8px 0 0 8px;min-width:2px;transition:width .5s}
   .funnel .drop{font-size:11px;color:var(--red);margin-top:2px}
-  /* funil trapezoidal (real) */
-  .qf{display:flex;gap:20px;align-items:stretch;flex-wrap:wrap}
-  .qf-shape{flex:1 1 300px;min-width:240px;display:flex;flex-direction:column;gap:3px;justify-content:center}
-  .qf-seg{position:relative;height:46px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px;letter-spacing:.02em;text-shadow:0 1px 3px rgba(0,0,0,.45)}
-  .qf-legend{flex:1 1 300px;min-width:240px;display:flex;flex-direction:column;justify-content:center}
-  .qf-leg{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line)}
+  /* funil trapezoidal (larguras fixas, estilo mockup) */
+  .qf{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+  .qf-shape{flex:1 1 320px;min-width:260px;display:flex;flex-direction:column;gap:4px;padding:4px 0}
+  .qf-seg{position:relative;height:52px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 4px 10px rgba(0,0,0,.35))}
+  .qf-seg span{color:#fff;font-weight:800;font-size:19px;letter-spacing:.01em;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+  .qf-legend{flex:1 1 320px;min-width:260px;display:flex;flex-direction:column;justify-content:center}
+  .qf-leg{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line)}
   .qf-leg:last-child{border-bottom:none}
-  .qf-dot{width:11px;height:11px;border-radius:3px;flex:none;box-shadow:0 0 8px rgba(124,58,237,.5)}
-  .qf-leg .nm{font-size:13px;color:#fff;font-weight:600;line-height:1.2}
-  .qf-leg .sb{font-size:11px;color:var(--muted);margin-top:1px}
-  .qf-leg .vv{margin-left:auto;text-align:right;white-space:nowrap}
-  .qf-leg .vv b{font-size:16px;color:#fff;font-variant-numeric:tabular-nums}
-  .qf-leg .vv span{display:block;font-size:11px;color:var(--muted)}
+  .qf-dot{width:12px;height:12px;border-radius:4px;flex:none}
+  .qf-txt{min-width:0}
+  .qf-leg .nm{font-size:13.5px;color:#fff;font-weight:600;line-height:1.25}
+  .qf-leg .sb{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.2}
+  .qf-leg .vv{margin-left:auto;text-align:right;white-space:nowrap;padding-left:8px}
+  .qf-leg .vv b{font-size:17px;color:#fff;font-variant-numeric:tabular-nums;line-height:1}
+  .qf-leg .vv span{display:block;font-size:11.5px;color:var(--muted);margin-top:3px}
   /* barras */
   .bars .row{display:grid;grid-template-columns:120px 1fr 52px;gap:10px;align-items:center;margin-bottom:9px;font-size:13px}
   .bars .row .name{color:var(--silver);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -195,17 +197,19 @@ var _QF_COL=['#7c3aed','#4f46e5','#14b8a6','#f59e0b','#f97316','#ef4444','#ec489
 function funnelHTML(steps,total){
   if(!steps||!steps.length) return '';
   total = total || steps[0].v || 1;
-  var max = steps[0].v || 1;
+  var n = steps.length;
+  // Larguras FIXAS (afunilam de forma uniforme, independentes da quantidade) — igual ao mockup
+  var WTOP=92, WBOT=30;
+  function bw(k){ return WTOP - (WTOP-WBOT)*(k/n); }
   var shape = steps.map(function(s,i){
-    var w = Math.max(9, s.v/max*100);
-    var wn = (i<steps.length-1) ? Math.max(6, steps[i+1].v/max*100) : Math.max(5, w*0.55);
-    var col = _QF_COL[i%_QF_COL.length];
-    var clip = 'polygon('+((100-w)/2).toFixed(1)+'% 0,'+((100+w)/2).toFixed(1)+'% 0,'+((100+wn)/2).toFixed(1)+'% 100%,'+((100-wn)/2).toFixed(1)+'% 100%)';
-    return '<div class="qf-seg" style="clip-path:'+clip+';-webkit-clip-path:'+clip+';background:linear-gradient(180deg,'+col+','+col+'cc)">'+fmt(s.v)+'</div>';
+    var wt=bw(i), wb=bw(i+1);
+    var col=_QF_COL[i%_QF_COL.length];
+    var clip='polygon('+((100-wt)/2).toFixed(2)+'% 0,'+((100+wt)/2).toFixed(2)+'% 0,'+((100+wb)/2).toFixed(2)+'% 100%,'+((100-wb)/2).toFixed(2)+'% 100%)';
+    return '<div class="qf-seg" style="clip-path:'+clip+';-webkit-clip-path:'+clip+';background:linear-gradient(180deg,'+col+' 0%,'+col+'e0 100%)"><span>'+fmt(s.v)+'</span></div>';
   }).join('');
   var legend = steps.map(function(s,i){
-    var col = _QF_COL[i%_QF_COL.length];
-    return '<div class="qf-leg"><span class="qf-dot" style="background:'+col+'"></span><div><div class="nm">'+s.n+'</div>'+(s.sub?'<div class="sb">'+s.sub+'</div>':'')+'</div><div class="vv"><b>'+fmt(s.v)+'</b><span>'+pct(s.v,total)+'</span></div></div>';
+    var col=_QF_COL[i%_QF_COL.length];
+    return '<div class="qf-leg"><span class="qf-dot" style="background:'+col+';box-shadow:0 0 10px '+col+'88"></span><div class="qf-txt"><div class="nm">'+s.n+'</div>'+(s.sub?'<div class="sb">'+s.sub+'</div>':'')+'</div><div class="vv"><b>'+fmt(s.v)+'</b><span>'+pct(s.v,total)+'</span></div></div>';
   }).join('');
   return '<div class="qf"><div class="qf-shape">'+shape+'</div><div class="qf-legend">'+legend+'</div></div>';
 }
