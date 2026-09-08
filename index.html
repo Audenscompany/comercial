@@ -4839,11 +4839,13 @@ function showPage(id){
 
 // ===== ABA METAS (LP V2) =====
 function renderMetas(){
-  function mkCard(label,val,note,color){
+  function mkCard(label,val,note,id){
     return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:6px;">'+
       '<span style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,0.45);">'+label+'</span>'+
-      '<div style="font-size:26px;font-weight:700;color:'+(color||'#f5f0ff')+';font-family:\'Bebas Neue\',sans-serif;line-height:1;">'+val+'</div>'+
+      '<div style="font-size:26px;font-weight:700;color:#f5f0ff;font-family:\'Bebas Neue\',sans-serif;line-height:1;">'+val+'<span style="font-size:12px;color:rgba(255,255,255,0.3);font-family:Inter,sans-serif;font-weight:500;"> meta</span></div>'+
       '<span style="font-size:11px;color:rgba(255,255,255,0.35);">'+note+'</span>'+
+      '<span style="font-size:12.5px;color:#4ade80;font-weight:600;" id="mreal-'+id+'">Realizado: —</span>'+
+      '<div style="height:5px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;"><div id="mbar-'+id+'" style="height:100%;width:0%;background:#4ade80;border-radius:99px;transition:width .6s;"></div></div>'+
     '</div>';
   }
   function vital(label,val,hint){
@@ -4854,14 +4856,14 @@ function renderMetas(){
     '</div>';
   }
   var funil=[
-    ['Visitas na LP','14.250','meta de tráfego'],
-    ['Leads','506','6,7% início · 53% concluem'],
-    ['Reuniões agendadas','85','qualificados agendam'],
-    ['Reuniões realizadas','59','−31% no-show'],
-    ['Clientes fechados','19','33% de fechamento'],
-    ['MRR novo','R$38 mil','ticket R$2.000']
+    ['Visitas na LP','14.250','meta de tráfego','visitas'],
+    ['Leads','506','53% concluem o quiz','leads'],
+    ['Reuniões agendadas','85','qualificados agendam','agend'],
+    ['Reuniões realizadas','59','−31% no-show','realiz'],
+    ['Clientes fechados','19','33% de fechamento','clientes'],
+    ['MRR novo','R$38 mil','ticket R$2.000','mrr']
   ];
-  var rowsFunil=funil.map(function(f){return mkCard(f[0],f[1],f[2]);}).join('');
+  var rowsFunil=funil.map(function(f){return mkCard(f[0],f[1],f[2],f[3]);}).join('');
   var tbl='<table style="width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;">'+
     '<thead><tr>'+
       '<th style="text-align:left;padding:11px 10px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,0.45);">Métrica</th>'+
@@ -4913,7 +4915,7 @@ function renderMetas(){
       '</div>'+
     '</div>'+
     // Funil KPIs
-    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">O funil da meta</div>'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">O funil da meta · meta vs realizado do mês</div>'+
     '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:22px;">'+rowsFunil+'</div>'+
     // Quebra tabela
     '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:10px;">Quebra: mês · semana · dia</div>'+
@@ -4938,20 +4940,60 @@ function renderMetas(){
 window.renderMetas=renderMetas;
 function loadMetasRealizado(){
   try{
+    var now=new Date(),mo=now.getMonth(),yr=now.getFullYear();
+    function money(n){return 'R$'+Math.round(n).toLocaleString('pt-BR');}
+    function setReal(id,real,meta,fmt){
+      var pct=meta>0?Math.round(real/meta*100):0;
+      var el=document.getElementById('mreal-'+id); if(el) el.textContent='Realizado: '+(fmt?fmt(real):real.toLocaleString('pt-BR'))+' · '+pct+'%';
+      var bar=document.getElementById('mbar-'+id); if(bar) bar.style.width=Math.min(100,pct)+'%';
+    }
+    // ---- 1) Clientes + MRR: MESMA fonte da aba Vendas (respeita exclusões) ----
+    var vc=(typeof ensureVendasCache==='function'?ensureVendasCache():window._todasVendasCache)||[];
+    var parse=(typeof parseFaturamento==='function')?parseFaturamento:function(x){return parseFloat(x)||0;};
+    function mrrOf(fu){if(!fu)return 0;if(fu.tipoValor==='tcv')return parse(fu.contrato)||0;return parse(fu.mensalidade)||parse(fu.contrato)||0;}
+    var vMes=vc.filter(function(v){var d=(typeof _vendaDate==='function')?_vendaDate(v.fu,v.m):null;return d&&d.getMonth()===mo&&d.getFullYear()===yr;});
+    var cli=vMes.length, mrr=vMes.reduce(function(s,v){return s+mrrOf(v.fu);},0);
+    setReal('clientes',cli,19);
+    setReal('mrr',mrr,38000,money);
+    var hM=document.getElementById('metas-mrr-real');if(hM)hM.textContent='Realizado este mês: '+money(mrr)+' ('+Math.round(mrr/38000*100)+'%)';
+    var hB=document.getElementById('metas-mrr-bar');if(hB)hB.style.width=Math.min(100,Math.round(mrr/38000*100))+'%';
+    var hC=document.getElementById('metas-cli-real');if(hC)hC.textContent=cli;
+    // ---- 2) Reuniões: nó meetings em memória ----
+    var ms=(typeof meetings==='object'&&meetings)?Object.keys(meetings).map(function(k){return meetings[k];}):[];
+    function mDate(m){var t=m&&(m.dtISO||m.data||m.dt);if(!t)return null;var d=new Date(t);return isNaN(d.getTime())?null:d;}
+    var agMes=ms.filter(function(m){var d=mDate(m);return d&&d.getMonth()===mo&&d.getFullYear()===yr;});
+    var realiz=agMes.filter(function(m){
+      if(typeof isRealizada==='function'&&isRealizada(m.status))return true;
+      var fu=(typeof followups==='object'&&followups)?(followups[m.id]||followups[m.meetingId]):null;
+      return !!(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda'));
+    }).length;
+    setReal('agend',agMes.length,85);
+    setReal('realiz',realiz,59);
+    // ---- 3) Visitas + leads: analytics da LP (async, cacheado) ----
+    _fillAnalyticsMetas(mo,yr,setReal);
+  }catch(e){}
+}
+function _fillAnalyticsMetas(mo,yr,setReal){
+  try{
     if(typeof fbGet!=='function')return;
-    fbGet('clientes').then(function(cl){
-      if(!cl)return;
-      var arr=Array.isArray(cl)?cl.filter(Boolean):Object.keys(cl).map(function(k){return cl[k];});
-      var now=new Date(),mo=now.getMonth(),yr=now.getFullYear();
-      function parseNum(x){if(x==null)return 0;if(typeof x==='number')return x;var s=(''+x).replace(/[^\d,\.]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');var n=parseFloat(s);return isNaN(n)?0:n;}
-      function inMonth(c){var t=c.createdAt||c.dataInicio;if(!t)return false;var d=new Date(typeof t==='number'?(t<1e12?t*1000:t):t);return d.getMonth()===mo&&d.getFullYear()===yr;}
-      var cli=0,mrr=0;
-      arr.forEach(function(c){if(c&&inMonth(c)){cli++;mrr+=parseNum(c.valorMensalidade);}});
-      var pct=Math.round(mrr/38000*100);
-      var elM=document.getElementById('metas-mrr-real');if(elM)elM.textContent='Realizado este mês: R$'+Math.round(mrr).toLocaleString('pt-BR')+' ('+pct+'%)';
-      var barM=document.getElementById('metas-mrr-bar');if(barM)barM.style.width=Math.min(100,pct)+'%';
-      var elC=document.getElementById('metas-cli-real');if(elC)elC.textContent=cli;
-    }).catch(function(){});
+    var apply=function(ev){
+      if(!ev)return;
+      var vis=0,lead=0;
+      Object.keys(ev).forEach(function(sid){
+        var e=ev[sid];if(!e||typeof e!=='object')return;
+        Object.keys(e).forEach(function(id){
+          var x=e[id];if(!x||!x.t)return;
+          var d=new Date(x.t-3*3600*1000); // BRT
+          if(d.getMonth()!==mo||d.getFullYear()!==yr)return;
+          if(x.e==='lp_view'){var vv=x.p&&x.p.variante;if(!vv||vv==='quiz-fv2'||vv==='fv2')vis++;}
+          else if(x.e==='lead_submit')lead++;
+        });
+      });
+      setReal('visitas',vis,14250);
+      setReal('leads',lead,506);
+    };
+    if(window._metasAnalyticsCache){apply(window._metasAnalyticsCache);return;}
+    fbGet('analytics/events').then(function(ev){window._metasAnalyticsCache=ev;apply(ev);}).catch(function(){});
   }catch(e){}
 }
 window.loadMetasRealizado=loadMetasRealizado;
