@@ -402,7 +402,8 @@ function renderQuiz(variant){
     if(x.n['quiz_start']) comecaram++;
     if(x.p['faturamento']) respFat++;
     if(x.n['qualified_lead']) qualif++;
-    var isLead = x.n['lead_submit']||sv.converted;
+    /* lead REAL = mandou os dados; quem foi pro Vivendo (faixa baixa / não quer investir) não deixa contato após a mudança de 06/09 */
+    var isLead = (x.n['lead_submit']||sv.converted) && !x.n['lp_vivendo_view'] && !x.n['lp_vivendo_redirect'];
     if(isLead) leadsN++;
     if(x.n['meeting_booked']) agendaram++;
     if(x.n['youtube_redirect']) youtube++;
