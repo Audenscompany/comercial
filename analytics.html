@@ -165,6 +165,11 @@
     </div>
 
     <div class="card" style="margin-top:16px">
+      <h2>Anúncios que trazem leads — Qualificados × Vivendo</h2>
+      <div id="adsDist"><div class="empty">Agrupa os leads do período por anúncio (utm_content/ad) e separa quem qualifica de quem vai pro Vivendo.</div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <h2>Leads recentes (com atribuição)</h2>
       <div id="leads"></div>
     </div>
@@ -414,6 +419,7 @@ function render(){
     el('leads').innerHTML = '<div class="empty">Nenhum lead no período selecionado.</div>';
   }
 
+  renderAdsDist(cut);
   var lpLabel = antiga ? 'LP antiga (Elementor)' : 'LP nova (audens-lp)';
   var per = (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
@@ -498,6 +504,8 @@ function renderQuiz(variant){
     el('pedidosDist').innerHTML='<div class="bars">'+rows+'</div>'+
       '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = qualificaram · <span style="color:var(--amber)">âmbar</span> = foram pro Vivendo. Total: <b style="color:var(--green)">'+tq+'</b> qualif × <b style="color:var(--amber)">'+tv+'</b> Vivendo. Âmbar nas faixas de <b>mais</b> pedidos = pool recuperável se afrouxar o corte.</div>';
   })();
+  /* Anúncios × resultado (qualificado × Vivendo) */
+  renderAdsDist(cut);
   /* Origem */
   el('sources').innerHTML = barsFrom(srcMap,'sess',vis) || '<div class="empty">Sem dados de origem ainda.</div>';
   /* Device */
@@ -567,6 +575,40 @@ function barsSimple(map, tot, cls){
   return arr.map(function(r){
     return '<div class="row"><div class="name">'+esc(r.name)+'</div><div class="bar"><span class="'+(cls||'')+'" style="width:'+(r.v/max*100)+'%"></span></div><div class="val">'+pct(r.v,tot)+'</div></div>';
   }).join('');
+}
+
+/* ===== Anúncios × resultado do lead (Qualificado x Vivendo) ===== */
+function _leadOutcome(l){
+  var st=String(l.status||'').toLowerCase();
+  var dst=String(l.destino||'').toLowerCase();
+  var faixa=String(l.faixa||'');
+  if(st==='vivendo'||dst==='vivendo'||dst==='lp-vivendo'||['ate-15','0-15','ate-20'].indexOf(faixa)>=0) return 'vivendo';
+  var KB=cache.kanban||{}; var kb=KB[leadTel(l)]||{}; var kst=String(kb.status||'').toLowerCase();
+  var QSET={qualificado:1,reuniao:1,proposta:1,fechado:1};
+  if(QSET[kst]||QSET[st]) return 'qualificado';
+  return 'outro';
+}
+function renderAdsDist(cut){
+  var box=el('adsDist'); if(!box) return;
+  var L=cache.leads||{}; var map={}; var tq=0,tv=0;
+  for(var k in L){ var l=L[k]||{}; if((l._createdAt||0)<cut) continue;
+    var ad=String(l.ad||l.utm_content||'').trim()||'(sem anúncio)';
+    var oc=_leadOutcome(l);
+    if(!map[ad]) map[ad]={qual:0,viv:0,tot:0};
+    map[ad].tot++;
+    if(oc==='qualificado'){ map[ad].qual++; tq++; }
+    else if(oc==='vivendo'){ map[ad].viv++; tv++; }
+  }
+  var ks=Object.keys(map).sort(function(a,b){ return (map[b].qual+map[b].viv)-(map[a].qual+map[a].viv); }).slice(0,12);
+  if(!ks.length || (tq+tv)===0){ box.innerHTML='<div class="empty">Sem leads com atribuição de anúncio no período. (Os leads precisam ter chegado pela LP com utm_content/ad do anúncio.)</div>'; return; }
+  var mx=1; ks.forEach(function(k){ mx=Math.max(mx,map[k].qual+map[k].viv); });
+  var rows=ks.map(function(k){ var q=map[k].qual,v=map[k].viv;
+    return '<div class="row" style="align-items:center"><div class="name" style="min-width:180px" title="'+esc(k)+'">'+esc(k)+'</div>'+
+      '<div class="bar" style="display:flex"><span class="g" style="width:'+Math.round(q/mx*100)+'%"></span><span class="a" style="width:'+Math.round(v/mx*100)+'%"></span></div>'+
+      '<div class="val" style="min-width:130px"><b style="color:var(--green)">'+q+'</b> qual · <b style="color:var(--amber)">'+v+'</b> viv</div></div>';
+  }).join('');
+  box.innerHTML='<div class="bars">'+rows+'</div>'+
+    '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = leads qualificados · <span style="color:var(--amber)">âmbar</span> = leads Vivendo. Total no período: <b style="color:var(--green)">'+tq+'</b> qualif × <b style="color:var(--amber)">'+tv+'</b> Vivendo. Cruze com o CTR/gasto de cada anúncio pra ver quais trazem qualificado e quais só alimentam o Vivendo.</div>';
 }
 
 tryGate();

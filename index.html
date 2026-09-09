@@ -1097,7 +1097,9 @@ function ensureKanbanEntry(lead){
   var MID_FAIXAS=['15-20','20-50','15-30','30-50'];
   var _fx=String(lead.faixa||''); var _inv=String(lead.investimento||'').toLowerCase();
   var _naoQuer=_inv==='nao'||_inv.indexOf('prioridade')>=0||_inv.indexOf('não pretendo')>=0||_inv.indexOf('nao pretendo')>=0||_inv.indexOf('não consigo')>=0||_inv.indexOf('nao consigo')>=0;
-  var isLowBand=LOW_FAIXAS.indexOf(_fx)>=0 || (_naoQuer && MID_FAIXAS.indexOf(_fx)>=0);  /* vai pro curso -> arquiva, sem tarefas */
+  var isLowBand=LOW_FAIXAS.indexOf(_fx)>=0 || (_naoQuer && MID_FAIXAS.indexOf(_fx)>=0);  /* vai pro curso Vivendo, sem tarefas de venda */
+  var _st=String(lead.status||'').toLowerCase(), _dst=String(lead.destino||'').toLowerCase();
+  var isVivendo=_st==='vivendo'||_dst==='vivendo'||isLowBand;  /* lead do Vivendo -> coluna Vivendo (nutrição pela cadência do receberlead) */
   var novoCard={
     nome:lead.nome||'',
     faixa:lead.faixa||'',
@@ -1117,7 +1119,7 @@ function ensureKanbanEntry(lead){
     instagram:lead.instagram||'',
     _source:lead._source||'',
     _createdAt:lead._createdAt||Date.now(),
-    status:(isLowBand ? 'arquivado' : (/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo')),
+    status:(isVivendo ? 'vivendo' : (/quiz/i.test(lead._source||'') ? 'qualificado' : 'novo')),
     statusAt:Date.now(),
     origem:'Tráfego'
   };
@@ -1132,7 +1134,7 @@ function ensureKanbanEntry(lead){
     if(err){ console.error('ensureKanbanEntry tx',err); return; }
     if(!committed) return;             // card já existia -> nada a fazer
     // Card recém-criado por nós: segue com cadência de tarefas + planilha
-    if(!isLowBand) generateCadenciaTasks(lead,key);
+    if(!isVivendo) generateCadenciaTasks(lead,key);
     // Salvar na planilha de leads (substitui Make.com)
     // Marca imediatamente para evitar re-sync pelo listener enquanto a chamada está em andamento
     _syncingLeads[key] = true;
@@ -1632,7 +1634,7 @@ function abrirDetalheKanban(key){
 
   var leadTag=getLeadTag(e.faturamento);
   var _statusLabel={'novo':'Novo Lead','contatado':'Contatado','reuniao':'Reunião Agendada',
-    'recuperacao':'Recuperação','fechado':'Fechado','arquivado':'Arquivado'}[e.status||'novo']||(e.status||'Novo Lead');
+    'recuperacao':'Recuperação','fechado':'Fechado','vivendo':'Vivendo','arquivado':'Arquivado'}[e.status||'novo']||(e.status||'Novo Lead');
 
   var _fuHtml='';
   if(fuData){
@@ -2243,10 +2245,10 @@ function kanbanCardHtml(e,idx){
   // Mescla o registro de leads/ (nome, faturamento, telefone, instagram, ad...) — o no kanban/ do /quiz-agendou so tem status
   try{ var _rec=_leadRec(e); if(_rec){ var _mk=e._key; e=Object.assign({},_rec,e); if(_mk)e._key=_mk; } }catch(_e){}
   var col=KANBAN_COLS[idx];
-  var isArchived=col.id==='arquivado';
+  var isArchived=(col.id==='arquivado'||col.id==='vivendo');  /* Vivendo é coluna lateral (nutrição), não faz parte da progressão do funil */
   var prevCol=KANBAN_COLS[idx-1];
   var nextCol=(!isArchived)?KANBAN_COLS[idx+1]:null;
-  if(nextCol && nextCol.id==='arquivado') nextCol=null;
+  if(nextCol && (nextCol.id==='arquivado'||nextCol.id==='vivendo')) nextCol=null;
   if(isArchived) prevCol=null;
   var nome=_leadDisplayName(e);
   var fatVal=parseFaturamentoValue(e.faturamento);
@@ -2413,6 +2415,7 @@ var KANBAN_COLS=[
   {id:'proposta',label:'Proposta Apresentada',color:'green'},
   {id:'recuperacao',label:'Recuperação',color:'orange'},
   {id:'fechado',label:'Fechado',color:'gold'},
+  {id:'vivendo',label:'Vivendo',color:'brand'},
   {id:'arquivado',label:'Arquivados',color:'muted'}
 ];
 // Origens possiveis de um lead/reuniao (usado no card do Kanban e na coluna ORIGEM da planilha de reunioes)
@@ -27958,7 +27961,7 @@ function renderVisaoGeral(){
 
   // ── leads ativos ─────────────────────────────────────────────
   var kbVals=Object.values(kanbanData);
-  var leadsAtivos=kbVals.filter(function(k){return k.status&&k.status!=='arquivado';}).length;
+  var leadsAtivos=kbVals.filter(function(k){return k.status&&k.status!=='arquivado'&&k.status!=='vivendo';}).length;
 
   // ── vendas e receita ─────────────────────────────────────────
   var prevM=mesAtual===0?11:mesAtual-1, prevY=mesAtual===0?anoAtual-1:anoAtual;
@@ -28002,7 +28005,7 @@ function renderVisaoGeral(){
     {id:'proposta',label:'Negoc.',color:'#10b981'},
     {id:'fechado',label:'Fechados',color:'#4ade80'}
   ];
-  var funnelTotal=kbVals.filter(function(k){return k.status&&k.status!=='arquivado';}).length||1;
+  var funnelTotal=kbVals.filter(function(k){return k.status&&k.status!=='arquivado'&&k.status!=='vivendo';}).length||1;
   var funnelData=funnelStages.map(function(s){
     var cnt=kbVals.filter(function(k){return k.status===s.id;}).length;
     return Object.assign({},s,{count:cnt,pct:Math.round(cnt/funnelTotal*100)});
