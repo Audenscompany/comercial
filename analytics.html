@@ -160,6 +160,11 @@
     </div>
 
     <div class="card" style="margin-top:16px">
+      <h2>Pedidos por faixa — quem qualifica × quem vai pro Vivendo</h2>
+      <div id="pedidosDist"><div class="empty">Começa a coletar quando as LPs instrumentadas (faixa de pedidos nos eventos) estiverem no ar.</div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <h2>Leads recentes (com atribuição)</h2>
       <div id="leads"></div>
     </div>
@@ -432,10 +437,10 @@ function renderQuiz(variant){
   var now=Date.now();
   var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
   var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
-  function evOf(sid){ var o={n:{},p:{}}; var ev=E[sid]; if(ev){ for(var kk in ev){ var e=ev[kk]||{}; if(e.e) o.n[e.e]=1; if(e.e==='quiz_answer'&&e.p&&e.p.pergunta) o.p[e.p.pergunta]=1; } } return o; }
+  function evOf(sid){ var o={n:{},p:{},ped:null,pedOut:null}; var ev=E[sid]; if(ev){ for(var kk in ev){ var e=ev[kk]||{}; if(e.e) o.n[e.e]=1; if(e.e==='quiz_answer'&&e.p&&e.p.pergunta) o.p[e.p.pergunta]=1; if((e.e==='qualified_lead'||e.e==='lp_vivendo_view'||e.e==='lp_vivendo_redirect')&&e.p&&e.p.pedidos){ o.ped=e.p.pedidos; o.pedOut=(e.e==='qualified_lead'?'qual':'viv'); } } } return o; }
   /* agrega uma janela de tempo [a,b) — reusada p/ período atual e anterior */
   function aggWin(a,b){
-    var r={vis:0,comecaram:0,respFat:0,qualif:0,qualSemCad:0,leadsN:0,agendaram:0,youtube:0,perg:{},dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{}};
+    var r={vis:0,comecaram:0,respFat:0,qualif:0,qualSemCad:0,leadsN:0,agendaram:0,youtube:0,perg:{},dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{},pedDist:{}};
     ORDER.forEach(function(q){ r.perg[q]=0; });
     for(var sid in S){ var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<a||t>=b) continue;
       var isQuiz=String(sv.page||'').indexOf(VPAGE)>=0;
@@ -448,6 +453,7 @@ function renderQuiz(variant){
       var isLead=(x.n['lead_submit']||sv.converted)&&!x.n['lp_vivendo_view']&&!x.n['lp_vivendo_redirect'];
       if(isLead) r.leadsN++;
       if(x.n['qualified_lead']&&!isLead) r.qualSemCad++;
+      if(x.ped){ if(!r.pedDist[x.ped]) r.pedDist[x.ped]={qual:0,viv:0}; if(x.pedOut==='qual') r.pedDist[x.ped].qual++; else r.pedDist[x.ped].viv++; }
       if(x.n['meeting_booked']) r.agendaram++;
       if(x.n['youtube_redirect']) r.youtube++;
       ORDER.forEach(function(q){ if(x.p[q]) r.perg[q]++; });
@@ -478,6 +484,20 @@ function renderQuiz(variant){
   var max=vis||1;
   el('funnel').innerHTML = funnelHTML(steps, vis);
   if(qualSemCad>0){ el('funnel').innerHTML += '<div style="font-size:12px;color:var(--amber);margin-top:10px;line-height:1.4">⚠️ <b>'+fmt(qualSemCad)+'</b> qualificaram mas saíram SEM deixar contato ('+pct(qualSemCad,qualif)+' dos qualificados) — recuperáveis se pedirmos o dado mais cedo.</div>'; }
+  /* Pedidos por faixa (qualificados x Vivendo) */
+  (function(){
+    var PEDORDER=['Até 200 pedidos/mês','De 200 a 300 pedidos/mês','De 300 a 500 pedidos/mês','De 500 a 1.000 pedidos/mês','De 1.000 a 2.000 pedidos/mês','Mais de 2.000 pedidos/mês'];
+    var pd=C.pedDist||{}; var ks=PEDORDER.filter(function(k){return pd[k];}); Object.keys(pd).forEach(function(k){ if(PEDORDER.indexOf(k)<0) ks.push(k); });
+    if(!ks.length){ el('pedidosDist').innerHTML='<div class="empty">Ainda sem dados de faixa de pedidos neste período (as LPs instrumentadas precisam estar no ar coletando).</div>'; return; }
+    var tq=0,tv=0,mx=1; ks.forEach(function(k){ tq+=pd[k].qual; tv+=pd[k].viv; mx=Math.max(mx,pd[k].qual+pd[k].viv); });
+    var rows=ks.map(function(k){ var q=pd[k].qual,v=pd[k].viv;
+      return '<div class="row" style="align-items:center"><div class="name" style="min-width:160px">'+esc(k)+'</div>'+
+        '<div class="bar" style="display:flex"><span class="g" style="width:'+Math.round(q/mx*100)+'%"></span><span class="a" style="width:'+Math.round(v/mx*100)+'%"></span></div>'+
+        '<div class="val" style="min-width:120px"><b style="color:var(--green)">'+q+'</b> qual · <b style="color:var(--amber)">'+v+'</b> viv</div></div>';
+    }).join('');
+    el('pedidosDist').innerHTML='<div class="bars">'+rows+'</div>'+
+      '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = qualificaram · <span style="color:var(--amber)">âmbar</span> = foram pro Vivendo. Total: <b style="color:var(--green)">'+tq+'</b> qualif × <b style="color:var(--amber)">'+tv+'</b> Vivendo. Âmbar nas faixas de <b>mais</b> pedidos = pool recuperável se afrouxar o corte.</div>';
+  })();
   /* Origem */
   el('sources').innerHTML = barsFrom(srcMap,'sess',vis) || '<div class="empty">Sem dados de origem ainda.</div>';
   /* Device */
