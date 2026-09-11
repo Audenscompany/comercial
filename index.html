@@ -2688,10 +2688,11 @@ function parseLeadDate(str){
 // - faturamento >= 20k (Marketplaces ou Assessoria)
 // - cadastrado há pelo menos 60 dias
 var COLDCALL_MIN_FAT=20000;
-var COLDCALL_MIN_DIAS=60;
+var COLDCALL_MIN_DIAS=15;
 function isLeadElegivel(l){
   var fat=parseFaturamentoValue(l.faturamento);
-  if(fat<COLDCALL_MIN_FAT) return false;
+  // Tem faturamento informado abaixo do mínimo -> fora. Sem faturamento (fat=0) -> entra.
+  if(fat>0 && fat<COLDCALL_MIN_FAT) return false;
   var ts=parseLeadDate(l._data);
   if(!ts && l._createdAt) ts=Number(l._createdAt);
   if(!ts) return true;
