@@ -856,6 +856,7 @@ function startRealtimeSync(){
     if(cfg.zapi_instance){ localStorage.setItem('audens_zapi_instance',cfg.zapi_instance); }
     if(cfg.zapi_token){ localStorage.setItem('audens_zapi_token',cfg.zapi_token); }
     if(cfg.zapi_security){ localStorage.setItem('audens_zapi_security',cfg.zapi_security); }
+    if(cfg.coldcallRoundStart!==undefined){ _coldcallRoundStart=cfg.coldcallRoundStart||''; }
     if(cfg.nav_permissions){
       // Firebase não permite '.' nas chaves — decodifica de volta para email
       var raw=cfg.nav_permissions;
@@ -2688,7 +2689,8 @@ function parseLeadDate(str){
 // - faturamento >= 20k (Marketplaces ou Assessoria)
 // - cadastrado há pelo menos 60 dias
 var COLDCALL_MIN_FAT=20000;
-var COLDCALL_MIN_DIAS=15;
+var COLDCALL_MIN_DIAS=30;
+var _coldcallRoundStart='';
 function isLeadElegivel(l){
   var fat=parseFaturamentoValue(l.faturamento);
   // Tem faturamento informado abaixo do mínimo -> fora. Sem faturamento (fat=0) -> entra.
@@ -2800,6 +2802,10 @@ function saveAll(){
 loadStorage();
 
 function todayStr(){return new Date().toLocaleDateString('pt-BR');}
+// Cold Call — rodada de reset: ligações registradas ANTES de _coldcallRoundStart (ISO YYYY-MM-DD)
+// são de rodada anterior; o lead volta a ser chamável como "2ª ligação".
+function _ccCallDayISO(d){ if(!d) return ''; var m=String(d).match(/(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; var i=String(d).match(/(\d{4})-(\d{2})-(\d{2})/); return i?i[1]+'-'+i[2]+'-'+i[3]:''; }
+function _ccPrior(reg){ if(!reg||!_coldcallRoundStart) return false; var di=_ccCallDayISO(reg.data); return !!di && di < _coldcallRoundStart; }
 function closeModal(id){var el=document.getElementById(id);if(!el)return;if(el.dataset.dynamic){el.remove();}else{el.classList.remove('open');}if(id==='modal-call')_callLeadSource='daily';}
 
 // ===== DATE HELPERS =====
@@ -5904,7 +5910,7 @@ function gerarLeadsExtras(qtd){
 function checkLeadsConcluidos(){
   var dl = getDailyLeads()||[];
   if(!dl.length) return false;
-  var done = dl.filter(function(l){return calls[l.telefone];}).length;
+  var done = dl.filter(function(l){var r=calls[l.telefone];return r&&!_ccPrior(r);}).length;
   return done >= dl.length;
 }
 // Formata número para discagem: remove 55, adiciona 015 se DDD ≠ 31
@@ -5968,7 +5974,7 @@ function renderLigar(){
       return true;
     });
   }
-  var done=dl.filter(function(l){return calls[l.telefone];}).length;
+  var done=dl.filter(function(l){var r=calls[l.telefone];return r&&!_ccPrior(r);}).length;
   var pct=dl.length?Math.round(done/dl.length*100):0;
   // Contagens por faixa
   var _cntMkt=dl.filter(function(l){var v=parseFaturamentoValue(l.faturamento);return v>=20000&&v<40000;}).length;
@@ -6028,6 +6034,7 @@ function renderLigar(){
         btn=isDue&&mtg.responsavel===CU.closer?'<button class="btn btn-task" onclick="openFollowup(meetings[\''+mtg.id+'\'])"><i class="ti ti-check"></i> Follow-up</button>':
           '<span style="font-size:11px;color:var(--muted);">'+mtg.responsavel+'</span>';
       }
+      else if(reg&&_ccPrior(reg)){sb='<span class="badge b-amber">2ª ligação</span>';btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar</button>';}
       else if(reg){sb=reg.at==='sim'?'<span class="badge b-cyan">Atendeu</span>':'<span class="badge b-red">Nao atendeu</span>';btn='<button class="btn btn-edit" onclick="openCallModal('+i+')"><i class="ti ti-edit"></i> Editar</button>';}
       else{sb='<span class="badge b-muted">Pendente</span>';btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar</button>';}
       var _telFmt = formatTelLigar(l.telefone);
