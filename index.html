@@ -11062,12 +11062,12 @@ function renderReunioes(){
     H+='<div id="reun-mes-tbl" style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">';
     H+='<div style="overflow-x:auto;"><table id="reun-mes-table" style="width:100%;border-collapse:collapse;">';
     H+='<thead><tr>';
-    ['Data','Lead','Origem','SDR','Closer','Status','Resultado','Ações'].forEach(function(h){
+    ['Data','Lead','Origem','SDR','Closer','Status','Resultado','Nota','Ações'].forEach(function(h){
       H+='<th style="padding:10px 12px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;">'+h+'</th>';
     });
     H+='</tr></thead><tbody>';
     if(!sortedRows.length){
-      H+='<tr><td colspan="8" style="padding:40px;text-align:center;color:var(--muted);">Nenhuma reunião neste período.</td></tr>';
+      H+='<tr><td colspan="9" style="padding:40px;text-align:center;color:var(--muted);">Nenhuma reunião neste período.</td></tr>';
     }
     sortedRows.forEach(function(m){
       var fu=getFu(m);
@@ -11089,6 +11089,8 @@ function renderReunioes(){
       H+='<td style="padding:10px 12px;"><div style="display:flex;align-items:center;gap:5px;">'+av(closer,22)+'<span style="font-size:11px;color:var(--white);">'+closer+'</span><button onclick="_openReunEdit(\''+m.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;font-size:11px;" title="Editar"><i class="ti ti-pencil" style="font-size:10px;"></i></button></div></td>';
       H+='<td style="padding:10px 12px;">'+statusBadge(m)+'</td>';
       H+='<td style="padding:10px 12px;font-size:11px;">'+res+'</td>';
+      // Nota (avaliação atrelada à reunião)
+      (function(){var _av=_avalByMeeting(m.id);var _c=_av?(_av.notaFinal>=70?'#10b981':_av.notaFinal>=45?'#f59e0b':'#ef4444'):'';H+='<td style="padding:10px 12px;">'+(_av?('<span onclick="window._avalDetailTab=\'overview\';_avalCurrentCloser=\''+_av.closerEmail+'\';_avalCurrentTab=\'reunioes\';_avalSelectedId=\''+_av.id+'\';showPage(\'avaliacoes\')" style="cursor:pointer;font-weight:800;font-size:13px;color:'+_c+';" title="Ver análise da reunião">'+_av.notaFinal+'</span>'):'<button onclick="acImportAvalModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:3px 8px;font-size:10px;cursor:pointer;" title="Importar análise">Avaliar</button>')+'</td>';})();
       // Actions
       H+='<td style="padding:10px 12px;"><div style="display:flex;gap:4px;">';
       if(!hasResult){
@@ -26204,6 +26206,159 @@ function acConfirmarSalvarAvaliacao(){
   showSheetToast('Avaliação de '+window._avalSelNome+' salva! Nota: '+record.notaFinal+'/100',false);
   window._avalSelEmail=null; window._avalSelNome=null;
 }
+// ===== IMPORTAR AVALIAÇÃO DO PDF (analista de reuniões) =====
+var _impAval=null;
+function _avalByMeeting(mid){ if(!mid) return null; var r=null; Object.values(_avaliacoes).forEach(function(a){ if(a.meetingId===mid){ if(!r||(a.timestamp||0)>(r.timestamp||0)) r=a; } }); return r; }
+function _acMeetingOptions(){
+  var arr=Object.values(meetings||{}).filter(function(m){ return m && !m._hidden && !m._retorno; });
+  arr.sort(function(a,b){ return (b.dtISO||'').localeCompare(a.dtISO||''); });
+  arr=arr.slice(0,150);
+  return '<option value="">— sem reunião específica —</option>'+arr.map(function(m){
+    var lbl=(m.nome||'?')+' — '+(m.dtDisplay||m.meetingDisplay||'')+(m.responsavel?(' · '+m.responsavel):'');
+    return '<option value="'+m.id+'">'+String(lbl).replace(/"/g,'&quot;')+'</option>';
+  }).join('');
+}
+function _acCloserOptionsSel(){
+  return Object.entries(USERS).filter(function(e){return e[1].funcao!=='sdr';}).map(function(e){
+    return '<option value="'+e[0]+'">'+e[1].name+'</option>';
+  }).join('');
+}
+function acImportAvalModal(){
+  var m=document.getElementById('aval-imp-modal'); if(m) m.remove();
+  var d=document.createElement('div'); d.id='aval-imp-modal';
+  d.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);padding:20px;';
+  d.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:18px;padding:26px;width:min(760px,96vw);max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:14px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+      '<div style="font-family:var(--font-bn);font-size:17px;letter-spacing:1px;color:var(--purple3);">IMPORTAR AVALIAÇÃO DO PDF</div>'+
+      '<button onclick="var e=document.getElementById(\'aval-imp-modal\');if(e)e.remove();" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;">×</button>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--muted);">Suba o PDF do analista de reuniões. A IA extrai as notas por competência, a nota geral, pontos fortes, ajustes e checklist. Você revisa e salva atrelado à reunião.</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+      '<div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px;">Closer</label><select id="aval-imp-closer" class="input-field" style="width:100%;box-sizing:border-box;">'+_acCloserOptionsSel()+'</select></div>'+
+      '<div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px;">Reunião</label><select id="aval-imp-meeting" class="input-field" style="width:100%;box-sizing:border-box;">'+_acMeetingOptions()+'</select></div>'+
+    '</div>'+
+    '<div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px;">PDF da análise</label>'+
+      '<input type="file" id="aval-imp-file" accept="application/pdf" class="input-field" style="width:100%;box-sizing:border-box;"/></div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;">'+
+      '<button onclick="acRunAvalImport()" id="aval-imp-run" style="padding:10px 20px;border-radius:8px;border:1px solid var(--purple);background:var(--purple);color:#fff;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-sparkles"></i> Analisar PDF</button>'+
+    '</div>'+
+    '<div id="aval-imp-result"></div>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+function _acLoadPdfJs(){
+  return new Promise(function(res,rej){
+    if(window.pdfjsLib){ res(window.pdfjsLib); return; }
+    var sc=document.createElement('script');
+    sc.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    sc.onload=function(){ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(window.pdfjsLib); }catch(e){ rej(e); } };
+    sc.onerror=function(){ rej(new Error('Falha ao carregar leitor de PDF')); };
+    document.head.appendChild(sc);
+  });
+}
+async function _acPdfText(file){
+  var lib=await _acLoadPdfJs();
+  var buf=await file.arrayBuffer();
+  var pdf=await lib.getDocument({data:buf}).promise;
+  var txt='';
+  for(var i=1;i<=pdf.numPages;i++){ var pg=await pdf.getPage(i); var c=await pg.getTextContent(); txt+=c.items.map(function(it){return it.str;}).join(' ')+'\n'; }
+  return txt;
+}
+var _AVAL_IMPORT_SYS='Você recebe o TEXTO de um PDF de análise/coaching de uma reunião de vendas da Audens. Extraia os dados FIELMENTE (não invente notas — use exatamente as que estão no texto). Responda APENAS com um bloco <AVAL_JSON>{...}</AVAL_JSON> e nada mais.\n\nSchema (JSON):\n{\n "cliente": "nome do cliente/lead",\n "tipo": "tipo da reunião (ex.: fechamento, diagnóstico)",\n "resultado": "resultado (ex.: contrato assinado, no-show, sem venda)",\n "resumo": "resumo em uma frase",\n "notaGeral": number (0 a 10, a nota geral da reunião como está no doc),\n "competencias": [{"nome":"nome da competência do scorecard","nota":number(0-10),"comentario":"1 frase do que embasa a nota, se houver"}],\n "pontosFortes": ["..."],\n "ajustes": [{"titulo":"...","evite":"o que evitar","faca":"o que fazer","exemplo":"exemplo de fala, se houver"}],\n "objecoes": [{"objecao":"...","evite":"...","faca":"...","exemplo":"..."}],\n "checklist": ["itens do checklist da próxima reunião"],\n "acaoImediata": ["ações imediatas neste cliente"]\n}\n\nRegras: use as competências EXATAMENTE como aparecem no scorecard do doc (com as notas do doc). Se a nota do doc estiver em outra escala, normalize para 0-10. Se um campo não existir no doc, use [] ou "". notaGeral é a nota geral do doc (0-10).';
+async function acRunAvalImport(){
+  var fileEl=document.getElementById('aval-imp-file');
+  var res=document.getElementById('aval-imp-result');
+  var runBtn=document.getElementById('aval-imp-run');
+  if(!fileEl||!fileEl.files||!fileEl.files[0]){ showSheetToast('Selecione o PDF da análise.',true); return; }
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  if(!claudeKey){ res.innerHTML='<div style="color:var(--amber);font-size:13px;">Configure sua Claude API Key em "Configurar IA" (no Jarvis) para usar a extração.</div>'; return; }
+  runBtn.disabled=true; runBtn.style.opacity='0.6';
+  res.innerHTML='<div style="color:var(--muted);font-size:13px;font-style:italic;padding:10px 0;"><i class="ti ti-loader"></i> Lendo o PDF e extraindo as notas...</div>';
+  try{
+    var texto=await _acPdfText(fileEl.files[0]);
+    if(!texto||texto.trim().length<40) throw new Error('Não consegui ler texto do PDF (pode ser um PDF escaneado/imagem).');
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4096,system:_AVAL_IMPORT_SYS,messages:[{role:'user',content:'TEXTO DO PDF:\n\n'+texto.slice(0,45000)}]})
+    });
+    if(!resp.ok){ var er=await resp.json().catch(function(){return{};}); throw new Error(er.error&&er.error.message?er.error.message:'Erro '+resp.status); }
+    var data=await resp.json();
+    var ans=(data.content&&data.content[0]&&data.content[0].text)||'';
+    var mt=ans.match(/<AVAL_JSON>([\s\S]*?)<\/AVAL_JSON>/);
+    var raw=mt?mt[1]:ans;
+    var obj=JSON.parse(raw.trim());
+    _impAval=obj;
+    acRenderAvalReview(obj);
+  }catch(e){
+    res.innerHTML='<div style="color:#f87171;font-size:13px;">Erro: '+(e.message||e)+'</div>';
+  }
+  runBtn.disabled=false; runBtn.style.opacity='1';
+}
+function acRenderAvalReview(o){
+  var res=document.getElementById('aval-imp-result');
+  var comps=(o.competencias||[]);
+  var compRows=comps.map(function(c,i){
+    return '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<div style="flex:1;font-size:12.5px;color:var(--white);">'+(c.nome||('Competência '+(i+1)))+'</div>'+
+      '<input type="number" min="0" max="10" step="1" value="'+(c.nota!=null?c.nota:'')+'" data-comp="'+i+'" class="aval-imp-nota input-field" style="width:64px;box-sizing:border-box;text-align:center;padding:6px;"/>'+
+      '<span style="font-size:11px;color:var(--muted);">/10</span>'+
+    '</div>';
+  }).join('');
+  res.innerHTML='<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:14px;display:flex;flex-direction:column;gap:12px;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'+
+      '<div style="font-size:13px;color:var(--white);"><b>'+(o.cliente||'Cliente')+'</b> · '+(o.resultado||'')+'</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;color:var(--muted);">Nota geral</span>'+
+        '<input type="number" min="0" max="10" step="0.1" value="'+(o.notaGeral!=null?o.notaGeral:'')+'" id="aval-imp-geral" class="input-field" style="width:74px;box-sizing:border-box;text-align:center;padding:6px;font-weight:800;"/><span style="font-size:12px;color:var(--muted);">/10</span></div>'+
+    '</div>'+
+    (o.resumo?'<div style="font-size:12px;color:var(--muted);font-style:italic;">"'+o.resumo+'"</div>':'')+
+    '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Notas por competência (revise se precisar)</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;">'+(compRows||'<div style="color:var(--muted);font-size:12px;">Nenhuma competência detectada no PDF.</div>')+'</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">'+
+      '<button onclick="acSaveImportedAval()" style="padding:10px 22px;border-radius:8px;border:1px solid #10b981;background:#10b981;color:#fff;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-device-floppy"></i> Salvar avaliação</button>'+
+    '</div>'+
+  '</div>';
+}
+function acSaveImportedAval(){
+  if(!_impAval){ showSheetToast('Nada para salvar.',true); return; }
+  var o=_impAval;
+  var closerEmail=(document.getElementById('aval-imp-closer')||{}).value||'';
+  var meetingId=(document.getElementById('aval-imp-meeting')||{}).value||'';
+  var closerNome=(USERS[closerEmail]&&USERS[closerEmail].name)||'';
+  // notas revisadas
+  document.querySelectorAll('.aval-imp-nota').forEach(function(inp){
+    var i=+inp.getAttribute('data-comp'); if(o.competencias&&o.competencias[i]) o.competencias[i].nota=parseFloat(inp.value)||0;
+  });
+  var gEl=document.getElementById('aval-imp-geral'); if(gEl&&gEl.value!=='') o.notaGeral=parseFloat(gEl.value)||0;
+  var mtg=meetingId?meetings[meetingId]:null;
+  var lead=(o.cliente||(mtg&&mtg.nome)||'Cliente');
+  if(mtg&&mtg.responsavel&&!closerEmail){ /* fallback */ }
+  var criterios=(o.competencias||[]).map(function(c,i){ return {id:i+1,nome:c.nome||('Competência '+(i+1)),nota:Math.round(c.nota||0),max:10,descricao:'',evidencia:'',acao:c.comentario||''}; });
+  var notaFinal=Math.round((o.notaGeral!=null?o.notaGeral:0)*10);
+  var falhas=(o.ajustes||[]).map(function(a){ return {titulo:a.titulo||'',impacto:a.evite||'',correcao:(a.faca||'')+(a.exemplo?(' — Ex.: '+a.exemplo):'')}; });
+  var now=new Date();
+  var id='aval_'+now.getTime();
+  var record={
+    id:id, closerEmail:closerEmail, closerNome:closerNome,
+    date:now.toISOString().split('T')[0], timestamp:now.getTime(),
+    meetingId:meetingId||'', origemImport:'pdf',
+    lead:lead, segmento:(o.tipo||''),
+    notaFinal:notaFinal, notaGeral:(o.notaGeral||0),
+    classificacao: notaFinal>=85?'Excelente':notaFinal>=70?'Bom':notaFinal>=45?'Regular':'Crítico',
+    problemaPrincipal:o.resumo||'', desejoPrincipal:'', proximoPasso:(o.acaoImediata&&o.acaoImediata[0])||'',
+    criterios:criterios, pontosFortes:o.pontosFortes||[], falhas:falhas,
+    acoesPrioritarias:(o.checklist||[]).concat(o.acaoImediata||[]),
+    objecoes:o.objecoes||[],
+    diagnostico:{ondeEsta:o.resumo||'',ondeQuerChegar:'',impedimentos:'',risco:'',solucao:(o.acaoImediata||[]).join(' ')}
+  };
+  _avaliacoes[id]=record;
+  if(fbDb||initFirebase()) fbDb.ref('avaliacoes/'+id).set(record);
+  _impAval=null;
+  var e=document.getElementById('aval-imp-modal'); if(e) e.remove();
+  showSheetToast('Avaliação de '+(closerNome||'closer')+' salva! Nota: '+notaFinal+'/100',false);
+  if(typeof showPage==='function') showPage('avaliacoes');
+}
+
 function loadAvaliacoes(){
   // Renderiza imediatamente com dados já em memória (evita tela vazia)
   var area=document.getElementById('content');
@@ -26347,7 +26502,7 @@ function renderAvaliacoes(){
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">'+
       '<div><div style="font-family:var(--font-bn);font-size:20px;letter-spacing:1px;color:var(--white);">AVALIAÇÃO DE CLOSERS</div>'+
       '<div style="font-size:12px;color:var(--muted);">Análises de reuniões salvas pelo Jarvis</div></div>'+
-      '<div style="display:flex;gap:8px;">'+closerPillsHtml+'</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button onclick="acImportAvalModal()" style="padding:8px 16px;border-radius:999px;border:1px solid var(--purple);background:var(--purple);color:#fff;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-file-upload"></i> Importar do PDF</button>'+closerPillsHtml+'</div>'+
     '</div>'+
     '<div style="display:flex;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:4px;width:fit-content;">'+tabHtml+'</div>'+
     tabContent+'</div>';
