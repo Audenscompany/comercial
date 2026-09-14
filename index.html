@@ -5941,6 +5941,63 @@ function copiarTelColdCall(ev, raw){
   });
 }
 
+// ===== INTEGRAÇÃO BDR AUTODIALER (discador automático) =====
+var _autodialerUrl = (function(){ try{ return localStorage.getItem('audens_autodialer_url')||'http://localhost:3000/api/leads'; }catch(e){ return 'http://localhost:3000/api/leads'; } })();
+function configDiscadorUrl(){
+  var v=prompt('Endereço do discador (Autodialer) — endpoint /api/leads:', _autodialerUrl);
+  if(v===null) return;
+  v=v.trim(); if(!v){ return; }
+  _autodialerUrl=v; try{ localStorage.setItem('audens_autodialer_url',v); }catch(e){}
+  showSheetToast('Endereço do discador salvo: '+v,false);
+}
+function _isLeadTeste(nome){ var n=String(nome||'').toLowerCase(); return /teste|test\b|john\s*doe|fulano|lucasteste|asdf/.test(n); }
+function _discadorFila(){
+  var venda=(typeof _buildVendaTels==='function')?_buildVendaTels():new Set();
+  var out=[];
+  (allLeads||[]).forEach(function(l){
+    var tel=(l.telefone||'').replace(/\D/g,''); if(!tel||!l.nome) return;
+    if(_isLeadTeste(l.nome)) return;
+    if(!isLeadElegivel(l)) return;              // mesma regra do Cold Call (≥20k ou sem faturamento, ≥30 dias)
+    if(venda.has(tel)) return;                   // já virou venda
+    var reg=calls[l.telefone]||calls[tel];
+    if(reg && !_ccPrior(reg)) return;            // já contatado na rodada atual (prior-round volta pra fila)
+    out.push(l);
+  });
+  out.sort(function(a,b){ return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento); });
+  return out;
+}
+function _discadorCSV(leads){
+  var header=['nome','telefone','empresa','segmento','cidade','instagram','email','observacoes','origem','faturamento_min'];
+  function cell(x){ return String(x==null?'':x).replace(/[\r\n]+/g,' ').replace(/,/g,';'); }
+  var linhas=leads.map(function(l){
+    var fatMin=parseFaturamentoValue(l.faturamento)||0;
+    var row={nome:l.nome,telefone:l.telefone,empresa:l.empresa||'',segmento:l.segmento||l.tipo||'',cidade:l.cidade||'',instagram:l.instagram||'',email:l.email||'',observacoes:'faturamento: '+(l.faturamento||'n/i'),origem:'CRM Audens',faturamento_min:fatMin};
+    return header.map(function(h){return cell(row[h]);}).join(',');
+  });
+  return [header.join(','),...linhas].join('\n');
+}
+function _baixarCSV(csv,nome){
+  try{ var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nome||'fila-discador.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},500); }catch(e){}
+}
+async function enviarFilaDiscador(){
+  var fila=_discadorFila();
+  if(!fila.length){ showSheetToast('Nenhum lead elegível para o discador agora.',true); return; }
+  if(!confirm('Enviar '+fila.length+' leads pro discador?\n\nDestino: '+_autodialerUrl+'\nOrdenados por faturamento (maior primeiro), sem quem já foi contatado nesta rodada.')) return;
+  var csv=_discadorCSV(fila);
+  showSheetToast('Enviando '+fila.length+' leads pro discador...',false);
+  try{
+    var res=await fetch(_autodialerUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csv:csv})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    var out=await res.json().catch(function(){return{};});
+    var imp=(out&&(out.importados!=null?out.importados:(out.imported!=null?out.imported:(out.count!=null?out.count:fila.length))));
+    showSheetToast('✓ '+imp+' leads enviados pro discador.',false);
+  }catch(e){
+    // Fallback: baixa o CSV pra importar manualmente no discador
+    _baixarCSV(csv,'fila-discador-'+todayStr().replace(/\//g,'-')+'.csv');
+    showSheetToast('Não consegui falar com o discador ('+(e.message||e)+'). Baixei o CSV — importe manualmente no Autodialer. Verifique o endereço (engrenagem) e o CORS do discador.',true);
+  }
+}
+
 function renderLigar(){
   var check=checkDay(new Date());
   if(!check.ok){
@@ -5984,6 +6041,8 @@ function renderLigar(){
   '<div class="page-header"><div><div class="page-title">Leads de Hoje</div><div class="page-sub">'+todayStr()+'</div></div>'+
   '<div style="display:flex;align-items:center;gap:10px;">'+
     '<button class="btn btn-outline" style="font-size:11px;" onclick="regenerarListaHoje()" title="Apaga o lote de hoje e gera um novo com as regras atuais"><i class="ti ti-refresh"></i> Regenerar lista</button>'+
+    '<button class="btn btn-outline" style="font-size:11px;" onclick="enviarFilaDiscador()" title="Envia a fila de leads elegíveis pro discador automático (Autodialer)"><i class="ti ti-phone-outgoing"></i> Enviar pro discador</button>'+
+    '<button class="btn btn-outline" style="font-size:11px;padding:6px 8px;" onclick="configDiscadorUrl()" title="Configurar endereço do discador"><i class="ti ti-settings"></i></button>'+
     '<div class="date-chip">'+done+'/'+dl.length+'</div>'+
   '</div></div>'+
   (pendFU.length>0?'<div class="task-alert" onclick="showPage(\'tarefas\')">'+
