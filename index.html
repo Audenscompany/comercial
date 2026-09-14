@@ -15148,7 +15148,7 @@ function buildAnaliseAdsHTML(data){
   // ===== BLOCO 4: RANKING DE PERFORMANCE | PERFORMANCE POR ORIGEM =====
   html+='<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin-bottom:18px;">';
 
-  var _rk=adsSorted.slice().map(function(a){return {a:a,dec:_adDecide(a)};}).sort(function(x,y){return (x.dec.w-y.dec.w)||((y.a.score||0)-(x.a.score||0))||((y.a.leads||0)-(x.a.leads||0));}).slice(0,12);
+  var _rk=adsSorted.slice().filter(function(a){var k=String(a.ad||'');return k!=='(sem ad)'&&k!=='-'&&k!=='';}).map(function(a){return {a:a,dec:_adDecide(a)};}).sort(function(x,y){return (x.dec.w-y.dec.w)||((y.a.score||0)-(x.a.score||0))||((y.a.leads||0)-(x.a.leads||0));}).slice(0,12);
   html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;">'+
     '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
       '<span style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--white);">Ranking de Performance</span>'+
@@ -15176,6 +15176,25 @@ function buildAnaliseAdsHTML(data){
     '</tr>';
   });
   if(adsSorted.length===0) html+='<tr><td colspan="10" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anúncio com dados no período.</td></tr>';
+  // Linha "Sem anúncio identificado": leads/vendas de tráfego que não têm ad atribuído (rastreio perdido na LP)
+  (function(){
+    var _sa={leads:0,qualif:0,realizadas:0,fechamentos:0};
+    ['(sem ad)','-',''].forEach(function(k){ var d=adData[k]; if(d){ _sa.leads+=d.leads||0; _sa.qualif+=d.qualif||0; _sa.realizadas+=d.realizadas||0; _sa.fechamentos+=d.fechamentos||0; } });
+    if(_sa.leads>0||_sa.fechamentos>0){
+      html+='<tr style="border-top:2px solid var(--border);background:rgba(245,158,11,0.06);">'+
+        '<td style="padding:9px 8px;font-size:12px;color:var(--amber);text-align:center;">!</td>'+
+        '<td style="padding:9px 8px;font-size:12px;font-weight:700;color:var(--amber);"><i class="ti ti-map-pin-off" style="font-size:11px;margin-right:5px;"></i>Sem anúncio identificado</td>'+
+        '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
+        '<td style="padding:9px 8px;text-align:right;font-size:12px;color:var(--white);">'+_sa.leads+'</td>'+
+        '<td style="padding:9px 8px;text-align:right;font-size:12px;color:var(--cyan);">'+_sa.qualif+'</td>'+
+        '<td data-adkey="(sem ad)" onclick="_showAdLeadsModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+(_sa.realizadas>0?'var(--amber)':'var(--muted)')+';">'+_sa.realizadas+'</td>'+
+        '<td data-adkey="(sem ad)" onclick="if('+(_sa.fechamentos>0?'true':'false')+')_showAdVendasModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:'+(_sa.fechamentos>0?'pointer':'default')+';color:'+(_sa.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(_sa.fechamentos>0?_sa.fechamentos:'—')+'</td>'+
+        '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
+        '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
+        '<td style="padding:9px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:rgba(245,158,11,0.15);font-size:10px;font-weight:700;color:var(--amber);white-space:nowrap;">Rastrear</span></td>'+
+      '</tr>';
+    }
+  })();
   html+='</tbody></table></div></div>';
 
   var _oLabels={'Trafego Pago':'Tráfego Pago','Trafego Organico':'Orgânico','Indicacoes / Outros':'Indicações'};
