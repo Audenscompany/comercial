@@ -10708,16 +10708,53 @@ function dispensarTarefa(mid){
 // ===== HISTORICO =====
 function renderHistorico(){return renderHistBase(Object.values(calls).sort(function(a,b){return(b.data||'').localeCompare(a.data||'');}),'Historico Geral');}
 function renderMeuHist(){var myName=(CU&&CU.name)||'';var myCalls=Object.values(calls).filter(function(c){return !myName||!c.responsavel||(c.responsavel||'').toLowerCase().includes(myName.toLowerCase());});return renderHistBase(myCalls.sort(function(a,b){return(b.data||'').localeCompare(a.data||'');}),'Meu Historico');}
+function _callResultCell(c){
+  function _e(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+  var parts=[];
+  if(c.origem==='autodialer'||c.canal==='autodialer') parts.push('<span class="badge b-purple" style="font-size:9px;">📞 Auto</span>');
+  if(c.outcome) parts.push('<span style="font-size:11px;color:var(--muted);">'+_e(c.outcome)+'</span>');
+  var resumo=c.resumo||c.obs||'';
+  if(resumo) parts.push('<span style="font-size:11px;color:var(--silver);" title="'+_e(resumo)+'">'+_e(String(resumo).slice(0,42))+(String(resumo).length>42?'…':'')+'</span>');
+  if(c.transcricao||c.resumo){ parts.push('<button class="btn btn-outline" style="font-size:9px;padding:2px 7px;margin-left:2px;" onclick="_showCallInfo(\''+String(c.tel||'').replace(/[^0-9]/g,'')+'\')">ver</button>'); }
+  return parts.length?parts.join(' '):'<span class="badge b-muted">--</span>';
+}
+function _showCallInfo(telDigits){
+  var c=null; Object.values(calls).forEach(function(x){ if(String(x.tel||'').replace(/[^0-9]/g,'')===telDigits) c=x; });
+  if(!c) return;
+  function _e(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  var ex=document.getElementById('call-info-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='call-info-modal';
+  d.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);padding:20px;';
+  var meta=[];
+  if(c.data) meta.push('Data: '+_e(c.data));
+  meta.push('Atendeu: '+(c.at==='sim'?'Sim':'Não'));
+  if(c.outcome) meta.push('Resultado: '+_e(c.outcome));
+  if(c.duracao) meta.push('Duração: '+_e(c.duracao)+'s');
+  if(c.responsavel) meta.push('Responsável: '+_e(c.responsavel));
+  d.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:min(680px,95vw);max-height:88vh;overflow:auto;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:17px;color:var(--purple3);">'+_e(c.nome||'Ligação')+' · '+_e(c.tel||'')+'</div>'+
+      '<button onclick="var e=document.getElementById(\'call-info-modal\');if(e)e.remove();" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;">×</button>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">'+meta.join(' · ')+(c.origem==='autodialer'?' · <span style="color:var(--purple3);">via Autodialer</span>':'')+'</div>'+
+    (c.resumo?'<div style="margin-bottom:14px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Resumo</div><div style="font-size:13px;color:var(--silver);line-height:1.5;">'+_e(c.resumo)+'</div></div>':'')+
+    (c.obs&&c.obs!==c.resumo?'<div style="margin-bottom:14px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Observação</div><div style="font-size:13px;color:var(--silver);line-height:1.5;">'+_e(c.obs)+'</div></div>':'')+
+    (c.transcricao?'<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Transcrição</div><div style="font-size:12.5px;color:var(--muted);line-height:1.6;white-space:pre-wrap;max-height:340px;overflow:auto;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">'+_e(c.transcricao)+'</div></div>':'')+
+  '</div>';
+  document.body.appendChild(d);
+}
+
 function renderHistBase(rows,title){
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">'+title+'</div></div><span class="badge b-purple">'+rows.length+' registros</span></div>'+
-  (rows.length?'<div class="cb"><div class="t-scroll"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Data</th><th>Atendeu</th><th>Reuniao</th><th>Responsavel</th><th>Venda</th></tr></thead><tbody>'+
+  (rows.length?'<div class="cb"><div class="t-scroll"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Data</th><th>Atendeu</th><th>Resultado</th><th>Reuniao</th><th>Responsavel</th><th>Venda</th></tr></thead><tbody>'+
     rows.map(function(c){
       var mtg=Object.values(meetings).find(function(m){return m.tel===c.tel;});
       var fu=mtg?followups[mtg.id]:null;
       return '<tr><td style="font-weight:600;">'+c.nome+'</td><td style="font-family:monospace;font-size:12px;color:var(--purple3);">'+c.tel+'</td>'+
         '<td style="color:var(--muted);">'+c.data+'</td>'+
         '<td>'+(c.at==='sim'?'<span class="badge b-green">Sim</span>':'<span class="badge b-red">Nao</span>')+'</td>'+
+        '<td>'+_callResultCell(c)+'</td>'+
         '<td>'+(mtg?'<span class="badge b-amber">'+mtg.dtDisplay+'</span>':'<span class="badge b-muted">--</span>')+'</td>'+
         '<td>'+(mtg?'<span class="badge b-purple">'+mtg.responsavel+'</span>':'<span class="badge b-muted">--</span>')+'</td>'+
         '<td>'+(fu?(fu.venda==='sim'?'<span class="badge b-green">R$'+fu.mensalidade+'</span>':'<span class="badge b-muted">Nao</span>'):'<span class="badge b-muted">--</span>')+'</td></tr>';
