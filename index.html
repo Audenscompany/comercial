@@ -16418,6 +16418,72 @@ function renderCalendario(){
 }
 
 // ===== CONFIG =====
+// ===== EXPORTAR LEADS (CSV + JSON) — só gestor, protegido por senha (hash no código, nada no Firebase) =====
+var _EXPORT_PW_HASH='d2d58aacca7347f32c4f972fb6b8134238799a87c1efd30a027f04a01c92f231'; // SHA-256 da senha; a senha em si NÃO fica no código nem no Firebase
+async function _sha256(str){
+  try{ var buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(str))); return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join(''); }
+  catch(e){ return ''; }
+}
+function _leadsExportCard(){
+  if(!CU||CU.role!=='gestor') return '';
+  return '<div class="cb" style="margin-bottom:16px;"><div class="cb-hd"><div class="cb-title"><i class="ti ti-file-export" style="color:var(--purple3);margin-right:6px;"></i>Exportar Leads</div></div>'+
+    '<div style="padding:20px;">'+
+      '<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px;">Gera um arquivo com <b style="color:var(--white)">todos os leads do banco</b> — todos os campos e todos os registros (não só os da tela) — em <b style="color:var(--white)">CSV</b> e <b style="color:var(--white)">JSON</b>, para análise comercial. É só leitura: não altera nada. Protegido por senha.</div>'+
+      '<button class="btn btn-primary" onclick="exportLeadsModal()"><i class="ti ti-download"></i> Exportar Leads (CSV + JSON)</button>'+
+    '</div></div>';
+}
+function exportLeadsModal(){
+  if(!CU||CU.role!=='gestor'){ showSheetToast('Apenas o gestor pode exportar leads.',true); return; }
+  var ex=document.getElementById('exp-leads-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='exp-leads-modal';
+  d.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);padding:20px;';
+  d.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:26px;width:min(400px,95vw);">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:16px;letter-spacing:1px;color:var(--purple3);">EXPORTAR LEADS</div>'+
+      '<button onclick="var e=document.getElementById(\'exp-leads-modal\');if(e)e.remove();" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;">×</button>'+
+    '</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5;">Digite a senha para exportar todos os leads.</div>'+
+    '<input id="exp-pw" type="password" placeholder="Senha" onkeydown="if(event.key===\'Enter\')_exportLeadsUnlock()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-size:15px;padding:12px 14px;text-align:center;letter-spacing:2px;margin-bottom:6px;">'+
+    '<div id="exp-msg" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:10px;"></div>'+
+    '<button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="_exportLeadsUnlock()"><i class="ti ti-lock-open"></i> Exportar</button>'+
+  '</div>';
+  document.body.appendChild(d);
+  setTimeout(function(){ var i=document.getElementById('exp-pw'); if(i) i.focus(); },50);
+}
+async function _exportLeadsUnlock(){
+  var pw=(document.getElementById('exp-pw')||{}).value||'';
+  var h=await _sha256(pw);
+  var msg=document.getElementById('exp-msg');
+  if(h!==_EXPORT_PW_HASH){ if(msg) msg.textContent='Senha incorreta.'; return; }
+  var e=document.getElementById('exp-leads-modal'); if(e) e.remove();
+  _runLeadsExport();
+}
+function _downloadFile(content, filename, mime){
+  try{ var blob=new Blob([content],{type:mime}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},800); }catch(e){ showSheetToast('Erro no download: '+e.message,true); }
+}
+function _leadsToCSV(rows){
+  var keySet={}; rows.forEach(function(r){ Object.keys(r).forEach(function(k){ keySet[k]=1; }); });
+  var pri=['_id','nome','telefone','email','instagram','empresa','cidade','faturamento','faixa','_source','utm_source','utm_medium','utm_campaign','utm_content','ad','ad_id','campanha','campaign_id','conjunto','adset_id','origem','status','especialistaNome','especialistaMotivo','_createdAt'];
+  var keys=pri.filter(function(k){return keySet[k];}).concat(Object.keys(keySet).filter(function(k){return pri.indexOf(k)<0;}).sort());
+  function cell(v){ if(v==null) return ''; if(typeof v==='object') v=JSON.stringify(v); v=String(v); if(/[",\n\r]/.test(v)) return '"'+v.replace(/"/g,'""')+'"'; return v; }
+  var head=keys.join(',');
+  var body=rows.map(function(r){ return keys.map(function(k){ return cell(r[k]); }).join(','); }).join('\r\n');
+  return '﻿'+head+'\r\n'+body; // BOM p/ acentos no Excel
+}
+async function _runLeadsExport(){
+  if(!fbDb && !initFirebase()){ showSheetToast('Firebase indisponível.',true); return; }
+  showSheetToast('Buscando todos os leads do banco...',false);
+  try{
+    var lSnap=await fbDb.ref('leads').once('value'); var L=lSnap.val()||{};
+    var kSnap=await fbDb.ref('kanban').once('value').catch(function(){return null;}); var K=(kSnap&&kSnap.val())||{};
+    var rows=Object.keys(L).map(function(id){ return Object.assign({_id:id}, L[id]||{}); });
+    var stamp=new Date().toISOString().slice(0,10);
+    _downloadFile(_leadsToCSV(rows), 'leads-audens-'+stamp+'.csv', 'text/csv;charset=utf-8');
+    _downloadFile(JSON.stringify({exportadoEm:new Date().toISOString(), totalLeads:rows.length, leads:L, kanban:K}, null, 1), 'leads-audens-'+stamp+'.json', 'application/json;charset=utf-8');
+    showSheetToast('✓ Exportados '+rows.length+' leads (CSV + JSON) para Downloads.',false);
+  }catch(e){ showSheetToast('Erro ao exportar: '+e.message,true); }
+}
+
 function renderConfig(){
   var connected=isGcalConnected();
   var sheetsDefs=[
@@ -16425,7 +16491,7 @@ function renderConfig(){
     {key:'reunioes',label:'Reunioes Agendadas',icon:'ti-calendar-check',color:'var(--amber)',desc:'Closer, SDR/BDR, Status, Origem'},
     {key:'clientes',label:'Clientes Fechados',icon:'ti-trophy',color:'var(--green)',desc:'Valor vendido, Mensalidade, Comissao, Origem'}
   ];
-  var sheetsHtml='<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
+  var sheetsHtml=_leadsExportCard()+'<div class="cb" style="margin-bottom:16px;"><div class="cb-hd">'+
     '<div class="cb-title"><i class="ti ti-table" style="color:var(--green);margin-right:6px;"></i>Planilhas Google Sheets</div>'+
     '<button id="btn-test-sheets" class="btn btn-outline" onclick="testSheetsConnection()" style="font-size:11px;"'+(connected?'':' disabled')+'>'+
       '<i class="ti ti-plug"></i> Testar Conexao</button>'+
