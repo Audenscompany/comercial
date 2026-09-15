@@ -5898,19 +5898,25 @@ function gerarLeadsExtras(qtd){
   var dl = getDailyLeads()||[];
   var usedTels = new Set(dl.map(function(l){return (l.telefone||'').replace(/\D/g,'');}));
   var venda = (typeof _buildVendaTels==='function')?_buildVendaTels():new Set();
+  // MESMO filtro da lista diária (fresh): só entram leads elegíveis que AINDA NÃO foram
+  // trabalhados nesta rodada (sem ligação/reunião). Antes faltava o !_leadHandled, então
+  // o +10 re-adicionava leads já concluídos e a lista continuava 100% (parecia que não gerava).
   var disponiveis = allLeads.filter(function(l){
     var t=(l.telefone||'').replace(/\D/g,'');
-    return t && !usedTels.has(t) && !venda.has(t) && isLeadElegivel(l);
+    return t && !usedTels.has(t) && !venda.has(t) && isLeadElegivel(l) && !_leadHandled(l);
   }).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
-  if(!disponiveis.length){ showSheetToast('Não há mais leads elegíveis na base.',true); return; }
+  if(!disponiveis.length){ showSheetToast('Todos os leads elegíveis da base já foram trabalhados nesta rodada. Use "Regenerar lista" para iniciar uma nova rodada.',true); return; }
   var novos = disponiveis.slice(0, qtd);
   var extraKey = getDailyKey();
   if(!_dailyMap[extraKey]) _dailyMap[extraKey]=[];
-  novos.forEach(function(l){ _dailyMap[extraKey].push(l); }); // empurra o OBJETO do lead (não o telefone)
-  _extraLeadsTotal += novos.length;
+  // Evita duplicar: não empurra um telefone que já esteja no lote de hoje
+  var jaNoLote = usedTels;
+  var adicionados=0;
+  novos.forEach(function(l){ var t=(l.telefone||'').replace(/\D/g,''); if(t&&!jaNoLote.has(t)){ _dailyMap[extraKey].push(l); jaNoLote.add(t); adicionados++; } });
+  _extraLeadsTotal += adicionados;
   saveAll();
   showPage('ligar');
-  showSheetToast('✓ +'+novos.length+' leads adicionados'+(novos.length<qtd?' (só havia '+novos.length+' elegíveis)':'')+'.',false);
+  showSheetToast('✓ +'+adicionados+' leads novos adicionados'+(adicionados<qtd?' (só havia '+adicionados+' novos elegíveis)':'')+'.',false);
 }
 
 function checkLeadsConcluidos(){
