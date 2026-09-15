@@ -5886,25 +5886,22 @@ function regenerarListaHoje(){
   showSheetToast('✓ Lista regenerada com as regras de faturamento!',false);
 }
 function gerarLeadsExtras(qtd){
-  var hoje = todayStr();
   var dl = getDailyLeads()||[];
   var usedTels = new Set(dl.map(function(l){return (l.telefone||'').replace(/\D/g,'');}));
-  // Buscar leads não usados hoje
+  var venda = (typeof _buildVendaTels==='function')?_buildVendaTels():new Set();
   var disponiveis = allLeads.filter(function(l){
-    return !usedTels.has((l.telefone||'').replace(/\D/g,'')) && isLeadElegivel(l);
-  });
-  if(!disponiveis.length){
-    alert('Não há mais leads disponíveis na base.');
-    return;
-  }
-  var novos = disponiveis.sort(function(){return Math.random()-.5;}).slice(0,qtd);
-  // Adicionar ao mapa do dia
+    var t=(l.telefone||'').replace(/\D/g,'');
+    return t && !usedTels.has(t) && !venda.has(t) && isLeadElegivel(l);
+  }).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
+  if(!disponiveis.length){ showSheetToast('Não há mais leads elegíveis na base.',true); return; }
+  var novos = disponiveis.slice(0, qtd);
   var extraKey = getDailyKey();
   if(!_dailyMap[extraKey]) _dailyMap[extraKey]=[];
-  novos.forEach(function(l){ _dailyMap[extraKey].push(l.telefone); });
+  novos.forEach(function(l){ _dailyMap[extraKey].push(l); }); // empurra o OBJETO do lead (não o telefone)
   _extraLeadsTotal += novos.length;
   saveAll();
   showPage('ligar');
+  showSheetToast('✓ +'+novos.length+' leads adicionados'+(novos.length<qtd?' (só havia '+novos.length+' elegíveis)':'')+'.',false);
 }
 
 function checkLeadsConcluidos(){
@@ -6040,6 +6037,9 @@ function renderLigar(){
   return '<div class="page active">'+
   '<div class="page-header"><div><div class="page-title">Leads de Hoje</div><div class="page-sub">'+todayStr()+'</div></div>'+
   '<div style="display:flex;align-items:center;gap:10px;">'+
+    '<button class="btn btn-outline" style="font-size:11px;" onclick="gerarLeadsExtras(10)" title="Adiciona +10 leads elegíveis à lista de hoje"><i class="ti ti-plus"></i> +10</button>'+
+    '<button class="btn btn-outline" style="font-size:11px;" onclick="gerarLeadsExtras(20)" title="Adiciona +20 leads"><i class="ti ti-plus"></i> +20</button>'+
+    '<button class="btn btn-outline" style="font-size:11px;" onclick="gerarLeadsExtras(50)" title="Adiciona +50 leads"><i class="ti ti-plus"></i> +50</button>'+
     '<button class="btn btn-outline" style="font-size:11px;" onclick="regenerarListaHoje()" title="Apaga o lote de hoje e gera um novo com as regras atuais"><i class="ti ti-refresh"></i> Regenerar lista</button>'+
     '<button class="btn btn-outline" style="font-size:11px;" onclick="enviarFilaDiscador()" title="Envia a fila de leads elegíveis pro discador automático (Autodialer)"><i class="ti ti-phone-outgoing"></i> Enviar pro discador</button>'+
     '<button class="btn btn-outline" style="font-size:11px;padding:6px 8px;" onclick="configDiscadorUrl()" title="Configurar endereço do discador"><i class="ti ti-settings"></i></button>'+
