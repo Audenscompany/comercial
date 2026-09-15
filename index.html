@@ -5351,11 +5351,14 @@ function getDailyLeads(){
   var key=getDailyKey();
   if(_dailyMap[key]){
     // Reaplica filtro de elegibilidade no cache — garante que regras de faturamento/60 dias são respeitadas
-    // mesmo que o lote tenha sido gerado antes das regras serem ativadas
     var cached=_dailyMap[key];
     var inelegiveis=cached.filter(function(l){return l.faturamento!==undefined&&!isLeadElegivel(l);});
-    if(inelegiveis.length>0){
-      // Cache contém leads inelegíveis → regenera silenciosamente
+    // Se o lote está 100% "resolvido" mas o usuário NÃO ligou hoje, ele é herança de dias
+    // anteriores (mesma rodada) — regenera com pessoas novas pra ligar.
+    var _hojeStr=todayStr();
+    var madeCallToday=Object.values(calls).some(function(c){return c&&c.data===_hojeStr&&(!CU||(c.responsavel||'')===CU.name);});
+    var staleHeranca=cached.length>0 && !madeCallToday && cached.every(_leadHandled);
+    if(inelegiveis.length>0 || staleHeranca){
       delete _dailyMap[key];
     } else {
       return cached;
@@ -5391,7 +5394,7 @@ function getDailyLeads(){
   if(!checkDay(new Date()).ok)return null;
   // Exclui apenas leads que resultaram em VENDA — "Concluído" sem venda volta para o pool
   var used=_buildVendaTels();
-  var fresh=allLeads.filter(function(l){return !used.has((l.telefone||'').replace(/\D/g,''))&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
+  var fresh=allLeads.filter(function(l){var t=(l.telefone||'').replace(/\D/g,'');return t&&!used.has(t)&&isLeadElegivel(l)&&!_leadHandled(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
   var returns=[];// _requeue mantido por compatibilidade mas não é mais necessário
   var batch=fresh.slice(0,50-returns.length).concat(returns).slice(0,50);
   if(!batch.length)return[];
