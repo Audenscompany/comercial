@@ -216,6 +216,39 @@ function destinoLead(l){
   return {t:'📅 Qualificado — não agendou', bg:'rgba(120,160,255,.16)', fg:'#8ab4ff'};
 }
 function destinoCell(l){ var d=destinoLead(l); return '<td><span class="pill" style="background:'+d.bg+';color:'+d.fg+'">'+esc(d.t)+'</span></td>'; }
+/* Anúncio do lead: nome do ad; se não veio anúncio, usa a origem rastreada (fonte) com ◦; senão traço */
+function adTxt(l){ var a=String((l&&(l.ad||l.utm_content))||'').trim(); if(a) return a; var f=String((l&&l.fonte)||'').trim(); return f?('◦ '+f):'—'; }
+function adCell(l){ var a=adTxt(l); var isFonte=a.indexOf('◦')===0; return '<td'+(isFonte?' style="color:var(--muted2)"':'')+'>'+esc(a)+'</td>'; }
+function campCell(l){ var c=String((l&&(l.campanha||l.utm_campaign))||'').trim()||'—'; return '<td>'+esc(c)+'</td>'; }
+/* ORIGEM = canal real do lead (Tráfego pago / Link da bio / Instagram / Direto…), não o funil */
+function origemLabel(l){
+  if(String((l&&(l.ad||l.utm_content))||'').trim()) return 'Tráfego';
+  var f=String((l&&l.fonte)||'').trim();
+  if(f){
+    if(/story/i.test(f)) return 'Story';
+    if(/instagram/i.test(f)) return /link/i.test(f) ? 'Link da bio' : 'Instagram';
+    if(/bio/i.test(f)) return 'Link da bio';
+    if(/manychat/i.test(f)) return 'ManyChat';
+    if(/whatsapp/i.test(f)) return 'WhatsApp';
+    if(/facebook/i.test(f)) return 'Facebook';
+    if(/youtube/i.test(f)) return 'YouTube';
+    if(/google/i.test(f)) return 'Google';
+    if(/meta/i.test(f)) return 'Meta (s/ UTM)';
+    if(/direto/i.test(f)) return 'Direto';
+    return f.replace(/^Ref:\s*/i,'');
+  }
+  var us=String((l&&l.utm_source)||'').trim();
+  if(us && !/^(meta|fb|facebook)$/i.test(us)) return us;
+  if(l&&l.ref) return dominio(l.ref);
+  return 'Direto';
+}
+function origemCell(l){
+  var t=origemLabel(l), col;
+  if(t==='Tráfego') col='background:rgba(124,52,240,.16);color:var(--purple2)';
+  else if(t==='Meta (s/ UTM)') col='background:rgba(245,184,81,.16);color:var(--amber)';
+  else col='background:rgba(58,208,126,.15);color:var(--green)';
+  return '<td><span class="pill" style="'+col+'">'+esc(t)+'</span></td>';
+}
 function fmtTel(d){d=String(d||"").replace(/\D/g,"");if(!d)return "";var n=d.replace(/^55/,"");if(n.length===11)return "("+n.slice(0,2)+") "+n.slice(2,7)+"-"+n.slice(7);if(n.length===10)return "("+n.slice(0,2)+") "+n.slice(2,6)+"-"+n.slice(6);return d;}
 function wppCell(l){var d=leadTel(l);if(!d)return '<span style="color:var(--muted2);font-size:12px;">\u2014</span>';return '<button class="wpp" onclick="copiarWpp(this,\''+d+'\')" title="Copiar WhatsApp"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.8.9.9-2.7-.2-.3A8 8 0 1 1 12 20zm4.5-5.9c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1-.2.2-.6.8-.8 1-.1.1-.3.2-.5 0-1.3-.6-2.1-1.1-3-2.6-.2-.4.2-.4.6-1.2.1-.1 0-.3 0-.4 0-.1-.5-1.3-.7-1.7-.2-.5-.4-.4-.5-.4h-.5c-.1 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.5 4 3.4.6.3 1 .4 1.4.5.6.2 1.1.2 1.5.1.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.4-.2z"/></svg>'+fmtTel(d)+'</button>';}
 function copiarWpp(btn,d){try{navigator.clipboard.writeText(d);}catch(e){var ta=document.createElement("textarea");ta.value=d;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(_){}document.body.removeChild(ta);}var old=btn.innerHTML;btn.classList.add("ok");btn.innerHTML='\u2713 Copiado';setTimeout(function(){btn.classList.remove("ok");btn.innerHTML=old;},1400);}
@@ -410,10 +443,9 @@ function render(){
   /* Leads recentes */
   leads.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
   if(leads.length){
-    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
       leads.slice(0,25).map(function(l){
-        var src = l.utm_source || l._source || (l.ref?dominio(l.ref):'') || 'direto';
-        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>';
+        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>';
       }).join('')+'</tbody></table>';
   } else {
     el('leads').innerHTML = '<div class="empty">Nenhum lead no período selecionado.</div>';
@@ -539,10 +571,10 @@ function renderQuiz(variant){
   qsRows=qsRows.filter(function(r){ return !qleads.some(function(l){ return Math.abs((l._createdAt||0)-r.t)<600000; }); });
   qsRows.sort(function(a,b){return b.t-a.t;});
   var rowsHtml='';
-  qleads.slice(0,25).forEach(function(l){ var src=l.utm_source||l._source||'quiz'; rowsHtml+='<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(src)+'</span></td><td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; });
-  qsRows.slice(0,25).forEach(function(r){ rowsHtml+='<tr><td><span style="color:var(--amber)">Qualificou ('+(r.agendou?'agendou':'sem cadastro')+')</span></td><td><span style="color:var(--muted2);font-size:12px">contato não capturado</span></td><td><span class="pill">quiz-'+variant+'</span></td><td>'+esc(r.faixa||'—')+'</td><td>—</td>'+destinoCell({faixa:r.faixa})+'<td class="num">'+quando(r.t)+'</td></tr>'; });
+  qleads.slice(0,25).forEach(function(l){ rowsHtml+='<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td>'+origemCell(l)+adCell(l)+campCell(l)+'<td>'+esc(l.faixa||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; });
+  qsRows.slice(0,25).forEach(function(r){ rowsHtml+='<tr><td><span style="color:var(--amber)">Qualificou ('+(r.agendou?'agendou':'sem cadastro')+')</span></td><td><span style="color:var(--muted2);font-size:12px">contato não capturado</span></td><td><span class="pill" style="background:rgba(139,130,160,.15);color:var(--muted2)">—</span></td><td>—</td><td>—</td><td>'+esc(r.faixa||'—')+'</td><td>—</td>'+destinoCell({faixa:r.faixa})+'<td class="num">'+quando(r.t)+'</td></tr>'; });
   if(rowsHtml){
-    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+(qsRows.length?('<div class="empty" style="margin-top:8px">⚠ '+qsRows.length+' qualificaram no quiz mas não deixaram nome/WhatsApp na LP (agendaram direto ou saíram antes do contato).</div>'):'');
+    el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+(qsRows.length?('<div class="empty" style="margin-top:8px">⚠ '+qsRows.length+' qualificaram no quiz mas não deixaram nome/WhatsApp na LP (agendaram direto ou saíram antes do contato).</div>'):'');
   } else { el('leads').innerHTML = '<div class="empty">Nenhum lead do quiz no período.</div>'; }
   var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = vis===0 ? 'Ainda não há dados do '+VNAME+' neste período.' : ('Atualizado agora · '+VNAME+' ('+VPAGE+') · período: '+per);
@@ -592,7 +624,8 @@ function renderAdsDist(cut){
   var box=el('adsDist'); if(!box) return;
   var L=cache.leads||{}; var map={}; var tq=0,tv=0;
   for(var k in L){ var l=L[k]||{}; if((l._createdAt||0)<cut) continue;
-    var ad=String(l.ad||l.utm_content||'').trim()||'(sem anúncio)';
+    var ad=String(l.ad||l.utm_content||'').trim();
+    if(!ad){ var _fn=String(l.fonte||'').trim(); ad = _fn ? ('◦ '+_fn) : '(sem anúncio / origem desconhecida)'; }
     var oc=_leadOutcome(l);
     if(!map[ad]) map[ad]={qual:0,viv:0,tot:0};
     map[ad].tot++;
@@ -608,7 +641,7 @@ function renderAdsDist(cut){
       '<div class="val" style="min-width:130px"><b style="color:var(--green)">'+q+'</b> qual · <b style="color:var(--amber)">'+v+'</b> viv</div></div>';
   }).join('');
   box.innerHTML='<div class="bars">'+rows+'</div>'+
-    '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = leads qualificados · <span style="color:var(--amber)">âmbar</span> = leads Vivendo. Total no período: <b style="color:var(--green)">'+tq+'</b> qualif × <b style="color:var(--amber)">'+tv+'</b> Vivendo. Cruze com o CTR/gasto de cada anúncio pra ver quais trazem qualificado e quais só alimentam o Vivendo.</div>';
+    '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = leads qualificados · <span style="color:var(--amber)">âmbar</span> = leads Vivendo. Total no período: <b style="color:var(--green)">'+tq+'</b> qualif × <b style="color:var(--amber)">'+tv+'</b> Vivendo. Cruze com o CTR/gasto de cada anúncio pra ver quais trazem qualificado e quais só alimentam o Vivendo. As linhas com <b>◦</b> na frente não são anúncio pago — são a origem real do lead (bio, Instagram orgânico, direto, indicação), agora rastreada automaticamente.</div>';
 }
 
 tryGate();
