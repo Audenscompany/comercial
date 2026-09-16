@@ -10153,7 +10153,10 @@ async function generateContratoDocx(dados){
     // Lista para modelos estruturados: loop {#adicionaisSel}{linha}{/adicionaisSel}
     var _adicSel;
     if(_adicList.length){
-      _adicSel=_adicList.map(function(a,i){return {linha:'\n'+String.fromCharCode(97+i)+') '+a.nome+' — R$ '+fmtMoeda(a.valor)+'/mês;'};});
+      _adicSel=_adicList.map(function(a,i){
+        var _preco=(_adicVal>0)?(' — R$ '+fmtMoeda(a.valor)+'/mês'):' — sem custo adicional';
+        return {linha:'\n'+String.fromCharCode(97+i)+') '+a.nome+_preco+';'};
+      });
     } else if(_adicVal>0){
       _adicSel=[{linha:'\nServiços adicionais no valor combinado de R$ '+fmtMoeda(_adicVal)+'/mês;'}];
     } else { _adicSel=[]; }
