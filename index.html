@@ -9589,6 +9589,14 @@ function prefillFollowupEdit(fu){
   setVal('fu-motivo', fu.motivo||'');
   setVal('fu-retorno-date', fu.retornoData||'');
   setVal('fu-retorno-time', fu.retornoTime||'09:00');
+  // Re-marca os servicos adicionais salvos (senao somem ao reeditar a venda)
+  try{
+    var _pa=(fu.adicionais&&fu.adicionais.length)?fu.adicionais:[];
+    _pa.forEach(function(a){var el=document.getElementById('fu-adic-'+a.id);if(el)el.checked=true;});
+    var _pav=document.getElementById('fu-adic-valor');
+    if(_pav&&fu.adicionaisValor){_pav.value=fu.adicionaisValor;_pav.dataset.userEdited='1';}
+    if(typeof fuUpdateAdicionais==='function')fuUpdateAdicionais('fu');
+  }catch(e){}
   updateBonusPreview();
   var btn=document.getElementById('fu-save-btn');
   if(btn) btn.textContent='Salvar alteracoes';
@@ -10572,6 +10580,14 @@ function saveFollowupEdit(){
   var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
   var mensBase=venda?calcMensalidadeBase():0;
+  // Serviços adicionais (Starter e Premium) — MESMA captura do saveFollowup; antes o modo edição ignorava.
+  var _adicPermitido=(plano==='starter'||plano==='premium');
+  var adicionais=(venda&&_adicPermitido)?fuAdicionaisSelecionados('fu'):[];
+  var adicValor=(venda&&_adicPermitido)?(parseFloat((document.getElementById('fu-adic-valor')||{}).value)||0):0;
+  if(venda&&adicValor>0){
+    if(tipoValor==='mmr'){mensalidade+=adicValor;contrato+=adicValor*(duracao||1);}
+    else{contrato+=adicValor*(duracao||1);}
+  }
   var retornoData=(choice==='retorno')?(document.getElementById('fu-retorno-date')?document.getElementById('fu-retorno-date').value:''):'';
   var retornoTime=(choice==='retorno')?((document.getElementById('fu-retorno-time')?document.getElementById('fu-retorno-time').value:'')||'09:00'):'09:00';
   var motivo=(choice==='perdida')?(document.getElementById('fu-motivo')?document.getElementById('fu-motivo').value:''):'';
@@ -10586,6 +10602,7 @@ function saveFollowupEdit(){
     resultado:venda?'venda':choice,
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
+    adicionais:adicionais,adicionaisValor:adicValor,
     bonusComp:(old.bonusComp!=null?old.bonusComp:BONUS_COMP),bonusVenda:venda?mensBase*BONUS_VENDA_PCT:0,
     motivo:motivo,retornoData:retornoData,retornoTime:retornoTime,
     dt:old.dt||todayStr()};
@@ -10608,6 +10625,8 @@ function saveFollowupEdit(){
       tipoValor:tipoValor,
       valorTotal:contrato,
       valorParcela:mensalidade,
+      adicionais:adicionais,
+      adicionaisValor:adicValor,
       frequencia:frequencia,
       vencimento:vencimento,
       closer:_fuMeeting.responsavel||'',
