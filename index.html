@@ -2806,10 +2806,24 @@ function todayStr(){return new Date().toLocaleDateString('pt-BR');}
 // são de rodada anterior; o lead volta a ser chamável como "2ª ligação".
 function _ccCallDayISO(d){ if(!d) return ''; var m=String(d).match(/(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; var i=String(d).match(/(\d{4})-(\d{2})-(\d{2})/); return i?i[1]+'-'+i[2]+'-'+i[3]:''; }
 function _ccPrior(reg){ if(!reg||!_coldcallRoundStart) return false; var di=_ccCallDayISO(reg.data); return !!di && di < _coldcallRoundStart; }
-// Lead "resolvido" (não é mais pra ligar): ligado nesta rodada OU já tem reunião/follow-up.
+// Turno atual: antes das 12h = manhã, senão tarde.
+function _ccTurnoAtual(){ return (new Date()).getHours() < 12 ? 'manha' : 'tarde'; }
+// Lead "resolvido" (não é mais pra ligar hoje):
+//  - atendeu (at='sim') ou número inválido → encerra de vez;
+//  - não atendeu / ocupado → só encerra depois de 2 tentativas NO MESMO DIA (1 manhã + 1 tarde);
+//    com 1 tentativa hoje continua chamável ("ligar de novo"); ligação de dia anterior sem sucesso
+//    NÃO conta como resolvido — o lead volta amanhã pra mais 2 tentativas;
+//  - já tem reunião/follow-up → resolvido.
 function _leadHandled(l){
   var r=calls[l&&l.telefone];
-  if(r && !_ccPrior(r)) return true;
+  if(r && !_ccPrior(r)){
+    if(r.at==='sim' || r.at==='invalido') return true;
+    if(r.at==='nao' || r.at==='ocupado'){
+      if(r.data===todayStr()) return (r.tentativasHoje||1) >= 2;
+      return false;
+    }
+    return true;
+  }
   return !!Object.values(meetings).find(function(m){return m.tel===(l&&l.telefone);});
 }
 function closeModal(id){var el=document.getElementById(id);if(!el)return;if(el.dataset.dynamic){el.remove();}else{el.classList.remove('open');}if(id==='modal-call')_callLeadSource='daily';}
@@ -6109,7 +6123,12 @@ function renderLigar(){
           '<span style="font-size:11px;color:var(--muted);">'+mtg.responsavel+'</span>';
       }
       else if(reg&&_ccPrior(reg)){sb='<span class="badge b-amber">2ª ligação</span>';btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar</button>';}
-      else if(reg){sb=reg.at==='sim'?'<span class="badge b-cyan">Atendeu</span>':'<span class="badge b-red">Nao atendeu</span>';btn='<button class="btn btn-edit" onclick="openCallModal('+i+')"><i class="ti ti-edit"></i> Editar</button>';}
+      else if(reg&&(reg.at==='nao'||reg.at==='ocupado')&&(reg.data!==todayStr()||(reg.tentativasHoje||1)<2)){
+        if(reg.data===todayStr()){var _tn=(reg.turnosHoje&&reg.turnosHoje.length)?reg.turnosHoje.map(function(t){return t==='manha'?'manhã':'tarde';}).join('+'):((reg.tentativasHoje||1)+'ª');sb='<span class="badge b-amber">Não atendeu ('+_tn+') · ligar de novo</span>';}
+        else{sb='<span class="badge b-amber">Não atendeu (dia ant.) · ligar</span>';}
+        btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar de novo</button>';
+      }
+      else if(reg){var _al=reg.at==='sim'?'<span class="badge b-cyan">Atendeu</span>':(reg.at==='invalido'?'<span class="badge b-red">Inválido</span>':'<span class="badge b-red">Não atendeu 2x hoje</span>');sb=_al;btn='<button class="btn btn-edit" onclick="openCallModal('+i+')"><i class="ti ti-edit"></i> Editar</button>';}
       else{sb='<span class="badge b-muted">Pendente</span>';btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar</button>';}
       var _telFmt = formatTelLigar(l.telefone);
       var _telIsLocal = _telFmt.startsWith('31');
@@ -9440,7 +9459,15 @@ function callStep4(){
 }
 async function saveCallDirect(){
   var dl=_getCallLeads(),l=dl[_curCallIdx];
-  var callObj={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:todayStr(),at:_callData.at,obs:_callData.obs||''};
+  var _hojeCC=todayStr();
+  var _prevCC=calls[l.telefone];
+  var _mesmoDiaCC=_prevCC && _prevCC.data===_hojeCC && !_ccPrior(_prevCC);
+  var _isRetryCC=(_callData.at==='nao' || _callData.at==='ocupado');
+  var _tentCC=(_mesmoDiaCC ? (_prevCC.tentativasHoje||0) : 0) + (_isRetryCC?1:0);
+  var _turnoCC=_ccTurnoAtual();
+  var _turnosCC=(_mesmoDiaCC && _prevCC.turnosHoje) ? _prevCC.turnosHoje.slice() : [];
+  if(_isRetryCC && _turnosCC.indexOf(_turnoCC)<0) _turnosCC.push(_turnoCC);
+  var callObj={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:_hojeCC,at:_callData.at,obs:_callData.obs||'',tentativasHoje:_tentCC,turnosHoje:_turnosCC,turno:_turnoCC};
   calls[l.telefone]=callObj;
   saveAll();
   saveLigacaoFB(l, _callData, '');
