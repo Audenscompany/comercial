@@ -2826,6 +2826,12 @@ function _leadHandled(l){
   }
   return !!Object.values(meetings).find(function(m){return m.tel===(l&&l.telefone);});
 }
+// Limite: apos N dias sem atender, o lead vai pro FIM da fila (prioridade minima; so e chamado
+// quando nao ha lead novo). Nao e descartado — continua voltando, mas por ultimo.
+var COLDCALL_MAX_DIAS_FILA=5;
+function _ccCansado(l){ var r=calls[l&&l.telefone]; return !!(r && (r.at==='nao'||r.at==='ocupado') && !_ccPrior(r) && (r.diasTentados||0)>=COLDCALL_MAX_DIAS_FILA); }
+// Ordenacao padrao da fila: leads 'cansados' (5+ dias sem atender) por ultimo; entre iguais, maior faturamento primeiro.
+function _ccSortFila(a,b){ var ca=_ccCansado(a)?1:0, cb=_ccCansado(b)?1:0; if(ca!==cb) return ca-cb; return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento); }
 function closeModal(id){var el=document.getElementById(id);if(!el)return;if(el.dataset.dynamic){el.remove();}else{el.classList.remove('open');}if(id==='modal-call')_callLeadSource='daily';}
 
 // ===== DATE HELPERS =====
@@ -5400,7 +5406,7 @@ function getDailyLeads(){
     if(leadsHoje.length<50){
       var _vendaSet=_buildVendaTels();
       var usedSet=new Set(telsHoje);
-      var extra=allLeads.filter(function(l){var t=(l.telefone||'').replace(/\D/g,'');return !usedSet.has(t)&&!_vendaSet.has(t)&&isLeadElegivel(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);}).slice(0,50-leadsHoje.length);
+      var extra=allLeads.filter(function(l){var t=(l.telefone||'').replace(/\D/g,'');return !usedSet.has(t)&&!_vendaSet.has(t)&&isLeadElegivel(l);}).sort(_ccSortFila).slice(0,50-leadsHoje.length);
       leadsHoje=leadsHoje.concat(extra);
     }
     _dailyMap[key]=leadsHoje;saveAll();return leadsHoje;
@@ -5408,7 +5414,7 @@ function getDailyLeads(){
   if(!checkDay(new Date()).ok)return null;
   // Exclui apenas leads que resultaram em VENDA — "Concluído" sem venda volta para o pool
   var used=_buildVendaTels();
-  var fresh=allLeads.filter(function(l){var t=(l.telefone||'').replace(/\D/g,'');return t&&!used.has(t)&&isLeadElegivel(l)&&!_leadHandled(l);}).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
+  var fresh=allLeads.filter(function(l){var t=(l.telefone||'').replace(/\D/g,'');return t&&!used.has(t)&&isLeadElegivel(l)&&!_leadHandled(l);}).sort(_ccSortFila);
   var returns=[];// _requeue mantido por compatibilidade mas não é mais necessário
   var batch=fresh.slice(0,50-returns.length).concat(returns).slice(0,50);
   if(!batch.length)return[];
@@ -5918,7 +5924,7 @@ function gerarLeadsExtras(qtd){
   var disponiveis = allLeads.filter(function(l){
     var t=(l.telefone||'').replace(/\D/g,'');
     return t && !usedTels.has(t) && !venda.has(t) && isLeadElegivel(l) && !_leadHandled(l);
-  }).sort(function(a,b){return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento);});
+  }).sort(_ccSortFila);
   if(!disponiveis.length){ showSheetToast('Todos os leads elegíveis da base já foram trabalhados nesta rodada. Use "Regenerar lista" para iniciar uma nova rodada.',true); return; }
   var novos = disponiveis.slice(0, qtd);
   var extraKey = getDailyKey();
@@ -5985,11 +5991,10 @@ function _discadorFila(){
     if(_isLeadTeste(l.nome)) return;
     if(!isLeadElegivel(l)) return;              // mesma regra do Cold Call (≥20k ou sem faturamento, ≥30 dias)
     if(venda.has(tel)) return;                   // já virou venda
-    var reg=calls[l.telefone]||calls[tel];
-    if(reg && !_ccPrior(reg)) return;            // já contatado na rodada atual (prior-round volta pra fila)
+    if(_leadHandled(l)) return;                  // resolvido (atendeu/reuniao/2 tentativas no dia); nao-atendeu ainda chamavel entra
     out.push(l);
   });
-  out.sort(function(a,b){ return parseFaturamentoValue(b.faturamento)-parseFaturamentoValue(a.faturamento); });
+  out.sort(_ccSortFila);
   return out;
 }
 function _discadorCSV(leads){
@@ -6125,7 +6130,7 @@ function renderLigar(){
       else if(reg&&_ccPrior(reg)){sb='<span class="badge b-amber">2ª ligação</span>';btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar</button>';}
       else if(reg&&(reg.at==='nao'||reg.at==='ocupado')&&(reg.data!==todayStr()||(reg.tentativasHoje||1)<2)){
         if(reg.data===todayStr()){var _tn=(reg.turnosHoje&&reg.turnosHoje.length)?reg.turnosHoje.map(function(t){return t==='manha'?'manhã':'tarde';}).join('+'):((reg.tentativasHoje||1)+'ª');sb='<span class="badge b-amber">Não atendeu ('+_tn+') · ligar de novo</span>';}
-        else{sb='<span class="badge b-amber">Não atendeu (dia ant.) · ligar</span>';}
+        else{var _dt=(reg.diasTentados||1);sb='<span class="badge b-amber">Não atendeu '+_dt+'d'+(_dt>=COLDCALL_MAX_DIAS_FILA?' · fim da fila':'')+' · ligar</span>';}
         btn='<button class="btn btn-reg" onclick="openCallModal('+i+')"><i class="ti ti-phone"></i> Ligar de novo</button>';
       }
       else if(reg){var _al=reg.at==='sim'?'<span class="badge b-cyan">Atendeu</span>':(reg.at==='invalido'?'<span class="badge b-red">Inválido</span>':'<span class="badge b-red">Não atendeu 2x hoje</span>');sb=_al;btn='<button class="btn btn-edit" onclick="openCallModal('+i+')"><i class="ti ti-edit"></i> Editar</button>';}
@@ -9467,7 +9472,10 @@ async function saveCallDirect(){
   var _turnoCC=_ccTurnoAtual();
   var _turnosCC=(_mesmoDiaCC && _prevCC.turnosHoje) ? _prevCC.turnosHoje.slice() : [];
   if(_isRetryCC && _turnosCC.indexOf(_turnoCC)<0) _turnosCC.push(_turnoCC);
-  var callObj={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:_hojeCC,at:_callData.at,obs:_callData.obs||'',tentativasHoje:_tentCC,turnosHoje:_turnosCC,turno:_turnoCC};
+  // Conta DIAS distintos com 'nao atendeu' (para o limite de 5 dias -> fim da fila)
+  var _prevRetryCC=_prevCC && (_prevCC.at==='nao'||_prevCC.at==='ocupado') && !_ccPrior(_prevCC);
+  var _diasCC=_isRetryCC ? (_prevRetryCC ? (_mesmoDiaCC ? (_prevCC.diasTentados||1) : ((_prevCC.diasTentados||1)+1)) : 1) : (_prevRetryCC?(_prevCC.diasTentados||1):0);
+  var callObj={nome:l.nome,tel:l.telefone,cidade:l.cidade||'',faturamento:l.faturamento||'',data:_hojeCC,at:_callData.at,obs:_callData.obs||'',tentativasHoje:_tentCC,turnosHoje:_turnosCC,turno:_turnoCC,diasTentados:_diasCC};
   calls[l.telefone]=callObj;
   saveAll();
   saveLigacaoFB(l, _callData, '');
