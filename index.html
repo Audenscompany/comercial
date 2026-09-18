@@ -32650,10 +32650,35 @@ function renderCadenciaPainel(){
     '</div></div>'+
     '<div id="cadp-status" style="font-size:12px;color:var(--muted);margin:6px 0 14px;">Carregando…</div>'+
     (g?'<div id="cadp-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:20px;"></div>':'')+
+    (g?'<div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:16px;">'+'<div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;"><i class="ti ti-hand-stop" style="color:var(--red);margin-right:6px;"></i>Bloquear número (parar mensagens da cadência)</div>'+'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'+'<input id="cadp-optout-tel" placeholder="DDD + número (ex.: 31987654321)" onkeydown="if(event.key===\'Enter\')optoutAdd()" style="flex:1;min-width:200px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 12px;">'+'<button class="btn btn-primary" onclick="optoutAdd()" style="font-size:12px;padding:9px 16px;"><i class="ti ti-ban"></i> Bloquear</button>'+'</div>'+'<div style="font-size:11px;color:var(--muted);margin-top:8px;">O número entra no opt-out e a automação de WhatsApp para de enviar mensagens pra ele. Aparece na lista de opt-out abaixo, onde dá pra reativar.</div>'+'</div>':'')+
     '<div id="cadp-body"></div>'+
   '</div>';
 }
 
+function _optoutTelDigits(t){ return String(t||'').replace(/\D/g,''); }
+async function optoutAdd(tel){
+  var raw = (tel!=null && typeof tel!=='object') ? tel : ((document.getElementById('cadp-optout-tel')||{}).value||'');
+  var d=_optoutTelDigits(raw);
+  if(d.length<10){ showSheetToast('Informe um número válido (DDD + número).',true); return; }
+  if(!fbDb && !initFirebase()){ showSheetToast('Firebase indisponível.',true); return; }
+  try{
+    await fbDb.ref('whatsapp_optout/'+d).set({optOut:true, at:Date.now(), reason:'manual', by:(typeof CU!=='undefined'&&CU?CU.name:'')});
+    var inp=document.getElementById('cadp-optout-tel'); if(inp) inp.value='';
+    showSheetToast('✓ '+d+' bloqueado — não recebe mais mensagens da cadência.',false);
+    if(typeof cadPainelInit==='function') cadPainelInit();
+  }catch(e){ showSheetToast('Erro ao bloquear: '+e.message,true); }
+}
+async function optoutRemove(tel){
+  var d=_optoutTelDigits(tel);
+  if(!d) return;
+  if(!confirm('Reativar mensagens para '+d+'?\nEle volta a poder receber a cadência de WhatsApp.')) return;
+  if(!fbDb && !initFirebase()){ showSheetToast('Firebase indisponível.',true); return; }
+  try{
+    await fbDb.ref('whatsapp_optout/'+d).remove();
+    showSheetToast('✓ '+d+' reativado.',false);
+    if(typeof cadPainelInit==='function') cadPainelInit();
+  }catch(e){ showSheetToast('Erro ao reativar: '+e.message,true); }
+}
 async function cadPainelInit(){
   var stEl=document.getElementById('cadp-status');
   if(stEl){stEl.style.color='var(--muted)';stEl.innerHTML='<i class="ti ti-loader"></i> Carregando dados da cadência…';}
@@ -32758,10 +32783,10 @@ async function cadPainelInit(){
       B+=_cadpCard('🚫 Cancelamentos ('+_canc.length+') — motivo de não ter enviado',_cmRows,'var(--amber)');
     }
     if(optKeys.length){
-      var orows=optKeys.map(function(k){var o=optout[k]||{};var l=leads[k]||{};
-        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone)+'</td><td style="padding:6px 8px;color:var(--muted);">'+(o.at?_cadpDT(o.at):'—')+'</td></tr>';
+      var orows=optKeys.map(function(k){var o=optout[k]||{};var l=leads[k]||{};var _t=(l.telefone||k);
+        return '<tr><td style="padding:6px 8px;">'+_cadpEsc(l.nome||k)+'</td><td style="padding:6px 8px;">'+_cadpTel(l.telefone||k)+'</td><td style="padding:6px 8px;color:var(--muted);">'+(o.at?_cadpDT(o.at):'—')+(o.reason==='manual'?' <span style="font-size:9px;color:var(--amber);">manual</span>':'')+'</td><td style="padding:6px 8px;text-align:right;"><button onclick="optoutRemove(\''+_cadpEsc(_t)+'\')" class="btn btn-outline" style="font-size:10.5px;padding:4px 9px;">Reativar</button></td></tr>';
       }).join('');
-      B+=_cadpCard('🚫 Opt-out — não receber mais ('+optKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['WhatsApp'],['Quando']])+'<tbody>'+orows+'</tbody></table></div>','var(--red)');
+      B+=_cadpCard('🚫 Opt-out — não receber mais ('+optKeys.length+')','<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'+_cadpTh([['Lead'],['WhatsApp'],['Quando'],['']])+'<tbody>'+orows+'</tbody></table></div>','var(--red)');
     }
 
     var evSorted=evArr.sort(function(a,b){return (b.at||0)-(a.at||0);}).slice(0,25);
