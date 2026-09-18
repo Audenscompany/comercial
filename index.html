@@ -889,7 +889,10 @@ function startRealtimeSync(){
   fbDb.ref('audens/config/ticketMedio').on('value',function(s){var _v=parseFloat(s.val()); if(_v>0) TICKET_MEDIO=_v;});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
   fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
-  fbDb.ref('vendas_excluidas_nome').on('value',function(s){_vendasExcluidasNome=s.val()||{};});
+  // Exclusão por NOME puro DESATIVADA: colidia com vendas de mesmo primeiro nome (ex.: dois "Vitor" de
+  // clientes diferentes). Passou a bloquear venda legítima. Usa-se id + sig (específicos por telefone)
+  // + _vendaExcluida na assinatura, que já cobrem qualquer venda realmente apagada.
+  fbDb.ref('vendas_excluidas_nome').on('value',function(s){_vendasExcluidasNome={};});
   try{ loadAdNamesCache(); }catch(e){}
   // backfill automatico dos nomes de anuncio (uma vez, se o Meta estiver conectado)
   setTimeout(function(){ try{ if(typeof isMetaConnected==='function'&&isMetaConnected()) resolveAllAdNames(); }catch(e){} }, 6000);
@@ -28893,9 +28896,6 @@ function renderVendas(){
     var _bySig=!!(_sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg]);
     var _byNome=!!(_vnnm&&_vendasExcluidasNome&&_vendasExcluidasNome[_vnnm]);
     if(_byId||_bySig||_byNome){
-      // Backfill: se foi excluida por id/sig mas o NOME ainda nao esta marcado, marca —
-      // assim a mesma venda some tambem no Plano de Carreira (que pode ve-la em outra forma).
-      if(_vnnm && !_byNome){ _vendasExcluidasNome[_vnnm]=true; if(fbDb){try{fbDb.ref('vendas_excluidas_nome/'+_vnnm).set(true);}catch(e){}} }
       return false;
     }
     return true;
@@ -29708,8 +29708,7 @@ async function removerVenda(fid){
     _vendasExcluidas[fid]=true;
     if(fbDb)await fbDb.ref('vendas_excluidas/'+fid).set(true);
     if(_sig){ _vendasExcluidasSig[_sig]=true; if(fbDb)await fbDb.ref('vendas_excluidas_sig/'+_sig).set(true); }
-    var _nnDel=_vnNorm((_fu&&_fu.nome)||(_m&&_m.nome)||'');
-    if(_nnDel){ _vendasExcluidasNome[_nnDel]=true; if(fbDb)await fbDb.ref('vendas_excluidas_nome/'+_nnDel).set(true); }
+    // Exclusão por nome puro desativada — id + sig (acima) + _vendaExcluida na assinatura (abaixo) já cobrem.
     // Marca a fonte (assinatura) pra parar de recriar a venda
     var _aid=(_fu&&_fu._fromContrato)||(fid.indexOf('assin_')===0?fid.slice(6):null);
     if(_aid&&fbDb){ try{await fbDb.ref('assinaturas/'+_aid).update({_vendaExcluida:true});}catch(e){} }
