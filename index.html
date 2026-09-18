@@ -28376,7 +28376,7 @@ function renderVisaoGeral(){
   vendasMes.slice().sort(function(a,b){return(_vendaDate(b.fu,b.m)||0)-(_vendaDate(a.fu,a.m)||0);}).slice(0,3).forEach(function(v){
     var dt=_vendaDate(v.fu,v.m);
     atividades.push({ts:dt?dt.getTime():0,color:'#4ade80',icon:'ti-shopping-cart',
-      text:(v.m&&v.m.responsavel?v.m.responsavel:'—')+' finalizou venda com '+(v.fu.nome||v.m&&v.m.nome||'cliente'),
+      text:(v.m&&v.m.responsavel?v.m.responsavel:'—')+' finalizou venda com '+((typeof _empresaCliente==='function')?_empresaCliente(v.fu,v.m):(v.fu.nome||v.m&&v.m.nome||'cliente')),
       time:dt?String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'):'—'});
   });
   reunioesHoje.slice(0,3).forEach(function(m){
