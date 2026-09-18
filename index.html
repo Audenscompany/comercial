@@ -26508,7 +26508,7 @@ async function _acPdfText(file){
   for(var i=1;i<=pdf.numPages;i++){ var pg=await pdf.getPage(i); var c=await pg.getTextContent(); txt+=c.items.map(function(it){return it.str;}).join(' ')+'\n'; }
   return txt;
 }
-var _AVAL_IMPORT_SYS='Você recebe o TEXTO de um PDF de análise/coaching de uma reunião de vendas da Audens. Extraia os dados FIELMENTE (não invente notas — use exatamente as que estão no texto). Responda APENAS com um bloco <AVAL_JSON>{...}</AVAL_JSON> e nada mais.\n\nSchema (JSON):\n{\n "cliente": "nome do cliente/lead",\n "tipo": "tipo da reunião (ex.: fechamento, diagnóstico)",\n "resultado": "resultado (ex.: contrato assinado, no-show, sem venda)",\n "resumo": "resumo em uma frase",\n "notaGeral": number (0 a 10, a nota geral da reunião como está no doc),\n "falaCloser": number (0 a 100 — % do tempo em que o CLOSER falou; null se não houver),\n "falaCliente": number (0 a 100 — % do CLIENTE; null se não houver),\n "competencias": [{"nome":"nome da competência do scorecard","nota":number(0-10),"comentario":"1 frase do que embasa a nota, se houver"}],\n "pontosFortes": ["..."],\n "ajustes": [{"titulo":"...","evite":"o que evitar","faca":"o que fazer","exemplo":"exemplo de fala, se houver"}],\n "objecoes": [{"objecao":"...","evite":"...","faca":"...","exemplo":"..."}],\n "checklist": ["itens do checklist da próxima reunião"],\n "acaoImediata": ["ações imediatas neste cliente"]\n}\n\nRegras: use as competências EXATAMENTE como aparecem no scorecard do doc (com as notas do doc). Se a nota do doc estiver em outra escala, normalize para 0-10. Se um campo não existir no doc, use [] ou "". notaGeral é a nota geral do doc (0-10). Se o doc trouxer tempo/proporção de fala (closer x cliente), preencha falaCloser e falaCliente (0-100); se só um lado aparecer, o outro é 100 menos ele; se não houver, null.';
+var _AVAL_IMPORT_SYS='Você recebe o TEXTO de um PDF de análise/coaching de uma reunião de vendas da Audens. Extraia os dados FIELMENTE (não invente notas — use exatamente as que estão no texto). Responda APENAS com um bloco <AVAL_JSON>{...}</AVAL_JSON> e nada mais.\n\nSchema (JSON):\n{\n "cliente": "nome do cliente/lead",\n "tipo": "tipo da reunião (ex.: fechamento, diagnóstico)",\n "resultado": "resultado (ex.: contrato assinado, no-show, sem venda)",\n "resumo": "resumo em uma frase",\n "notaGeral": number (0 a 10, a nota geral da reunião como está no doc),\n "falaCloser": number (0 a 100 — no bloco "Índice de Fala / talk-to-listen", a % do VENDEDOR/closer; ex.: "Lucas ~63%" vira 63; null se não houver),\n "falaCliente": number (0 a 100 — a % do CLIENTE; ex.: "Dalan ~37%" vira 37; null se não houver),\n "falaAlvo": number (0 a 100 — o alvo do vendedor citado, ex.: "vendedor <=57%" vira 57; null se não houver),\n "falaNota": number (0 a 10 — a "Nota do Índice de Fala", ex.: "5/10" vira 5; null se não houver),\n "competencias": [{"nome":"nome da competência do scorecard","nota":number(0-10),"comentario":"1 frase do que embasa a nota, se houver"}],\n "pontosFortes": ["..."],\n "ajustes": [{"titulo":"...","evite":"o que evitar","faca":"o que fazer","exemplo":"exemplo de fala, se houver"}],\n "objecoes": [{"objecao":"...","evite":"...","faca":"...","exemplo":"..."}],\n "checklist": ["itens do checklist da próxima reunião"],\n "acaoImediata": ["ações imediatas neste cliente"]\n}\n\nRegras: use as competências EXATAMENTE como aparecem no scorecard do doc (com as notas do doc). Se a nota do doc estiver em outra escala, normalize para 0-10. Se um campo não existir no doc, use [] ou "". notaGeral é a nota geral do doc (0-10). O bloco "Índice de Fala (talk-to-listen)" traz o % do vendedor (falaCloser) e do cliente (falaCliente); capture também o alvo (falaAlvo) e a "Nota do Índice de Fala" (falaNota) quando aparecerem. Se só um lado do % aparecer, o outro é 100 menos ele; se não houver, null.';
 async function acRunAvalImport(){
   var fileEl=document.getElementById('aval-imp-file');
   var res=document.getElementById('aval-imp-result');
@@ -26591,7 +26591,7 @@ function acSaveImportedAval(){
     date:now.toISOString().split('T')[0], timestamp:now.getTime(),
     meetingId:meetingId||'', origemImport:'pdf',
     lead:lead, segmento:(o.tipo||''),
-    notaFinal:notaFinal, notaGeral:(o.notaGeral||0), falaCloserPct:falaCloserPct, falaClientePct:falaClientePct,
+    notaFinal:notaFinal, notaGeral:(o.notaGeral||0), falaCloserPct:falaCloserPct, falaClientePct:falaClientePct, falaAlvo:(o.falaAlvo!=null?Math.round(o.falaAlvo):null), falaNota:(o.falaNota!=null?o.falaNota:null),
     classificacao: notaFinal>=85?'Excelente':notaFinal>=70?'Bom':notaFinal>=45?'Regular':'Crítico',
     problemaPrincipal:o.resumo||'', desejoPrincipal:'', proximoPasso:(o.acaoImediata&&o.acaoImediata[0])||'',
     criterios:criterios, pontosFortes:o.pontosFortes||[], falhas:falhas,
@@ -26822,15 +26822,16 @@ function _renderAvalDetail(sc){
   if(sc.falaCloserPct!=null){
     var _fc=Math.max(0,Math.min(100,Math.round(sc.falaCloserPct)));
     var _fcli=(sc.falaClientePct!=null)?Math.max(0,Math.min(100,Math.round(sc.falaClientePct))):(100-_fc);
-    var _tc=_fc<=50?'#10b981':_fc<=65?'#f59e0b':'#ef4444';
-    var _tm=_fc<=50?'No ponto — escutou mais do que falou':_fc<=65?'Falou um pouco demais':'Falou demais — precisa escutar mais';
+    var _alvo=(sc.falaAlvo!=null?Math.round(sc.falaAlvo):50);
+    var _tc=_fc<=_alvo?'#10b981':_fc<=_alvo+12?'#f59e0b':'#ef4444';
+    var _tm=_fc<=_alvo?'No alvo — escutou o suficiente':_fc<=_alvo+12?'Um pouco acima do alvo':'Falou demais — acima do alvo';
     H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:14px;">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;"><span style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);">Tempo de fala</span><span style="font-size:12px;font-weight:800;color:'+_tc+';">'+_tm+'</span></div>'+
       '<div style="display:flex;height:26px;border-radius:8px;overflow:hidden;border:1px solid var(--border);">'+
         '<div style="width:'+_fc+'%;background:'+_tc+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#0b0b12;white-space:nowrap;">Closer '+_fc+'%</div>'+
         '<div style="width:'+_fcli+'%;background:rgba(255,255,255,0.10);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--white);white-space:nowrap;">Cliente '+_fcli+'%</div>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-top:8px;">Ideal (venda consultiva): closer fala ~40–45% e escuta o resto.</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:8px;">'+(sc.falaAlvo!=null?('Alvo do estudo: vendedor \u2264 '+Math.round(sc.falaAlvo)+'%'):'Ideal (venda consultiva): closer fala ~40\u201345% e escuta o resto')+(sc.falaNota!=null?(' \u00b7 Nota do Índice de Fala: '+sc.falaNota+'/10'):'')+'</div>'+
     '</div>';
   }
   // 1. Pontos fortes
