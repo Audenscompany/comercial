@@ -15135,7 +15135,7 @@ function buildAnaliseAdsHTML(data){
   function _n0(n){return (n||0).toLocaleString('pt-BR');}
 
   // ===== MOTOR DE DECISAO (limites configuraveis) =====
-  window.ADS_THRESH = window.ADS_THRESH || {minLeads:3, minSpend:30, cpqlBom:150, cacBom:600, txQualBoa:0.15, spendAlto:200};
+  window.ADS_THRESH = window.ADS_THRESH || {minLeads:3, minSpend:30, cpqlBom:150, cprBom:300, cacBom:600, txQualBoa:0.15, spendAlto:200};
   var TH = window.ADS_THRESH;
   function _spOf(a){ return (a._spend!=null?a._spend:(typeof _metaSpendFor==='function'?_metaSpendFor(a.ad):0))||0; }
   function _adDecide(a){
@@ -15328,13 +15328,16 @@ function buildAnaliseAdsHTML(data){
       '<span style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">'+adsSorted.length+' anúncios</span>'+
     '</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-family:Barlow Condensed,sans-serif;">'+
       '<thead><tr style="border-bottom:1px solid var(--border);">'+
-        ['#','Anúncio','Gasto','Leads','Qualif.','Reun.','Vendas','CPQL','CAC','Decisão'].map(function(h,i){var al=(i<=1)?'left':(i===9?'center':'right');var c=(h==='Vendas'||h==='CAC')?'var(--green)':(h==='Reun.'?'var(--amber)':'var(--muted)');return '<th style="padding:9px 8px;text-align:'+al+';font-size:9.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:'+c+';white-space:nowrap;">'+h+'</th>';}).join('')+
+        ['#','Anúncio','Gasto','Leads','Qualif.','Reun.','Vendas','CPR','CPQL','CAC','Decisão'].map(function(h,i){var al=(i<=1)?'left':(i===10?'center':'right');var c=(h==='Vendas'||h==='CAC')?'var(--green)':((h==='Reun.'||h==='CPR')?'var(--amber)':'var(--muted)');return '<th style="padding:9px 8px;text-align:'+al+';font-size:9.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:'+c+';white-space:nowrap;">'+h+'</th>';}).join('')+
       '</tr></thead><tbody>';
   _rk.forEach(function(o,idx){
     var a=o.a,dec=o.dec,sp=_spOf(a);
     var cpql=(sp>0&&a.qualif>0)?sp/a.qualif:0, cac=(sp>0&&a.fechamentos>0)?sp/a.fechamentos:0;
     var cpqlCol=cpql<=0?'var(--muted)':cpql<=TH.cpqlBom?'#4ade80':cpql<=TH.cpqlBom*2?'#fbbf24':'#f87171';
     var cacCol=cac<=0?'var(--muted)':cac<=TH.cacBom?'#4ade80':cac<=TH.cacBom*2?'#fbbf24':'#f87171';
+    var _cprBom=(TH.cprBom||300);
+    var cpr=(sp>0&&(a.realizadas||0)>0)?sp/a.realizadas:0;
+    var cprCol=cpr<=0?'var(--muted)':cpr<=_cprBom?'#4ade80':cpr<=_cprBom*2?'#fbbf24':'#f87171';
     html+='<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
       '<td style="padding:9px 8px;font-size:12px;color:var(--muted);">'+(idx+1)+'</td>'+
       '<td style="padding:9px 8px;font-size:12px;font-weight:700;color:var(--white);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+_adDisplayName(a.ad).replace(/"/g,'&quot;')+'">'+_adDisplayName(a.ad)+'</td>'+
@@ -15343,12 +15346,13 @@ function buildAnaliseAdsHTML(data){
       '<td style="padding:9px 8px;text-align:right;font-size:12px;color:var(--cyan);">'+a.qualif+'</td>'+
       '<td data-adkey="'+String(a.ad).replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey)_showAdLeadsModal(this.dataset.adkey)" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+((a.realizadas||0)>0?'var(--amber)':'var(--muted)')+';">'+(a.realizadas||0)+'</td>'+
       '<td data-adkey="'+String(a.ad).replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey&&'+(a.fechamentos>0?'true':'false')+')_showAdVendasModal(this.dataset.adkey)" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:'+(a.fechamentos>0?'pointer':'default')+';color:'+(a.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(a.fechamentos>0?a.fechamentos:'—')+'</td>'+
+      '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+cprCol+';">'+(cpr>0?fmtBRL3(cpr):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+cpqlCol+';">'+(cpql>0?fmtBRL3(cpql):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+cacCol+';">'+(cac>0?fmtBRL3(cac):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:'+dec.bg+';font-size:10px;font-weight:700;letter-spacing:0.5px;color:'+dec.cl+';white-space:nowrap;"><i class="ti '+dec.ic+'" style="font-size:10px;"></i>'+dec.label+'</span></td>'+
     '</tr>';
   });
-  if(adsSorted.length===0) html+='<tr><td colspan="10" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anúncio com dados no período.</td></tr>';
+  if(adsSorted.length===0) html+='<tr><td colspan="11" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anúncio com dados no período.</td></tr>';
   // Linha "Sem anúncio identificado": leads/vendas de tráfego que não têm ad atribuído (rastreio perdido na LP)
   (function(){
     var _sa={leads:0,qualif:0,realizadas:0,fechamentos:0};
@@ -15362,6 +15366,7 @@ function buildAnaliseAdsHTML(data){
         '<td style="padding:9px 8px;text-align:right;font-size:12px;color:var(--cyan);">'+_sa.qualif+'</td>'+
         '<td data-adkey="(sem ad)" onclick="_showAdLeadsModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+(_sa.realizadas>0?'var(--amber)':'var(--muted)')+';">'+_sa.realizadas+'</td>'+
         '<td data-adkey="(sem ad)" onclick="if('+(_sa.fechamentos>0?'true':'false')+')_showAdVendasModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:'+(_sa.fechamentos>0?'pointer':'default')+';color:'+(_sa.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(_sa.fechamentos>0?_sa.fechamentos:'—')+'</td>'+
+        '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
         '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
         '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
         '<td style="padding:9px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:rgba(245,158,11,0.15);font-size:10px;font-weight:700;color:var(--amber);white-space:nowrap;">Rastrear</span></td>'+
