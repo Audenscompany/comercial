@@ -306,6 +306,12 @@ tbody tr:hover td{background:var(--pglow2);}
     <div class="login-sub">Company · CRM Comercial</div>
     <div class="login-div"></div>
 
+    <button class="btn-login" onclick="doLoginGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1f1f1f;margin-bottom:6px;">
+      <svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0;"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.28-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Entrar com Google
+    </button>
+    <div style="text-align:center;font-size:11px;color:var(--muted);margin:6px 0 10px;font-family:Barlow Condensed,sans-serif;letter-spacing:1px;text-transform:uppercase;">ou entre com e-mail</div>
+
     <label class="f-label">E-mail</label>
     <input class="f-input" id="login-email" type="email" placeholder="seu@email.com">
     <label class="f-label">Senha</label>
@@ -391,6 +397,18 @@ var USERS={
 };
 // Senhas originais do código — nunca sobrescritas pelo Firebase
 var USERS_DEFAULTS={'lucas@audens.com':'audens2025','gustavo@audens.com':'closer2025','joao@audens.com':'sdr2025'};
+// ===== LOGIN POR GOOGLE — allowlist: Gmail real -> identidade interna (@audens.com). Só quem está aqui entra. =====
+var GOOGLE_ALLOWLIST={
+  'lucasramongs2016@gmail.com':'lucas@audens.com',
+  'scalambrabraz@gmail.com':'joao@audens.com'
+  // ,'EMAIL_DO_GUSTAVO@gmail.com':'gustavo@audens.com'  // <- adicionar o Gmail do Gustavo aqui depois
+};
+function _resolveIdentity(email){
+  email=(email||'').toLowerCase().trim();
+  if(USERS[email]) return email;                              // e-mail interno (login por senha, reserva)
+  if(GOOGLE_ALLOWLIST[email]) return GOOGLE_ALLOWLIST[email]; // Gmail permitido -> identidade interna
+  return null;
+}
 var CLOSERS=['Lucas','Gustavo','João']; // João é SDR e também pode ser closer
 var SDR_USERS=['João'];
 var _navPermissions={}; // {email: [pageId, ...]} — permissões customizadas por usuário
@@ -449,11 +467,13 @@ window.addEventListener('DOMContentLoaded', function(){
   loadUserPasswords();
   var _bootDone=false;
   function _bootFromEmail(email){
-    if(_bootDone) return; email=(email||'').toLowerCase();
-    var u=USERS[email]; if(!u) return;
+    if(_bootDone) return;
+    var ident=(typeof _resolveIdentity==='function')?_resolveIdentity(email):((email||'').toLowerCase());
+    if(!ident){ try{ if(typeof firebase!=='undefined'&&firebase.auth&&firebase.auth().currentUser) firebase.auth().signOut(); }catch(e){} return; }
+    var u=USERS[ident]; if(!u) return;
     _bootDone=true;
-    CU={email:email,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
-    localStorage.setItem('audens_session',JSON.stringify({email:email}));
+    CU={email:ident,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
+    localStorage.setItem('audens_session',JSON.stringify({email:ident}));
     showMain();
   }
   // 1) Sessao REAL do Firebase Auth (persistida) — autoridade quando existir
@@ -4418,6 +4438,29 @@ async function createGcalEvent(meeting){
 // ===== AUTH =====
 function selectRole(r){
 // selectRole removed — role determined by email
+}
+function doLoginGoogle(){
+  var er=document.getElementById('login-err');
+  if(er) er.textContent='Abrindo Google…';
+  if(!fbDb) initFirebase();
+  try{
+    var prov=new firebase.auth.GoogleAuthProvider();
+    prov.setCustomParameters({prompt:'select_account'});
+    firebase.auth().signInWithPopup(prov).then(function(res){
+      var email=((res.user&&res.user.email)||'').toLowerCase();
+      var ident=_resolveIdentity(email);
+      if(!ident){ if(er) er.textContent='A conta '+email+' não tem acesso ao CRM.'; try{firebase.auth().signOut();}catch(e){} return; }
+      var u=USERS[ident];
+      if(er) er.textContent='';
+      CU={email:ident,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
+      localStorage.setItem('audens_session',JSON.stringify({email:ident}));
+      showMain();
+    }).catch(function(e){
+      var c=(e&&e.code)||'';
+      if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request'){ if(er) er.textContent=''; return; }
+      if(er) er.textContent='Falha no login Google: '+((e&&e.message)||c);
+    });
+  }catch(e){ if(er) er.textContent='Login Google indisponível neste navegador.'; }
 }
 function doLogin(){
   if(!fbDb) initFirebase();
