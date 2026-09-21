@@ -445,22 +445,27 @@ window.addEventListener('DOMContentLoaded', function(){
     ensureFirebase(function(){ renderSignPage(signId); });
     return;
   }
-  // Pre-load passwords from Firebase so login works with updated passwords on any machine
   if(!fbDb) initFirebase();
   loadUserPasswords();
-  var saved = localStorage.getItem('audens_session');
-  if(saved){
-    try{
-      var s = JSON.parse(saved);
-      var u = USERS[s.email];
-      if(u){
-        CU = {email:s.email,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
-        showMain();
-        return;
-      }
-    }catch(e){}
-    localStorage.removeItem('audens_session');
+  var _bootDone=false;
+  function _bootFromEmail(email){
+    if(_bootDone) return; email=(email||'').toLowerCase();
+    var u=USERS[email]; if(!u) return;
+    _bootDone=true;
+    CU={email:email,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
+    localStorage.setItem('audens_session',JSON.stringify({email:email}));
+    showMain();
   }
+  // 1) Sessao REAL do Firebase Auth (persistida) — autoridade quando existir
+  try{
+    if(typeof firebase!=='undefined' && firebase.auth){
+      firebase.auth().onAuthStateChanged(function(user){ if(user && user.email) _bootFromEmail(user.email); });
+    }
+  }catch(e){}
+  // 2) Fallback de transicao: enquanto o login real nao esta ativo (regras ainda abertas),
+  //    restaura a sessao local. Assim que o Auth real assume, este ramo e ignorado.
+  var saved=localStorage.getItem('audens_session');
+  if(saved){ try{ var s=JSON.parse(saved); setTimeout(function(){ if(!_bootDone && !(typeof firebase!=='undefined'&&firebase.auth&&firebase.auth().currentUser)) _bootFromEmail(s.email); }, 900); }catch(e){ localStorage.removeItem('audens_session'); } }
 });
 // ===== FIREBASE CONFIG =====
 var firebaseConfig = {
@@ -490,14 +495,9 @@ function initFirebase(){
       console.warn('[AppCheck] nao ativou:', e && e.message);
     }
     fbDb = firebase.database();
-    // Sign in anonimamente para que as regras do Firebase que exigem auth != null funcionem
-    if(firebase.auth && firebase.auth().currentUser === null){
-      firebase.auth().signInAnonymously().then(function(){
-        console.log('[Firebase] Signed in anonymously — uid:', firebase.auth().currentUser&&firebase.auth().currentUser.uid);
-      }).catch(function(e){
-        console.warn('[Firebase] signInAnonymously falhou:', e.message, '— usando acesso público');
-      });
-    }
+    // Login REAL (email/senha) e feito no doLogin/onAuthStateChanged. Sem login anonimo:
+    // ele autenticaria qualquer visitante e deixaria o banco aberto mesmo com regras auth!=null.
+    try{ if(firebase.auth) firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
     return true;
   }catch(e){console.error('Firebase init error',e);return false;}
 }
@@ -4426,35 +4426,37 @@ function doLogin(){
   var er=document.getElementById('login-err');
   var u=USERS[em];
   if(!u){er.textContent='E-mail não encontrado.';return;}
-  var _defaultPw=USERS_DEFAULTS&&USERS_DEFAULTS[em];
-  // Se a senha não bate localmente, recarrega do Firebase e tenta de novo
-  if(u.pw!==pw&&_defaultPw!==pw){
-    er.textContent='Verificando...';
+  er.textContent='Entrando...';
+  function _finish(){
+    er.textContent='';
+    CU={email:em,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
+    localStorage.setItem('audens_session',JSON.stringify({email:em}));
+    showMain();
+  }
+  // Fallback de transicao: enquanto o login real (Firebase Auth) nao estiver ativo,
+  // valida a senha localmente (mantem o sistema funcionando sem quebrar ninguem).
+  function _fallbackLocal(){
+    var _defaultPw=USERS_DEFAULTS&&USERS_DEFAULTS[em];
+    if(u.pw===pw||_defaultPw===pw){ _finish(); return; }
     loadUserPasswords().then(function(){
-      var u2=USERS[em];
-      if(!u2){er.textContent='Usuário não encontrado.';return;}
-      if(u2.pw!==pw&&_defaultPw!==pw){er.textContent='Senha incorreta.';return;}
-      if(_defaultPw===pw&&u2.pw!==pw){
-        if(fbDb){var fbKey=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey).remove();}
-        u2.pw=pw;
-      }
-      er.textContent='';
-      CU={email:em,role:u2.role,name:u2.name,initials:u2.initials,closer:u2.closer,funcao:u2.funcao||'closer'};
-      localStorage.setItem('audens_session',JSON.stringify({email:em}));
-      showMain();
-    });
-    return;
+      var u2=USERS[em]||u; u=u2;
+      if(u2.pw===pw||_defaultPw===pw){ _finish(); }
+      else{ er.textContent='Senha incorreta.'; }
+    }).catch(function(){ er.textContent='Senha incorreta.'; });
   }
-  if(_defaultPw===pw&&u.pw!==pw){
-    if(fbDb){var fbKey2=em.replace(/[@.#$[\]]/g,'_');fbDb.ref('userPasswords/'+fbKey2).remove();}
-    u.pw=pw;
-  }
-  er.textContent='';
-  CU={email:em,role:u.role,name:u.name,initials:u.initials,closer:u.closer,funcao:u.funcao||'closer'};
-  localStorage.setItem('audens_session',JSON.stringify({email:em}));
-  showMain();
+  // Login REAL no Firebase Auth (o que efetivamente destrava o banco quando as regras estiverem trancadas).
+  try{
+    if(typeof firebase!=='undefined' && firebase.auth){
+      firebase.auth().signInWithEmailAndPassword(em,pw)
+        .then(function(){ _finish(); })
+        .catch(function(e){ _fallbackLocal(); }); // conta ainda nao criada / provider off / etc -> transicao
+      return;
+    }
+  }catch(e){}
+  _fallbackLocal();
 }
 function doLogout(){
+  try{ if(typeof firebase!=='undefined'&&firebase.auth) firebase.auth().signOut(); }catch(e){}
   CU=null;localStorage.removeItem('audens_session');document.getElementById('login-email').value='';document.getElementById('login-senha').value='';
   document.getElementById('login-err').textContent='';
   document.getElementById('login-screen').classList.add('active');
