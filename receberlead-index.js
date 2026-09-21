@@ -661,6 +661,84 @@ async function handleQuizAgendou(req, res) {
   return res.status(200).json({ ok: true, responsavel: responsavel });
 }
 
+// ===== Rota /lp-agendou: LP V2 (FV2) agendou pelo agendador proprio (sem Calendly) =====
+// A FV2 NAO escreve mais direto no Firebase (a trava bloqueou isso). Ela manda o agendamento
+// aqui e o servidor grava kanban/ + meetings/ com acesso de admin (passa pela trava) e dispara
+// a confirmacao no WhatsApp. Move o card p/ "Reuniao Agendada".
+async function handleLpAgendou(req, res) {
+  if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).send("Method Not Allowed"); }
+  if (!checaSecret(req)) { return res.status(401).send("Unauthorized"); }
+  const b = req.body || {};
+  const telRaw = pick(b, ["telefone", "phone", "whatsapp", "tel"]);
+  const meetingISO = pick(b, ["meetingISO", "dtISO", "iso"]);
+  const meetingDisplay = pick(b, ["meetingDisplay", "disp", "dtDisplay"]) || "";
+  if (!telRaw) { return res.status(400).json({ ok: false, error: "telefone é obrigatório" }); }
+  if (!meetingISO) { return res.status(400).json({ ok: false, error: "meetingISO é obrigatório" }); }
+  const tel = String(telRaw).replace(/\D/g, "");
+  const key = (tel || "lp_" + Date.now()).replace(/[.#$\[\]]/g, "_");
+  const faixa = pick(b, ["faixa", "faturamento_faixa"]) || "";
+  const responsavel = pick(b, ["responsavel", "closer"]) || closerPorFaixa(faixa);
+  const nome = pick(b, ["nome", "name"]) || "";
+  const mid = pick(b, ["meetingId", "mid"]) || ("km_" + key + "_" + Date.now());
+  var L = {};
+  try { L = (await db.ref("leads/" + key).once("value")).val() || {}; } catch (e) {}
+  function _pref(campo, fromBody) { var v = fromBody != null ? String(fromBody) : ""; if (v && v.trim() !== "") return v; return (L[campo] != null ? String(L[campo]) : ""); }
+  var kb = {
+    status: "reuniao", statusAt: Date.now(), responsavel: responsavel, sdrName: "LP", sdr: "LP",
+    meetingISO: meetingISO, meetingDisplay: meetingDisplay, meetingId: mid,
+    lembretes: { h1: false, h2: false, m10: false },
+    faixa: faixa || L.faixa || "", nome: nome || L.nome || "", telefone: tel,
+    email: _pref("email", pick(b, ["email"])),
+    instagram: _pref("instagram", pick(b, ["instagram"])),
+    faturamento: _pref("faturamento", pick(b, ["faturamento"])),
+    segmento: _pref("segmento", pick(b, ["segmento"])),
+    investimento: _pref("investimento", pick(b, ["investimento"])),
+    ja_investiu: _pref("ja_investiu", pick(b, ["ja_investiu"])),
+    ad: _pref("ad", pick(b, ["ad"])),
+    campanha: _pref("campanha", pick(b, ["campanha"])),
+    conjunto: _pref("conjunto", pick(b, ["conjunto"])),
+    origem: pick(b, ["origem"]) || "lp-audens-quiz-fv2",
+    _viaLP: true, _createdAt: (L._createdAt || Date.now())
+  };
+  var mrec = {
+    id: mid, tel: tel, nome: (nome || L.nome || ""), dtISO: meetingISO, dtDisplay: meetingDisplay,
+    status: "pending", responsavel: responsavel, kanbanKey: key, sdrName: "LP", origem: "trafego pago",
+    faturamentoLead: kb.faturamento || "", guestEmail: kb.email || "", scheduledAt: Date.now(), _viaLP: true
+  };
+  try { await db.ref("kanban/" + key).update(kb); } catch (e) { console.error("lp-agendou kanban:", e); }
+  try { await db.ref("meetings/" + mid).set(mrec); } catch (e) { console.error("lp-agendou meeting:", e); }
+  try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
+  try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
+  try { await cadReatStop(key, "meeting_scheduled"); } catch (e) {}
+  try {
+    await enviarMensagemWhatsapp(tel, mensagemConfirmacaoParte1(nome));
+    await enviarImagemWhatsapp(tel, IMG_FATURAMENTO_ANTERIOR, "");
+    await enviarImagemWhatsapp(tel, IMG_FATURAMENTO_ATUAL, legendaFaturamentoAtual());
+    if (meetingDisplay) await enviarMensagemWhatsapp(tel, mensagemConfirmacaoParte2(meetingDisplay));
+    await enviarMensagemWhatsapp(tel, mensagemEscassez(nome, responsavel));
+  } catch (e) { console.error("lp-agendou wa:", e); }
+  return res.status(200).json({ ok: true, responsavel: responsavel, meetingId: mid });
+}
+
+// ===== Rota /busy: horarios ocupados de um closer (para a FV2 montar a agenda sem ler o banco direto) =====
+async function handleBusy(req, res) {
+  if (!checaSecret(req)) { return res.status(401).send("Unauthorized"); }
+  const closer = (req.query && (req.query.closer || req.query.responsavel)) || "";
+  var out = [];
+  function add(iso) { if (!iso) return; var t = Date.parse(iso); if (!isNaN(t)) out.push(t); }
+  try {
+    var M = (await db.ref("meetings").once("value")).val() || {};
+    var K = (await db.ref("kanban").once("value")).val() || {};
+    Object.keys(M).forEach(function (k) { var m = M[k]; if (!m || typeof m !== "object") return; if (closer && (m.responsavel || "") !== closer) return;
+      var st = String(m.status || "").toLowerCase(); if (["cancelado","noshow","reagendado","descartado","perdido"].indexOf(st) >= 0) return;
+      add(m.dtISO || m.meetingISO); });
+    Object.keys(K).forEach(function (k) { var c = K[k]; if (!c || typeof c !== "object") return; if (closer && (c.responsavel || "") !== closer) return; if (!c.meetingISO) return;
+      var st = String(c.status || "").toLowerCase(); if (["arquivado","descartado","perdido","cancelado"].indexOf(st) >= 0) return;
+      add(c.meetingISO); });
+  } catch (e) { console.error("busy:", e); }
+  return res.status(200).json({ busy: out });
+}
+
 // ===== Rota /setup-calendly-webhook: registra a assinatura do webhook no Calendly (one-time) =====
 // Uso: abrir no navegador
 //   https://<cloud-run>/setup-calendly-webhook?secret=<WEBHOOK_SECRET>&token=<PAT_DO_CALENDLY>
@@ -3353,6 +3431,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/quiz-agendou") {
       return await handleQuizAgendou(req, res);
+    }
+    if (path === "/lp-agendou") {
+      return await handleLpAgendou(req, res);
+    }
+    if (path === "/busy") {
+      return await handleBusy(req, res);
     }
     if (path === "/calendly-webhook") {
       return await handleCalendlyWebhook(req, res);
