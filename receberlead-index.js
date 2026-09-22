@@ -41,8 +41,11 @@ const FINANCEIRO_GROUP_ID = process.env.FINANCEIRO_GROUP_ID || "";
 
 // URLs publicas das imagens de resultado (faturamento antes/depois) usadas na
 // mensagem de confirmacao de reuniao. Hospedadas no mesmo GitHub Pages do CRM.
-const IMG_FATURAMENTO_ANTERIOR = "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg";
-const IMG_FATURAMENTO_ATUAL = "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg";
+// ===== Show-up assumiu a jornada pré-reunião: confirmação-na-criação e lembretes antigos DESLIGADOS (mude p/ true para religar) =====
+const CONFIRMACAO_CRIACAO_ATIVA = false;
+const LEMBRETES_ANTIGOS_ATIVOS = false;
+const IMG_FATURAMENTO_ANTERIOR = CONFIRMACAO_CRIACAO_ATIVA ? "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg" : "";
+const IMG_FATURAMENTO_ATUAL = CONFIRMACAO_CRIACAO_ATIVA ? "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg" : "";
 
 // ===== Mensagens =====
 
@@ -67,6 +70,7 @@ function mensagemQuizQualificado(nomeCompleto) {
 
 // Primeira parte da confirmacao de reuniao (texto antes das imagens)
 function mensagemConfirmacaoParte1(nomeCompleto) {
+  if (!CONFIRMACAO_CRIACAO_ATIVA) return "";
   var primeiroNome = primeiroNomeDe(nomeCompleto);
   return "Perfeito " + primeiroNome + ", nossa conversa está confirmada! 🙌\n" +
     "Enquanto isso, olha esse resultado de um cliente nosso com um delivery parecido com o seu 👇";
@@ -74,6 +78,7 @@ function mensagemConfirmacaoParte1(nomeCompleto) {
 
 // Legenda enviada junto com a imagem de faturamento atual (resultado do cliente)
 function legendaFaturamentoAtual() {
+  if (!CONFIRMACAO_CRIACAO_ATIVA) return "";
   return "Hoje eles vendem mais de 140 mil!\n" +
     "Esse crescimento todo não foi atoa, nós aplicamos o Método Audens!\n" +
     "O mesmo método que fiz na minha hamburgueria pra vender hoje mais de 450 mil por mês!\n" +
@@ -83,6 +88,7 @@ function legendaFaturamentoAtual() {
 
 // Parte final da confirmacao de reuniao (com data/hora marcada)
 function mensagemConfirmacaoParte2(meetingDisplay) {
+  if (!CONFIRMACAO_CRIACAO_ATIVA) return "";
   return "Falta muito pouco pra nossa reunião, às " + meetingDisplay + " vamos estar juntos para uma análise estratégica do seu negócio.\n" +
     "É muito importante que todos os sócios estejam presentes pra poder entender tudo aquilo que eu vou falar.\n" +
     "Tenho certeza que a nossa análise vai ajudar muito vocês!";
@@ -197,6 +203,7 @@ async function enviarMensagemWhatsapp(telefone, mensagem) {
   }
   const phone = toWhatsappPhone(telefone);
   if (!phone) return;
+  if (!mensagem) return; // texto vazio (fluxo desligado) — não envia
   try {
     const url = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
     const resp = await fetch(url, {
@@ -219,6 +226,7 @@ async function enviarImagemWhatsapp(telefone, imageUrl, caption) {
   }
   const phone = toWhatsappPhone(telefone);
   if (!phone) return;
+  if (!imageUrl) return; // url vazia (fluxo desligado) — não envia
   try {
     const url = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`;
     const body = { phone, image: imageUrl };
@@ -558,6 +566,7 @@ async function handleTrack(req, res) {
 
 // Mensagem de escassez de agenda (enviada logo após a confirmação de reunião)
 function mensagemEscassez(nomeCompleto, responsavel) {
+  if (!CONFIRMACAO_CRIACAO_ATIVA) return "";
   var primeiroNome = primeiroNomeDe(nomeCompleto);
   var closer = responsavel && responsavel.trim() ? responsavel.trim() : "Lucas";
   return "Conto com sua presença, meu amigo! 🤝\n\n" +
@@ -1129,6 +1138,7 @@ async function handleLembreteVespera(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  if (!LEMBRETES_ANTIGOS_ATIVOS) return res.status(200).json({ ok: true, disabled: "lembretes_antigos_desligados_showup" });
 
   try {
     const snap = await db.ref("meetings").once("value");
@@ -2079,6 +2089,7 @@ async function handleLembretes(req, res) {
   if (!checaSecret(req)) {
     return res.status(401).send("Unauthorized");
   }
+  if (!LEMBRETES_ANTIGOS_ATIVOS) return res.status(200).json({ ok: true, disabled: "lembretes_antigos_desligados_showup" });
 
   const snap = await db.ref("kanban").once("value");
   const data = snap.val() || {};
