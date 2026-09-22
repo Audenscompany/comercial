@@ -2117,6 +2117,283 @@ async function handleLembretes(req, res) {
   return res.status(200).json({ ok: true, enviados });
 }
 
+// ═══════════════════════ SISTEMA SHOW-UP AUDENS — Fase 2 (servidor) ═══════════════════════
+// Nasce DESLIGADO. Ativar em config/showup { enabled:true, testPhone:"55..." , noshowAuto:true }
+// testPhone preenchido = TODAS as mensagens vão só para esse número (modo teste seguro).
+const SHOWUP_MEDIA = "https://audenscompany.github.io/comercial/assets/showup/";
+const SU_VIDEO = SHOWUP_MEDIA + "institucional-video-lucas.mp4";
+const SU_AUDIO = SHOWUP_MEDIA + "institucional-audio-lucas.opus";
+const SU_DEP = {
+  ifood:       [SHOWUP_MEDIA + "depoimento-perto-do-fogo.mp4"],
+  faturamento: [SHOWUP_MEDIA + "depoimento-naliatis.mp4", SHOWUP_MEDIA + "depoimento-gerra.mp4", SHOWUP_MEDIA + "depoimento-perto-do-fogo.mp4"],
+  trafego: [], recorrencia: [], lucro: []
+};
+const SU_DOR_MAP = { "1": "ifood", "2": "faturamento", "3": "trafego", "4": "recorrencia", "5": "lucro" };
+
+// ---- senders de vídeo e áudio (Z-API) ----
+async function enviarVideoWhatsapp(telefone, videoUrl, caption) {
+  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN) return;
+  const phone = toWhatsappPhone(telefone); if (!phone) return;
+  try {
+    const url = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-video`;
+    const body = { phone, video: videoUrl }; if (caption) body.caption = caption;
+    const resp = await fetch(url, { method: "POST", headers: zapiHeaders(), body: JSON.stringify(body) });
+    const data = await resp.json().catch(() => ({}));
+    console.log("Z-API send-video status:", resp.status, JSON.stringify(data));
+  } catch (err) { console.error("enviarVideoWhatsapp error:", err); }
+}
+async function enviarAudioWhatsapp(telefone, audioUrl) {
+  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN) return;
+  const phone = toWhatsappPhone(telefone); if (!phone) return;
+  try {
+    const url = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-audio`;
+    const resp = await fetch(url, { method: "POST", headers: zapiHeaders(), body: JSON.stringify({ phone, audio: audioUrl }) });
+    const data = await resp.json().catch(() => ({}));
+    console.log("Z-API send-audio status:", resp.status, JSON.stringify(data));
+  } catch (err) { console.error("enviarAudioWhatsapp error:", err); }
+}
+
+function suPrimeiroNome(n) { return String(n || "").trim().split(/\s+/)[0] || "tudo bem"; }
+
+// ---- textos das mensagens ----
+function suMsgAt(n) { n = suPrimeiroNome(n);
+  return `Fala, ${n}! Tudo certo? 🙌\nVi que você marcou sua análise estratégica com a Audens.\nMe manda só o *@ da sua loja* que eu já vou dando uma olhada no seu Instagram e no seu cardápio antes da nossa conversa.`; }
+function suMsg1click(n) { n = suPrimeiroNome(n);
+  return `Deixa eu já entender teu cenário antes da gente conversar, ${n}. Qual desses mais pega aí hoje? Responde só o número 👇\n\n1️⃣ iFood\n2️⃣ Faturamento travado\n3️⃣ Tráfego\n4️⃣ Recorrência (cliente não volta)\n5️⃣ Lucro`; }
+function suCaseText(dor, n) { n = suPrimeiroNome(n);
+  const t = {
+    ifood: `${n}, teve dono aqui que vendia 5.200 e recebia só 2.300 do iFood — no fim do mês não sobrava nada. O caminho é puxar esse cliente pro canal próprio, onde a margem é sua. Olha o que rolou com quem fez isso 👇`,
+    faturamento: `${n}, travar quase nunca é o produto — é conversão no cardápio + visita de cliente novo. Olha esse caso 👇`,
+    trafego: `${n}, se você já impulsionou e não voltou, o problema não é o Meta — é que impulsionar não é anúncio de verdade. Olha esse resultado: a Burguerhein fez +44% de faturamento e +51% de pedidos com tráfego bem feito. Na nossa conversa eu te mostro como.`,
+    recorrencia: `${n}, cliente que não volta é dinheiro que você já pagou pra conquistar e deixou escapar. Dá pra reativar sua base parada — te mostro exatamente como na conversa.`,
+    lucro: `${n}, vender e não sobrar quase nunca é "a margem é apertada" — é precificação e canal errado. Eu falo como dono de delivery também (Burguer FC +300k/mês, Pizza FC +200k/mês). Te mostro onde teu lucro tá vazando.`
+  };
+  return t[dor] || t.faturamento;
+}
+function suMsgDecisor(n) { n = suPrimeiroNome(n);
+  return `Ah, e uma coisa rápida, ${n}: a decisão de tocar isso é só tua ou tem sócio/esposa junto? Se for a dois, melhor os dois na conversa — assim ninguém fica com dúvida depois 👍`; }
+function suSpoiler(dor) {
+  const s = {
+    ifood: "quanto do teu faturamento tá refém do iFood e como virar isso",
+    faturamento: "onde tá o gargalo que te trava e o que destrava primeiro",
+    trafego: "por que teu anúncio não vende e a estrutura que faz o delivery girar",
+    recorrencia: "como fazer o cliente voltar sozinho, sem pagar iFood de novo",
+    lucro: "onde teu lucro tá vazando e o que muda já no próximo mês"
+  };
+  return s[dor] || "onde tá vazando teu lucro e o que dá pra destravar já";
+}
+function suMsgConfirm(n, dor) { n = suPrimeiroNome(n);
+  return `Falta pouco pra nossa análise, ${n} ⏰ Hoje eu te mostro ${suSpoiler(dor)}.\nMe confirma aqui: responde *1 pra confirmar* ✅ ou *2 se precisar remarcar*.`; }
+function suMsgConfirmOK(n) { n = suPrimeiroNome(n);
+  return `Fechado, ${n}! 🚀 Tô te esperando. Te mando o link uns minutinhos antes da gente começar.`; }
+function suMsgRemarcar(n) { n = suPrimeiroNome(n);
+  return `Sem problema, ${n}! Qual dia e período fica melhor pra você? Já te passo os horários disponíveis 🤝`; }
+function suMsgLink(n, link) { n = suPrimeiroNome(n);
+  return link ? `Tô entrando na sala, ${n}. Bora começar 👇\n${link}` : `Tô entrando na sala, ${n}! Me responde aqui que eu te passo o link agora 👇`; }
+function suMsgNoShow5(n) { n = suPrimeiroNome(n);
+  return `${n}, tô aqui na sala te esperando 🙂 Deu algum imprevisto? Entra que é rapidinho — quero te mostrar onde dá pra destravar teu delivery.`; }
+function suMsgNoShow20(n) { n = suPrimeiroNome(n);
+  return `Tranquilo, ${n}, sei que a correria do delivery é real. Bora remarcar pra um horário melhor? Me diz o melhor dia/período que eu já encaixo 🤝`; }
+
+async function suCfg() {
+  try { const v = (await db.ref("config/showup").once("value")).val() || {};
+    return { enabled: v.enabled === true, testPhone: (v.testPhone || "").replace(/\D/g, ""), noshowAuto: v.noshowAuto !== false }; }
+  catch (e) { return { enabled: false, testPhone: "", noshowAuto: true }; }
+}
+
+// grava status + histórico (mesmo formato do CRM)
+async function suLog(mid, status, note) {
+  try {
+    const ref = db.ref("meetings/" + mid + "/showup");
+    const cur = (await ref.child("history").once("value")).val() || [];
+    const arr = Array.isArray(cur) ? cur : Object.values(cur);
+    arr.push({ at: Date.now(), status: status, note: note || "", by: "Automação" });
+    const patch = { status: status, updatedAt: Date.now() };
+    await ref.update(patch);
+    await ref.child("history").set(arr);
+  } catch (e) { console.error("suLog:", e); }
+}
+async function suSetSent(mid, flag) { try { await db.ref("meetings/" + mid + "/showup/sent/" + flag).set(Date.now()); } catch (e) {} }
+
+// classifica a resposta do lead
+function suClassify(text, ctx) {
+  const norm = String(text || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, " ").trim();
+  // @ da loja
+  if (ctx === "handle" && (/@[a-z0-9._]{2,}/i.test(text) || /^[a-z0-9._]{3,30}$/i.test(norm))) {
+    const m = String(text).match(/@?[a-z0-9._]{2,}/i); return { kind: "handle", value: m ? m[0].replace(/^@?/, "@") : text.trim() };
+  }
+  const remarcar = /(^|\b)(2|remarc|nao vou|nao consigo|nao vai dar|nao posso|nao da|outro dia|outro horario|imprevisto|cancelar|desmarcar|nao vou conseguir|nao tenho como)(\b|$)/;
+  const confirmar = /(^|\b)(1|sim|confirmo|confirmado|confirmar|vou|estarei|to dentro|to la|combinado|beleza|blz|pode ser|ok|okay|okey|perfeito|isso|com certeza|fechado|bora)(\b|$)|👍|✅|🙏/;
+  if (ctx === "confirm") {
+    if (remarcar.test(norm)) return { kind: "remarcar" };
+    if (confirmar.test(norm)) return { kind: "confirmar" };
+    return { kind: "duvida" };
+  }
+  if (ctx === "dor") {
+    const d = norm.match(/[1-5]/); if (d) return { kind: "dor", value: SU_DOR_MAP[d[0]] };
+    if (/ifood|i food/.test(norm)) return { kind: "dor", value: "ifood" };
+    if (/fatur/.test(norm)) return { kind: "dor", value: "faturamento" };
+    if (/trafego|anuncio|impuls/.test(norm)) return { kind: "dor", value: "trafego" };
+    if (/recorren|volta|fideliz/.test(norm)) return { kind: "dor", value: "recorrencia" };
+    if (/lucro|margem|sobra/.test(norm)) return { kind: "dor", value: "lucro" };
+    return { kind: "outro" };
+  }
+  // sem contexto específico
+  if (remarcar.test(norm)) return { kind: "remarcar" };
+  if (confirmar.test(norm)) return { kind: "confirmar" };
+  return { kind: "outro" };
+}
+
+// achar a reunião ativa (pendente e futura/hoje) de um lead
+async function suAcharMeeting(leadKey, tel) {
+  const snap = await db.ref("meetings").once("value");
+  const M = snap.val() || {}; const t9 = String(tel || "").replace(/\D/g, "").slice(-9);
+  let best = null;
+  for (const mid in M) {
+    const m = M[mid]; if (!m || m._retorno) continue;
+    const st = m.status || ""; if (st === "cancelado" || st === "reagendado" || st === "done") continue;
+    const mk = m.kanbanKey || ""; const mt9 = String(m.tel || m.telefone || "").replace(/\D/g, "").slice(-9);
+    if (mk !== leadKey && (!t9 || mt9 !== t9)) continue;
+    if (!best || (m.dtISO || "") > (best.dtISO || "")) { best = m; best.id = best.id || mid; best._mid = mid; }
+  }
+  return best;
+}
+
+// chamado pelo /wa-inbound quando o lead tem reunião no ar
+async function suHandleInbound(leadKey, lead, text, tel) {
+  const m = await suAcharMeeting(leadKey, tel);
+  if (!m) return false;
+  const mid = m._mid || m.id;
+  const su = m.showup || {}; const sent = su.sent || {};
+  await db.ref("meetings/" + mid + "/showup").update({ lastInboundAt: Date.now(), lastInboundText: String(text || "").slice(0, 300) });
+
+  // contexto: se já pedimos confirmação e ainda não confirmou → contexto confirm
+  let ctx = "outro";
+  if (sent.confirm && su.status !== "confirmado") ctx = "confirm";
+  else if (sent.click && !su.dor) ctx = "dor";
+  else if (sent.at && !su.handle) ctx = "handle";
+
+  const r = suClassify(text, ctx);
+  if (r.kind === "handle") {
+    await db.ref("meetings/" + mid + "/showup").update({ handle: r.value });
+    if (m.kanbanKey) { try { await db.ref("kanban/" + m.kanbanKey + "/instagram").set(r.value); } catch (e) {} }
+    await suLog(mid, "engajado", "💬 Mandou o @ da loja: " + r.value);
+    return true;
+  }
+  if (r.kind === "dor") {
+    await db.ref("meetings/" + mid + "/showup").update({ dor: r.value });
+    await suLog(mid, "engajado", "💬 Respondeu a dor: " + r.value);
+    return true;
+  }
+  if (r.kind === "confirmar") {
+    await db.ref("meetings/" + mid + "/showup").update({ confirmado: true });
+    await suLog(mid, "confirmado", "✅ Confirmou presença (respondeu: " + String(text).slice(0, 60) + ")");
+    try { await enviarMensagemWhatsapp(tel, suMsgConfirmOK(m.nome)); } catch (e) {}
+    return true;
+  }
+  if (r.kind === "remarcar") {
+    await suLog(mid, "remarcada", "🔁 Pediu para remarcar (respondeu: " + String(text).slice(0, 60) + ")");
+    try { await enviarMensagemWhatsapp(tel, suMsgRemarcar(m.nome)); } catch (e) {}
+    try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: true }); } catch (e) {}
+    return true;
+  }
+  // dúvida / outro → não confirma; passa pro SDR
+  await suLog(mid, (su.status === "confirmado" ? "confirmado" : "sdr_em_acao"), "💬 Respondeu (assumir): " + String(text).slice(0, 80));
+  try {
+    await db.ref("leads/" + leadKey).update({ needsHumanAttention: true });
+    await db.ref("sdr_tarefas/" + leadKey + "_showup").set({ leadKey: leadKey, nome: lead.nome || m.nome || "", telefone: lead.telefone || tel, empresa: lead.empresa || "", tipo: "⚡ Show-up: lead respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
+  } catch (e) {}
+  return true;
+}
+
+// ---- MOTOR (Cloud Scheduler chama /showup-tick a cada ~5 min) ----
+async function handleShowupTick(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  const cfg = await suCfg();
+  const dry = req.query.dryrun === "1";
+  if (!cfg.enabled && !dry) return res.status(200).json({ ok: true, skipped: "showup_desligado" });
+  const snap = await db.ref("meetings").once("value");
+  const M = snap.val() || {}; const now = Date.now();
+  const acoes = [];
+  for (const mid in M) {
+    const m = M[mid]; if (!m || m._retorno || !m.tel || !m.dtISO) continue;
+    const st = m.status || ""; if (st === "cancelado" || st === "reagendado") continue;
+    const su = m.showup || {}; const sent = su.sent || {};
+    const Hmin = (new Date(m.dtISO).getTime() - now) / 60000; const Hh = Hmin / 60;
+    const booked = su.initAt || m.scheduledAt || null;
+    const dor = su.dor || null;
+    const alvo = cfg.testPhone || m.tel;
+    const nome = m.nome || "";
+    const send = async (fn, flag, status, note) => {
+      if (dry) { acoes.push({ mid, flag, dry: true }); return; }
+      try { await fn(); } catch (e) { console.error("showup send " + flag + ":", e); }
+      await suSetSent(mid, flag); await suLog(mid, status, note); acoes.push({ mid, flag, nome });
+    };
+
+    // init
+    if (!su.initAt) { await db.ref("meetings/" + mid + "/showup").update({ initAt: now, status: su.status || "agendado" }); }
+
+    // ── PÓS-REUNIÃO (no-show) ──
+    if (Hmin <= -5) {
+      if (st !== "done" && cfg.noshowAuto && !su.confirmadoPresente) {
+        if (!sent.ns5 && Hmin > -20) { await send(() => enviarMensagemWhatsapp(alvo, suMsgNoShow5(nome)), "ns5", "no_show", "🚪 Ninguém apareceu — enviado 'tô na sala'"); }
+        else if (!sent.ns20 && Hmin <= -20 && Hmin > -240) { await send(() => enviarMensagemWhatsapp(alvo, suMsgNoShow20(nome)), "ns20", "no_show", "🔁 Oferecida remarcação pós no-show"); }
+      }
+      continue;
+    }
+
+    // ── PRÉ-REUNIÃO ──
+    // S1 · @ da loja (assim que possível)
+    if (!sent.at) { await send(() => enviarMensagemWhatsapp(alvo, suMsgAt(nome)), "at", "agendado", "📩 Pedido o @ da loja"); continue; }
+    // S2 · vídeo institucional (5 min após, se faltar > 3h)
+    if (!sent.video && booked && (now - booked) >= 5 * 60000 && Hmin > 180) {
+      await send(async () => { await enviarVideoWhatsapp(alvo, SU_VIDEO, "Gravei esse rapidinho pra você 👆"); }, "video", "agendado", "🎥 Vídeo institucional enviado"); continue; }
+    // S3 · 1-clique (2h após, se faltar > 3h e sem resposta)
+    if (!sent.click && booked && (now - booked) >= 120 * 60000 && Hmin > 180 && !su.lastInboundAt) {
+      await send(() => enviarMensagemWhatsapp(alvo, suMsg1click(nome)), "click", "agendado", "❓ Enviada pergunta de 1 clique (dor)"); continue; }
+    // S4 · case + spoiler (janela longa: entre 20h e 30h antes)
+    if (!sent.kase && Hh <= 30 && Hh > 20) {
+      const dk = dor || "faturamento"; const vids = SU_DEP[dk] || [];
+      await send(async () => { await enviarMensagemWhatsapp(alvo, suCaseText(dk, nome)); if (vids[0]) await enviarVideoWhatsapp(alvo, vids[0], ""); }, "kase", "engajado", "📈 Case enviado (" + dk + ")"); continue; }
+    // S5 · áudio de preparo + decisor (24h antes)
+    if (!sent.audio && Hh <= 24 && Hh > 3) {
+      await send(async () => { await enviarAudioWhatsapp(alvo, SU_AUDIO); await enviarMensagemWhatsapp(alvo, suMsgDecisor(nome)); }, "audio", "engajado", "🎙️ Áudio de preparo + pergunta do decisor"); continue; }
+    // S6 · confirmação (3h antes)
+    if (!sent.confirm && Hh <= 3 && Hmin > 0) {
+      await db.ref("meetings/" + mid + "/showup").update({ confirmAskedAt: now });
+      await send(() => enviarMensagemWhatsapp(alvo, suMsgConfirm(nome, dor)), "confirm", "agendado", "📲 Pedida confirmação (1/2)"); continue; }
+    // Risco de no-show: 1h sem confirmar após pedir
+    if (su.confirmAskedAt && !su.confirmado && su.status !== "confirmado" && su.status !== "risco_noshow" && (now - su.confirmAskedAt) >= 60 * 60000 && Hmin > 0) {
+      if (!dry) {
+        await suLog(mid, "risco_noshow", "⚠️ 1h sem confirmar — risco de no-show");
+        try { if (m.kanbanKey) await db.ref("leads/" + m.kanbanKey + "/needsHumanAttention").set(true); } catch (e) {}
+        try { await db.ref("sdr_tarefas/" + (m.kanbanKey || mid) + "_showuprisco").set({ leadKey: m.kanbanKey || "", nome: nome, telefone: m.tel, empresa: "", tipo: "🟠 Show-up: risco de no-show — chamar/ligar", icon: "ti-alert-triangle", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() }); } catch (e) {}
+      }
+      acoes.push({ mid, flag: "risco", nome }); continue;
+    }
+    // S link · 15 min antes, só confirmados
+    if (!sent.link && Hmin <= 15 && Hmin > 0 && (su.confirmado || su.status === "confirmado")) {
+      await send(() => enviarMensagemWhatsapp(alvo, suMsgLink(nome, m.meetLink || m.link || "")), "link", "confirmado", "🔗 Link enviado (quase começando)"); continue; }
+  }
+  return res.status(200).json({ ok: true, dry: dry, total: Object.keys(M).length, acoes });
+}
+
+// ---- /showup-init : semeia showup nas reuniões futuras (backfill) ----
+async function handleShowupInit(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  const snap = await db.ref("meetings").once("value");
+  const M = snap.val() || {}; const now = Date.now(); let n = 0;
+  for (const mid in M) {
+    const m = M[mid]; if (!m || !m.dtISO) continue;
+    if (new Date(m.dtISO).getTime() < now) continue;
+    if (m.showup && m.showup.initAt) continue;
+    await db.ref("meetings/" + mid + "/showup").update({ initAt: now, status: "agendado", sent: {} }); n++;
+  }
+  return res.status(200).json({ ok: true, seeded: n });
+}
+// ═══════════════════════ FIM SHOW-UP Fase 2 ═══════════════════════
+
+
 // ===== Roteamento principal =====
 // ===== Rota /retorno: avisa o lead que foi agendado um retorno com data e hora =====
 async function handleRetorno(req, res) {
@@ -2334,6 +2611,8 @@ async function cadHandleInbound(phone, text) {
     await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
     return;
   }
+  // SHOW-UP: se o lead tem reunião no ar, interpreta a resposta (confirmação/dor/@/remarcar) ANTES de qualquer outra coisa
+  try { var _suH = await suHandleInbound(leadKey, lead, text, tel); if (_suH) return; } catch (e) { console.error("suHandleInbound:", e); }
   // NÃO pausa a cadência: ela continua durante os 5 dias mesmo que o lead responda (só para ao sair de Novo/Qualificado, no opt-out ou ao agendar reunião)
   // AGENDAMENTO CONVERSACIONAL: se há horários oferecidos, tenta entender e marcar
   var ag = lead.agendamento;
@@ -3509,6 +3788,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/reativacao-build") {
       return await handleReativacaoBuild(req, res);
+    }
+    if (path === "/showup-tick") {
+      return await handleShowupTick(req, res);
+    }
+    if (path === "/showup-init") {
+      return await handleShowupInit(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);
