@@ -2197,7 +2197,7 @@ function suMsgNoShow20(n) { n = suPrimeiroNome(n);
 
 async function suCfg() {
   try { const v = (await db.ref("config/showup").once("value")).val() || {};
-    return { enabled: v.enabled === true, testPhone: (v.testPhone || "").replace(/\D/g, ""), noshowAuto: v.noshowAuto !== false }; }
+    return { enabled: v.enabled === true || v.enabled === "true", testPhone: String(v.testPhone || "").replace(/\D/g, ""), noshowAuto: !(v.noshowAuto === false || v.noshowAuto === "false") }; }
   catch (e) { return { enabled: false, testPhone: "", noshowAuto: true }; }
 }
 
