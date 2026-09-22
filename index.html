@@ -4903,6 +4903,7 @@ function showPage(id){
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
     if(id==='reunioes'||id==='reunioes-noshow') setTimeout(loadFunilReunioes,50);
+    if(id==='reunioes') setTimeout(function(){_suLoadInbound(function(){var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='reunioes')showPage('reunioes');});},80);
     if(id==='reativacao') setTimeout(loadReativacao,50);
     if(id==='assinaturas') setTimeout(loadAssinaturas,50);
     if(id==='asaas') setTimeout(loadAsaasPage,50);
@@ -10896,6 +10897,95 @@ function _cadOrigemBadge(m){
   if(v==='reativacao')return '<span style="font-size:9px;color:#f59e0b;background:rgba(245,158,11,0.14);padding:1px 7px;border-radius:8px;white-space:nowrap;font-weight:600;">\u267B\uFE0F Reativação base fria</span>';
   return '';
 }
+// [SHOWUP HELPERS INJECTED]
+// ═══════════ SISTEMA SHOW-UP AUDENS — Fase 1 (client-side) ═══════════
+var _suInboundMap=null,_suInboundAt=0;
+function _suLoadInbound(cb){
+  if(_suInboundMap && (Date.now()-_suInboundAt)<120000){ return; } // cache válido: não re-renderiza (evita loop)
+  if(!(fbDb||initFirebase())){ return; }
+  fbDb.ref('leads').once('value').then(function(s){
+    var v=s.val()||{},map={};
+    Object.keys(v).forEach(function(k){var l=v[k];if(!l)return;var w=l.whatsapp||{};var tel=(l.telefone||'').replace(/\D/g,'').slice(-9);if(!tel)return;
+      map[tel]={lastInboundAt:w.lastInboundAt||0,human:!!w.humanConversationActive};});
+    _suInboundMap=map;_suInboundAt=Date.now();
+    if(cb)cb();
+  }).catch(function(){ _suInboundMap={};_suInboundAt=Date.now(); });
+}
+function _suInboundFor(m){
+  var tel=((m.tel||m.telefone||'')).replace(/\D/g,'').slice(-9);
+  var byMap=(_suInboundMap&&tel)?_suInboundMap[tel]:null;
+  var suIn=(m.showup&&m.showup.lastInboundAt)?{lastInboundAt:m.showup.lastInboundAt,human:true}:null;
+  if(byMap&&suIn)return byMap.lastInboundAt>=suIn.lastInboundAt?byMap:suIn;
+  return byMap||suIn||null;
+}
+function _suRespondeu(m){var i=_suInboundFor(m);return !!(i&&i.lastInboundAt);}
+function _suRespondeuHoje(m){var i=_suInboundFor(m);if(!i||!i.lastInboundAt)return false;var d=new Date(i.lastInboundAt),n=new Date();return d.getDate()===n.getDate()&&d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}
+function _suHoras(m){if(!m.dtISO)return null;return (new Date(m.dtISO).getTime()-Date.now())/3600000;}
+var _SU_DEFS={
+  agendado:{lbl:'Agendado',col:'#9333ea',ic:'ti-calendar-plus'},
+  engajado:{lbl:'Engajado',col:'#06b6d4',ic:'ti-message-2'},
+  confirmado:{lbl:'Confirmado',col:'#22c55e',ic:'ti-circle-check'},
+  risco_noshow:{lbl:'Risco de no-show',col:'#f59e0b',ic:'ti-alert-triangle'},
+  sdr_em_acao:{lbl:'SDR em ação',col:'#a78bfa',ic:'ti-headset'},
+  realizada:{lbl:'Realizada',col:'#16a34a',ic:'ti-check'},
+  no_show:{lbl:'No-show',col:'#ef4444',ic:'ti-user-off'},
+  remarcada:{lbl:'Remarcada',col:'#3b82f6',ic:'ti-calendar-repeat'}
+};
+function _suStatus(m,fuReal,fuNs){
+  if(fuReal)return 'realizada';
+  if(fuNs)return 'no_show';
+  var s=(m.showup&&m.showup.status)||'';
+  if(_SU_DEFS[s])return s;
+  if(_suRespondeu(m))return 'engajado';
+  return 'agendado';
+}
+function _suBadge(st){var d=_SU_DEFS[st]||_SU_DEFS.agendado;return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:'+d.col.replace('#','rgba(').slice(0,-1)+',0.15);color:'+d.col+';"><i class="ti '+d.ic+'" style="font-size:11px;"></i>'+d.lbl+'</span>';}
+function _suFmtDT(ts){try{var d=new Date(ts);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}catch(e){return '';}}
+function _suHist(m){return (m.showup&&Array.isArray(m.showup.history))?m.showup.history:[];}
+function _suPush(mid,status,note){
+  var m=meetings[mid];if(!m)return;
+  var su=m.showup||{};su.status=status;su.updatedAt=Date.now();
+  su.history=Array.isArray(su.history)?su.history:[];
+  su.history.push({at:Date.now(),status:status,note:note||'',by:(typeof CU!=='undefined'&&CU?CU.name:'')});
+  m.showup=su;
+  try{if(saveAll)saveAll();}catch(e){}
+  if(fbDb||initFirebase()){try{fbDb.ref('meetings/'+mid+'/showup').update({status:status,updatedAt:su.updatedAt});fbDb.ref('meetings/'+mid+'/showup/history').set(su.history);}catch(e){}}
+  showPage('reunioes');
+}
+function _suAcao(mid,tipo){
+  var labels={confirmado:'✅ Confirmado manualmente',sdr_em_acao:'🎧 SDR assumiu a conversa',engajado:'💬 Marcado como engajado',remarcada:'🔁 Marcada para remarcar',no_show:'✋ Marcado como no-show'};
+  _suPush(mid,tipo,labels[tipo]||tipo);
+  if(tipo==='sdr_em_acao'){try{var m=meetings[mid];if((fbDb||initFirebase())&&m&&m.kanbanKey)fbDb.ref('leads/'+m.kanbanKey+'/needsHumanAttention').set(true);}catch(e){}}
+}
+function _suHistToggle(mid){var el=document.getElementById('suhist-'+mid);if(el)el.style.display=(el.style.display==='none'||!el.style.display)?'block':'none';}
+function _suBtn(mid,tipo,lbl,col){return '<button onclick="_suAcao(\''+mid+'\',\''+tipo+'\')" style="background:'+col.replace('#','rgba(').slice(0,-1)+',0.12);border:1px solid '+col.replace('#','rgba(').slice(0,-1)+',0.3);border-radius:7px;color:'+col+';padding:5px 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">'+lbl+'</button>';}
+function _suRow(m,isRealF,isNsF){
+  var suSt=_suStatus(m,isRealF,isNsF);
+  var resp=_suRespondeu(m),respHoje=_suRespondeuHoje(m),inb=_suInboundFor(m);
+  var respTxt=respHoje?'💬 respondeu hoje':(resp?'respondeu '+_suFmtDT(inb.lastInboundAt):'✋ não respondeu');
+  var respCol=respHoje?'#22c55e':(resp?'var(--muted)':'#ef4444');
+  var H='<div style="flex-basis:100%;border-top:1px dashed var(--border);margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+  H+=_suBadge(suSt);
+  H+='<span style="font-size:10.5px;color:'+respCol+';font-weight:600;">'+respTxt+'</span>';
+  var terminal=(suSt==='realizada'||suSt==='no_show');
+  H+='<div style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap;">';
+  if(!terminal){
+    H+=_suBtn(m.id,'sdr_em_acao','Assumir','#a78bfa');
+    H+=_suBtn(m.id,'confirmado','Confirmar','#22c55e');
+    H+=_suBtn(m.id,'remarcada','Remarcar','#3b82f6');
+  }
+  var hist=_suHist(m);
+  H+='<button onclick="_suHistToggle(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:7px;color:var(--muted);padding:5px 9px;font-size:10px;cursor:pointer;"><i class="ti ti-history" style="font-size:11px;"></i> Histórico'+(hist.length?' ('+hist.length+')':'')+'</button>';
+  H+='</div>';
+  H+='</div>';
+  H+='<div id="suhist-'+m.id+'" style="flex-basis:100%;display:none;margin-top:8px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">';
+  if(!hist.length){H+='<div style="font-size:10.5px;color:var(--muted);">Nenhum evento registrado ainda. As ações e mensagens automáticas vão aparecer aqui com data e hora.</div>';}
+  else{H+=hist.slice().reverse().map(function(h){var d=_SU_DEFS[h.status]||{};return '<div style="display:flex;gap:8px;align-items:baseline;font-size:10.5px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.03);"><span style="color:var(--muted);min-width:74px;">'+_suFmtDT(h.at)+'</span><span style="color:'+(d.col||'var(--white)')+';font-weight:600;">'+(h.note||(d.lbl||h.status))+'</span>'+(h.by?'<span style="color:var(--muted);margin-left:auto;">'+h.by+'</span>':'')+'</div>';}).join('');}
+  H+='</div>';
+  return H;
+}
+// ═══════════ FIM SHOW-UP Fase 1 ═══════════
+
 function renderReunioes(){
   var now=new Date();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
@@ -11178,12 +11268,14 @@ function renderReunioes(){
     var tPend=todayMeets.filter(function(m){var fu=getFu(m);if(fu&&(fu.comparecimento))return false;var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt<=now&&!isReal(m)&&!isNs(m);}).length;
     var tFut=todayMeets.filter(function(m){var dt=m.dtISO?new Date(m.dtISO):null;return dt&&dt>now;}).length;
 
-    H+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">';
+    var tRisco=todayMeets.filter(function(m){return _suStatus(m,isReal(m),isNs(m))==='risco_noshow';}).length;
+    H+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;">';
     function miniKpi(ic,col,lbl,val,sub){return '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;"><div style="width:40px;height:40px;border-radius:10px;background:'+col.replace('#','rgba(').slice(0,-1)+',0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti '+ic+'" style="font-size:18px;color:'+col+';"></i></div><div><div style="font-family:Bebas Neue,sans-serif;font-size:28px;line-height:1;color:'+col+';">'+val+'</div><div style="font-size:10px;color:var(--muted);margin-top:1px;">'+lbl+'</div><div style="font-size:10px;color:var(--muted);">'+sub+'</div></div></div>';}
     H+=miniKpi('ti-calendar-event','#9333ea','Reuniões hoje',todayMeets.length,todayMeets.length===0?'Sem reuniões agendadas':tFut+' ainda por acontecer');
     H+=miniKpi('ti-check','#22c55e','Realizadas hoje',tReal,tReal>0?pct(tReal,todayMeets.length)+'% de comparecimento':'—');
     H+=miniKpi('ti-user-off','#ef4444','No-shows hoje',tNs,tNs>0?pct(tNs,todayMeets.length)+'% das reuniões':'—');
     H+=miniKpi('ti-clock','#f59e0b','Pendentes hoje',tPend,tPend>0?'Aguardando registro de resultado':'Tudo registrado ✓');
+    H+=miniKpi('ti-alert-triangle','#f97316','Risco de no-show',tRisco,tRisco>0?'Sem confirmar — agir agora':'Nenhum em risco ✓');
     H+='</div>';
 
     if(todayMeets.length===0){
@@ -11202,7 +11294,8 @@ function renderReunioes(){
         var isPast=(m.dtISO&&new Date(m.dtISO)<now);
         var needsAction=isPast&&!hasResult;
         var isVend=isVenda(m);
-        var borderCol=isVend?'#22c55e':isNs(m)?'#ef4444':isReal(m)?'#22c55e':needsAction?'#f59e0b':'var(--border)';
+        var _suStHoje=_suStatus(m,isReal(m),isNs(m));
+        var borderCol=isVend?'#22c55e':isNs(m)?'#ef4444':isReal(m)?'#22c55e':_suStHoje==='risco_noshow'?'#f97316':needsAction?'#f59e0b':_suStHoje==='confirmado'?'#22c55e':_suStHoje==='engajado'?'#06b6d4':'var(--border)';
 
         H+='<div style="background:var(--card);border:1px solid '+borderCol+';border-left:3px solid '+borderCol+';border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
         // Time
@@ -11234,6 +11327,7 @@ function renderReunioes(){
         }
         H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 10px;font-size:12px;cursor:pointer;" title="Editar reunião"><i class="ti ti-settings"></i></button>';
         H+='</div>';
+        H+=_suRow(m,isReal(m),isNs(m));
         H+='</div>'; // end card
       });
       H+='</div>';
