@@ -2320,6 +2320,8 @@ async function handleShowupTick(req, res) {
     const st = m.status || ""; if (st === "cancelado" || st === "reagendado") continue;
     const su = m.showup || {}; const sent = su.sent || {};
     const Hmin = (new Date(m.dtISO).getTime() - now) / 60000; const Hh = Hmin / 60;
+    // SEGURANÇA: reunião que já passou e NUNCA entrou na jornada (base antiga) — ignora, não dispara nada
+    if (!su.initAt && Hmin < -5) continue;
     const booked = su.initAt || m.scheduledAt || null;
     const dor = su.dor || null;
     const alvo = cfg.testPhone || m.tel;
