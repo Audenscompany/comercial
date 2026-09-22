@@ -2213,6 +2213,16 @@ async function suCfg() {
 }
 
 // grava status + histórico (mesmo formato do CRM)
+var _suJoaoTel = null, _suJoaoAt = 0;
+async function suContatoJoao() {
+  if (_suJoaoTel !== null && (Date.now() - _suJoaoAt) < 300000) return _suJoaoTel;
+  try { var c = (await db.ref("config/contatos_equipe").once("value")).val() || {}; _suJoaoTel = String(c.joao || c.Joao || c.joão || ""); }
+  catch (e) { _suJoaoTel = ""; }
+  _suJoaoAt = Date.now(); return _suJoaoTel;
+}
+async function suNotificarJoao(texto) {
+  try { var t = await suContatoJoao(); if (t) await enviarMensagemWhatsapp(t, texto); } catch (e) { console.error("suNotificarJoao:", e); }
+}
 async function suLog(mid, status, note) {
   try {
     const ref = db.ref("meetings/" + mid + "/showup");
@@ -2313,6 +2323,7 @@ async function suHandleInbound(leadKey, lead, text, tel) {
   try {
     await db.ref("leads/" + leadKey).update({ needsHumanAttention: true });
     await db.ref("sdr_tarefas/" + leadKey + "_showup").set({ leadKey: leadKey, nome: lead.nome || m.nome || "", telefone: lead.telefone || tel, empresa: lead.empresa || "", tipo: "⚡ Show-up: lead respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
+    if (!su.joaoAssumirNotif) { await db.ref("meetings/" + mid + "/showup/joaoAssumirNotif").set(true); await suNotificarJoao("💬 *Lead respondeu — assumir*\nCliente: " + (m.nome || "") + "\nWhatsApp: " + tel + "\nDisse: \"" + String(text).slice(0, 120) + "\""); }
   } catch (e) {}
   return true;
 }
@@ -2381,8 +2392,17 @@ async function handleShowupTick(req, res) {
         await suLog(mid, "risco_noshow", "⚠️ 1h sem confirmar — risco de no-show");
         try { if (m.kanbanKey) await db.ref("leads/" + m.kanbanKey + "/needsHumanAttention").set(true); } catch (e) {}
         try { await db.ref("sdr_tarefas/" + (m.kanbanKey || mid) + "_showuprisco").set({ leadKey: m.kanbanKey || "", nome: nome, telefone: m.tel, empresa: "", tipo: "🟠 Show-up: risco de no-show — chamar/ligar", icon: "ti-alert-triangle", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() }); } catch (e) {}
+        await suNotificarJoao("🟠 *RISCO DE NO-SHOW — chama o cliente*\nCliente: " + nome + "\nWhatsApp: " + m.tel + "\nReunião: " + (m.dtDisplay || m.meetingDisplay || "") + "\nNão confirmou a presença. Dá um alô no WhatsApp dele agora.");
       }
       acoes.push({ mid, flag: "risco", nome }); continue;
+    }
+    // Ping "LIGA AGORA" pro João ~1h30 antes se ainda não confirmou (uma vez)
+    if (!sent.joaoLiga && sent.confirm && !su.confirmado && su.status !== "confirmado" && Hmin <= 90 && Hmin > 0) {
+      if (!dry) {
+        await suSetSent(mid, "joaoLiga");
+        await suNotificarJoao("📞 *LIGA AGORA — reunião em ~1h30 sem confirmação*\nCliente: " + nome + "\nTelefone: " + m.tel + "\nReunião: " + (m.dtDisplay || m.meetingDisplay || "") + "\nNão respondeu no WhatsApp. Tenta ligar pra ele.");
+      }
+      acoes.push({ mid, flag: "joaoLiga", nome }); continue;
     }
     // S link · 15 min antes, só confirmados
     if (!sent.link && Hmin <= 15 && Hmin > 0 && (su.confirmado || su.status === "confirmado")) {
