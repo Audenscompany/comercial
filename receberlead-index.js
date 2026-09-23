@@ -2546,8 +2546,8 @@ function cadParseFat(str) {
 function cadResolveEsp(fat) {
   var v = cadParseFat(fat);
   if (v == null || isNaN(v) || v <= 0) return { nome: null, motivo: "faturamento_invalido" };
-  if (v >= 50000) return { nome: "Lucas", motivo: "faturamento_gte_50k" };
-  return { nome: "Gustavo", motivo: "faturamento_lt_50k" };
+  // Todos os leads vão para o Lucas (Gustavo saiu da distribuição — 23/09/26)
+  return { nome: "Lucas", motivo: "distribuicao_lucas" };
 }
 function cadBRT(ts) {
   var s = new Date(ts).toLocaleString("en-CA", { timeZone: "America/Sao_Paulo", hour12: false, year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
