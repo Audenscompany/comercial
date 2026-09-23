@@ -621,8 +621,8 @@ async function handleAgendar(req, res) {
 // a confirmação de reunião no WhatsApp (voz Audens). NÃO cria evento no Google Agenda
 // (o Calendly já cria, conectado à agenda) para evitar duplicidade.
 function closerPorFaixa(faixa) {
-  // Acima de R$ 50 mil -> Lucas | Abaixo de R$ 50 mil (20-50) -> Gustavo
-  return (faixa === "50-100" || faixa === "100-300" || faixa === "300+") ? "Lucas" : "Gustavo";
+  // Todas as reuniões vão para o Lucas (Gustavo saiu da distribuição — 23/09/26)
+  return "Lucas";
 }
 async function handleQuizAgendou(req, res) {
   if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).send("Method Not Allowed"); }

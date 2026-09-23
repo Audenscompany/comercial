@@ -9463,7 +9463,7 @@ function callStep3(){
   document.getElementById('mc-body').innerHTML=
     '<div style="margin-bottom:16px;"><label class="f-label">Faturamento do lead (R$)</label>'+
     '<input class="f-input" id="mc-fat" type="number" min="0" step="100" placeholder="Ex: 25000" style="margin-bottom:0;" oninput="autoAssignCloser()" value="'+(_callData.faturamento||'')+'">'+
-    '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Abaixo de R$40.000 → Gustavo · A partir de R$40.000 → Lucas</div></div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Todas as reuniões → Lucas</div></div>'+
     '<div style="margin-bottom:16px;"><label class="f-label">Responsavel pela reuniao</label>'+
     '<select class="f-select" id="mc-resp">'+
       CLOSERS.map(function(c){return'<option value="'+c+'">'+(c===CU.closer?c+' (voce)':c)+'</option>';}).join('')+
@@ -9481,7 +9481,7 @@ function autoAssignCloser(){
   if(!fatEl||!respEl) return;
   var fat=parseFloat(fatEl.value);
   if(isNaN(fat)) return;
-  respEl.value = fat < 40000 ? 'Gustavo' : 'Lucas';
+  respEl.value = 'Lucas'; // todas as reuniões vão pro Lucas
 }
 function callStep4(){
   _callData.responsavel=document.getElementById('mc-resp').value;
