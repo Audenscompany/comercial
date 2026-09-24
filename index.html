@@ -10978,6 +10978,21 @@ function _suRow(m,isRealF,isNsF){
 }
 // ═══════════ FIM SHOW-UP Fase 1 ═══════════
 
+async function _posFinalizar(mid){
+  var m=(typeof meetings!=='undefined')?meetings[mid]:null; if(!m){return;}
+  var nome=(typeof _meetLeadName==='function'?_meetLeadName(m):(m.nome||m.telefone||''));
+  var tel=String(m.tel||m.telefone||'').replace(/\D/g,'');
+  if(!confirm('Encerrar as tratativas com '+(nome||'este lead')+'?\n\nVou mandar a mensagem de encerramento e iniciar a cadência de relacionamento (a cada 20 dias).')) return;
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/pos-finalizar?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefone:tel,nome:nome,kanbanKey:m.kanbanKey||'',meetingId:mid})});
+    if(r.ok){
+      try{ if(fbDb||initFirebase()) fbDb.ref('meetings/'+mid+'/retornoEncerrado').set(true); }catch(e){}
+      if(meetings[mid]) meetings[mid].retornoEncerrado=true;
+      if(window.showSheetToast) showSheetToast('Tratativa encerrada \u2014 cad\u00eancia de 20 dias iniciada \u2705',false); else alert('Tratativa encerrada!');
+      showPage('reunioes');
+    } else { alert('N\u00e3o consegui encerrar agora. Tenta de novo.'); }
+  }catch(e){ alert('Erro ao encerrar: '+(e&&e.message||e)); }
+}
 function renderReunioes(){
   var now=new Date();
   var filtM=_reunMesFiltro?_reunMesFiltro.m:now.getMonth();
@@ -11412,6 +11427,7 @@ function renderReunioes(){
   else if(tab==='retornos'){
     function _retFu(m){return followups[m.id]||Object.values(followups).find(function(f){return f.meetingId===m.id;})||null;}
     function _retState(m){
+      if(m.retornoEncerrado)return {k:'encerrado',lbl:'✅ Encerrado · relacionamento',col:'#9ca3af'};
       var f=_retFu(m);
       var dt=m.dtISO?new Date(m.dtISO):null;
       if((m.status||'')==='done'||(f&&f.comparecimento)){
@@ -11474,6 +11490,9 @@ function renderReunioes(){
         H+='<button onclick="openFollowup(meetings[\''+m.id+'\'],true);" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:11px;cursor:pointer;white-space:nowrap;"><i class="ti ti-pencil" style="font-size:12px;"></i> Editar</button>';
       }
       H+='<button onclick="_openReunEdit(\''+m.id+'\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:7px 10px;font-size:12px;cursor:pointer;" title="Editar retorno"><i class="ti ti-settings"></i></button>';
+      if(!m.retornoEncerrado){
+        H+='<button onclick="_posFinalizar(\''+m.id+'\')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;" title="Encerrar tratativa e iniciar cadência de relacionamento (a cada 20 dias)"><i class="ti ti-flag-check" style="font-size:12px;"></i> Finalizar</button>';
+      }
       H+='</div>';
       H+='</div>';
     }

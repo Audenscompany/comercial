@@ -2427,6 +2427,73 @@ async function handleShowupInit(req, res) {
 // ═══════════════════════ FIM SHOW-UP Fase 2 ═══════════════════════
 
 
+// ═══════════ RETORNO PÓS-TRATATIVA — encerra + cadência de relacionamento a cada 20 dias (rotativa, indefinida) ═══════════
+function posEncerramento(n) { n = suPrimeiroNome(n);
+  return `Fala, ${n}! Por aqui a gente vai encerrar as tratativas por enquanto — sem problema nenhum 🙏\nFica tranquilo que seguimos totalmente à disposição: qualquer coisa que você precisar pro delivery, é só me chamar aqui.\nSucesso pra você e pra operação! 🚀`;
+}
+const POS_CHECKINS = [
+  (n) => `Opa, ${suPrimeiroNome(n)}! Passando só pra saber: como tá a operação do delivery ultimamente? Tá conseguindo crescer ou empacou em algum ponto?`,
+  (n) => `E aí, ${suPrimeiroNome(n)}? Lembrei de você por aqui. Como andam os pedidos e o faturamento esse mês? Se tiver algum gargalo, me conta que eu te dou uma luz 👀`,
+  (n) => `Fala, ${suPrimeiroNome(n)}! Tudo certo por aí? Queria saber como tá o movimento do delivery — melhorou, estabilizou ou tá aquele sobe e desce?`,
+  (n) => `${suPrimeiroNome(n)}, e a operação, como vai? Se bater vontade de destravar o crescimento, minha porta segue aberta. Me dá um retorno de como tão as coisas 🤝`
+];
+async function posCfg() {
+  try { const v = (await db.ref("config/pos").once("value")).val() || {};
+    return { enabled: v.enabled !== false, testPhone: String(v.testPhone || "").replace(/\D/g, ""), intervalDays: parseInt(v.intervalDays) || 20 }; }
+  catch (e) { return { enabled: true, testPhone: "", intervalDays: 20 }; }
+}
+// ROTA /pos-finalizar : chamada pelo botão "Finalizar" da aba Retornos
+async function handlePosFinalizar(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var telRaw = pick(b, ["telefone", "phone", "tel"]); var nome = pick(b, ["nome", "name"]) || "";
+  var leadKey = pick(b, ["kanbanKey", "leadKey", "key"]); var meetingId = pick(b, ["meetingId", "mid"]);
+  var tel = String(telRaw || "").replace(/\D/g, "");
+  if (!tel && !leadKey) return res.status(400).json({ ok: false, error: "telefone ou leadKey obrigatorio" });
+  if (!leadKey) { try { var m = await acharKeyLead(tel, "", nome); if (m) leadKey = m.key; } catch (e) {} }
+  if (!leadKey) leadKey = (tel || ("pos_" + Date.now())).replace(/[.#$\[\]]/g, "_");
+  var cfg = await posCfg(); var now = Date.now(); var alvo = cfg.testPhone || tel;
+  try { await cadStop(leadKey, "pos_finalizado"); } catch (e) {}
+  try { await cadNsStop(leadKey, "pos_finalizado"); } catch (e) {}
+  try { await cadReatStop(leadKey, "pos_finalizado"); } catch (e) {}
+  try { await db.ref("leads/" + leadKey + "/cadenciaPos").set({ status: "active", startedAt: now, touchIndex: 0, lastTouchAt: now, nome: nome, tel: tel, encerradaEm: now }); } catch (e) {}
+  try { await db.ref("cadencia_pos_ativos/" + leadKey).set({ at: now, tel: tel, nome: nome }); } catch (e) {}
+  if (meetingId) { try { await db.ref("meetings/" + meetingId + "/retornoEncerrado").set(true); } catch (e) {} }
+  if (alvo) { try { await enviarMensagemWhatsapp(alvo, posEncerramento(nome)); } catch (e) {} }
+  try { await db.ref("cadencia_events").push({ type: "pos_finalizado", leadKey: leadKey, at: now }); } catch (e) {}
+  return res.status(200).json({ ok: true, leadKey: leadKey });
+}
+// ROTA /pos-tick : Cloud Scheduler (1x/dia). Dispara o check-in de quem venceu os 20 dias.
+async function handlePosTick(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var cfg = await posCfg(); var dry = req.query.dryrun === "1";
+  if (!cfg.enabled && !dry) return res.status(200).json({ ok: true, skipped: "pos_desligado" });
+  var ativos = (await db.ref("cadencia_pos_ativos").once("value")).val() || {};
+  var now = Date.now(); var intervalMs = (cfg.intervalDays || 20) * 86400000; var acoes = [];
+  var keys = Object.keys(ativos);
+  for (var i = 0; i < keys.length; i++) {
+    var leadKey = keys[i];
+    var lead = (await db.ref("leads/" + leadKey).once("value")).val() || {};
+    var cad = lead.cadenciaPos; if (!cad || cad.status !== "active") continue;
+    var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+    if (opt && opt.optOut) { if (!dry) { try { await db.ref("leads/" + leadKey + "/cadenciaPos/status").set("stopped"); } catch (e) {} try { await db.ref("cadencia_pos_ativos/" + leadKey).remove(); } catch (e) {} } continue; }
+    var last = cad.lastTouchAt || cad.startedAt || 0;
+    if ((now - last) < intervalMs) continue;
+    var idx = cad.touchIndex || 0;
+    var fn = POS_CHECKINS[idx % POS_CHECKINS.length];
+    var tel = cad.tel || lead.telefone || ""; var alvo = cfg.testPhone || tel;
+    if (dry) { acoes.push({ leadKey: leadKey, idx: idx, dry: true }); continue; }
+    if (alvo) { try { await enviarMensagemWhatsapp(alvo, fn(cad.nome || lead.nome || "")); } catch (e) {} }
+    try { await db.ref("leads/" + leadKey + "/cadenciaPos").update({ touchIndex: idx + 1, lastTouchAt: now }); } catch (e) {}
+    try { await db.ref("leads/" + leadKey + "/whatsapp/lastOutboundAt").set(now); } catch (e) {}
+    try { await db.ref("cadencia_events").push({ type: "pos_checkin", leadKey: leadKey, idx: idx, at: now }); } catch (e) {}
+    acoes.push({ leadKey: leadKey, idx: idx });
+  }
+  return res.status(200).json({ ok: true, dry: dry, ativos: keys.length, acoes: acoes });
+}
+// ═══════════ FIM RETORNO PÓS-TRATATIVA ═══════════
+
+
 // ===== Roteamento principal =====
 // ===== Rota /retorno: avisa o lead que foi agendado um retorno com data e hora =====
 async function handleRetorno(req, res) {
@@ -2646,6 +2713,16 @@ async function cadHandleInbound(phone, text) {
   }
   // SHOW-UP: se o lead tem reunião no ar, interpreta a resposta (confirmação/dor/@/remarcar) ANTES de qualquer outra coisa
   try { var _suH = await suHandleInbound(leadKey, lead, text, tel); if (_suH) return; } catch (e) { console.error("suHandleInbound:", e); }
+  // PÓS-TRATATIVA: se o lead está na cadência de relacionamento e responde → tarefa pro time + pausa
+  try {
+    if (lead.cadenciaPos && lead.cadenciaPos.status === "active") {
+      await db.ref("leads/" + leadKey + "/cadenciaPos/status").set("paused_reply");
+      await db.ref("leads/" + leadKey).update({ needsHumanAttention: true });
+      await db.ref("sdr_tarefas/" + leadKey + "_pos").set({ leadKey: leadKey, nome: lead.nome || "", telefone: lead.telefone || tel, empresa: lead.empresa || "", tipo: "♻️ Pós-tratativa: lead respondeu — retomar", icon: "ti-refresh", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
+      await db.ref("cadencia_events").push({ type: "pos_reply", leadKey: leadKey, at: Date.now() });
+      return;
+    }
+  } catch (e) { console.error("pos inbound:", e); }
   // NÃO pausa a cadência: ela continua durante os 5 dias mesmo que o lead responda (só para ao sair de Novo/Qualificado, no opt-out ou ao agendar reunião)
   // AGENDAMENTO CONVERSACIONAL: se há horários oferecidos, tenta entender e marcar
   var ag = lead.agendamento;
@@ -3827,6 +3904,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/showup-init") {
       return await handleShowupInit(req, res);
+    }
+    if (path === "/pos-finalizar") {
+      return await handlePosFinalizar(req, res);
+    }
+    if (path === "/pos-tick") {
+      return await handlePosTick(req, res);
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);
