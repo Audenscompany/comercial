@@ -6610,11 +6610,13 @@ function _finPeriodToRange(period){
 function _finNormalizeLegacy(saidas,entradas,recebimentos){
   var ledger=[];
   var confStatuses=['CONFIRMED','RECEIVED','RECEIVED_IN_CASH'];
+  var INVEST_CATS={'Aplicação CDB':1,'Aplicacao CDB':1,'Investimentos':1,'Aplicação':1};
   Object.entries(saidas||{}).forEach(function(e){
     var d=Object.assign({},e[1],{_id:e[0],_src:'saidas'});
-    ledger.push({id:e[0],type:'despesa',amount:parseFloat(d.valor)||0,
+    var _cat=d.categoria||'Outros';
+    ledger.push({id:e[0],type:(INVEST_CATS[_cat]?'investimento':'despesa'),amount:parseFloat(d.valor)||0,
       date:d.data||'',dueDate:d.data||'',description:d.descricao||'Despesa',
-      category:d.categoria||'Outros',accountId:'legado',status:d.status||'pendente',
+      category:_cat,accountId:'legado',status:d.status||'pendente',
       origin:'manual',createdAt:d.createdAt||0,createdBy:d.criadoPor||'',
       fixed:!!(d.fixa||d.fixed),_src:'saidas',_raw:d});
   });
@@ -6691,12 +6693,15 @@ function finComputeSummary(period){
   var items=finLedgerForPeriod(period);
   var receitas=items.filter(function(t){return t.type==='receita'&&(t.status==='confirmado'||t.status==='conciliado');});
   var despesas=items.filter(function(t){return t.type==='despesa'&&(t.status==='confirmado'||t.status==='conciliado');});
+  var investimentos=items.filter(function(t){return t.type==='investimento'&&(t.status==='confirmado'||t.status==='conciliado');});
   var receitaTotal=receitas.reduce(function(s,t){return s+t.amount;},0);
   var despesaTotal=despesas.reduce(function(s,t){return s+t.amount;},0);
+  var investimentoTotal=investimentos.reduce(function(s,t){return s+t.amount;},0);
   var asaasTotal=receitas.filter(function(t){return t.origin==='asaas';}).reduce(function(s,t){return s+t.amount;},0);
   var manualTotal=receitas.filter(function(t){return t.origin==='manual';}).reduce(function(s,t){return s+t.amount;},0);
   var pendentes=items.filter(function(t){return t.status==='pendente';});
   return{receitaTotal:receitaTotal,despesaTotal:despesaTotal,lucro:receitaTotal-despesaTotal,
+    investimentoTotal:investimentoTotal,investimentoCount:investimentos.length,
     asaasTotal:asaasTotal,manualTotal:manualTotal,
     receitaCount:receitas.length,despesaCount:despesas.length,
     pendentesCount:pendentes.length};
@@ -6804,6 +6809,7 @@ async function finRenderDashboard(){
       _finKpiCard('Recebido','R$ '+fmtMoeda(s.asaasTotal+s.manualTotal),'var(--cyan)',s.asaasTotal?'Asaas R$ '+fmtMoeda(s.asaasTotal):'Apenas manual','ti-cash',0)+
       _finKpiCard('Despesas do Mês','R$ '+fmtMoeda(s.despesaTotal),'var(--red)','vs '+finMesLabelCurto(prevP)+' R$ '+fmtMoeda(sp.despesaTotal),'ti-trending-down',sp.despesaTotal?Math.round((s.despesaTotal-sp.despesaTotal)/sp.despesaTotal*100):0)+
       _finKpiCard('Lucro / Prejuízo','R$ '+fmtMoeda(s.lucro),s.lucro>=0?'var(--purple3)':'var(--red)','Receitas − Despesas realizadas','ti-report-money',sp.lucro?Math.round((s.lucro-sp.lucro)/Math.abs(sp.lucro)*100):0)+
+      _finKpiCard('Investido (CDB)','R$ '+fmtMoeda(s.investimentoTotal||0),'var(--amber)','Aplicações no período · não é despesa',(s.investimentoCount||0)+' aplicação(ões)',0)+
       (function(){var mg=s.receitaTotal?(s.lucro/s.receitaTotal*100):0;var mgp=sp.receitaTotal?(sp.lucro/sp.receitaTotal*100):0;return _finKpiCard('Margem de Lucro',mg.toFixed(1).replace('.',',')+'%',mg>=0?'var(--green)':'var(--red)','vs '+finMesLabelCurto(prevP)+' '+mgp.toFixed(1).replace('.',',')+'%','ti-percentage',Math.round(mg-mgp));})()+
       _finKpiCard('Saldo em Contas',_finState.contas.length?'R$ '+fmtMoeda(saldoContas):'—',_finState.contas.length?'var(--white)':'var(--muted)',_finState.contas.length?'Atualizado agora':'Nenhuma conta cadastrada','ti-building-bank',0)+
     '</div>';
@@ -8154,7 +8160,7 @@ async function finSalvarLancamento(){
   loadFinanceiroData();
 }
 // ===== IMPORTAR EXTRATO BANCÁRIO =====
-var FIN_CATS_DEFAULT=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Outros'];
+var FIN_CATS_DEFAULT=['Infraestrutura','Marketing','Equipe','Pró-Labore','Impostos','Comissoes','Fornecedores','Taxas Bancárias','Aluguel','Transporte','Padaria','Supermercado','Limpeza','Aplicação CDB','Outros'];
 var FIN_CATS=FIN_CATS_DEFAULT.slice();
 var FIN_ENTRADA_CATS=['Receita Cliente','Asaas','InfinitePay','Transferência Recebida','Reembolso','Outros'];
 var _extratoRows=[];
@@ -8323,6 +8329,8 @@ function autoGuessExtratoCategoria(desc, valor){
   if(dl.includes('iof')||dl.includes('tarifa bancaria')||dl.includes('tarifa')) cat='Taxas Bancárias';
   if(dl.includes('imposto')||dl.includes('simples nacional')||dl.includes('dasn')||dl.includes('darf')) cat='Impostos';
   if(dl.includes('fornecedor')) cat='Fornecedores';
+  // Investimento / aplicação (CDB, renda fixa) — NÃO é despesa
+  if(dl.includes('cdb')||dl.includes('rdb')||dl.includes('aplicacao')||dl.includes('aplicação')||dl.includes('aplic.')||dl.includes('renda fixa')||dl.includes('tesouro')||dl.includes('lci')||dl.includes('lca')||dl.includes('investimento')||dl.includes('resgate')) cat='Aplicação CDB';
   // Receitas (valores positivos)
   if(valor>0){
     if(dl.includes('pix recebido')||dl.includes('transferencia recebida')||dl.includes('recebido')) cat='Receita Cliente';
