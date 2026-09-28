@@ -8258,6 +8258,7 @@ function openModalExtrato(){
       '</div>'+
       '<div id="extrato-step1">'+
         '<div class="info-note" style="margin-bottom:14px;"><i class="ti ti-info-circle"></i> Suporte a <b>CSV</b> (Data ; Descrição ; Valor) e <b>PDF</b> de extrato bancário. Valores negativos = saídas.</div>'+
+        '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;"><button onclick="openHistImportacoes()" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--muted);padding:6px 12px;font-size:12px;cursor:pointer;"><i class="ti ti-history"></i> Histórico de importações</button></div>'+
         '<div style="display:flex;gap:10px;margin-bottom:14px;">'+
           '<label style="flex:1;border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'var(--cyan)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
             '<i class="ti ti-file-type-pdf" style="font-size:28px;color:#ef4444;display:block;margin-bottom:6px;"></i>'+
@@ -8627,26 +8628,88 @@ function renderExtratoTable(){
 }
 
 async function salvarExtrato(){
+  if(window._extratoSalvando) return; // trava contra clique duplo
   // Extrato = apenas saídas. Entradas sempre vêm do Asaas ou lançamento manual.
   var selecionadas=_extratoRows.filter(function(r){return r.sel;});
   if(!selecionadas.length){ alert('Selecione ao menos uma linha.'); return; }
+  window._extratoSalvando=true;
   var btn=document.querySelector('#modal-extrato .btn-primary');
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
   var today=new Date().toISOString().split('T')[0];
-  var erros=0;
+  var importId='imp_'+Date.now();
+  var erros=0, totalVal=0, okCount=0;
   for(var i=0;i<selecionadas.length;i++){
     var s=selecionadas[i];
     try{
       await fbPush('financeiro/saidas',{
         data:s.data||today, valor:Math.abs(s.valor), descricao:s.descricao||'Importado extrato',
         categoria:s.categoria||'Outros', status:'confirmado',
-        criadoPor:(CU&&CU.name)||'gestor', createdAt:Date.now(), _importado:true
+        criadoPor:(CU&&CU.name)||'gestor', createdAt:Date.now(), _importado:true,
+        importId:importId, importadoEm:Date.now()
       });
+      totalVal+=Math.abs(s.valor); okCount++;
     }catch(e){erros++;}
   }
+  try{ await fbSet('financeiro/import_batches/'+importId,{ at:Date.now(), count:okCount, total:totalVal, by:(CU&&CU.name)||'gestor', tipo:'extrato' }); }catch(e){}
+  window._extratoSalvando=false;
   closeModal('modal-extrato');
-  showSheetToast(selecionadas.length+' saída(s) importada(s)'+(erros?' ('+erros+' erros)':'')+'!',erros>0);
+  showSheetToast(okCount+' saída(s) importada(s)'+(erros?' ('+erros+' erros)':'')+'!',erros>0);
   loadFinanceiroData();
+}
+
+// ===== HISTÓRICO DE IMPORTAÇÕES DE EXTRATO =====
+async function openHistImportacoes(){
+  var batches=(await fbGet('financeiro/import_batches'))||{};
+  var arr=Object.entries(batches).map(function(e){return Object.assign({id:e[0]},e[1]);}).sort(function(a,b){return (b.at||0)-(a.at||0);});
+  function _dt(ts){try{var d=new Date(ts);return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear()+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}catch(e){return '—';}}
+  var rows = arr.length ? arr.map(function(b){
+    return '<tr>'+
+      '<td style="font-size:12px;white-space:nowrap;">'+_dt(b.at)+'</td>'+
+      '<td style="font-size:12px;">'+(b.count||0)+' saídas</td>'+
+      '<td style="font-weight:700;color:var(--red);white-space:nowrap;">R$ '+fmtMoeda(b.total||0)+'</td>'+
+      '<td style="font-size:12px;color:var(--muted);">'+esc(b.by||'')+'</td>'+
+      '<td style="text-align:right;"><button onclick="apagarImportacao(\''+b.id+'\')" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:#f87171;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="ti ti-trash"></i> Apagar</button></td>'+
+    '</tr>';
+  }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Nenhuma importação registrada. Importações antigas (antes desta atualização) não têm lote — use "Remover duplicatas" abaixo.</td></tr>';
+  var html='<div class="modal-ov" id="modal-histimp" data-dynamic="1" style="display:flex;" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:640px;width:96vw;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+        '<span class="modal-title" style="margin:0;"><i class="ti ti-history" style="margin-right:8px;color:var(--cyan);"></i>Histórico de importações</span>'+
+        '<button onclick="var e=document.getElementById(\'modal-histimp\');if(e)e.remove();" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;"><i class="ti ti-x"></i></button>'+
+      '</div>'+
+      '<div class="t-scroll" style="max-height:52vh;overflow:auto;"><table><thead><tr><th>Quando</th><th>Qtde</th><th>Total</th><th>Por</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'+
+        '<div style="font-size:11px;color:var(--muted);">Apagar uma importação remove todas as saídas daquele lote.</div>'+
+        '<button onclick="finRemoverDuplicatasSaidas()" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:8px;color:#f59e0b;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"><i class="ti ti-copy-off"></i> Remover duplicatas</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  var ex=document.getElementById('modal-histimp'); if(ex) ex.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function apagarImportacao(importId){
+  if(!confirm('Apagar TODAS as saídas desta importação? Não dá pra desfazer.')) return;
+  var saidas=(await fbGet('financeiro/saidas'))||{};
+  var ids=Object.keys(saidas).filter(function(k){return saidas[k]&&saidas[k].importId===importId;});
+  for(var i=0;i<ids.length;i++){ try{ await fbDb.ref('financeiro/saidas/'+ids[i]).remove(); }catch(e){} }
+  try{ await fbDb.ref('financeiro/import_batches/'+importId).remove(); }catch(e){}
+  showSheetToast(ids.length+' saída(s) da importação apagadas.');
+  var m=document.getElementById('modal-histimp'); if(m) m.remove();
+  _finState.loaded=false; loadFinanceiroData();
+}
+async function finRemoverDuplicatasSaidas(){
+  var saidas=(await fbGet('financeiro/saidas'))||{};
+  var seen={}, dup=[];
+  Object.keys(saidas).forEach(function(k){ var s=saidas[k]; if(!s) return;
+    var key=(s.data||'')+'|'+Math.round((parseFloat(s.valor)||0)*100)+'|'+(s.descricao||'')+'|'+(s.categoria||'');
+    if(seen[key]) dup.push(k); else seen[key]=k;
+  });
+  if(!dup.length){ alert('Nenhuma duplicata encontrada (mesma data, valor, descrição e categoria).'); return; }
+  if(!confirm('Encontrei '+dup.length+' saída(s) duplicada(s). Apagar as cópias extras, mantendo 1 de cada?')) return;
+  for(var i=0;i<dup.length;i++){ try{ await fbDb.ref('financeiro/saidas/'+dup[i]).remove(); }catch(e){} }
+  showSheetToast(dup.length+' duplicata(s) removida(s).');
+  var m=document.getElementById('modal-histimp'); if(m) m.remove();
+  _finState.loaded=false; loadFinanceiroData();
 }
 
 async function finConfirmarSaida(id,btn){
