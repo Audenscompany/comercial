@@ -8600,10 +8600,11 @@ function renderExtratoTable(){
     var catOptsRow=FIN_CATS.map(function(c){return '<option value="'+c+'"'+(c===r.categoria?' selected':'')+'>'+c+'</option>';}).join('');
     var catSel='<select onchange="_extratoRows['+i+'].categoria=this.value" style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;">'+catOptsRow+'</select>';
     var dataFmt=r.data?r.data.split('-').reverse().join('/'):'—';
+    var descVal=String(r.descricao||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
     return '<tr style="opacity:'+(r.sel?'1':'0.4')+';">'+
       '<td style="width:36px;text-align:center;"><input type="checkbox" '+(r.sel?'checked':'')+' onchange="_extratoRows['+i+'].sel=this.checked;renderExtratoTable();" style="accent-color:var(--purple);"></td>'+
       '<td style="color:var(--muted);font-size:12px;white-space:nowrap;">'+dataFmt+'</td>'+
-      '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;" title="'+esc(r.descricao)+'">'+esc(r.descricao)+'</td>'+
+      '<td style="min-width:200px;"><input type="text" value="'+descVal+'" onchange="_extratoRows['+i+'].descricao=this.value" placeholder="Descrição" style="width:100%;box-sizing:border-box;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:12px;outline:none;"></td>'+
       '<td style="font-weight:700;color:'+valColor+';font-family:Barlow Condensed,sans-serif;white-space:nowrap;">'+valFmt+'</td>'+
       '<td>'+catSel+'</td>'+
     '</tr>';
