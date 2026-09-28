@@ -2494,6 +2494,75 @@ async function handlePosTick(req, res) {
 // ═══════════ FIM RETORNO PÓS-TRATATIVA ═══════════
 
 
+// ═══════════ AUDENS DAY — reativação de reuniões dos últimos 60 dias (3 dias) ═══════════
+// Config em config/audensday { testPhone:"55...", closerNome:"Lucas" }. testPhone = tudo só pro seu número.
+async function adCfg() {
+  try { var v = (await db.ref("config/audensday").once("value")).val() || {};
+    return { testPhone: String(v.testPhone || "").replace(/\D/g, ""), closerNome: v.closerNome || "Lucas" }; }
+  catch (e) { return { testPhone: "", closerNome: "Lucas" }; }
+}
+function adMsg(dia, nome, closer) {
+  var n = primeiroNomeDe(nome) || "tudo bem";
+  if (dia === 1) return `Fala, ${n}! Aqui é o ${closer}, da Audens 🙌 Lembrei de você — como fechou setembro aí no delivery? As vendas cresceram, estabilizaram? Se tiver algum gargalo, me conta que eu te dou uma luz 👀`;
+  if (dia === 2) return `${n}, tô fechando o mês por aqui e consigo abrir uma condição especial de virada pra quem topar retomar agora. Ainda faz sentido pra você ter uma assessoria puxando o crescimento do seu delivery?`;
+  return `Último dia, ${n}! 🚀 A condição de virada de mês encerra hoje. Se quiser destravar outubro com a Audens, me responde aqui que eu já te encaixo.`;
+}
+// /audensday-enroll : monta a base (reuniões últimos 60 dias, menos clientes e opt-out)
+async function handleAudensDayEnroll(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var dry = req.query.dryrun === "1";
+  var M = (await db.ref("meetings").once("value")).val() || {};
+  var followups = (await db.ref("followups").once("value")).val() || {};
+  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
+  var cutoff = Date.now() - 60 * 86400000;
+  // clientes = telefones com followup resultado "venda" (fecharam)
+  var clientes = {};
+  Object.keys(followups).forEach(function (k) { var fu = followups[k]; if (fu && fu.resultado === "venda") { var t = String(fu.tel || "").replace(/\D/g, "").slice(-9); if (t) clientes[t] = 1; } });
+  // 1 registro por telefone (reunião mais recente dentro dos 60 dias)
+  var byTel = {};
+  Object.keys(M).forEach(function (mid) {
+    var m = M[mid]; if (!m || m._retorno) return;
+    var when = m.scheduledAt || (m.dtISO ? new Date(m.dtISO).getTime() : 0);
+    if (!when || when < cutoff) return;
+    var t = String(m.tel || m.telefone || "").replace(/\D/g, "").slice(-9); if (!t) return;
+    if (!byTel[t] || when > byTel[t].when) byTel[t] = { when: when, nome: m.nome || "", tel: String(m.tel || m.telefone || "").replace(/\D/g, ""), kanbanKey: m.kanbanKey || "", closer: m.responsavel || "" };
+  });
+  var ativos = {}, incl = 0, skip = { cliente: 0, optout: 0, sem_tel: 0 };
+  Object.keys(byTel).forEach(function (t) {
+    if (clientes[t]) { skip.cliente++; return; }
+    var b = byTel[t]; if (!b.tel || b.tel.length < 10) { skip.sem_tel++; return; }
+    var lk = b.kanbanKey || ("ad_" + t);
+    if (optout[lk]) { skip.optout++; return; }
+    ativos[t] = { nome: b.nome, tel: b.tel, kanbanKey: lk, closer: b.closer || "", at: Date.now(), sent: {} }; incl++;
+  });
+  if (!dry) { await db.ref("audensday/ativos").set(ativos); await db.ref("audensday/meta").set({ enrolledAt: Date.now(), total: incl }); }
+  return res.status(200).json({ ok: true, dry: dry, incluidos: incl, skips: skip, amostra: Object.values(ativos).slice(0, 12).map(function (a) { return a.nome; }) });
+}
+// /audensday-send?dia=1|2|3 : dispara a mensagem do dia (idempotente por dia)
+async function handleAudensDaySend(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var dia = parseInt(req.query.dia || "0", 10);
+  if (dia !== 1 && dia !== 2 && dia !== 3) return res.status(400).json({ ok: false, error: "dia deve ser 1, 2 ou 3" });
+  var dry = req.query.dryrun === "1";
+  var cfg = await adCfg();
+  var ativos = (await db.ref("audensday/ativos").once("value")).val() || {};
+  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
+  var keys = Object.keys(ativos), enviados = 0, pulados = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var t = keys[i], a = ativos[t]; if (!a) continue;
+    if (a.sent && a.sent["d" + dia]) { pulados++; continue; }
+    if (a.kanbanKey && optout[a.kanbanKey]) { pulados++; continue; }
+    var alvo = cfg.testPhone || a.tel;
+    if (dry) { enviados++; continue; }
+    try { await enviarMensagemWhatsapp(alvo, adMsg(dia, a.nome, a.closer || cfg.closerNome)); } catch (e) {}
+    try { await db.ref("audensday/ativos/" + t + "/sent/d" + dia).set(Date.now()); } catch (e) {}
+    enviados++;
+  }
+  return res.status(200).json({ ok: true, dia: dia, dry: dry, total: keys.length, enviados: enviados, pulados: pulados });
+}
+// ═══════════ FIM AUDENS DAY ═══════════
+
+
 // ===== Roteamento principal =====
 // ===== Rota /retorno: avisa o lead que foi agendado um retorno com data e hora =====
 async function handleRetorno(req, res) {
@@ -2690,6 +2759,23 @@ async function handleCadenciaTest(req, res) {
 }
 
 // ===== FASE 2: resposta do lead pausa a cadência (+ opt-out automático) =====
+// Verdadeiro se o lead tem uma reunião PENDENTE marcada para HOJE (BRT)
+async function temReuniaoHoje(leadKey, tel) {
+  try {
+    var M = (await db.ref("meetings").once("value")).val() || {};
+    var t9 = String(tel || "").replace(/\D/g, "").slice(-9);
+    var hoje = cadBRT(Date.now()).date; // YYYY-MM-DD em BRT
+    for (var mid in M) {
+      var m = M[mid]; if (!m || m._retorno || !m.dtISO) continue;
+      var st = String(m.status || "").toLowerCase();
+      if (st === "cancelado" || st === "reagendado" || st === "done" || st === "noshow") continue;
+      var mk = m.kanbanKey || ""; var mt9 = String(m.tel || m.telefone || "").replace(/\D/g, "").slice(-9);
+      if (mk !== leadKey && (!t9 || mt9 !== t9)) continue;
+      if (cadBRT(m.dtISO).date === hoje) return true;
+    }
+  } catch (e) { console.error("temReuniaoHoje:", e); }
+  return false;
+}
 async function cadHandleInbound(phone, text) {
   var tel = String(phone || "").replace(/\D/g, "");
   if (!tel) return;
@@ -2711,8 +2797,11 @@ async function cadHandleInbound(phone, text) {
     await db.ref("cadencia_events").push({ type: "opt_out", leadKey: leadKey, at: Date.now() });
     return;
   }
-  // SHOW-UP: se o lead tem reunião no ar, interpreta a resposta (confirmação/dor/@/remarcar) ANTES de qualquer outra coisa
-  try { var _suH = await suHandleInbound(leadKey, lead, text, tel); if (_suH) return; } catch (e) { console.error("suHandleInbound:", e); }
+  // REGRA: a IA só responde AUTOMATICAMENTE quem tem reunião marcada para HOJE. Os demais nunca recebem resposta automática — viram tarefa pro João.
+  var _reuniaoHoje = await temReuniaoHoje(leadKey, tel);
+  if (_reuniaoHoje) {
+    try { var _suH = await suHandleInbound(leadKey, lead, text, tel); if (_suH) return; } catch (e) { console.error("suHandleInbound:", e); }
+  }
   // PÓS-TRATATIVA: se o lead está na cadência de relacionamento e responde → tarefa pro time + pausa
   try {
     if (lead.cadenciaPos && lead.cadenciaPos.status === "active") {
@@ -2724,14 +2813,8 @@ async function cadHandleInbound(phone, text) {
     }
   } catch (e) { console.error("pos inbound:", e); }
   // NÃO pausa a cadência: ela continua durante os 5 dias mesmo que o lead responda (só para ao sair de Novo/Qualificado, no opt-out ou ao agendar reunião)
-  // AGENDAMENTO CONVERSACIONAL: se há horários oferecidos, tenta entender e marcar
-  var ag = lead.agendamento;
-  if (ag && (ag.status === "options_sent" || ag.status === "awaiting_confirm")) {
-    try {
-      var handled = await cadTentarAgendar(leadKey, lead, ag, text, tel);
-      if (handled) return; // resolvido automaticamente — não passa pro João
-    } catch (e) { console.error("cadTentarAgendar:", e); }
-  }
+  // AGENDAMENTO CONVERSACIONAL DESLIGADO (a pedido 28/09): a IA NÃO marca horário sozinha.
+  // Só a jornada de show-up de quem tem reunião HOJE responde automaticamente; o resto vira tarefa pro João.
   // não deu pra resolver sozinho → passa pro João
   try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: true }); } catch (e) {}
   // Tarefa "respondeu" para o João — só se o lead está em alguma cadência ativa
@@ -3904,6 +3987,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/showup-init") {
       return await handleShowupInit(req, res);
+    }
+    if (path === "/audensday-enroll") {
+      return await handleAudensDayEnroll(req, res);
+    }
+    if (path === "/audensday-send") {
+      return await handleAudensDaySend(req, res);
     }
     if (path === "/pos-finalizar") {
       return await handlePosFinalizar(req, res);
