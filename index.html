@@ -32904,7 +32904,11 @@ function renderCadenciaPainel(){
     '<button onclick="cadPainelReprogramar()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#f59e0b;border-color:rgba(245,158,11,.4);">Reprogramar fila p/ agora</button>'+
     '<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+
     '<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+
-    '<button onclick="cadPainelNoshowBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Recontatar no-shows</button>'
+    '<button onclick="cadPainelNoshowBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Recontatar no-shows</button>+
+    '<button onclick="cadPainelAudensBase()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">⭐ Audens Day · montar base</button>'+
+    '<button onclick="cadPainelAudensSend(1)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">Audens Day · enfileirar dia 1</button>'+
+    '<button onclick="cadPainelAudensSend(2)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">dia 2</button>'+
+    '<button onclick="cadPainelAudensSend(3)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">dia 3</button>''
   ) : '';
   var sub = g ? 'Motor de follow-up do João · ao vivo do Firebase' : 'Leads que responderam a automação — encerre quando assumir o atendimento';
   return '<div class="page active" id="pg-cadencia-painel" style="max-width:1180px;">'+
@@ -32917,6 +32921,43 @@ function renderCadenciaPainel(){
     (g?'<div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:16px;">'+'<div style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;"><i class="ti ti-hand-stop" style="color:var(--red);margin-right:6px;"></i>Bloquear número (parar mensagens da cadência)</div>'+'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'+'<input id="cadp-optout-tel" placeholder="DDD + número (ex.: 31987654321)" onkeydown="if(event.key===\'Enter\')optoutAdd()" style="flex:1;min-width:200px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:9px 12px;">'+'<button class="btn btn-primary" onclick="optoutAdd()" style="font-size:12px;padding:9px 16px;"><i class="ti ti-ban"></i> Bloquear</button>'+'</div>'+'<div style="font-size:11px;color:var(--muted);margin-top:8px;">O número entra no opt-out e a automação de WhatsApp para de enviar mensagens pra ele. Aparece na lista de opt-out abaixo, onde dá pra reativar.</div>'+'</div>':'')+
     '<div id="cadp-body"></div>'+
   '</div>';
+}
+
+async function cadPainelAudensBase(){
+  var st=document.getElementById('cadp-status');
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Montando base do Audens Day…';}
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/audensday-enroll?secret='+WEBHOOK_SECRET+'&dryrun=1',{method:'POST'});
+    var j={};try{j=await r.json();}catch(e){}
+    if(!j||j.incluidos==null){ if(st){st.style.color='var(--amber)';st.textContent='Não consegui montar — a rota /audensday-enroll já está no deploy?';} return; }
+    var n=j.incluidos;
+    if(n===0){ if(st){st.style.color='var(--muted)';st.textContent='Ninguém elegível (reuniões dos últimos 60 dias, tirando clientes e opt-out).';} return; }
+    var sk=j.skips||{};
+    var amostra=(j.amostra||[]).slice(0,8).map(function(x){return '• '+x;}).join('\n');
+    if(!confirm(n+' pessoa(s) entram no Audens Day (reuniões dos últimos 60 dias, menos clientes e opt-out).\n\nExcluídos: '+(sk.cliente||0)+' clientes · '+(sk.optout||0)+' opt-out · '+(sk.sem_tel||0)+' sem telefone.\n\nExemplos:\n'+amostra+'\n\nMontar a base agora? (ainda NÃO envia nada — depois clique em "enfileirar dia 1")')){ if(st){st.textContent='Cancelado.';} return; }
+    if(st){st.innerHTML='<i class="ti ti-loader"></i> Gravando base…';}
+    var r2=await fetch(RECEBERLEAD_URL+'/audensday-enroll?secret='+WEBHOOK_SECRET,{method:'POST'});
+    var j2={};try{j2=await r2.json();}catch(e){}
+    if(st){st.style.color='var(--green)';st.textContent='✓ Base do Audens Day montada: '+((j2&&j2.incluidos)||0)+' pessoa(s). Agora clique em "enfileirar dia 1".';}
+    setTimeout(cadPainelInit,1200);
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function cadPainelAudensSend(dia){
+  var st=document.getElementById('cadp-status');
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Conferindo dia '+dia+'…';}
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/audensday-send?secret='+WEBHOOK_SECRET+'&dia='+dia+'&dryrun=1',{method:'POST'});
+    var j={};try{j=await r.json();}catch(e){}
+    if(!j||j.enfileirados==null){ if(st){st.style.color='var(--amber)';st.textContent='Não consegui — montou a base antes? A rota /audensday-send está no deploy?';} return; }
+    var n=j.enfileirados;
+    if(n===0){ if(st){st.style.color='var(--muted)';st.textContent='Nada novo pra enfileirar no dia '+dia+' ('+(j.ja_na_fila_ou_enviados||0)+' já na fila/enviados).';} return; }
+    if(!confirm('Dia '+dia+' do Audens Day: '+n+' mensagem(ns) entram na fila.\n\nSaem 1 a cada 300s, das 09h às 23h (o que passar das 23h continua amanhã). O escoamento é o mesmo disparador da cadência.\n\nEnfileirar agora?')){ if(st){st.textContent='Cancelado.';} return; }
+    if(st){st.innerHTML='<i class="ti ti-loader"></i> Enfileirando dia '+dia+'…';}
+    var r2=await fetch(RECEBERLEAD_URL+'/audensday-send?secret='+WEBHOOK_SECRET+'&dia='+dia,{method:'POST'});
+    var j2={};try{j2=await r2.json();}catch(e){}
+    if(st){st.style.color='var(--green)';st.textContent='✓ Dia '+dia+': '+((j2&&j2.enfileirados)||0)+' na fila. Último agendado '+((j2&&j2.ultimo_agendado)||'—')+'. O disparador escoa sozinho.';}
+    setTimeout(cadPainelInit,1200);
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 
 function _optoutTelDigits(t){ return String(t||'').replace(/\D/g,''); }
