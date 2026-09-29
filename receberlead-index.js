@@ -3775,6 +3775,29 @@ const CAD_CAMP_TEMPLATES = {
   }
 };
 
+// Templates efetivos: mescla config/campanha/templates (editado pela tela) sobre os defaults acima.
+// Um toque presente no Firebase sobrescreve o texto; ausente cai no default. Texto vazio = toque NAO envia.
+var _campTplCache = { at: 0, val: null };
+async function campEffectiveTemplates() {
+  try {
+    if (_campTplCache.val && (Date.now() - _campTplCache.at) < 20000) return _campTplCache.val;
+    var over = (await db.ref("config/campanha/templates").once("value")).val() || {};
+    var eff = { reuniu: {}, nunca: {} };
+    ["reuniu", "nunca"].forEach(function (vk) {
+      var base = CAD_CAMP_TEMPLATES[vk] || {};
+      Object.keys(base).forEach(function (tid) { eff[vk][tid] = { text: base[tid].text, media: base[tid].media || [] }; });
+      var ov = over[vk] || {};
+      Object.keys(ov).forEach(function (tid) {
+        if (!eff[vk][tid]) eff[vk][tid] = { text: "", media: [] };
+        if (typeof ov[tid] === "string") eff[vk][tid].text = ov[tid];
+        else if (ov[tid] && typeof ov[tid].text === "string") { eff[vk][tid].text = ov[tid].text; if (ov[tid].media) eff[vk][tid].media = ov[tid].media; }
+      });
+    });
+    _campTplCache = { at: Date.now(), val: eff };
+    return eff;
+  } catch (e) { return { reuniu: CAD_CAMP_TEMPLATES.reuniu, nunca: CAD_CAMP_TEMPLATES.nunca }; }
+}
+
 function campTouchFor(ativo, period, todayDate) {
   if (!ativo || (ativo.status && ativo.status !== "active") || !ativo.startedAt) return null;
   var sd = cadBRT(ativo.startedAt).date;
@@ -3864,6 +3887,7 @@ async function handleCampDrain(req, res) {
 }
 async function campDrainCore() {
   var cfg = await cadCfg();
+  var EFF_TPL = await campEffectiveTemplates();
   var campOn = (await db.ref("config/cadencia/campEnabled").once("value")).val();
   var out = { camp: true, campEnabled: !!campOn, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
   if (!campOn) { out.note = "campanha DESLIGADA"; return res.status(200).json(out); }
@@ -3888,9 +3912,10 @@ async function campDrainCore() {
       if (v.reason === "meeting_scheduled" || v.reason === "closed_or_won" || v.reason === "opt_out") { try { await db.ref("cadencia_camp_ativos/" + key + "/status").set("stopped"); } catch (e) {} }
       out.cancelled++; continue;
     }
-    var set = CAD_CAMP_TEMPLATES[v.ativo.variant] || CAD_CAMP_TEMPLATES.nunca;
+    var set = EFF_TPL[v.ativo.variant] || EFF_TPL.nunca;
     var tpl = set[item.templateId];
     if (!tpl) { await itemRef.update({ status: "failed", reason: "template_missing" }); out.failed++; continue; }
+    if (!tpl.text || !String(tpl.text).trim()) { await itemRef.update({ status: "cancelled_before_send", cancelReason: "template_empty", cancelledAt: Date.now() }); await msgRef.update({ status: "cancelled_before_send", reason: "template_empty" }); out.cancelled++; continue; }
     var lead = v.lead;
     var r = cadRender(tpl.text, lead);
     if (r.missing.length) { await itemRef.update({ status: "blocked", reason: "missing_variable" }); await msgRef.update({ status: "blocked" }); out.failed++; continue; }
@@ -3995,6 +4020,11 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/camp-drain") {
       return await handleCampDrain(req, res);
+    }
+    if (path === "/camp-templates") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      _campTplCache = { at: 0, val: null };
+      return res.status(200).json({ ok: true, templates: await campEffectiveTemplates() });
     }
     if (path === "/cadencia-stop") {
       return await handleCadenciaStop(req, res);

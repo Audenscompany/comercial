@@ -32681,7 +32681,7 @@ function campViradaMontar(){
   var el=document.getElementById('camp-virada-res'); if(!el)return;
   el.innerHTML='<div style="color:var(--muted);font-size:12px;"><i class="ti ti-loader ti-spin"></i> Montando lista...</div>';
   _campLoadClientesExtra().then(function(){
-    var r=_campViradaLista();
+    var r=(_campPublico()==='reuniao')?_campReuniaoLista():_campViradaLista();
     var all=r.reuniu.concat(r.nunca);
     var total=all.length;
     var lucas=all.filter(function(x){return x.esp==='Lucas';}).length;
@@ -32717,7 +32717,7 @@ function campViradaInscrever(){
   var r=window._campViradaCache; if(!r){alert('Monte a lista primeiro.');return;}
   var all=r.reuniu.concat(r.nunca);
   if(!all.length){alert('Lista vazia.');return;}
-  if(!confirm('Inscrever '+all.length+' leads na Campanha Virada?\n\nIsso só grava a lista (cadencia_camp). NÃO dispara mensagem — o envio só acontece depois do backend + teste.'))return;
+  if(!confirm('Inscrever '+all.length+' pessoas na campanha "'+_campNome()+'"?\n\nIsso só grava a lista. NÃO dispara mensagem — o envio depende do Disparo ligado no painel.'))return;
   if(!fbDb&&typeof initFirebase==='function')initFirebase();
   // startedAt = amanhã 07:00
   var d=new Date();d.setHours(0,0,0,0);var startedAt=d.getTime();
@@ -32727,12 +32727,12 @@ function campViradaInscrever(){
     var atuais=snap.val()||{};
     var updates={};
     // remove os que sairam da lista (só da trilha virada-ago)
-    Object.keys(atuais).forEach(function(k){var a=atuais[k];if(a&&(a.campaignId==='virada-ago'||!a.campaignId)&&!novoSet[k])updates['cadencia_camp_ativos/'+k]=null;});
+    Object.keys(atuais).forEach(function(k){var a=atuais[k];if(a&&!novoSet[k])updates['cadencia_camp_ativos/'+k]=null;});
     // grava/atualiza os atuais
-    Object.keys(novoSet).forEach(function(key){var x=novoSet[key];updates['cadencia_camp_ativos/'+key]={campaignId:'virada-ago',startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};});
+    Object.keys(novoSet).forEach(function(key){var x=novoSet[key];updates['cadencia_camp_ativos/'+key]={campaignId:_campSlug(_campNome()),startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};});
     return fbDb.ref().update(updates);
   }).then(function(){
-    fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now()});
+    fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now(),nome:_campNome(),publico:_campPublico()});fbDb.ref('config/campanha').update({nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),de:(document.getElementById('camp-de')||{}).value||'',ate:(document.getElementById('camp-ate')||{}).value||'',campaignId:_campSlug(_campNome()),at:Date.now()});
     var el=document.getElementById('camp-virada-res');
     if(el)el.insertAdjacentHTML('afterbegin','<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;"><b>'+all.length+' leads inscritos</b> na Virada (start HOJE · roda no próximo ciclo do motor 9h/14h). Confirme deploy do backend + Disparo ligado.</div>');
   }).catch(function(e){alert('Erro ao inscrever: '+e.message);});
@@ -32751,13 +32751,119 @@ async function campDispararAgora(){
     alert('BUILD ('+period+'):\n'+JSON.stringify(bj,null,1)+'\n\nDRAIN:\n'+JSON.stringify(dj,null,1)+diag);
   }catch(e){ alert('Erro chamando o backend: '+e.message+'\n\nProvavelmente o receberlead-index.js ainda nao foi deployado com o motor da campanha.'); }
 }
+function _campSlug(x){return (x||'campanha').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'campanha';}
+function _campPublico(){var e=document.getElementById('camp-publico');return e?e.value:'lead';}
+function _campNome(){var e=document.getElementById('camp-nome');return (e&&e.value.trim())||'Campanha';}
+// base por REUNIAO: quem teve reuniao no periodo (data da reuniao), menos clientes/optados/quem tem reuniao futura
+function _campReuniaoLista(){
+  var now=Date.now();
+  var clientePhone={};
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId||fid];var t=_campNorm((fu.tel)||(m&&m.tel));if(t)clientePhone[t]=1;});
+  if(window._campClienteExtraPhones)Object.keys(window._campClienteExtraPhones).forEach(function(t){clientePhone[t]=1;});
+  var meetByPhone={};
+  Object.keys(meetings||{}).forEach(function(mid){var m=meetings[mid];if(!m||m._hidden)return;var t=_campNorm(m.tel);if(!t)return;(meetByPhone[t]=meetByPhone[t]||[]).push(m);});
+  var fatByPhone={};
+  Object.keys(kanbanData||{}).forEach(function(kk){var k=kanbanData[kk];if(!k)return;var t=_campNorm(k.telefone);if(t&&!fatByPhone[t])fatByPhone[t]=k.faturamento;});
+  var byPhone={};
+  Object.keys(meetings||{}).forEach(function(mid){var m=meetings[mid];if(!m||m._hidden)return;
+    var when=m.scheduledAt||(m.dtISO?new Date(m.dtISO).getTime():0); if(!_campInRange(when))return;
+    var t=_campNorm(m.tel); if(!t)return;
+    var o=byPhone[t]; if(!o||when>o.when){byPhone[t]={when:when,tel:(m.tel||'').replace(/\D/g,''),nome:m.nome||'',empresa:m.empresa||'',fat:m.faturamento||fatByPhone[t]||'',kkey:m.kanbanKey||''};}
+  });
+  var _cut=_campCutVal();
+  var out={reuniu:[],nunca:[],excl:{data:0,fat:0,agendado:0,cliente:0,semtel:0}};
+  Object.keys(byPhone).forEach(function(t){var o=byPhone[t];
+    if(!o.tel||o.tel.length<10){out.excl.semtel++;return;}
+    if(clientePhone[t]){out.excl.cliente++;return;}
+    var mts=meetByPhone[t]||[];
+    var futura=mts.some(function(m){var st=(m.status||'').toLowerCase();return (m.scheduledAt||0)>=now && st!=='done'&&st!=='noshow'&&st!=='cancelado'&&st!=='cancelled'&&st!=='reagendado';});
+    if(futura){out.excl.agendado++;return;}
+    var fat=parseFaturamento(String(o.fat||'').toLowerCase());
+    if(_cut>0 && fat>0 && fat<_cut){out.excl.fat++;return;}
+    var esp=fat>=40000?'Lucas':'João';
+    out.reuniu.push({tel:t,telFull:o.tel,nome:o.nome,empresa:o.empresa,fat:fat,esp:esp,variant:'reuniu',kkey:o.kkey});
+  });
+  window._campViradaCache=out; return out;
+}
+// carrega nome/publico/periodo/corte salvos
+async function campCfgLoad(){
+  try{
+    var c=(typeof fbGet==='function'?await fbGet('config/campanha'):null)||{};
+    var byId=function(i){return document.getElementById(i);};
+    if(c.nome&&byId('camp-nome'))byId('camp-nome').value=c.nome;
+    if(c.publico&&byId('camp-publico')){byId('camp-publico').value=c.publico;campPublicoUI();}
+    if(c.corte&&byId('camp-cut'))byId('camp-cut').value=String(c.corte);
+    if(c.de&&byId('camp-de'))byId('camp-de').value=c.de;
+    if(c.ate&&byId('camp-ate'))byId('camp-ate').value=c.ate;
+  }catch(e){}
+}
+function campPublicoUI(){
+  var pub=_campPublico();
+  var hint=document.getElementById('camp-hint');
+  var lbl=document.getElementById('camp-de-lbl');
+  if(lbl)lbl.textContent=(pub==='reuniao')?'Reunião entre:':'Entrou entre:';
+  if(hint)hint.innerHTML=(pub==='reuniao')
+    ? 'Público: <b>participou de reunião</b> no período + não-cliente + sem reunião futura. Todos recebem a sequência <b>"reuniu"</b>. Especialista: ≥40k → Lucas · &lt;40k → João.'
+    : 'Público: <b>lead que chegou</b> (entrou no funil no período) + faturamento acima do corte + sem reunião agendada + não-cliente. Quem já reuniu recebe "reuniu"; quem nunca reuniu recebe "nunca".';
+}
+// ---- editor de mensagens ----
+var _campTplDefs=null;
+async function campTplEditorToggle(){
+  var box=document.getElementById('camp-tpl-editor');
+  if(!box)return;
+  if(box.style.display==='block'){box.style.display='none';return;}
+  box.style.display='block';
+  box.innerHTML='<div style="color:var(--muted);font-size:12px;"><i class="ti ti-loader ti-spin"></i> Carregando mensagens…</div>';
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/camp-templates?secret='+WEBHOOK_SECRET,{method:'POST'});
+    var j=await r.json();
+    _campTplDefs=(j&&j.templates)||{reuniu:{},nunca:{}};
+    campTplEditorRender();
+  }catch(e){ box.innerHTML='<div style="color:var(--amber);font-size:12px;">Não consegui carregar as mensagens do servidor (deploy do receberlead atualizado?). Erro: '+e.message+'</div>'; }
+}
+function _campTplLabel(id){var m=String(id).match(/^d(\d+)_(manha|tarde)$/);if(!m)return id;return 'Dia '+m[1]+' · '+(m[2]==='manha'?'manhã':'tarde');}
+function campTplEditorRender(){
+  var box=document.getElementById('camp-tpl-editor'); if(!box||!_campTplDefs)return;
+  var ta='width:100%;min-height:64px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:8px 10px;box-sizing:border-box;resize:vertical;';
+  var section=function(vk,titulo,cor){
+    var set=_campTplDefs[vk]||{};
+    var ids=Object.keys(set).sort();
+    var rows=ids.map(function(id){
+      return '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">'+_campTplLabel(id)+'</label>'+
+        '<textarea data-vk="'+vk+'" data-id="'+id+'" style="'+ta+'">'+_cadpEsc(set[id].text||'')+'</textarea></div>';
+    }).join('');
+    return '<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:800;color:'+cor+';margin-bottom:8px;">'+titulo+'</div>'+rows+'</div>';
+  };
+  box.innerHTML=
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Edite os textos e clique em <b>Salvar mensagens</b>. Variáveis: <code>{{primeiroNome}}</code>, <code>{{especialistaNome}}</code>, <code>{{empresa}}</code>. <b>Deixe em branco</b> um dia que não quer que dispare.</div>'+
+    section('reuniu','Sequência 1 — PARTICIPOU DE REUNIÃO','#fbbf24')+
+    section('nunca','Sequência 2 — LEAD QUE CHEGOU (nunca reuniu)','#38bdf8')+
+    '<button onclick="campTplSave()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-device-floppy"></i> Salvar mensagens</button>'+
+    ' <span id="camp-tpl-status" style="font-size:12px;color:var(--green);margin-left:8px;"></span>';
+}
+async function campTplSave(){
+  var box=document.getElementById('camp-tpl-editor'); if(!box)return;
+  var tas=box.querySelectorAll('textarea[data-vk]');
+  var payload={reuniu:{},nunca:{}};
+  tas.forEach(function(t){var vk=t.getAttribute('data-vk'),id=t.getAttribute('data-id');payload[vk][id]={text:t.value};});
+  var st=document.getElementById('camp-tpl-status');
+  if(!fbDb&&typeof initFirebase==='function')initFirebase();
+  try{ await fbDb.ref('config/campanha/templates').set(payload); if(st){st.style.color='var(--green)';st.textContent='✓ mensagens salvas';} }
+  catch(e){ if(st){st.style.color='var(--red)';st.textContent='erro: '+e.message;} }
+}
 function renderCampViradaCard(){
+  setTimeout(campCfgLoad,50);
   return _csdrCard(
-    '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:8px;"><i class="ti ti-rocket" style="color:#fbbf24;margin-right:6px;"></i>Campanha Virada de Agosto</div>'+
-    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Público: entrou <b>no período escolhido</b> + faturamento <b>acima do corte selecionado</b> + <b>sem reunião agendada</b> + não-cliente. Especialista: ≥40k → Lucas · &lt;40k → João. Trilha própria (<code>cadencia_camp</code>) — não mexe na cadência do João.</div>'+
-    '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><label style="font-size:11px;color:var(--muted);margin-right:4px;text-transform:uppercase;letter-spacing:1px;">Entrou entre:</label><input type="date" id="camp-de" value="2026-08-01" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"><span style="color:var(--muted);font-size:12px;">até</span><input type="date" id="camp-ate" value="2026-08-31" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"></div>'+
-    '<div style="margin-bottom:12px;"><label style="font-size:11px;color:var(--muted);margin-right:8px;text-transform:uppercase;letter-spacing:1px;">Corte mínimo de faturamento:</label><select id="camp-cut" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;"><option value="10000">≥ 10k</option><option value="15000" selected>≥ 15k</option><option value="20000">≥ 20k</option><option value="25000">≥ 25k</option><option value="40000">≥ 40k</option></select></div>'+
-    '<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button> '+'<button onclick="campDispararAgora()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-player-play"></i> Testar motor (disparar agora)</button>'+
+    '<div style="font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--white);margin-bottom:8px;"><i class="ti ti-rocket" style="color:#fbbf24;margin-right:6px;"></i>Campanha</div>'+
+    '<div style="margin-bottom:12px;"><label style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Nome da campanha</label><input id="camp-nome" placeholder="Ex.: Audens Day Setembro" value="Audens Day Setembro" style="width:100%;max-width:360px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:8px 11px;box-sizing:border-box;"></div>'+
+    '<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Público:</label><select id="camp-publico" onchange="campPublicoUI();if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;"><option value="lead">Lead que chegou (entrou no funil)</option><option value="reuniao">Participou de reunião</option></select></div>'+
+    '<div id="camp-hint" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Público: <b>lead que chegou</b> (entrou no funil no período) + faturamento acima do corte + sem reunião agendada + não-cliente. Quem já reuniu recebe "reuniu"; quem nunca reuniu recebe "nunca".</div>'+
+    '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><label id="camp-de-lbl" style="font-size:11px;color:var(--muted);margin-right:4px;text-transform:uppercase;letter-spacing:1px;">Entrou entre:</label><input type="date" id="camp-de" value="2026-09-01" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"><span style="color:var(--muted);font-size:12px;">até</span><input type="date" id="camp-ate" value="2026-09-30" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"></div>'+
+    '<div style="margin-bottom:12px;"><label style="font-size:11px;color:var(--muted);margin-right:8px;text-transform:uppercase;letter-spacing:1px;">Corte mínimo de faturamento:</label><select id="camp-cut" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;"><option value="0">sem corte</option><option value="10000">≥ 10k</option><option value="15000" selected>≥ 15k</option><option value="20000">≥ 20k</option><option value="25000">≥ 25k</option><option value="40000">≥ 40k</option></select></div>'+
+    '<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button> '+
+    '<button onclick="campTplEditorToggle()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-messages"></i> Editar mensagens</button> '+
+    '<button onclick="campDispararAgora()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-player-play"></i> Testar motor (disparar agora)</button>'+
+    '<div id="camp-tpl-editor" style="display:none;margin-top:16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;"></div>'+
     '<div id="camp-virada-res" style="margin-top:14px;"></div>'
   );
 }
