@@ -2494,8 +2494,7 @@ async function handlePosTick(req, res) {
 // ═══════════ FIM RETORNO PÓS-TRATATIVA ═══════════
 
 
-// ═══════════ AUDENS DAY — reativação de reuniões dos últimos 60 dias (3 dias) ═══════════
-// Config em config/audensday { testPhone:"55...", closerNome:"Lucas" }. testPhone = tudo só pro seu número.
+// ═══════════ AUDENS DAY — reativação reuniões 60 dias (fila 1 msg/300s, janela 09h-23h BRT) ═══════════
 async function adCfg() {
   try { var v = (await db.ref("config/audensday").once("value")).val() || {};
     return { testPhone: String(v.testPhone || "").replace(/\D/g, ""), closerNome: v.closerNome || "Lucas" }; }
@@ -2507,7 +2506,6 @@ function adMsg(dia, nome, closer) {
   if (dia === 2) return `${n}, tô fechando o mês por aqui e consigo abrir uma condição especial de virada pra quem topar retomar agora. Ainda faz sentido pra você ter uma assessoria puxando o crescimento do seu delivery?`;
   return `Último dia, ${n}! 🚀 A condição de virada de mês encerra hoje. Se quiser destravar outubro com a Audens, me responde aqui que eu já te encaixo.`;
 }
-// /audensday-enroll : monta a base (reuniões últimos 60 dias, menos clientes e opt-out)
 async function handleAudensDayEnroll(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var dry = req.query.dryrun === "1";
@@ -2515,10 +2513,8 @@ async function handleAudensDayEnroll(req, res) {
   var followups = (await db.ref("followups").once("value")).val() || {};
   var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
   var cutoff = Date.now() - 60 * 86400000;
-  // clientes = telefones com followup resultado "venda" (fecharam)
   var clientes = {};
   Object.keys(followups).forEach(function (k) { var fu = followups[k]; if (fu && fu.resultado === "venda") { var t = String(fu.tel || "").replace(/\D/g, "").slice(-9); if (t) clientes[t] = 1; } });
-  // 1 registro por telefone (reunião mais recente dentro dos 60 dias)
   var byTel = {};
   Object.keys(M).forEach(function (mid) {
     var m = M[mid]; if (!m || m._retorno) return;
@@ -2538,27 +2534,65 @@ async function handleAudensDayEnroll(req, res) {
   if (!dry) { await db.ref("audensday/ativos").set(ativos); await db.ref("audensday/meta").set({ enrolledAt: Date.now(), total: incl }); }
   return res.status(200).json({ ok: true, dry: dry, incluidos: incl, skips: skip, amostra: Object.values(ativos).slice(0, 12).map(function (a) { return a.nome; }) });
 }
-// /audensday-send?dia=1|2|3 : dispara a mensagem do dia (idempotente por dia)
+function adClampToWindow(ts) {
+  var b = cadBRT(ts);
+  if (b.hour >= 23) return new Date(cadAddDaysStr(b.date, 1) + "T09:00:00-03:00").getTime();
+  if (b.hour < 9) return new Date(b.date + "T09:00:00-03:00").getTime();
+  return ts;
+}
+async function adReserveSlot() {
+  var ref = db.ref("audensday/nextSlot"); var out = 0;
+  await ref.transaction(function (cur) {
+    var base = adClampToWindow(Math.max(Date.now(), cur || Date.now()));
+    out = base; return base + 300000;
+  });
+  return out;
+}
 async function handleAudensDaySend(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var dia = parseInt(req.query.dia || "0", 10);
   if (dia !== 1 && dia !== 2 && dia !== 3) return res.status(400).json({ ok: false, error: "dia deve ser 1, 2 ou 3" });
   var dry = req.query.dryrun === "1";
-  var cfg = await adCfg();
   var ativos = (await db.ref("audensday/ativos").once("value")).val() || {};
-  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
-  var keys = Object.keys(ativos), enviados = 0, pulados = 0;
+  var keys = Object.keys(ativos), enfileirados = 0, ja = 0, ultimoISO = "";
   for (var i = 0; i < keys.length; i++) {
     var t = keys[i], a = ativos[t]; if (!a) continue;
-    if (a.sent && a.sent["d" + dia]) { pulados++; continue; }
-    if (a.kanbanKey && optout[a.kanbanKey]) { pulados++; continue; }
-    var alvo = cfg.testPhone || a.tel;
-    if (dry) { enviados++; continue; }
-    try { await enviarMensagemWhatsapp(alvo, adMsg(dia, a.nome, a.closer || cfg.closerNome)); } catch (e) {}
-    try { await db.ref("audensday/ativos/" + t + "/sent/d" + dia).set(Date.now()); } catch (e) {}
-    enviados++;
+    if (a.sent && a.sent["d" + dia]) { ja++; continue; }
+    if (dry) { enfileirados++; continue; }
+    var qref = db.ref("audensday/fila/" + t + "_d" + dia); var created = false;
+    await qref.transaction(function (c) { if (c) return; created = true; return { tel: a.tel, nome: a.nome || "", closer: a.closer || "", kanbanKey: a.kanbanKey || "", dia: dia, status: "queued", scheduledAt: 0, createdAt: Date.now() }; });
+    if (!created) { ja++; continue; }
+    var sa = await adReserveSlot(); await qref.update({ scheduledAt: sa }); enfileirados++; ultimoISO = new Date(sa).toISOString();
   }
-  return res.status(200).json({ ok: true, dia: dia, dry: dry, total: keys.length, enviados: enviados, pulados: pulados });
+  return res.status(200).json({ ok: true, dia: dia, dry: dry, total: keys.length, enfileirados: enfileirados, ja_na_fila_ou_enviados: ja, ultimo_agendado: ultimoISO, obs: "1 mensagem a cada 300s, das 09h às 23h BRT; o que passar das 23h continua no dia seguinte" });
+}
+async function adDrainCore() {
+  var cfg = await adCfg();
+  var last = (await db.ref("audensday/lastSentAt").once("value")).val() || 0;
+  if (Date.now() - last < 290 * 1000) return { enviados: 0, aguardando_intervalo: true };
+  var fila = (await db.ref("audensday/fila").once("value")).val() || {};
+  var now = Date.now();
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  if (!ids.length) return { enviados: 0 };
+  ids.sort(function (a, b) { return (fila[a].scheduledAt || 0) - (fila[b].scheduledAt || 0); });
+  var id = ids[0], it = fila[id], ref = db.ref("audensday/fila/" + id);
+  var locked = false;
+  await ref.transaction(function (c) { if (!c || c.status !== "queued") return c; c.status = "processing"; locked = true; return c; });
+  if (!locked) return { enviados: 0 };
+  var optout = (await db.ref("whatsapp_optout").once("value")).val() || {};
+  var t = id.replace(/_d[123]$/, "");
+  var lk = (it.kanbanKey || ("ad_" + t));
+  if (optout[lk]) { await ref.update({ status: "cancelled_optout" }); return { enviados: 0, pulado_optout: true }; }
+  var alvo = cfg.testPhone || it.tel;
+  try { await enviarMensagemWhatsapp(alvo, adMsg(it.dia, it.nome, it.closer || cfg.closerNome)); } catch (e) {}
+  try { await ref.update({ status: "sent", sentAt: Date.now() }); } catch (e) {}
+  try { await db.ref("audensday/lastSentAt").set(Date.now()); } catch (e) {}
+  try { await db.ref("audensday/ativos/" + t + "/sent/d" + it.dia).set(Date.now()); } catch (e) {}
+  return { enviados: 1, para: it.nome, dia: it.dia };
+}
+async function handleAudensDayDrain(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  return res.status(200).json(Object.assign({ ok: true }, await adDrainCore()));
 }
 // ═══════════ FIM AUDENS DAY ═══════════
 
@@ -2956,6 +2990,7 @@ async function handleCadenciaDrain(req, res) {
   var cfg = await cadCfg();
   var out = { enabled: cfg.enabled, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
   try { out.camp = await campDrainCore(); } catch (e) { console.error("campDrain:", e); }
+  try { out.audensday = await adDrainCore(); } catch (e) { console.error("adDrain:", e); }
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
   var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
   if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
@@ -3993,6 +4028,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/audensday-send") {
       return await handleAudensDaySend(req, res);
+    }
+    if (path === "/audensday-drain") {
+      return await handleAudensDayDrain(req, res);
     }
     if (path === "/pos-finalizar") {
       return await handlePosFinalizar(req, res);
