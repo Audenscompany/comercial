@@ -32723,18 +32723,14 @@ function campViradaInscrever(){
   var d=new Date();d.setHours(0,0,0,0);var startedAt=d.getTime();
   var novoSet={};
   all.forEach(function(x){var key=(x.telFull||x.tel).replace(/[.#$\[\]]/g,'_'); if(key)novoSet[key]=x;});
-  fbDb.ref('cadencia_camp_ativos').once('value').then(function(snap){
-    var atuais=snap.val()||{};
-    var updates={};
-    // remove os que sairam da lista (só da trilha virada-ago)
-    Object.keys(atuais).forEach(function(k){var a=atuais[k];if(a&&!novoSet[k])updates['cadencia_camp_ativos/'+k]=null;});
-    // grava/atualiza os atuais
-    Object.keys(novoSet).forEach(function(key){var x=novoSet[key];updates['cadencia_camp_ativos/'+key]={campaignId:_campSlug(_campNome()),startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};});
-    return fbDb.ref().update(updates);
-  }).then(function(){
-    fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now(),nome:_campNome(),publico:_campPublico()});fbDb.ref('config/campanha').update({nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),de:(document.getElementById('camp-de')||{}).value||'',ate:(document.getElementById('camp-ate')||{}).value||'',estrutura:_campEstruturaUI(),campaignId:_campSlug(_campNome()),at:Date.now()});
+  var lista=all.map(function(x){return {tel:x.tel,telFull:x.telFull,nome:x.nome,empresa:x.empresa,fat:x.fat,esp:x.esp,variant:x.variant,kkey:x.kkey};});
+  var body={lista:lista,campaignId:_campSlug(_campNome()),startedAt:startedAt,nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),de:(document.getElementById('camp-de')||{}).value||'',ate:(document.getElementById('camp-ate')||{}).value||'',estrutura:_campEstruturaUI()};
+  fetch(RECEBERLEAD_URL+'/camp-enroll?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(j){
+    if(!j||!j.ok){ alert('Erro ao inscrever no servidor: '+((j&&(j.error||j.note))||'sem resposta')+'\nO receberlead novo está deployado?'); return; }
+    // salva tambem a config da campanha (nome/publico/estrutura) via servidor
+    fetch(RECEBERLEAD_URL+'/camp-save?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),de:body.de,ate:body.ate,estrutura:_campEstruturaUI(),campaignId:_campSlug(_campNome())})}).catch(function(){});
     var el=document.getElementById('camp-virada-res');
-    if(el)el.insertAdjacentHTML('afterbegin','<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;"><b>'+all.length+' leads inscritos</b> na Virada (start HOJE · roda no próximo ciclo do motor 9h/14h). Confirme deploy do backend + Disparo ligado.</div>');
+    if(el)el.insertAdjacentHTML('afterbegin','<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;"><b>'+(j.inscritos||all.length)+' inscritos</b> na campanha (via servidor). Agora edite/salve as mensagens e clique em <b>Disparar agora</b> (ou ligue o Disparo).</div>');
   }).catch(function(e){alert('Erro ao inscrever: '+e.message);});
 }
 async function campDispararJa(){
@@ -32909,13 +32905,14 @@ async function campTplSave(){
   var payload={reuniu:{},nunca:{}};
   tas.forEach(function(t){var vk=t.getAttribute('data-vk'),id=t.getAttribute('data-id');payload[vk][id]={text:t.value};});
   var st=document.getElementById('camp-tpl-status');
-  if(!fbDb&&typeof initFirebase==='function')initFirebase();
+  if(st){st.style.color='var(--muted)';st.textContent='salvando…';}
+  var body={templates:payload,estrutura:_campEstruturaUI(),nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),campaignId:_campSlug(_campNome())};
   try{
-    await fbDb.ref('config/campanha/templates').set(payload);
-    await fbDb.ref('config/campanha/estrutura').set(_campEstruturaUI());
-    if(st){st.style.color='var(--green)';st.textContent='✓ mensagens e estrutura salvas';}
-  }
-  catch(e){ if(st){st.style.color='var(--red)';st.textContent='erro: '+e.message;} }
+    var r=await fetch(RECEBERLEAD_URL+'/camp-save?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var j=await r.json();
+    if(j&&j.ok){ if(st){st.style.color='var(--green)';st.textContent='✓ mensagens e estrutura salvas no servidor';} }
+    else { if(st){st.style.color='var(--red)';st.textContent='erro ao salvar: '+((j&&(j.error||j.note))||'sem resposta')+' (deploy do receberlead novo?)';} }
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='erro: '+e.message+' (receberlead deployado?)';} }
 }
 function renderCampViradaCard(){
   setTimeout(campCfgLoad,50);

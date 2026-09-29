@@ -4038,6 +4038,44 @@ http('receberLead', async (req, res) => {
       _campTplCache = { at: 0, val: null };
       return res.status(200).json({ ok: true, templates: await campEffectiveTemplates() });
     }
+    if (path === "/camp-save") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var bb = req.body || {}; if (typeof bb === "string") { try { bb = JSON.parse(bb); } catch (e) { bb = {}; } }
+      var upd = {};
+      if (bb.templates && typeof bb.templates === "object") upd.templates = bb.templates;
+      if (bb.estrutura && typeof bb.estrutura === "object") upd.estrutura = bb.estrutura;
+      if (bb.nome != null) upd.nome = String(bb.nome);
+      if (bb.publico) upd.publico = String(bb.publico);
+      if (bb.corte != null) upd.corte = bb.corte;
+      if (bb.de != null) upd.de = String(bb.de);
+      if (bb.ate != null) upd.ate = String(bb.ate);
+      if (bb.campaignId) upd.campaignId = String(bb.campaignId);
+      upd.at = Date.now();
+      await db.ref("config/campanha").update(upd);
+      _campTplCache = { at: 0, val: null };
+      return res.status(200).json({ ok: true, saved: Object.keys(upd) });
+    }
+    if (path === "/camp-enroll") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var be = req.body || {}; if (typeof be === "string") { try { be = JSON.parse(be); } catch (e) { be = {}; } }
+      var lista = Array.isArray(be.lista) ? be.lista : [];
+      var campaignId = be.campaignId ? String(be.campaignId) : "campanha";
+      var startedAt = be.startedAt ? Number(be.startedAt) : Date.now();
+      var novo = {};
+      lista.forEach(function (x) {
+        var telFull = String((x.telFull || x.tel || "")).replace(/\D/g, "");
+        if (!telFull || telFull.length < 10) return;
+        var key = (x.kkey || telFull).replace(/[.#$\[\]]/g, "_");
+        novo[key] = { campaignId: campaignId, startedAt: startedAt, status: "active", especialista: x.esp || "", variant: x.variant || "nunca", tel: telFull, nome: x.nome || "", empresa: x.empresa || "", fat: x.fat || 0, at: Date.now() };
+      });
+      var atuais = (await db.ref("cadencia_camp_ativos").once("value")).val() || {};
+      var updates = {};
+      Object.keys(atuais).forEach(function (k) { if (!novo[k]) updates["cadencia_camp_ativos/" + k] = null; });
+      Object.keys(novo).forEach(function (k) { updates["cadencia_camp_ativos/" + k] = novo[k]; });
+      await db.ref().update(updates);
+      await db.ref("cadencia_camp_meta").update({ inscritos: Object.keys(novo).length, startedAt: startedAt, at: Date.now(), nome: be.nome || "", publico: be.publico || "" });
+      return res.status(200).json({ ok: true, inscritos: Object.keys(novo).length });
+    }
     if (path === "/camp-agora") {
       if (!checaSecret(req)) return res.status(401).send("Unauthorized");
       var campOn2 = (await db.ref("config/cadencia/campEnabled").once("value")).val();
