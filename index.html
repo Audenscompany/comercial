@@ -32737,6 +32737,42 @@ function campViradaInscrever(){
     if(el)el.insertAdjacentHTML('afterbegin','<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;"><b>'+all.length+' leads inscritos</b> na Virada (start HOJE · roda no próximo ciclo do motor 9h/14h). Confirme deploy do backend + Disparo ligado.</div>');
   }).catch(function(e){alert('Erro ao inscrever: '+e.message);});
 }
+async function campDispararJa(){
+  var est=_campEstruturaUI(); var pub=_campPublico();
+  var firstP=est.periodos[0]||'manha';
+  var vk=(pub==='reuniao')?'reuniu':'reuniu';
+  // 1) salva o que estiver no editor (se aberto) pra garantir
+  var box=document.getElementById('camp-tpl-editor');
+  if(box&&box.style.display==='block'){ try{ await campTplSave(); }catch(e){} }
+  // 2) confere no SERVIDOR a mensagem que realmente vai sair
+  var srv=null;
+  try{ var r=await fetch(RECEBERLEAD_URL+'/camp-templates?secret='+WEBHOOK_SECRET+'&_t='+Date.now(),{method:'POST'}); var j=await r.json(); srv=(j&&j.templates)||null; }catch(e){ alert('Não consegui ler as mensagens do servidor: '+e.message+'\nO receberlead está deployado com a versão nova?'); return; }
+  if(!srv||!srv[vk]||!srv[vk]['d1_'+firstP]){ alert('O servidor não tem a mensagem do Dia 1 · '+firstP+'. Abra "Editar mensagens", escreva e Salve; depois recarregue com Ctrl+Shift+R.'); return; }
+  var primeira=srv[vk]['d1_'+firstP].text||'';
+  // 3) quantos ativos
+  var ativos=(typeof fbGet==='function'?await fbGet('cadencia_camp_ativos'):{})||{};
+  var nAtivos=Object.keys(ativos).filter(function(k){return ativos[k]&&ativos[k].status==='active';}).length;
+  if(!nAtivos){ alert('Não há ninguém inscrito. Clique em "Montar lista" e depois "Inscrever".'); return; }
+  // 4) trava de agosto
+  var suspeita=/31\/08|virada de agosto/i.test(primeira);
+  var aviso=suspeita?'\n\n⚠️ ATENÇÃO: essa mensagem parece ser a de AGOSTO (fala em 31/08). Se não for o que você quer, cancele, edite as mensagens, salve e tente de novo.':'';
+  if(!confirm('DISPARAR AGORA para '+nAtivos+' pessoa(s)?\n\nA 1ª mensagem que vai sair (Dia 1 · '+firstP+') é:\n\n"'+primeira+'"\n\nSai 1 a cada 300s (5 min). Os próximos dias seguem automático nos ciclos do motor.'+aviso)) return;
+  // 5) garante o disparo ligado
+  try{ var on=await fbGet('config/cadencia/campEnabled'); if(!on){ if(confirm('O "Disparo da Campanha" está desligado. Ligar agora?')){ if(!fbDb&&typeof initFirebase==='function')initFirebase(); await fbDb.ref('config/cadencia/campEnabled').set(true); } else { return; } } }catch(e){}
+  var el=document.getElementById('camp-virada-res');
+  if(el)el.insertAdjacentHTML('afterbegin','<div id="camp-ja-status" style="background:rgba(22,163,74,.12);border:1px solid rgba(22,163,74,.4);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;"><i class="ti ti-loader ti-spin"></i> Enfileirando e disparando…</div>');
+  try{
+    var r2=await fetch(RECEBERLEAD_URL+'/camp-agora?secret='+WEBHOOK_SECRET,{method:'POST'});
+    var j2=await r2.json();
+    var st=document.getElementById('camp-ja-status');
+    if(j2&&j2.ok){
+      var env=(j2.drain&&j2.drain.sent)||0;
+      if(st)st.innerHTML='✓ <b>'+(j2.enfileirados||0)+'</b> mensagem(ns) na fila · <b>'+env+'</b> já saíram agora. O restante sai 1 a cada 5 min, sozinho.';
+    } else {
+      if(st){st.style.background='rgba(245,158,11,.12)';st.style.color='#fbbf24';st.innerHTML='⚠️ '+((j2&&(j2.note||j2.error))||'não disparou')+'';}
+    }
+  }catch(e){ var st2=document.getElementById('camp-ja-status'); if(st2){st2.style.color='var(--red)';st2.textContent='Erro: '+e.message;} }
+}
 async function campDispararAgora(){
   var period=(new Date().getHours()<13)?'manha':'tarde';
   if(!confirm('Rodar o motor da campanha AGORA (period='+period+')?\n\nSe o Disparo estiver ligado e sem número de teste, isso ENVIA para os leads reais.'))return;
@@ -32893,6 +32929,7 @@ function renderCampViradaCard(){
     '<div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">'+'<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Estrutura da sequência</div>'+'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;">'+'<label style="font-size:12px;color:var(--white);">Dias: <select id="camp-dias" onchange="campEstruturaChanged()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;margin-left:4px;"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select></label>'+'<label style="font-size:12px;color:var(--white);cursor:pointer;"><input type="checkbox" id="camp-p-manha" checked onchange="campEstruturaChanged()" style="accent-color:#22c55e;"> Manhã</label>'+'<label style="font-size:12px;color:var(--white);cursor:pointer;"><input type="checkbox" id="camp-p-tarde" onchange="campEstruturaChanged()" style="accent-color:#22c55e;"> Tarde</label>'+'<label style="font-size:12px;color:var(--white);cursor:pointer;"><input type="checkbox" id="camp-p-noite" onchange="campEstruturaChanged()" style="accent-color:#22c55e;"> Noite</label>'+'</div>'+'<div style="font-size:10.5px;color:var(--muted);margin-top:7px;">Ex.: 3 dias só de manhã = 3 mensagens. O editor de mensagens mostra só os campos escolhidos aqui.</div>'+'</div>'+'<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button> '+
     '<button onclick="campTplEditorToggle()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-messages"></i> Editar mensagens</button> '+
     '<button onclick="campDispararAgora()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-player-play"></i> Testar motor (disparar agora)</button>'+
+    '<button onclick="campDispararJa()" class="btn" style="padding:9px 16px;font-size:12px;margin-left:6px;background:#16a34a;border:1px solid #16a34a;color:#fff;font-weight:700;"><i class="ti ti-player-play"></i> Disparar agora (respeita 300s)</button>'+
     '<div id="camp-tpl-editor" style="display:none;margin-top:16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;"></div>'+
     '<div id="camp-virada-res" style="margin-top:14px;"></div>'
   );

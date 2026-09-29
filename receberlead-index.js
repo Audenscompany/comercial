@@ -4038,6 +4038,20 @@ http('receberLead', async (req, res) => {
       _campTplCache = { at: 0, val: null };
       return res.status(200).json({ ok: true, templates: await campEffectiveTemplates() });
     }
+    if (path === "/camp-agora") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var campOn2 = (await db.ref("config/cadencia/campEnabled").once("value")).val();
+      if (!campOn2) return res.status(200).json({ ok: false, error: "campEnabled=false", note: "Ligue o Disparo da Campanha antes." });
+      _campTplCache = { at: 0, val: null };
+      var est2 = await campEstrutura();
+      var builds = [];
+      for (var pi = 0; pi < est2.periodos.length; pi++) {
+        try { builds.push(await campBuildCore(est2.periodos[pi])); } catch (e) { builds.push({ error: String(e && e.message || e) }); }
+      }
+      var drain = await campDrainCore();
+      var enf = builds.reduce(function (a, b) { return a + ((b && b.totals && b.totals.queued) || 0); }, 0);
+      return res.status(200).json({ ok: true, enfileirados: enf, builds: builds, drain: drain });
+    }
     if (path === "/cadencia-stop") {
       return await handleCadenciaStop(req, res);
     }
