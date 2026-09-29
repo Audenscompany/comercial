@@ -2946,7 +2946,7 @@ async function cadReserveSlot(intervalSeconds) {
 async function handleCadenciaBuild(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var period = (req.query.period || "").toLowerCase();
-  if (period !== "manha" && period !== "tarde") return res.status(400).json({ ok: false, error: "period deve ser manha|tarde" });
+  if (period !== "manha" && period !== "tarde" && period !== "noite") return res.status(400).json({ ok: false, error: "period deve ser manha|tarde|noite" });
   var cfg = await cadCfg();
   var today = cadBRT(Date.now()).date;
   var dow = cadBRT(Date.now()).dow;
@@ -3798,16 +3798,25 @@ async function campEffectiveTemplates() {
   } catch (e) { return { reuniu: CAD_CAMP_TEMPLATES.reuniu, nunca: CAD_CAMP_TEMPLATES.nunca }; }
 }
 
-function campTouchFor(ativo, period, todayDate) {
+// Estrutura configuravel (config/campanha/estrutura): quantos dias e quais periodos disparam.
+// Default = 6 dias, manha+tarde (comportamento antigo). Texto vazio no template ainda pula no drain.
+async function campEstrutura() {
+  try {
+    var e = (await db.ref("config/campanha/estrutura").once("value")).val() || {};
+    var dias = parseInt(e.dias, 10); if (!(dias >= 1 && dias <= 6)) dias = 6;
+    var periodos = Array.isArray(e.periodos) && e.periodos.length ? e.periodos.filter(function (x) { return x === "manha" || x === "tarde" || x === "noite"; }) : ["manha", "tarde"];
+    if (!periodos.length) periodos = ["manha", "tarde"];
+    return { dias: dias, periodos: periodos };
+  } catch (e) { return { dias: 6, periodos: ["manha", "tarde"] }; }
+}
+function campTouchFor(ativo, period, todayDate, estrutura) {
   if (!ativo || (ativo.status && ativo.status !== "active") || !ativo.startedAt) return null;
+  var est = estrutura || { dias: 6, periodos: ["manha", "tarde"] };
+  if (est.periodos.indexOf(period) === -1) return null;
   var sd = cadBRT(ativo.startedAt).date;
   var day = cadDaysBetween(sd, todayDate) + 1;
-  if (day < 1 || day > 6) return null;
-  var id = "d" + day + "_" + period;
-  var set = CAD_CAMP_TEMPLATES[ativo.variant] || CAD_CAMP_TEMPLATES.nunca;
-  var tpl = set[id];
-  if (!tpl) return null;
-  return { templateId: id, day: day, period: period };
+  if (day < 1 || day > est.dias) return null;
+  return { templateId: "d" + day + "_" + period, day: day, period: period };
 }
 async function campScheduledSet() {
   // telefones (last9) com reuniao futura/ativa -> auto-stop
@@ -3824,7 +3833,7 @@ async function campScheduledSet() {
   } catch (e) {}
   return set;
 }
-async function campValidate(key, period, todayDate, fromDrain, sched) {
+async function campValidate(key, period, todayDate, fromDrain, sched, estrutura) {
   var ativo = (await db.ref("cadencia_camp_ativos/" + key).once("value")).val();
   if (!ativo) return { eligible: false, reason: "not_found" };
   if (ativo.status && ativo.status !== "active") return { eligible: false, reason: "not_active" };
@@ -3834,7 +3843,7 @@ async function campValidate(key, period, todayDate, fromDrain, sched) {
   var kb = (await db.ref("kanban/" + key).once("value")).val() || {};
   if (CAD_CAMP_STOP_STATUS[kb.status || ""]) return { eligible: false, reason: (kb.status === "reuniao" ? "meeting_scheduled" : "closed_or_won") };
   var opt = (await db.ref("whatsapp_optout/" + key).once("value")).val(); if (opt && opt.optOut) return { eligible: false, reason: "opt_out" };
-  var touch = campTouchFor(ativo, period, todayDate); if (!touch) return { eligible: false, reason: "outside_cadence" };
+  var touch = campTouchFor(ativo, period, todayDate, estrutura); if (!touch) return { eligible: false, reason: "outside_cadence" };
   var already = (await db.ref("cadencia_camp_msg/" + key + "/" + touch.templateId).once("value")).val();
   if (already && already.status === "sent") return { eligible: false, reason: "already_sent" };
   if (!fromDrain && already && (already.status === "queued" || already.status === "processing")) return { eligible: false, reason: "already_" + already.status };
@@ -3846,22 +3855,24 @@ async function campValidate(key, period, todayDate, fromDrain, sched) {
 async function handleCampBuild(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var period = (req.query.period || "").toLowerCase();
-  if (period !== "manha" && period !== "tarde") return res.status(400).json({ ok: false, error: "period deve ser manha|tarde" });
+  if (period !== "manha" && period !== "tarde" && period !== "noite") return res.status(400).json({ ok: false, error: "period deve ser manha|tarde|noite" });
   return res.status(200).json(await campBuildCore(period));
 }
 async function campBuildCore(period) {
   var cfg = await cadCfg();
+  var est = await campEstrutura();
   var campOn = (await db.ref("config/cadencia/campEnabled").once("value")).val();
   var today = cadBRT(Date.now()).date, dow = cadBRT(Date.now()).dow;
-  var out = { camp: true, period: period, today: today, campEnabled: !!campOn, totals: { candidates: 0, eligible: 0, queued: 0 }, skips: {} };
-  if (!campOn) { out.note = "campanha DESLIGADA (config/cadencia/campEnabled=false)"; return res.status(200).json(out); }
+  var out = { camp: true, period: period, today: today, campEnabled: !!campOn, estrutura: est, totals: { candidates: 0, eligible: 0, queued: 0 }, skips: {} };
+  if (!campOn) { out.note = "campanha DESLIGADA (config/cadencia/campEnabled=false)"; return out; }
+  if (est.periodos.indexOf(period) === -1) { out.note = "periodo " + period + " desligado na estrutura"; return out; }
   var ativos = (await db.ref("cadencia_camp_ativos").once("value")).val() || {};
   var keys = Object.keys(ativos); out.totals.candidates = keys.length;
   var sched = await campScheduledSet();
   var batchId = "camp_" + period + "_" + today.replace(/-/g, "") + "_" + Date.now();
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    var v = await campValidate(key, period, today, false, sched);
+    var v = await campValidate(key, period, today, false, sched, est);
     if (!v.eligible) {
       out.skips[v.reason] = (out.skips[v.reason] || 0) + 1;
       if (v.reason === "meeting_scheduled" || v.reason === "closed_or_won" || v.reason === "opt_out") { try { await db.ref("cadencia_camp_ativos/" + key + "/status").set("stopped"); } catch (e) {} }
@@ -3888,6 +3899,7 @@ async function handleCampDrain(req, res) {
 async function campDrainCore() {
   var cfg = await cadCfg();
   var EFF_TPL = await campEffectiveTemplates();
+  var EST = await campEstrutura();
   var campOn = (await db.ref("config/cadencia/campEnabled").once("value")).val();
   var out = { camp: true, campEnabled: !!campOn, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
   if (!campOn) { out.note = "campanha DESLIGADA"; return res.status(200).json(out); }
@@ -3904,7 +3916,7 @@ async function campDrainCore() {
     if (!locked) continue;
     out.processed++;
     var item = (await itemRef.once("value")).val(); var key = item.leadKey;
-    var v = await campValidate(key, item.period, today, true, sched);
+    var v = await campValidate(key, item.period, today, true, sched, EST);
     var msgRef = db.ref("cadencia_camp_msg/" + key + "/" + item.templateId);
     if (!v.eligible) {
       await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });

@@ -32732,7 +32732,7 @@ function campViradaInscrever(){
     Object.keys(novoSet).forEach(function(key){var x=novoSet[key];updates['cadencia_camp_ativos/'+key]={campaignId:_campSlug(_campNome()),startedAt:startedAt,status:'active',especialista:x.esp,variant:x.variant,tel:x.telFull,nome:x.nome||'',empresa:x.empresa||'',fat:x.fat,at:Date.now()};});
     return fbDb.ref().update(updates);
   }).then(function(){
-    fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now(),nome:_campNome(),publico:_campPublico()});fbDb.ref('config/campanha').update({nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),de:(document.getElementById('camp-de')||{}).value||'',ate:(document.getElementById('camp-ate')||{}).value||'',campaignId:_campSlug(_campNome()),at:Date.now()});
+    fbDb.ref('cadencia_camp_meta').update({inscritos:all.length,startedAt:startedAt,at:Date.now(),nome:_campNome(),publico:_campPublico()});fbDb.ref('config/campanha').update({nome:_campNome(),publico:_campPublico(),corte:_campCutVal(),de:(document.getElementById('camp-de')||{}).value||'',ate:(document.getElementById('camp-ate')||{}).value||'',estrutura:_campEstruturaUI(),campaignId:_campSlug(_campNome()),at:Date.now()});
     var el=document.getElementById('camp-virada-res');
     if(el)el.insertAdjacentHTML('afterbegin','<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#4ade80;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;"><b>'+all.length+' leads inscritos</b> na Virada (start HOJE · roda no próximo ciclo do motor 9h/14h). Confirme deploy do backend + Disparo ligado.</div>');
   }).catch(function(e){alert('Erro ao inscrever: '+e.message);});
@@ -32751,6 +32751,16 @@ async function campDispararAgora(){
     alert('BUILD ('+period+'):\n'+JSON.stringify(bj,null,1)+'\n\nDRAIN:\n'+JSON.stringify(dj,null,1)+diag);
   }catch(e){ alert('Erro chamando o backend: '+e.message+'\n\nProvavelmente o receberlead-index.js ainda nao foi deployado com o motor da campanha.'); }
 }
+function _campEstruturaUI(){
+  var d=parseInt((document.getElementById('camp-dias')||{}).value||'3',10)||3;
+  var ps=[];
+  if((document.getElementById('camp-p-manha')||{}).checked)ps.push('manha');
+  if((document.getElementById('camp-p-tarde')||{}).checked)ps.push('tarde');
+  if((document.getElementById('camp-p-noite')||{}).checked)ps.push('noite');
+  if(!ps.length)ps=['manha'];
+  return {dias:d,periodos:ps};
+}
+function campEstruturaChanged(){ var b=document.getElementById('camp-tpl-editor'); if(b&&b.style.display==='block')campTplEditorRender(); }
 function _campSlug(x){return (x||'campanha').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'campanha';}
 function _campPublico(){var e=document.getElementById('camp-publico');return e?e.value:'lead';}
 function _campNome(){var e=document.getElementById('camp-nome');return (e&&e.value.trim())||'Campanha';}
@@ -32795,6 +32805,13 @@ async function campCfgLoad(){
     if(c.corte&&byId('camp-cut'))byId('camp-cut').value=String(c.corte);
     if(c.de&&byId('camp-de'))byId('camp-de').value=c.de;
     if(c.ate&&byId('camp-ate'))byId('camp-ate').value=c.ate;
+    var est=c.estrutura||{};
+    if(est.dias&&byId('camp-dias'))byId('camp-dias').value=String(est.dias);
+    if(Array.isArray(est.periodos)){
+      if(byId('camp-p-manha'))byId('camp-p-manha').checked=est.periodos.indexOf('manha')>-1;
+      if(byId('camp-p-tarde'))byId('camp-p-tarde').checked=est.periodos.indexOf('tarde')>-1;
+      if(byId('camp-p-noite'))byId('camp-p-noite').checked=est.periodos.indexOf('noite')>-1;
+    }
   }catch(e){}
 }
 function campPublicoUI(){
@@ -32822,22 +32839,31 @@ async function campTplEditorToggle(){
   }catch(e){ box.innerHTML='<div style="color:var(--amber);font-size:12px;">Não consegui carregar as mensagens do servidor (deploy do receberlead atualizado?). Erro: '+e.message+'</div>'; }
 }
 function _campTplLabel(id){var m=String(id).match(/^d(\d+)_(manha|tarde)$/);if(!m)return id;return 'Dia '+m[1]+' · '+(m[2]==='manha'?'manhã':'tarde');}
+function _campPerLabel(pk){return pk==='manha'?'manhã':(pk==='tarde'?'tarde':'noite');}
 function campTplEditorRender(){
-  var box=document.getElementById('camp-tpl-editor'); if(!box||!_campTplDefs)return;
-  var ta='width:100%;min-height:64px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:8px 10px;box-sizing:border-box;resize:vertical;';
+  var box=document.getElementById('camp-tpl-editor'); if(!box)return;
+  var defs=_campTplDefs||{reuniu:{},nunca:{}};
+  var est=_campEstruturaUI();
+  var pub=_campPublico();
+  var ta='width:100%;min-height:60px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:8px 10px;box-sizing:border-box;resize:vertical;';
   var section=function(vk,titulo,cor){
-    var set=_campTplDefs[vk]||{};
-    var ids=Object.keys(set).sort();
-    var rows=ids.map(function(id){
-      return '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">'+_campTplLabel(id)+'</label>'+
-        '<textarea data-vk="'+vk+'" data-id="'+id+'" style="'+ta+'">'+_cadpEsc(set[id].text||'')+'</textarea></div>';
-    }).join('');
+    var set=defs[vk]||{};
+    var rows='';
+    for(var d=1;d<=est.dias;d++){
+      est.periodos.forEach(function(pk){
+        var id='d'+d+'_'+pk;
+        rows+='<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Dia '+d+' · '+_campPerLabel(pk)+'</label>'+
+          '<textarea data-vk="'+vk+'" data-id="'+id+'" style="'+ta+'">'+_cadpEsc((set[id]&&set[id].text)||'')+'</textarea></div>';
+      });
+    }
     return '<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:800;color:'+cor+';margin-bottom:8px;">'+titulo+'</div>'+rows+'</div>';
   };
+  var body='';
+  if(pub==='reuniao'){ body=section('reuniu','Sequência — PARTICIPOU DE REUNIÃO','#fbbf24'); }
+  else { body=section('reuniu','Sequência 1 — JÁ REUNIU (dentro do público lead)','#fbbf24')+section('nunca','Sequência 2 — NUNCA REUNIU','#38bdf8'); }
   box.innerHTML=
-    '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Edite os textos e clique em <b>Salvar mensagens</b>. Variáveis: <code>{{primeiroNome}}</code>, <code>{{especialistaNome}}</code>, <code>{{empresa}}</code>. <b>Deixe em branco</b> um dia que não quer que dispare.</div>'+
-    section('reuniu','Sequência 1 — PARTICIPOU DE REUNIÃO','#fbbf24')+
-    section('nunca','Sequência 2 — LEAD QUE CHEGOU (nunca reuniu)','#38bdf8')+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Mostrando <b>'+est.dias+' dia(s)</b> · '+est.periodos.map(_campPerLabel).join(', ')+'. Ajuste a estrutura acima pra mudar os campos. Variáveis: <code>{{primeiroNome}}</code>, <code>{{especialistaNome}}</code>, <code>{{empresa}}</code>.</div>'+
+    body+
     '<button onclick="campTplSave()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-device-floppy"></i> Salvar mensagens</button>'+
     ' <span id="camp-tpl-status" style="font-size:12px;color:var(--green);margin-left:8px;"></span>';
 }
@@ -32848,7 +32874,11 @@ async function campTplSave(){
   tas.forEach(function(t){var vk=t.getAttribute('data-vk'),id=t.getAttribute('data-id');payload[vk][id]={text:t.value};});
   var st=document.getElementById('camp-tpl-status');
   if(!fbDb&&typeof initFirebase==='function')initFirebase();
-  try{ await fbDb.ref('config/campanha/templates').set(payload); if(st){st.style.color='var(--green)';st.textContent='✓ mensagens salvas';} }
+  try{
+    await fbDb.ref('config/campanha/templates').set(payload);
+    await fbDb.ref('config/campanha/estrutura').set(_campEstruturaUI());
+    if(st){st.style.color='var(--green)';st.textContent='✓ mensagens e estrutura salvas';}
+  }
   catch(e){ if(st){st.style.color='var(--red)';st.textContent='erro: '+e.message;} }
 }
 function renderCampViradaCard(){
@@ -32860,7 +32890,7 @@ function renderCampViradaCard(){
     '<div id="camp-hint" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Público: <b>lead que chegou</b> (entrou no funil no período) + faturamento acima do corte + sem reunião agendada + não-cliente. Quem já reuniu recebe "reuniu"; quem nunca reuniu recebe "nunca".</div>'+
     '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><label id="camp-de-lbl" style="font-size:11px;color:var(--muted);margin-right:4px;text-transform:uppercase;letter-spacing:1px;">Entrou entre:</label><input type="date" id="camp-de" value="2026-09-01" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"><span style="color:var(--muted);font-size:12px;">até</span><input type="date" id="camp-ate" value="2026-09-30" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;"></div>'+
     '<div style="margin-bottom:12px;"><label style="font-size:11px;color:var(--muted);margin-right:8px;text-transform:uppercase;letter-spacing:1px;">Corte mínimo de faturamento:</label><select id="camp-cut" onchange="if(window._campViradaCache)campViradaMontar()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;"><option value="0">sem corte</option><option value="10000">≥ 10k</option><option value="15000" selected>≥ 15k</option><option value="20000">≥ 20k</option><option value="25000">≥ 25k</option><option value="40000">≥ 40k</option></select></div>'+
-    '<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button> '+
+    '<div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">'+'<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Estrutura da sequência</div>'+'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;">'+'<label style="font-size:12px;color:var(--white);">Dias: <select id="camp-dias" onchange="campEstruturaChanged()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:6px 9px;margin-left:4px;"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select></label>'+'<label style="font-size:12px;color:var(--white);cursor:pointer;"><input type="checkbox" id="camp-p-manha" checked onchange="campEstruturaChanged()" style="accent-color:#22c55e;"> Manhã</label>'+'<label style="font-size:12px;color:var(--white);cursor:pointer;"><input type="checkbox" id="camp-p-tarde" onchange="campEstruturaChanged()" style="accent-color:#22c55e;"> Tarde</label>'+'<label style="font-size:12px;color:var(--white);cursor:pointer;"><input type="checkbox" id="camp-p-noite" onchange="campEstruturaChanged()" style="accent-color:#22c55e;"> Noite</label>'+'</div>'+'<div style="font-size:10.5px;color:var(--muted);margin-top:7px;">Ex.: 3 dias só de manhã = 3 mensagens. O editor de mensagens mostra só os campos escolhidos aqui.</div>'+'</div>'+'<button onclick="campViradaMontar()" class="btn btn-primary" style="padding:9px 18px;"><i class="ti ti-list-search"></i> Montar lista</button> '+
     '<button onclick="campTplEditorToggle()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-messages"></i> Editar mensagens</button> '+
     '<button onclick="campDispararAgora()" class="btn btn-outline" style="padding:9px 14px;font-size:12px;margin-left:6px;"><i class="ti ti-player-play"></i> Testar motor (disparar agora)</button>'+
     '<div id="camp-tpl-editor" style="display:none;margin-top:16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;"></div>'+
