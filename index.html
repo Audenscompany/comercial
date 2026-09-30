@@ -10488,7 +10488,7 @@ function saveFollowup(){
     if(!retornoData){alert('Informe a data do retorno.');return;}
   }
   followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
-    comparecimento:'sim',venda:venda?'sim':'nao',
+    contratante:(_fuContratanteVal||'').trim(),comparecimento:'sim',venda:venda?'sim':'nao',
     resultado:venda?'venda':choice,
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
@@ -10755,7 +10755,7 @@ function saveFollowupEdit(){
   }
   if(choice==='retorno'&&!retornoData){alert('Informe a data do retorno.');return;}
   followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
-    comparecimento:'sim',venda:venda?'sim':'nao',
+    contratante:(_fuContratanteVal||'').trim(),comparecimento:'sim',venda:venda?'sim':'nao',
     resultado:venda?'venda':choice,
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
@@ -29473,7 +29473,7 @@ function renderVendas(){
 
 function _empresaCliente(fu,m){
   var ke=(m&&m.kanbanKey)?kanbanData[m.kanbanKey]:null;
-  var emp=(fu&&fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa);
+  var emp=(fu&&fu.contratante)||(fu&&fu.empresa)||(m&&m.empresa)||(ke&&ke.empresa);
   if(emp) return emp;
   var tel=String((m&&m.tel)||(fu&&fu.tel)||(ke&&ke.telefone)||'').replace(/\D/g,'');
   if(tel){
