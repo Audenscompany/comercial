@@ -9727,6 +9727,8 @@ function prefillFollowupEdit(fu){
   else if(fu.resultado==='perdida') selectFU('perdida');
   var setVal=function(id,val){var el=document.getElementById(id);if(el && val!==undefined && val!==null) el.value=val;};
   setVal('fu-plano', fu.plano||'marketplaces');
+  var _fuLeadE=(_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?kanbanData[_fuMeeting.kanbanKey]:null;
+  setVal('fu-contratante', fu.contratante || ((_fuLeadE&&_fuLeadE.empresa)?_fuLeadE.empresa:(_fuMeeting?_fuMeeting.nome:'')));
   setVal('fu-duracao', fu.duracao||6);
   setVal('fu-data-inicio', fu.dataInicio||'');
   setVal('fu-tipo-valor', fu.tipoValor||'tcv');
@@ -9772,7 +9774,7 @@ function renderFollowupBody(){
         '<button class="btn" id="fu-perdida" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'perdida\')">Venda Perdida</button>'+
       '</div></div>'+
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
-        '<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+_cnpjLimpo((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
+        '<div style="margin-bottom:12px;"><label class="f-label">Nome da Contratante (vai no contrato)</label><input class="f-input" type="text" id="fu-contratante" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+'<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+_cnpjLimpo((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;" onchange="fuOnPlanoChange()">'+
             '<option value="starter">Starter</option>'+
@@ -10454,6 +10456,7 @@ function saveFollowup(){
   var choice=window._fuChoice; // 'sim' (venda) | 'retorno' | 'perdida'
   var venda=choice==='sim';
   var plano=venda?document.getElementById('fu-plano').value:'';
+  var _fuContratanteVal=(document.getElementById('fu-contratante')||{}).value||'';
   var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
   var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
   var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
@@ -10560,7 +10563,7 @@ function saveFollowup(){
     if(kk2) persistLeadCnpj(kk2, cnpj);
     generateContratoDocx({
       plano:plano,
-      nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+      nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
       cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
       telefone:_fuMeeting.tel,
       duracaoMeses:duracao,
@@ -10582,7 +10585,7 @@ function saveFollowup(){
     })(kk2,leadInfo,{plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,contrato:contrato,mensalidade:mensalidade,cnpj:cnpj});
     // Registra a venda na planilha de Clientes (computa em todo o sistema)
     appendClienteRow({
-      nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+      nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
       plano:plano,
       duracao:duracao,
       dataInicio:dataInicio,
@@ -10602,7 +10605,7 @@ function saveFollowup(){
       var _mrr=plano==='starter'?Math.round(contrato/45*30):(tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato));
       var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
       saveContrato(null,{
-        cliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+        cliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
         dataInicio:dataInicio,
         valorMes:_mrr,
         valorVendido:_tcv,
@@ -10724,6 +10727,7 @@ function saveFollowupEdit(){
   var choice=window._fuChoice; // 'sim' (venda) | 'retorno' | 'perdida'
   var venda=choice==='sim';
   var plano=venda?document.getElementById('fu-plano').value:'';
+  var _fuContratanteVal=(document.getElementById('fu-contratante')||{}).value||'';
   var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
   var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
   var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
@@ -10770,7 +10774,7 @@ function saveFollowupEdit(){
     if(kk2) persistLeadCnpj(kk2, cnpj);
     generateContratoDocx({
       plano:plano,
-      nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+      nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
       cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
       telefone:_fuMeeting.tel,
       duracaoMeses:duracao,
@@ -10792,7 +10796,7 @@ function saveFollowupEdit(){
     var _isFirstTimeSheet = old.venda!=='sim' || old._fromContrato;
     if(_isFirstTimeSheet){
       appendClienteRow({
-        nomeCliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+        nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
         plano:plano,
         duracao:duracao,
         dataInicio:dataInicio,
@@ -10812,7 +10816,7 @@ function saveFollowupEdit(){
         var _mrr=plano==='starter'?Math.round(contrato/45*30):(tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato));
         var _tcv=tipoValor==='tcv'?contrato:(_mrr*_planoDur);
         saveContrato(null,{
-          cliente:(leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome,
+          cliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
           dataInicio:dataInicio,
           valorMes:_mrr,
           valorVendido:_tcv,
