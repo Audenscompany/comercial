@@ -4105,7 +4105,7 @@ http('receberLead', async (req, res) => {
 
       // ===== LEADS =====
       var leads = (await db.ref("leads").once("value")).val() || {};
-      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0, leadsSemDado = 0;
+      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0, leadsSemDado = 0, adAgg = {};
       Object.keys(leads).forEach(function (k) {
         var l = leads[k]; if (!l) return;
         if (!inPeriodMs(l._createdAt)) return;
@@ -4114,6 +4114,10 @@ http('receberLead', async (req, res) => {
         var b = bandLabel(v === null ? 0 : v); if (v === null) b = "sem dado"; leadsBand[b] = (leadsBand[b] || 0) + 1;
         if (v !== null) { if (v >= 50000) leadsGte50++; if (v >= 60000) leadsGte60++; }
         if (v === null) leadsSemDado++;
+        var _adn = String((l.ad || l.campanha || "sem anúncio")).trim() || "sem anúncio";
+        if (!adAgg[_adn]) adAgg[_adn] = { ad: _adn, leads: 0, gte50k: 0, gte60k: 0, semdado: 0 };
+        adAgg[_adn].leads++;
+        if (v === null) adAgg[_adn].semdado++; else { if (v >= 50000) adAgg[_adn].gte50k++; if (v >= 60000) adAgg[_adn].gte60k++; }
       });
 
       // ===== REUNIOES =====
@@ -4165,7 +4169,7 @@ http('receberLead', async (req, res) => {
 
       return res.status(200).json({
         ok: true, periodo: periodo, ym: ym,
-        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand },
+        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand, por_anuncio: (req.query.byad==='1' ? Object.keys(adAgg).map(function(k){return adAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined) },
         reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, agendadas_gte50k: R.ag_gte50||0, agendadas_gte60k: R.ag_gte60||0, realizadas_gte50k: R.real_gte50||0, realizadas_gte60k: R.real_gte60||0, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand, por_origem_agendadas: agOrigem },
         no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, por_origem: nsOrigem, lista: nsList.slice(0, 80) }
       });
