@@ -4139,9 +4139,13 @@ http('receberLead', async (req, res) => {
       var nsList = [];
       Object.keys(byTel).forEach(function (t) {
         var o = byTel[t], m = o.m; R.agendadas++;
-        var v = fatMin(m.faturamentoLead || "");
+        var _lk = m.kanbanKey || t; var _ld = leads[_lk] || null;
+        var _fatSrc = (m.faturamentoLead && String(m.faturamentoLead).trim()) ? m.faturamentoLead : (_ld ? (_ld.faixa || _ld.faturamento || "") : "");
+        var v = fatMin(_fatSrc);
         var ab = (v === null) ? "sem dado" : bandLabel(v); agBand[ab] = (agBand[ab] || 0) + 1;
         var og = normOrigem(m.origem); agOrigem[og] = (agOrigem[og] || 0) + 1;
+        if (v !== null && v >= 50000) R.ag_gte50 = (R.ag_gte50||0)+1;
+        if (v !== null && v >= 60000) R.ag_gte60 = (R.ag_gte60||0)+1;
         var fu = followups[o.mid] || null;
         var res = fu && fu.resultado ? String(fu.resultado).toLowerCase() : "";
         var mst = String(m.status || "").toLowerCase();
@@ -4151,7 +4155,7 @@ http('receberLead', async (req, res) => {
         else if (mst === "pending" || mst === "") cat = "pendente";
         else cat = "outras";
         if (cat === "no_show") { R.no_show++; nsBand[ab] = (nsBand[ab] || 0) + 1; nsOrigem[og] = (nsOrigem[og] || 0) + 1; nsList.push({ nome: m.nome || "", tel: m.tel || "", fat: m.faturamentoLead || "", fatMin: v, dt: m.dtDisplay || o.dtISO, closer: m.responsavel || "", origem: m.origem || "", tarefaOrigem: m.tarefaOrigem || "" }); }
-        else if (cat === "realizada") { R.realizadas++; realBand[ab] = (realBand[ab] || 0) + 1; }
+        else if (cat === "realizada") { R.realizadas++; realBand[ab] = (realBand[ab] || 0) + 1; if (v !== null && v >= 50000) R.real_gte50=(R.real_gte50||0)+1; if (v !== null && v >= 60000) R.real_gte60=(R.real_gte60||0)+1; }
         else if (cat === "pendente") R.pendentes++;
         else R.outras++;
       });
@@ -4162,7 +4166,7 @@ http('receberLead', async (req, res) => {
       return res.status(200).json({
         ok: true, periodo: periodo, ym: ym,
         leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand },
-        reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand, por_origem_agendadas: agOrigem },
+        reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, agendadas_gte50k: R.ag_gte50||0, agendadas_gte60k: R.ag_gte60||0, realizadas_gte50k: R.real_gte50||0, realizadas_gte60k: R.real_gte60||0, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand, por_origem_agendadas: agOrigem },
         no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, por_origem: nsOrigem, lista: nsList.slice(0, 80) }
       });
     }
