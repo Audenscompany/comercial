@@ -4034,7 +4034,9 @@ http('receberLead', async (req, res) => {
       return await handleCampDrain(req, res);
     }
     if (path === "/read") {
-      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var _rs = process.env.READ_SECRET || "";
+      var _given = String(req.query.rsecret || req.get("x-read-secret") || "");
+      if (!_rs || _given !== _rs) return res.status(401).send("Unauthorized");
       var rpath = String((req.query.path || "")).replace(/^\/+|\/+$/g, "");
       if (!rpath) return res.status(400).json({ ok: false, error: "informe ?path=<no>" });
       var ref = db.ref(rpath);
