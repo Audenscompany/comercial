@@ -4058,7 +4058,14 @@ http('receberLead', async (req, res) => {
       var _ag = String(req.query.rsecret || req.get("x-read-secret") || "");
       if (!_as || _ag !== _as) return res.status(401).send("Unauthorized");
       var ym = String(req.query.ym || "");
-      if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ ok: false, error: "use ?ym=YYYY-MM" });
+      var dFrom = String(req.query.from || ""), dTo = String(req.query.to || "");
+      var useRange = /^\d{4}-\d{2}-\d{2}$/.test(dFrom) && /^\d{4}-\d{2}-\d{2}$/.test(dTo);
+      if (!useRange && !/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ ok: false, error: "use ?ym=YYYY-MM ou ?from=YYYY-MM-DD&to=YYYY-MM-DD" });
+      function dateOfMs(ms) { if (!ms) return ""; var d = new Date(Number(ms) - 3 * 3600 * 1000); return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0"); }
+      function dateOfISO(iso) { if (!iso) return ""; var d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 10); var b = new Date(d.getTime() - 3 * 3600 * 1000); return b.getUTCFullYear() + "-" + String(b.getUTCMonth() + 1).padStart(2, "0") + "-" + String(b.getUTCDate()).padStart(2, "0"); }
+      function inPeriodMs(ms) { if (useRange) { var ds = dateOfMs(ms); return ds >= dFrom && ds <= dTo; } return ymOfMs(ms) === ym; }
+      function inPeriodISO(iso) { if (useRange) { var ds = dateOfISO(iso); return ds >= dFrom && ds <= dTo; } return ymOfISO(iso) === ym; }
+      var periodo = useRange ? (dFrom + " a " + dTo) : ym;
       function fatMin(str) {
         if (str === null || str === undefined || String(str).trim() === "") return null; // sem dado
         var s = String(str).toLowerCase().trim();
@@ -4085,7 +4092,7 @@ http('receberLead', async (req, res) => {
       var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0, leadsSemDado = 0;
       Object.keys(leads).forEach(function (k) {
         var l = leads[k]; if (!l) return;
-        if (ymOfMs(l._createdAt) !== ym) return;
+        if (!inPeriodMs(l._createdAt)) return;
         leadsMes++;
         var v = fatMin(l.faixa || l.faturamento || "");
         var b = bandLabel(v === null ? 0 : v); if (v === null) b = "sem dado"; leadsBand[b] = (leadsBand[b] || 0) + 1;
@@ -4104,7 +4111,7 @@ http('receberLead', async (req, res) => {
         var st0 = String(m.status || "").toLowerCase();
         if (st0 === "reagendado" || st0 === "cancelado" || st0 === "cancelled") return;
         if (m._retorno) return;
-        var iso = m.dtISO || ""; if (ymOfISO(iso) !== ym) return;
+        var iso = m.dtISO || ""; if (!inPeriodISO(iso)) return;
         var t = norm(m.tel || m.telefone); if (!t) return;
         var cur = byTel[t];
         if (!cur || (new Date(iso) > new Date(cur.dtISO || 0))) byTel[t] = { mid: mid, m: m, dtISO: iso };
@@ -4134,7 +4141,7 @@ http('receberLead', async (req, res) => {
       var nsSemDado = nsList.filter(function (x) { return x.fatMin === null; }).length;
 
       return res.status(200).json({
-        ok: true, ym: ym,
+        ok: true, periodo: periodo, ym: ym,
         leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand },
         reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand },
         no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, lista: nsList.slice(0, 80) }
