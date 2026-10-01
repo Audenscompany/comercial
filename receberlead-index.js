@@ -4053,6 +4053,87 @@ http('receberLead', async (req, res) => {
       if (txt && txt.length > 180000) return res.status(200).json({ ok: true, path: rpath, truncated: true, note: "no muito grande; use ?shallow=1 pra listar as chaves ou ?limit=N", size: txt.length });
       return res.status(200).json({ ok: true, path: rpath, value: out });
     }
+    if (path === "/analytics") {
+      var _as = process.env.READ_SECRET || "";
+      var _ag = String(req.query.rsecret || req.get("x-read-secret") || "");
+      if (!_as || _ag !== _as) return res.status(401).send("Unauthorized");
+      var ym = String(req.query.ym || "");
+      if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ ok: false, error: "use ?ym=YYYY-MM" });
+      function fatMin(str) {
+        if (!str) return 0;
+        var s = String(str).toLowerCase();
+        var fx = s.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/); // faixa "50-100"
+        if (fx) return parseInt(fx[1], 10) * 1000;
+        if (s.indexOf("pedido") !== -1) { var pn = s.match(/\d+/g); if (pn) return Math.min.apply(null, pn.map(Number)) * 50; return 0; }
+        if (/acima|mais de|\+/.test(s)) { var a = s.match(/(\d+(?:[.,]\d+)?)/); if (a) { var v = parseFloat(a[1].replace(",", ".")); return s.indexOf("milh") !== -1 ? v * 1e6 : v * 1000; } }
+        if (/at[eé]/.test(s)) return 0; // "até 15 mil" -> piso 0
+        var nums = s.match(/(\d+(?:[.,]\d+)?)/g); // "de 50 mil a 100 mil" -> min
+        if (nums && nums.length) { var mn = Math.min.apply(null, nums.map(function (n) { return parseFloat(n.replace(",", ".")); })); return s.indexOf("milh") !== -1 ? mn * 1e6 : (s.indexOf("mil") !== -1 ? mn * 1000 : mn); }
+        return 0;
+      }
+      function bandLabel(v) { if (v >= 300000) return "300k+"; if (v >= 100000) return "100-300k"; if (v >= 50000) return "50-100k"; if (v >= 40000) return "40-50k"; if (v >= 20000) return "20-40k"; if (v > 0) return "ate 20k"; return "sem dado"; }
+      function ymOfMs(ms) { if (!ms) return ""; var d = new Date(Number(ms) - 3 * 3600 * 1000); return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0"); }
+      function ymOfISO(iso) { if (!iso) return ""; var d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 7); var b = new Date(d.getTime() - 3 * 3600 * 1000); return b.getUTCFullYear() + "-" + String(b.getUTCMonth() + 1).padStart(2, "0"); }
+
+      // ===== LEADS =====
+      var leads = (await db.ref("leads").once("value")).val() || {};
+      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0;
+      Object.keys(leads).forEach(function (k) {
+        var l = leads[k]; if (!l) return;
+        if (ymOfMs(l._createdAt) !== ym) return;
+        leadsMes++;
+        var v = fatMin(l.faixa || l.faturamento || "");
+        var b = bandLabel(v); leadsBand[b] = (leadsBand[b] || 0) + 1;
+        if (v >= 50000) leadsGte50++;
+        if (v >= 60000) leadsGte60++;
+      });
+
+      // ===== REUNIOES =====
+      var meetings = (await db.ref("meetings").once("value")).val() || {};
+      var followups = (await db.ref("followups").once("value")).val() || {};
+      function norm(t) { t = String(t || "").replace(/\D/g, ""); return t.length > 9 ? t.slice(-9) : t; }
+      // dedup por telefone: mantem a reuniao de maior dtISO dentro do mes
+      var byTel = {};
+      Object.keys(meetings).forEach(function (mid) {
+        var m = meetings[mid]; if (!m || m._hidden || mid === "undefined") return;
+        var st0 = String(m.status || "").toLowerCase();
+        if (st0 === "reagendado" || st0 === "cancelado" || st0 === "cancelled") return;
+        if (m._retorno) return;
+        var iso = m.dtISO || ""; if (ymOfISO(iso) !== ym) return;
+        var t = norm(m.tel || m.telefone); if (!t) return;
+        var cur = byTel[t];
+        if (!cur || (new Date(iso) > new Date(cur.dtISO || 0))) byTel[t] = { mid: mid, m: m, dtISO: iso };
+      });
+      var R = { agendadas: 0, realizadas: 0, no_show: 0, pendentes: 0, outras: 0 };
+      var nsBand = {}, realBand = {}, agBand = {};
+      var nsList = [];
+      Object.keys(byTel).forEach(function (t) {
+        var o = byTel[t], m = o.m; R.agendadas++;
+        var v = fatMin(m.faturamentoLead || "");
+        var ab = bandLabel(v); agBand[ab] = (agBand[ab] || 0) + 1;
+        var fu = followups[o.mid] || null;
+        var res = fu && fu.resultado ? String(fu.resultado).toLowerCase() : "";
+        var mst = String(m.status || "").toLowerCase();
+        var cat;
+        if (res === "noshow" || mst === "noshow" || mst === "no_show") cat = "no_show";
+        else if (res === "venda" || res === "retorno" || res === "perdida" || fu && fu.comparecimento === "sim" || mst === "done" || mst === "realizada") cat = "realizada";
+        else if (mst === "pending" || mst === "") cat = "pendente";
+        else cat = "outras";
+        if (cat === "no_show") { R.no_show++; nsBand[ab] = (nsBand[ab] || 0) + 1; nsList.push({ nome: m.nome || "", tel: m.tel || "", fat: m.faturamentoLead || "", fatMin: v, dt: m.dtDisplay || o.dtISO, closer: m.responsavel || "" }); }
+        else if (cat === "realizada") { R.realizadas++; realBand[ab] = (realBand[ab] || 0) + 1; }
+        else if (cat === "pendente") R.pendentes++;
+        else R.outras++;
+      });
+      var nsGte50 = nsList.filter(function (x) { return x.fatMin >= 50000; }).length;
+      var nsGte60 = nsList.filter(function (x) { return x.fatMin >= 60000; }).length;
+
+      return res.status(200).json({
+        ok: true, ym: ym,
+        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, porFaixa: leadsBand },
+        reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand },
+        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, porFaixa: nsBand, lista: nsList.slice(0, 60) }
+      });
+    }
     if (path === "/camp-templates") {
       if (!checaSecret(req)) return res.status(401).send("Unauthorized");
       _campTplCache = { at: 0, val: null };
