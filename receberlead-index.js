@@ -4049,9 +4049,25 @@ http('receberLead', async (req, res) => {
       var lim = parseInt(req.query.limit || "0", 10);
       var snap = (lim > 0) ? await ref.limitToFirst(lim).once("value") : await ref.once("value");
       var out = snap.val();
+      // ?fields=a,b,c -> em no do tipo objeto-de-objetos, devolve so esses campos por registro (encolhe muito)
+      // ?strip=x,y   -> remove esses campos de cada registro (ex.: showup, history)
+      var fields = String(req.query.fields || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+      var strip = String(req.query.strip || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+      if (out && typeof out === "object" && (fields.length || strip.length)) {
+        var red = {};
+        Object.keys(out).forEach(function (k) {
+          var r = out[k];
+          if (r && typeof r === "object" && !Array.isArray(r)) {
+            if (fields.length) { var o = {}; fields.forEach(function (f) { if (r[f] !== undefined) o[f] = r[f]; }); red[k] = o; }
+            else { var o2 = {}; Object.keys(r).forEach(function (f) { if (strip.indexOf(f) === -1) o2[f] = r[f]; }); red[k] = o2; }
+          } else red[k] = r;
+        });
+        out = red;
+      }
       var txt = JSON.stringify(out);
-      if (txt && txt.length > 180000) return res.status(200).json({ ok: true, path: rpath, truncated: true, note: "no muito grande; use ?shallow=1 pra listar as chaves ou ?limit=N", size: txt.length });
-      return res.status(200).json({ ok: true, path: rpath, value: out });
+      var maxB = parseInt(req.query.maxbytes || "6000000", 10);
+      if (txt && txt.length > maxB) return res.status(200).json({ ok: true, path: rpath, truncated: true, size: txt.length, note: "no grande; use ?fields=a,b,c pra pegar so os campos que precisa, ou ?shallow=1, ou ?strip=showup" });
+      return res.status(200).json({ ok: true, path: rpath, count: (out && typeof out === "object") ? Object.keys(out).length : undefined, value: out });
     }
     if (path === "/analytics") {
       var _as = process.env.READ_SECRET || "";
