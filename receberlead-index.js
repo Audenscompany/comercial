@@ -4118,11 +4118,14 @@ http('receberLead', async (req, res) => {
       });
       var R = { agendadas: 0, realizadas: 0, no_show: 0, pendentes: 0, outras: 0 };
       var nsBand = {}, realBand = {}, agBand = {};
+      var agOrigem = {}, nsOrigem = {};
+      function normOrigem(x){ x=String(x||'').toLowerCase(); if(!x) return 'sem origem'; if(x.indexOf('cold')>-1||x.indexOf('ligac')>-1||x.indexOf('ligaç')>-1) return 'cold call'; if(x.indexOf('tráf')>-1||x.indexOf('traf')>-1) return 'tráfego'; if(x.indexOf('indic')>-1) return 'indicação'; if(x.indexOf('manual')>-1) return 'manual'; if(x.indexOf('instagram')>-1||x.indexOf('perfil')>-1) return 'instagram'; return x; }
       var nsList = [];
       Object.keys(byTel).forEach(function (t) {
         var o = byTel[t], m = o.m; R.agendadas++;
         var v = fatMin(m.faturamentoLead || "");
         var ab = (v === null) ? "sem dado" : bandLabel(v); agBand[ab] = (agBand[ab] || 0) + 1;
+        var og = normOrigem(m.origem); agOrigem[og] = (agOrigem[og] || 0) + 1;
         var fu = followups[o.mid] || null;
         var res = fu && fu.resultado ? String(fu.resultado).toLowerCase() : "";
         var mst = String(m.status || "").toLowerCase();
@@ -4131,7 +4134,7 @@ http('receberLead', async (req, res) => {
         else if (res === "venda" || res === "retorno" || res === "perdida" || fu && fu.comparecimento === "sim" || mst === "done" || mst === "realizada") cat = "realizada";
         else if (mst === "pending" || mst === "") cat = "pendente";
         else cat = "outras";
-        if (cat === "no_show") { R.no_show++; nsBand[ab] = (nsBand[ab] || 0) + 1; nsList.push({ nome: m.nome || "", tel: m.tel || "", fat: m.faturamentoLead || "", fatMin: v, dt: m.dtDisplay || o.dtISO, closer: m.responsavel || "" }); }
+        if (cat === "no_show") { R.no_show++; nsBand[ab] = (nsBand[ab] || 0) + 1; nsOrigem[og] = (nsOrigem[og] || 0) + 1; nsList.push({ nome: m.nome || "", tel: m.tel || "", fat: m.faturamentoLead || "", fatMin: v, dt: m.dtDisplay || o.dtISO, closer: m.responsavel || "", origem: m.origem || "", tarefaOrigem: m.tarefaOrigem || "" }); }
         else if (cat === "realizada") { R.realizadas++; realBand[ab] = (realBand[ab] || 0) + 1; }
         else if (cat === "pendente") R.pendentes++;
         else R.outras++;
@@ -4143,8 +4146,8 @@ http('receberLead', async (req, res) => {
       return res.status(200).json({
         ok: true, periodo: periodo, ym: ym,
         leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand },
-        reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand },
-        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, lista: nsList.slice(0, 80) }
+        reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand, por_origem_agendadas: agOrigem },
+        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, por_origem: nsOrigem, lista: nsList.slice(0, 80) }
       });
     }
     if (path === "/camp-templates") {
