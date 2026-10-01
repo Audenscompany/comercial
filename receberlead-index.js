@@ -4033,6 +4033,24 @@ http('receberLead', async (req, res) => {
     if (path === "/camp-drain") {
       return await handleCampDrain(req, res);
     }
+    if (path === "/read") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var rpath = String((req.query.path || "")).replace(/^\/+|\/+$/g, "");
+      if (!rpath) return res.status(400).json({ ok: false, error: "informe ?path=<no>" });
+      var ref = db.ref(rpath);
+      if (req.query.shallow === "1") {
+        var snapK = await ref.once("value");
+        var val = snapK.val();
+        if (val && typeof val === "object") return res.status(200).json({ ok: true, path: rpath, shallow: true, keys: Object.keys(val), total: Object.keys(val).length });
+        return res.status(200).json({ ok: true, path: rpath, value: val });
+      }
+      var lim = parseInt(req.query.limit || "0", 10);
+      var snap = (lim > 0) ? await ref.limitToFirst(lim).once("value") : await ref.once("value");
+      var out = snap.val();
+      var txt = JSON.stringify(out);
+      if (txt && txt.length > 180000) return res.status(200).json({ ok: true, path: rpath, truncated: true, note: "no muito grande; use ?shallow=1 pra listar as chaves ou ?limit=N", size: txt.length });
+      return res.status(200).json({ ok: true, path: rpath, value: out });
+    }
     if (path === "/camp-templates") {
       if (!checaSecret(req)) return res.status(401).send("Unauthorized");
       _campTplCache = { at: 0, val: null };
