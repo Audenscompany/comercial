@@ -4060,16 +4060,21 @@ http('receberLead', async (req, res) => {
       var ym = String(req.query.ym || "");
       if (!/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ ok: false, error: "use ?ym=YYYY-MM" });
       function fatMin(str) {
-        if (!str) return 0;
-        var s = String(str).toLowerCase();
+        if (str === null || str === undefined || String(str).trim() === "") return null; // sem dado
+        var s = String(str).toLowerCase().trim();
         var fx = s.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/); // faixa "50-100"
         if (fx) return parseInt(fx[1], 10) * 1000;
-        if (s.indexOf("pedido") !== -1) { var pn = s.match(/\d+/g); if (pn) return Math.min.apply(null, pn.map(Number)) * 50; return 0; }
-        if (/acima|mais de|\+/.test(s)) { var a = s.match(/(\d+(?:[.,]\d+)?)/); if (a) { var v = parseFloat(a[1].replace(",", ".")); return s.indexOf("milh") !== -1 ? v * 1e6 : v * 1000; } }
-        if (/at[eé]/.test(s)) return 0; // "até 15 mil" -> piso 0
-        var nums = s.match(/(\d+(?:[.,]\d+)?)/g); // "de 50 mil a 100 mil" -> min
-        if (nums && nums.length) { var mn = Math.min.apply(null, nums.map(function (n) { return parseFloat(n.replace(",", ".")); })); return s.indexOf("milh") !== -1 ? mn * 1e6 : (s.indexOf("mil") !== -1 ? mn * 1000 : mn); }
-        return 0;
+        if (s.indexOf("pedido") !== -1) { var pn = s.match(/\d+/g); if (pn) return Math.min.apply(null, pn.map(Number)) * 50; return null; }
+        // teto puro: "menos de X", "até X", "abaixo" no INICIO -> piso 0
+        if (/^\s*(r\$)?\s*(at[eé]|menos de|abaixo|no m[aá]ximo)/.test(s)) return 0;
+        var raw = s.match(/\d[\d.,]*/g);
+        if (!raw || !raw.length) return null;
+        var nums = raw.map(function (t) { t = t.replace(/\.(?=\d{3}\b)/g, "").replace(/,(?=\d{3}\b)/g, "").replace(",", "."); return parseFloat(t) || 0; });
+        var mn = Math.min.apply(null, nums.filter(function (x) { return x > 0; }).concat([Infinity]));
+        if (!isFinite(mn)) return null;
+        if (s.indexOf("milh") !== -1) mn = mn * 1e6;
+        else if (s.indexOf("mil") !== -1 && mn < 1000) mn = mn * 1000;
+        return mn;
       }
       function bandLabel(v) { if (v >= 300000) return "300k+"; if (v >= 100000) return "100-300k"; if (v >= 50000) return "50-100k"; if (v >= 40000) return "40-50k"; if (v >= 20000) return "20-40k"; if (v > 0) return "ate 20k"; return "sem dado"; }
       function ymOfMs(ms) { if (!ms) return ""; var d = new Date(Number(ms) - 3 * 3600 * 1000); return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0"); }
@@ -4077,15 +4082,15 @@ http('receberLead', async (req, res) => {
 
       // ===== LEADS =====
       var leads = (await db.ref("leads").once("value")).val() || {};
-      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0;
+      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0, leadsSemDado = 0;
       Object.keys(leads).forEach(function (k) {
         var l = leads[k]; if (!l) return;
         if (ymOfMs(l._createdAt) !== ym) return;
         leadsMes++;
         var v = fatMin(l.faixa || l.faturamento || "");
-        var b = bandLabel(v); leadsBand[b] = (leadsBand[b] || 0) + 1;
-        if (v >= 50000) leadsGte50++;
-        if (v >= 60000) leadsGte60++;
+        var b = bandLabel(v === null ? 0 : v); if (v === null) b = "sem dado"; leadsBand[b] = (leadsBand[b] || 0) + 1;
+        if (v !== null) { if (v >= 50000) leadsGte50++; if (v >= 60000) leadsGte60++; }
+        if (v === null) leadsSemDado++;
       });
 
       // ===== REUNIOES =====
@@ -4110,7 +4115,7 @@ http('receberLead', async (req, res) => {
       Object.keys(byTel).forEach(function (t) {
         var o = byTel[t], m = o.m; R.agendadas++;
         var v = fatMin(m.faturamentoLead || "");
-        var ab = bandLabel(v); agBand[ab] = (agBand[ab] || 0) + 1;
+        var ab = (v === null) ? "sem dado" : bandLabel(v); agBand[ab] = (agBand[ab] || 0) + 1;
         var fu = followups[o.mid] || null;
         var res = fu && fu.resultado ? String(fu.resultado).toLowerCase() : "";
         var mst = String(m.status || "").toLowerCase();
@@ -4124,14 +4129,15 @@ http('receberLead', async (req, res) => {
         else if (cat === "pendente") R.pendentes++;
         else R.outras++;
       });
-      var nsGte50 = nsList.filter(function (x) { return x.fatMin >= 50000; }).length;
-      var nsGte60 = nsList.filter(function (x) { return x.fatMin >= 60000; }).length;
+      var nsGte50 = nsList.filter(function (x) { return x.fatMin !== null && x.fatMin >= 50000; }).length;
+      var nsGte60 = nsList.filter(function (x) { return x.fatMin !== null && x.fatMin >= 60000; }).length;
+      var nsSemDado = nsList.filter(function (x) { return x.fatMin === null; }).length;
 
       return res.status(200).json({
         ok: true, ym: ym,
-        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, porFaixa: leadsBand },
+        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand },
         reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand },
-        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, porFaixa: nsBand, lista: nsList.slice(0, 60) }
+        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, lista: nsList.slice(0, 80) }
       });
     }
     if (path === "/camp-templates") {
