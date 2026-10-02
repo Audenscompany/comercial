@@ -15068,6 +15068,17 @@ function buildAnaliseAdsHTML(data){
     if(q.cpql50>TH.cpql50Bom*3 || (sp>=TH.spendAlto && q.q50<TH.minQ50)) return {k:'cortar',label:'Cortar',cl:'#f87171',bg:'rgba(239,68,68,0.15)',ic:'ti-player-pause',w:4};
     return {k:'manter',label:'Manter',cl:'#fbbf24',bg:'rgba(245,158,11,0.15)',ic:'ti-arrow-right',w:2};
   }
+  function _decWhy(a, dec){
+    var q=_adQ(a); var sp=_spOf(a); var k=(dec&&dec.k)||'';
+    var base='Gasto '+fmtBRL3(sp)+' · '+(a.leads||0)+' leads · '+q.q50+' ≥50k · CPQL50 '+(q.cpql50>0?fmtBRL3(q.cpql50):'—')+' · '+(a.fechamentos||0)+' venda(s)';
+    if(k==='inconcl') return 'Amostra insuficiente: '+q.q50+' leads ≥50k (mínimo '+TH.minQ50+'). Sem amostra não se decide escala. '+base;
+    if(k==='insuf') return 'Volume baixo demais pra avaliar. '+base;
+    if(k==='escalar') return ((a.fechamentos||0)>0?'Tem venda com CAC saudável.':'CPQL50 dentro da meta ('+fmtBRL3(TH.cpql50Bom)+').')+' '+base;
+    if(k==='testar') return 'CPQL50 na zona de teste (meta '+fmtBRL3(TH.cpql50Bom)+'). Mais verba com cautela. '+base;
+    if(k==='cortar') return 'Gasto alto sem qualificar ≥50k, ou CPQL50 muito acima da meta. '+base;
+    if(k==='manter') return 'Dentro do esperado, sem sinal forte de escala nem corte. '+base;
+    return base;
+  }
 
   // ===== metricas derivadas / diagnostico (reusadas depois) =====
   var _cpql=(gastoAds>0&&totQualif>0)?gastoAds/totQualif:0;
@@ -15275,7 +15286,7 @@ function buildAnaliseAdsHTML(data){
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+_cAgCol+';">'+(_cAg>0?fmtBRL3(_cAg):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+_cRealCol+';">'+(_cReal>0?fmtBRL3(_cReal):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+cacCol+';">'+(cac>0?fmtBRL3(cac):'—')+'</td>'+
-      '<td style="padding:9px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:'+dec.bg+';font-size:10px;font-weight:700;letter-spacing:0.5px;color:'+dec.cl+';white-space:nowrap;"><i class="ti '+dec.ic+'" style="font-size:10px;"></i>'+dec.label+'</span></td>'+
+      '<td style="padding:9px 8px;text-align:center;"><span title="'+_decWhy(a,dec).replace(/"/g,'&quot;')+'" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:'+dec.bg+';font-size:10px;font-weight:700;letter-spacing:0.5px;color:'+dec.cl+';white-space:nowrap;cursor:help;"><i class="ti '+dec.ic+'" style="font-size:10px;"></i>'+dec.label+'</span></td>'+
     '</tr>';
   });
   if(adsSorted.length===0) html+='<tr><td colspan="16" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anúncio com dados no período.</td></tr>';
