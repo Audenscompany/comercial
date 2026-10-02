@@ -14515,7 +14515,7 @@ function buildAnaliseAdsHTML(data){
     var conjunto=(col(l,['Conjunto','CONJUNTO','conjunto'])||'').trim();
     var fat=parseFaturamento(col(l,['Faturamento','FATURAMENTO','faturamento']));
     if(!ad||ad==='-') ad='(sem ad)';
-    if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,noshow:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
     if(fat>=20000) d.qualif++;
@@ -14616,13 +14616,14 @@ function buildAnaliseAdsHTML(data){
     var _camp=(adInfo&&adInfo.campanha)||'', _conj=(adInfo&&adInfo.conjunto)||'';
     if(adKey==='(sem ad)'){ var _piC=rTel?(_phoneInfoMap[rTel]||{}):{}; var _cc=((_camp||_piC.campanha||'')).toLowerCase().trim(); if(_cc==='igbio'){ adKey='igbio'; _camp=_camp||_piC.campanha||'igbio'; } }
     if(adKey==='(sem ad)'){ var _piC3=rTel?(_phoneInfoMap[rTel]||{}):{}; var _pl=_provavelAdListRaw(_camp||_piC3.campanha||'', _conj||_piC3.conjunto||''); if(_pl.length===1){ adKey=_pl[0]; _camp=_camp||_piC3.campanha||''; _conj=_conj||_piC3.conjunto||''; } }
-    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:_camp,conjunto:_conj,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:_camp,conjunto:_conj,leads:0,qualif:0,reunioes:0,realizadas:0,noshow:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     // Dedup: se já contamos esta reunião (mesmo telefone) para este ad, pula
     if(rTel){if(!_adTelSeen[adKey])_adTelSeen[adKey]=new Set();if(_adTelSeen[adKey].has(rTel))return;_adTelSeen[adKey].add(rTel);}
     entry.reunioes++;
     var status=(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status'])||'').toUpperCase().trim();
     if(status==='REALIZADA'||status==='VENDA'||status==='NO-SHOW'||status==='NOSHOW') entry.realizadas++;
+    if(status==='NO-SHOW'||status==='NOSHOW') entry.noshow++;
     // Verifica fechamento cruzando reuniões.EMPRESA → clientes (planilha operacional)
     // Prioridade: coluna EMPRESA da reunião (empresa que fechou), depois CLIENTE (nome da pessoa)
     var fuMatch=rTel?(phoneFuMap[rTel]||phoneMeetFuMap[rTel]):null;
@@ -14689,7 +14690,7 @@ function buildAnaliseAdsHTML(data){
     _step3Phones.add(mTel);
     var adKey=(kb.ad||'').trim();
     if(!adKey) return;
-    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:kb.campanha||'',conjunto:kb.conjunto||'',leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+    if(!adData[adKey]) adData[adKey]={ad:adKey,campanha:kb.campanha||'',conjunto:kb.conjunto||'',leads:0,qualif:0,reunioes:0,realizadas:0,noshow:0,fechamentos:0,mrr:0,fats:[]};
     var entry=adData[adKey];
     entry.reunioes++;
     if(!entry.leadsList) entry.leadsList=[];
@@ -14698,6 +14699,7 @@ function buildAnaliseAdsHTML(data){
     var _llIdx3=entry.leadsList.length-1;
     var mst=(m.status||'').toLowerCase();
     if(mst==='done'||mst==='noshow') entry.realizadas++;
+    if(mst==='noshow') entry.noshow++;
     // Verifica fechamento via followup (respeita exclusoes da aba Vendas)
     var fu=followups[m.id];
     var _fuExcl=fu&&((_vendasExcluidas&&_vendasExcluidas[m.id])||(function(){var _sg=(typeof _vendaSig==='function')?_vendaSig(fu,m):'';return _sg&&_vendasExcluidasSig&&_vendasExcluidasSig[_sg];})());
@@ -14739,7 +14741,7 @@ function buildAnaliseAdsHTML(data){
       if((!ad||ad==='-'||ad==='(sem ad)')&&t9){ var pm=telAdMap[t9]||_phoneInfoMap[t9]; if(pm&&pm.ad)ad=pm.ad; }
       if(!ad||ad==='-')ad='(sem ad)';
       var camp=((kb&&kb.campanha)||(t9&&_phoneInfoMap[t9]&&_phoneInfoMap[t9].campanha)||'');
-      if(!adData[ad])adData[ad]={ad:ad,campanha:camp,conjunto:'',leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
+      if(!adData[ad])adData[ad]={ad:ad,campanha:camp,conjunto:'',leads:0,qualif:0,reunioes:0,realizadas:0,noshow:0,fechamentos:0,mrr:0,fats:[]};
       if(!adData[ad].campanha&&camp)adData[ad].campanha=camp;
       adData[ad].fechamentos++;
       if(!adData[ad].vendasList)adData[ad].vendasList=[];
@@ -14966,7 +14968,7 @@ function buildAnaliseAdsHTML(data){
   function _n0(n){return (n||0).toLocaleString('pt-BR');}
 
   // ===== MOTOR DE DECISAO (limites configuraveis) =====
-  window.ADS_THRESH = window.ADS_THRESH || {minLeads:3, minSpend:30, cpqlBom:150, cacBom:600, txQualBoa:0.15, spendAlto:200, minQ50:5, cpql50Bom:500, cpql60Bom:900};
+  window.ADS_THRESH = window.ADS_THRESH || {minLeads:3, minSpend:30, cpqlBom:150, cacBom:600, txQualBoa:0.15, spendAlto:200, minQ50:5, cpql50Bom:500, cpql60Bom:900, custoAgBom:150, custoRealBom:600};
   var TH = window.ADS_THRESH;
   function _spOf(a){ return (a._spend!=null?a._spend:(typeof _metaSpendFor==='function'?_metaSpendFor(a.ad):0))||0; }
   function _adQ(a){
@@ -15176,13 +15178,18 @@ function buildAnaliseAdsHTML(data){
       '<span style="font-family:Barlow Condensed,sans-serif;font-size:11px;color:var(--muted);">'+adsSorted.length+' anúncios</span>'+
     '</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-family:Barlow Condensed,sans-serif;">'+
       '<thead><tr style="border-bottom:1px solid var(--border);">'+
-        ['#','Anúncio','Gasto','Leads','≥50k','≥60k','Reun.','Vendas','CPQL50','CPQL60','CAC','Decisão'].map(function(h,i){var al=(i<=1)?'left':(i===11?'center':'right');var c=(h==='Vendas'||h==='CAC')?'var(--green)':(h==='Reun.'?'var(--amber)':((h==='≥50k'||h==='≥60k'||h==='CPQL50'||h==='CPQL60')?'var(--cyan)':'var(--muted)'));return '<th style="padding:9px 8px;text-align:'+al+';font-size:9.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:'+c+';white-space:nowrap;">'+h+'</th>';}).join('')+
+        ['#','Anúncio','Gasto','Leads','≥50k','≥60k','Agend.','Real.','NS%','Vend.','CPQL50','CPQL60','C/Ag','C/Real','CAC','Decisão'].map(function(h,i){var al=(i<=1)?'left':(i===15?'center':'right');var c=(h==='Vend.'||h==='CAC')?'var(--green)':((h==='Agend.'||h==='Real.')?'var(--amber)':(h==='NS%'?'#f87171':((h==='≥50k'||h==='≥60k'||h==='CPQL50'||h==='CPQL60'||h==='C/Ag'||h==='C/Real')?'var(--cyan)':'var(--muted)')));return '<th style="padding:9px 8px;text-align:'+al+';font-size:9.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:'+c+';white-space:nowrap;">'+h+'</th>';}).join('')+
       '</tr></thead><tbody>';
   _rk.forEach(function(o,idx){
     var a=o.a,dec=o.dec,sp=_spOf(a);
     var q=_adQ(a); var cpql50=q.cpql50, cpql60=q.cpql60, cac=q.cac;
     function _cCol(v,bom){ return v<=0?'var(--muted)':v<=bom?'#4ade80':v<=bom*2?'#fbbf24':'#f87171'; }
     var c50=_cCol(cpql50,TH.cpql50Bom), c60=_cCol(cpql60,TH.cpql60Bom), cacCol=_cCol(cac,TH.cacBom);
+    var _ag=a.reunioes||0, _ns=a.noshow||0, _real=Math.max(0,(a.realizadas||0)-_ns);
+    var _nsPct=(a.realizadas||0)>0?Math.round(_ns/(a.realizadas)*100):null;
+    var _cAg=(sp>0&&_ag>0)?sp/_ag:0, _cReal=(sp>0&&_real>0)?sp/_real:0;
+    var _cAgCol=_cCol(_cAg,TH.custoAgBom), _cRealCol=_cCol(_cReal,TH.custoRealBom);
+    var _nsCol=_nsPct===null?'var(--muted)':(_nsPct<30?'#4ade80':(_nsPct<50?'#fbbf24':'#f87171'));
     html+='<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'+
       '<td style="padding:9px 8px;font-size:12px;color:var(--muted);">'+(idx+1)+'</td>'+
       '<td style="padding:9px 8px;font-size:12px;font-weight:700;color:var(--white);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+_adDisplayName(a.ad).replace(/"/g,'&quot;')+'">'+_adDisplayName(a.ad)+'</td>'+
@@ -15190,19 +15197,23 @@ function buildAnaliseAdsHTML(data){
       '<td style="padding:9px 8px;text-align:right;font-size:12px;color:var(--white);">'+a.leads+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;color:'+(q.q50>0?'var(--cyan)':'var(--muted)')+';">'+q.q50+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;color:'+(q.q60>0?'var(--cyan)':'var(--muted)')+';">'+q.q60+'</td>'+
-      '<td data-adkey="'+String(a.ad).replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey)_showAdLeadsModal(this.dataset.adkey)" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+((a.realizadas||0)>0?'var(--amber)':'var(--muted)')+';">'+(a.realizadas||0)+'</td>'+
+      '<td data-adkey="'+String(a.ad).replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey)_showAdLeadsModal(this.dataset.adkey)" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+(_ag>0?'var(--amber)':'var(--muted)')+';">'+_ag+'</td>'+
+      '<td style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;color:'+(_real>0?'var(--amber)':'var(--muted)')+';">'+_real+'</td>'+
+      '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+_nsCol+';">'+(_nsPct===null?'—':_nsPct+'%')+'</td>'+
       '<td data-adkey="'+String(a.ad).replace(/"/g,'&quot;')+'" onclick="if(this.dataset.adkey&&'+(a.fechamentos>0?'true':'false')+')_showAdVendasModal(this.dataset.adkey)" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:'+(a.fechamentos>0?'pointer':'default')+';color:'+(a.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(a.fechamentos>0?a.fechamentos:'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+c50+';">'+(cpql50>0?fmtBRL3(cpql50):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+c60+';">'+(cpql60>0?fmtBRL3(cpql60):'—')+'</td>'+
+      '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+_cAgCol+';">'+(_cAg>0?fmtBRL3(_cAg):'—')+'</td>'+
+      '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+_cRealCol+';">'+(_cReal>0?fmtBRL3(_cReal):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:'+cacCol+';">'+(cac>0?fmtBRL3(cac):'—')+'</td>'+
       '<td style="padding:9px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:'+dec.bg+';font-size:10px;font-weight:700;letter-spacing:0.5px;color:'+dec.cl+';white-space:nowrap;"><i class="ti '+dec.ic+'" style="font-size:10px;"></i>'+dec.label+'</span></td>'+
     '</tr>';
   });
-  if(adsSorted.length===0) html+='<tr><td colspan="12" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anúncio com dados no período.</td></tr>';
+  if(adsSorted.length===0) html+='<tr><td colspan="16" style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">Nenhum anúncio com dados no período.</td></tr>';
   // Linha "Sem anúncio identificado": leads/vendas de tráfego que não têm ad atribuído (rastreio perdido na LP)
   (function(){
-    var _sa={leads:0,qualif:0,realizadas:0,fechamentos:0,q50:0,q60:0};
-    ['(sem ad)','-',''].forEach(function(k){ var d=adData[k]; if(d){ _sa.leads+=d.leads||0; _sa.qualif+=d.qualif||0; _sa.realizadas+=d.realizadas||0; _sa.fechamentos+=d.fechamentos||0; (d.fats||[]).forEach(function(f){ if(f>=50000)_sa.q50++; if(f>=60000)_sa.q60++; }); } });
+    var _sa={leads:0,qualif:0,realizadas:0,fechamentos:0,q50:0,q60:0,reunioes:0,noshow:0};
+    ['(sem ad)','-',''].forEach(function(k){ var d=adData[k]; if(d){ _sa.leads+=d.leads||0; _sa.qualif+=d.qualif||0; _sa.realizadas+=d.realizadas||0; _sa.fechamentos+=d.fechamentos||0; _sa.reunioes+=d.reunioes||0; _sa.noshow+=d.noshow||0; (d.fats||[]).forEach(function(f){ if(f>=50000)_sa.q50++; if(f>=60000)_sa.q60++; }); } });
     if(_sa.leads>0||_sa.fechamentos>0){
       html+='<tr style="border-top:2px solid var(--border);background:rgba(245,158,11,0.06);">'+
         '<td style="padding:9px 8px;font-size:12px;color:var(--amber);text-align:center;">!</td>'+
@@ -15211,8 +15222,12 @@ function buildAnaliseAdsHTML(data){
         '<td style="padding:9px 8px;text-align:right;font-size:12px;color:var(--white);">'+_sa.leads+'</td>'+
         '<td style="padding:9px 8px;text-align:right;font-size:12px;color:'+(_sa.q50>0?'var(--cyan)':'var(--muted)')+';">'+_sa.q50+'</td>'+
         '<td style="padding:9px 8px;text-align:right;font-size:12px;color:'+(_sa.q60>0?'var(--cyan)':'var(--muted)')+';">'+_sa.q60+'</td>'+
-        '<td data-adkey="(sem ad)" onclick="_showAdLeadsModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+(_sa.realizadas>0?'var(--amber)':'var(--muted)')+';">'+_sa.realizadas+'</td>'+
+        '<td data-adkey="(sem ad)" onclick="_showAdLeadsModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:pointer;color:'+(_sa.reunioes>0?'var(--amber)':'var(--muted)')+';">'+_sa.reunioes+'</td>'+
+        '<td style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;color:var(--muted);">'+Math.max(0,(_sa.realizadas||0)-(_sa.noshow||0))+'</td>'+
+        '<td style="padding:9px 8px;text-align:right;font-size:11.5px;font-weight:700;color:var(--muted);">'+((_sa.realizadas||0)>0?Math.round((_sa.noshow||0)/_sa.realizadas*100)+'%':'—')+'</td>'+
         '<td data-adkey="(sem ad)" onclick="if('+(_sa.fechamentos>0?'true':'false')+')_showAdVendasModal(\'(sem ad)\')" style="padding:9px 8px;text-align:right;font-size:12px;font-weight:700;cursor:'+(_sa.fechamentos>0?'pointer':'default')+';color:'+(_sa.fechamentos>0?'var(--green)':'var(--muted)')+';">'+(_sa.fechamentos>0?_sa.fechamentos:'—')+'</td>'+
+        '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
+        '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
         '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
         '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
         '<td style="padding:9px 8px;text-align:right;color:var(--muted);">—</td>'+
