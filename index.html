@@ -10741,7 +10741,7 @@ function renderReunioes(){
     }
     return null;
   }
-  function isConf(m){var fu=getFu(m);return !!(m.confirmado||m.confirmacao||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
+  function isConf(m){var fu=getFu(m);var su=m.showup||{};return !!(m.confirmado||m.confirmacao||su.confirmado||su.status==='confirmado'||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
   function isReal(m){var fu=getFu(m);return fu?(fu.comparecimento==='sim'||fu.resultado==='venda'):isRealizada(m.status);}
   function isNs(m){var fu=getFu(m);var st=(m.status||'').toLowerCase();return fu?fu.comparecimento==='nao':(st.includes('noshow')||st.includes('no-show')||st==='no_show');}
   function isProp(m){var fu=getFu(m);return fu&&(fu.resultado==='proposta'||fu.resultado==='venda');}
@@ -10999,6 +10999,19 @@ function renderReunioes(){
       }
       H+='</div>';
     }
+  })();
+
+  // ═══ SHOW-RATE ≥50k / ≥60k (Plano Mestre P2) ═══
+  (function(){
+    function _sr(arr){ var e=arr.filter(function(m){return isReal(m)||isNs(m);}); var r=e.filter(isReal).length; return e.length?{p:Math.round(r/e.length*100),n:e.length}:{p:null,n:0}; }
+    function _f(m){ return (getFat(m)||Number(m.icp_fatmin)||0); }
+    var a=_sr(rows), a50=_sr(rows.filter(function(m){return _f(m)>=50000;})), a60=_sr(rows.filter(function(m){return _f(m)>=60000;}));
+    function _c(p){ return p===null?'var(--muted)':(p>=55?'#4ade80':(p>=40?'#fbbf24':'#f87171')); }
+    function _cell(lbl,o){ return '<div style="flex:1;min-width:100px;"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+lbl+'</div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;color:'+_c(o.p)+';line-height:1.1;">'+(o.p===null?'—':o.p+'%')+'</div><div style="font-size:10px;color:var(--muted);">'+o.n+' reuniões</div></div>'; }
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;">'
+      +'<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);min-width:80px;">Show-rate<br><span style="font-weight:500;letter-spacing:0;text-transform:none;">'+mesLabel+'</span></div>'
+      +_cell('Total',a)+_cell('ICP ≥50k',a50)+_cell('ICP ≥60k',a60)
+      +'</div>';
   })();
 
   // Sub-tabs
@@ -18694,7 +18707,7 @@ function renderReunioesNoshow(){
     }
     return null;
   }
-  function isConf(m){var fu=getFu(m);return !!(m.confirmado||m.confirmacao||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
+  function isConf(m){var fu=getFu(m);var su=m.showup||{};return !!(m.confirmado||m.confirmacao||su.confirmado||su.status==='confirmado'||(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda')));}
   function isReal(m){var fu=getFu(m);return fu?(fu.comparecimento==='sim'||fu.resultado==='venda'):isRealizada(m.status);}
   function isNs(m){var fu=getFu(m);var st=(m.status||'').toLowerCase();return fu?fu.comparecimento==='nao':(st.includes('noshow')||st.includes('no-show')||st==='no_show');}
   function isVenda(m){var fu=getFu(m);return fu&&fu.resultado==='venda';}
