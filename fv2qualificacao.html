@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+/* Atribuição (UTMs do anúncio + fbp/fbc) — captura na 1ª visita e persiste p/ não perder na navegação */
+(function(){var KEYS=['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','campaign_id','adset_id','ad_id','campaign_name','adset_name','ad_name'];var qs;try{qs=new URLSearchParams(window.location.search);}catch(e){qs={get:function(){return null;}};}var salvo={};try{salvo=JSON.parse(localStorage.getItem('audens_attrib')||'{}');}catch(e){}var cur={};KEYS.forEach(function(k){var v=qs.get(k);if(v){cur[k]=v;salvo[k]=v;}});try{var r=document.referrer;if(r)cur.ref=r;}catch(e){}cur.ts=Date.now();var m;m=document.cookie.match(/_fbp=([^;]+)/);if(m)salvo.fbp=m[1];m=document.cookie.match(/_fbc=([^;]+)/);if(m)salvo.fbc=m[1];if(!salvo.fbc&&salvo.fbclid)salvo.fbc='fb.1.'+Date.now()+'.'+salvo.fbclid;var sig=false;for(var kk in cur){if(kk!=='ts'&&kk!=='ref'){sig=true;break;}}if(cur.ref)sig=true;if(sig&&!salvo.first_touch)salvo.first_touch=cur;if(sig)salvo.last_touch=cur;try{localStorage.setItem('audens_attrib',JSON.stringify(salvo));}catch(e){}window.__audensAttrib=salvo;})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audens — Diagnóstico de Tráfego</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Meta Pixel -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','288150133971064');fbq('track','PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=288150133971064&ev=PageView&noscript=1"/></noscript>
+<style>
+  :root{
+    --orange:#7C34F0;
+    --orange-hover:#5A22C0;
+    --orange-soft:#e9dcff;
+    --orange-softer:#f4eeff;
+    --bg:#f9fafb;
+    --ink:#0f1729;
+    --gray:#6b7280;
+    --line:#e5e7eb;
+    --line-soft:#e3d6f7;
+    --blue:#7C34F0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Geist',-apple-system,system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* progress bar */
+  #progress-track{position:fixed;top:0;left:0;right:0;height:4px;background:#e9dcff;z-index:50}
+  #progress-fill{height:100%;width:0;background:var(--orange);transition:width .4s ease}
+  /* back button */
+  #back{position:fixed;top:18px;left:22px;width:34px;height:34px;border:none;background:transparent;
+    color:#4b5563;font-size:22px;cursor:pointer;z-index:60;display:none;line-height:1;border-radius:6px}
+  #back:hover{background:#efefef}
+  /* logo */
+  .logo{display:flex;flex-direction:column;align-items:center;gap:6px;padding:36px 0 0}
+  .logo img{height:46px;width:auto;display:block}
+  .logo .name{font-family:'Lato',sans-serif;font-weight:900;font-size:9px;letter-spacing:2px;color:var(--blue)}
+  /* layout */
+  .stage{max-width:640px;margin:0 auto;padding:0 24px;min-height:calc(100vh - 96px);
+    display:flex;flex-direction:column;justify-content:center}
+  .stage.wide{max-width:900px}
+  .stage.cal{justify-content:flex-start;padding-top:8px;padding-bottom:40px}
+  .step{display:none;animation:fade .35s ease}
+  .step.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  h1{font-family:'Lato',sans-serif;font-weight:400;font-size:30px;line-height:1.25;color:#000;margin-bottom:6px}
+  h1 b{font-weight:700}
+  .req{color:#ef4444}
+  .subtitle{color:var(--gray);font-size:16px;margin:8px 0 4px;line-height:1.4}
+  .subtitle b{color:#374151;font-weight:600}
+  /* intro prova social */
+  .intro-prova{margin:16px 0 4px;padding:12px 16px;background:#f4ecff;border:1px solid #e3d6f7;
+    border-radius:12px;font-size:14px;line-height:1.7;color:#4b2a8a;font-weight:500}
+  .intro-prova b{color:#7C34F0;font-weight:700}
+  /* intro list */
+  .intro-list{list-style:none;margin:22px 0 4px;font-size:17px;line-height:2}
+  .intro-note{color:var(--gray);font-style:italic;font-size:15px;margin-top:20px;line-height:1.6}
+  /* inputs */
+  .field{margin-top:26px}
+  input.txt{width:100%;border:none;border-bottom:1px solid var(--line-soft);background:transparent;
+    font-family:inherit;font-size:20px;color:var(--ink);padding:10px 4px;outline:none}
+  input.txt::placeholder{color:#c9ccd1}
+  input.txt:focus{border-bottom-color:var(--orange)}
+  .phone-row{display:flex;align-items:flex-end;gap:14px}
+  .cc{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line-soft);padding:10px 2px;font-size:18px;color:#374151;white-space:nowrap}
+  .cc .flag{font-size:20px}
+  .cc select{border:none;background:transparent;font-family:inherit;font-size:18px;color:#374151;outline:none;cursor:pointer}
+  .phone-row input.txt{flex:1}
+  .err{display:none;color:#ef4444;font-size:14px;margin-top:10px;align-items:center;gap:6px}
+  .err.show{display:flex}
+  .err::before{content:"\24d8";font-style:normal}
+  /* choice cards */
+  .choices{margin-top:26px;display:flex;flex-direction:column;gap:14px}
+  .choice{display:flex;align-items:center;gap:14px;border:1px solid var(--line);background:#fff;
+    border-radius:8px;padding:16px 18px;cursor:pointer;font-size:17px;transition:all .15s;text-align:left;width:100%;font-family:inherit;color:var(--ink)}
+  .choice:hover{border-color:#c9a6ff;background:#faf7ff}
+  .choice .badge{width:26px;height:26px;flex:0 0 26px;border-radius:6px;background:#f3f4f6;color:#374151;
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+  .choice.sel{border-color:var(--orange);background:var(--orange-softer)}
+  .choice.sel .badge{background:var(--orange);color:#fff}
+  /* continue button */
+  .btn{font-family:'Lato',sans-serif;font-weight:500;background:var(--orange);color:#fafafa;border:none;
+    cursor:pointer;transition:background .15s}
+  .btn:hover{background:var(--orange-hover)}
+  .btn-continue{margin-top:26px;padding:16px 34px;font-size:16px}
+  .hint{margin-top:12px;color:#9ca3af;font-size:13px}
+  .hint kbd{background:#eef0f2;border-radius:4px;padding:1px 6px;font-family:monospace;font-size:12px}
+  .cta{margin-top:34px;padding:18px 40px;font-size:16px;font-weight:700;width:100%;max-width:420px}
+  /* meeting card */
+  .meet-card{display:flex;align-items:center;gap:12px;margin:22px 0 18px}
+  .meet-ico{width:42px;height:42px;border-radius:8px;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px}
+  .meet-card .t{font-family:'Lato',sans-serif;font-weight:700;font-size:16px;color:#000}
+  .meet-card .d{color:var(--gray);font-size:14px;margin-top:2px;display:flex;align-items:center;gap:5px}
+  /* calendly inline — altura FIXA (o widget rola internamente; evita vão branco) */
+  .cal-inline{width:100%;height:720px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  @media(max-width:640px){ .cal-inline{height:760px} }
+  /* youtube (não qualificado) */
+  .yt-wrap{text-align:center}
+  .yt-ico{width:70px;height:70px;border-radius:50%;background:#f4eeff;color:var(--orange);font-size:32px;
+    display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+  .yt-card{border:1px solid var(--line);border-radius:14px;padding:24px;background:#fff;margin-top:18px}
+  /* success */
+  #done{text-align:center}
+  #done .check{width:70px;height:70px;border-radius:50%;background:var(--orange);color:#fff;font-size:36px;
+    display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
+  /* ===== agendador nativo ===== */
+  .agenda{width:100%;margin-top:6px}
+  .ag-load,.ag-empty{padding:34px 8px;text-align:center;color:var(--gray);font-size:15px}
+  .ag-warn{background:#fff4f4;border:1px solid #f3c9c9;color:#c0392b;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+  .ag-label{font-family:'Lato',sans-serif;font-weight:700;font-size:14px;color:#374151;margin:18px 0 10px}
+  .ag-label:first-child{margin-top:4px}
+  .ag-tz{font-weight:400;color:#9ca3af;font-size:12px}
+  .ag-days{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+  .ag-day{flex:0 0 auto;scroll-snap-align:start;width:66px;border:1px solid var(--line);background:#fff;border-radius:12px;
+    padding:10px 0;cursor:pointer;font-family:inherit;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .15s}
+  .ag-day:hover{border-color:#c9a6ff}
+  .ag-day .dw{font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:.5px}
+  .ag-day .dn{font-family:'Lato',sans-serif;font-weight:700;font-size:22px;line-height:1}
+  .ag-day .dm{font-size:11px;color:var(--gray)}
+  .ag-day.on{border-color:var(--orange);background:var(--orange-softer)}
+  .ag-day.on .dn{color:var(--orange)}
+  .ag-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px}
+  .ag-slot{border:1px solid var(--line);background:#fff;border-radius:10px;padding:13px 0;cursor:pointer;
+    font-family:'Lato',sans-serif;font-weight:600;font-size:16px;color:var(--ink);transition:all .15s}
+  .ag-slot:hover{border-color:#c9a6ff;background:#faf7ff}
+  .ag-slot.on{border-color:var(--orange);background:var(--orange);color:#fff}
+  .ag-confirm{width:100%;margin-top:22px;padding:17px 20px;font-size:16px;font-weight:700;border-radius:10px}
+  .ag-confirm:disabled{background:#d9cff2;cursor:not-allowed}
+</style>
+</head>
+<body>
+<script src="https://assessoriaaudens.com.br/depoimentos-data.js" onerror="void 0"></script>
+<div id="progress-track"><div id="progress-fill"></div></div>
+<button id="back" title="Voltar">&#8249;</button>
+
+<div class="logo">
+  <img src="https://assessoriaaudens.com.br/images/logo-mark.webp" alt="Audens">
+  <div class="name">AUDENS</div>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<script>
+/* =======================================================================
+   CONFIG — edite só aqui
+   ======================================================================= */
+var CONFIG = {
+  YOUTUBE_URL:  'https://www.youtube.com/@LucasRamong',
+  LP_VIVENDO_URL: 'https://assessoriaaudens.com.br/vivendo-de-delivery/',
+  CRM_ENDPOINT: 'https://receberlead-471063273836.us-central1.run.app',
+  CRM_SECRET:   'audens2025xk',
+  EXPERIMENT_ID: 'fv2-compromisso-v1',
+  FIREBASE_URL: 'https://audens-crm-default-rtdb.firebaseio.com',
+  /* faixas que qualificam para reunião: R$50 mil+ (régua subida — abaixo disso vai pro YouTube e arquiva) */
+  FAIXAS_QUALIFICA: ['30-50','50-100','100-300'],
+  CAPTURAR_NAO_QUALIFICADO: true,
+  /* Agendador nativo — horário de atendimento (fuso de Brasília, UTC-3) */
+  AGENDA: {
+    tzOffsetH: -3,
+    duracaoMin: 50,
+    antecedenciaH: 2,      /* não permite marcar nas próximas 2h */
+    horizonteDias: 2,      /* mostra só os 2 próximos dias úteis com vaga */
+    horasSemana: [9,10,11,12,13,14,15,16,17,18],  /* seg–sex — sábado/domingo desativados */
+    waDuvidas: '5531986187980',  /* WhatsApp p/ dúvidas (Lucas) — atualizado do CRM em runtime */
+    feriados: [
+      '2026-01-01','2026-02-16','2026-02-17','2026-04-03','2026-04-21','2026-05-01','2026-06-04','2026-09-07','2026-10-12','2026-11-02','2026-11-15','2026-11-20','2026-12-25',
+      '2027-01-01','2027-02-08','2027-02-09','2027-03-26','2027-04-21','2027-05-01','2027-05-27','2027-09-07','2027-10-12','2027-11-02','2027-11-15','2027-11-20','2027-12-25'
+    ]  /* feriados nacionais — sem agendamento */
+  }
+};
+
+/* Faturamento estimado a partir de PEDIDOS/mês × ticket médio por SEGMENTO (embutido).
+   O lead responde só pedidos+segmento; o CRM/closer continua vendo faturamento (estimado). */
+var TICKET_SEG = { 'Hamburgueria':60, 'Pizzaria':70, 'Outro':55 };
+var PEDIDOS_REP = {
+  'Até 200 pedidos/mês':150,
+  'De 200 a 300 pedidos/mês':250,
+  'De 300 a 500 pedidos/mês':400,
+  'De 500 a 1.000 pedidos/mês':750,
+  'De 1.000 a 2.000 pedidos/mês':1500,
+  'Mais de 2.000 pedidos/mês':2500
+};
+/* faixa -> rótulo de faturamento (o que aparece no CRM) */
+var FAIXA_FAT = {
+  '0-15':'Até R$20 mil',
+  '15-30':'De R$20 mil a R$30 mil',
+  '30-50':'De R$30 mil a R$50 mil',
+  '50-100':'De R$50 mil a R$100 mil',
+  '100-300':'Acima de R$100 mil'
+};
+function ticketSeg(){ return TICKET_SEG[answers.segmento] || 50; }
+function fatEstimado(){ return (PEDIDOS_REP[answers.pedidos]||0) * ticketSeg(); }
+function pedEv(o){ o=o||{}; o.segmento=(answers.segmento||''); return o; }
+
+/* =======================================================================
+   TRACKING
+   ======================================================================= */
+var FBQ_STANDARD = { lead_submit:'Lead', schedule_view:'ViewContent' };
+(function(){
+  var TRACK_URL = CONFIG.CRM_ENDPOINT + '/track';
+  function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,10); }
+  var sid; try{ sid = sessionStorage.getItem('audens_sid'); if(!sid){ sid=rid(); sessionStorage.setItem('audens_sid',sid);} }catch(e){ sid=rid(); }
+  var Q; try{ Q = new URLSearchParams(location.search); }catch(e){ Q={get:function(){return '';}}; }
+  function utm(k){ try{ return Q.get(k)||''; }catch(e){ return ''; } }
+  var UTMS = { source:utm('utm_source'), medium:utm('utm_medium'), campaign:utm('utm_campaign'), content:utm('utm_content'), term:utm('utm_term') };
+  function device(){ return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)?'mobile':'desktop'; }
+  var queue=[], timer=null;
+  function flush(useBeacon){
+    if(timer){clearTimeout(timer);timer=null;}
+    if(!queue.length) return;
+    var batch=queue.splice(0,queue.length);
+    var payload=JSON.stringify({sid:sid,page:location.pathname,device:device(),ref:(document.referrer||''),utms:UTMS,events:batch});
+    try{
+      if(useBeacon && navigator.sendBeacon){ navigator.sendBeacon(TRACK_URL,new Blob([payload],{type:'text/plain'})); }
+      else { fetch(TRACK_URL,{method:'POST',mode:'cors',keepalive:true,headers:{'Content-Type':'application/json'},body:payload}).catch(function(){}); }
+    }catch(e){}
+  }
+  function enqueue(name,params){
+    queue.push({e:name,p:params||{},t:Date.now()});
+    if(name==='lead_submit'||name==='meeting_booked'||name==='qualified_lead'){ flush(); return; }
+    if(!timer) timer=setTimeout(function(){flush();},4000);
+  }
+  addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') flush(true); });
+  addEventListener('pagehide',function(){ flush(true); });
+  window.__ownTrack=enqueue;
+})();
+function pushEvent(name,params){
+  try{ if(typeof fbq==='function'){ var std=FBQ_STANDARD[name]; if(std) fbq('track',std,params||{}); else fbq('trackCustom',name,params||{}); } }catch(e){}
+  try{ if(window.__ownTrack) window.__ownTrack(name,params); }catch(e){}
+  try{ (window.dataLayer=window.dataLayer||[]).push(Object.assign({event:name},params||{})); }catch(e){}
+}
+
+/* =======================================================================
+   ESTADO / QUALIFICAÇÃO / CRM
+   ======================================================================= */
+var URLQ; try{ URLQ=new URLSearchParams(location.search); }catch(e){ URLQ={get:function(){return '';}}; }
+function utmv(){ var A=window.__audensAttrib||{}; for(var i=0;i<arguments.length;i++){ var k=arguments[i]; if(A[k]) return A[k]; var v=URLQ.get(k); if(v) return v; } return ''; }
+
+/* Faturamento perguntado DIRETO. Mapeia a resposta -> código de faixa interno (mantido). */
+var FAT_COD = {
+  'Até R$20 mil':'0-15',
+  'De R$20 mil a R$30 mil':'15-30',
+  'De R$30 mil a R$50 mil':'30-50',
+  'De R$50 mil a R$100 mil':'50-100',
+  'Acima de R$100 mil':'100-300'
+};
+function faixaCod(){ return FAT_COD[answers.faturamento]||''; }
+function dispostoSim(){ return !!(answers.disposto && answers.disposto.indexOf('Sim')>=0); }
+function isQualified(){ return CONFIG.FAIXAS_QUALIFICA.indexOf(faixaCod())>=0 && dispostoSim(); }
+/* quem precisa deixar contato = quem chega ao agendamento (qualificado OU 30 mil+ na conscientização).
+   Abaixo de R$30 mil (0-15 e 15-30) vai pro YouTube/arquivo sem preencher contato extra. */
+function precisaContato(){
+  var f=faixaCod();
+  if(f==='0-15'||f==='15-30') return false;
+  if(isQualified()) return true;
+  if(['30-50','50-100','100-300','300+'].indexOf(f)>=0) return true;
+  return false;
+}
+
+var leadSent=false;
+function enviarCRM(extra){
+  if(!CONFIG.CRM_ENDPOINT || !CONFIG.CRM_SECRET) return;
+  var base = {
+    nome:(answers.nome||'').trim(),
+    telefone:(answers.whatsapp||''),
+    email:(answers.email||'').trim(),
+    instagram:(answers.instagram||'').trim(),
+    faturamento:(answers.faturamento||FAIXA_FAT[faixaCod()]||''),
+    faturamento_estimado:'nao',
+    segmento:(answers.segmento||''),
+    faixa:faixaCod(),
+    investimento:dispostoSim()?'sim':'nao',
+    ja_investiu:(answers.investiu||''),
+    origem:'lp-audens-quiz-fv2',
+    utm_campaign:utmv('utm_campaign','campaign'), utm_content:utmv('utm_content','ad'), utm_medium:utmv('utm_medium','adset'), utm_source:utmv('utm_source')||'meta',
+    ad:utmv('utm_content','ad'), campanha:utmv('utm_campaign','campaign'), conjunto:utmv('utm_medium','adset'),
+    campaign_id:utmv('campaign_id'), adset_id:utmv('adset_id'), ad_id:utmv('ad_id'),
+    campaign_name:utmv('campaign_name','utm_campaign'), adset_name:utmv('adset_name','utm_medium'), ad_name:utmv('ad_name','utm_content'),
+    variante_lp:'quiz-fv2', experiment_id:CONFIG.EXPERIMENT_ID, first_touch:(window.__audensAttrib||{}).first_touch||null, last_touch:(window.__audensAttrib||{}).last_touch||null,
+    fbp:(document.cookie.match(/_fbp=([^;]+)/)||[])[1]||(window.__audensAttrib||{}).fbp||'', fbc:(document.cookie.match(/_fbc=([^;]+)/)||[])[1]||(window.__audensAttrib||{}).fbc||''
+  };
+  if(extra) for(var k in extra) base[k]=extra[k];
+  try{ fetch(CONFIG.CRM_ENDPOINT,{method:'POST',mode:'cors',keepalive:true,headers:{'Content-Type':'application/json','X-Webhook-Secret':CONFIG.CRM_SECRET},body:JSON.stringify(base)}).catch(function(){}); }catch(e){}
+}
+
+/* =======================================================================
+   PASSOS DO FORMULÁRIO
+   ======================================================================= */
+const steps = [
+  { type:'intro',
+    h:'Donos de hamburgueria e pizzaria estão saindo de R$30 mil pra R$100 mil+ por mês. Descubra em 1 minuto o que trava o SEU faturamento hoje.',
+    prova:'⭐ +200 marcas atendidas &nbsp;·&nbsp; Perto do Fogo R$27k → <b>R$224k</b> &nbsp;·&nbsp; Gerrá R$37k → <b>R$120k</b> &nbsp;·&nbsp; Burguer FC + Pizza FC <b>+R$500 mil/mês</b>',
+    list:['🔍 Em 50 min a gente mostra onde está travando: funil, oferta ou cardápio',
+          '🍔 Feita por quem opera a Burguer FC e a Pizza FC de verdade — não por "guru"',
+          '🎯 Você sai sabendo o que mudar primeiro — e investe só se quiser',
+          '✅ 100% gratuita, em menos de 1 minuto pra ver se tem perfil'],
+    note:'Responda em menos de 1 minuto pra ver se o seu negócio tem perfil.',
+    cta:'QUERO MINHA ANÁLISE GRATUITA' },
+
+  /* --- Contato PRIMEIRO: nome + WhatsApp logo no início --- */
+  { type:'text', key:'nome', h:'Qual seu nome e sobrenome?', required:true },
+
+  { type:'phone', key:'whatsapp', h:'Qual seu número do WhatsApp?', required:true,
+    placeholder:'(00) 00000-0000' },
+
+  /* --- Qualificação --- */
+  { type:'choice', key:'investiu', h:'Já investiu em tráfego pago antes?', required:true,
+    options:['Sim, eu mesmo faço','Sim, contratei uma pessoa/time','Nunca investi'] },
+
+  { type:'choice', key:'segmento', h:'Qual o <b>segmento</b> do seu negócio?', required:true,
+    options:['Hamburgueria','Pizzaria','Outro'] },
+
+  { type:'choice', key:'faturamento', h:'Qual o <b>faturamento médio mensal</b> do seu negócio?', required:true,
+    options:['Até R$20 mil','De R$20 mil a R$30 mil','De R$30 mil a R$50 mil','De R$50 mil a R$100 mil','Acima de R$100 mil'] },
+
+  { type:'choice', key:'disposto',
+    h:'Está disposto a investir pelo menos <b>R$1.500/mês</b> em anúncios, sem contar o valor da nossa mão de obra?',
+    required:true,
+    options:['✅ Sim! Quero tráfego profissional pra crescer.','❌ Não pretendo investir no meu negócio agora.'] },
+
+  { type:'text', key:'instagram', h:'Qual @ do Instagram da sua empresa?', required:true,
+    subtitle:'Digite somente o user, <b>sem o @ e sem espaços</b>, por favor.' },
+
+  { type:'final' }
+];
+
+const answers = {};
+let idx = 0;
+
+const stage = document.getElementById('stage');
+const back  = document.getElementById('back');
+const fill  = document.getElementById('progress-fill');
+
+function updateProgress(){
+  const pct = idx===0 ? 2 : Math.round((idx/(steps.length-1))*100);
+  fill.style.width = pct + '%';
+  back.style.display = (idx>0 && !finalReached) ? 'block' : 'none';
+}
+
+function go(n){ idx = Math.max(0, Math.min(steps.length-1, n)); render(); }
+back.onclick = ()=>go(idx-1);
+
+var finalReached=false;
+function render(){
+  updateProgress();
+  const s = steps[idx];
+  stage.className='stage';
+  stage.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'step active';
+  if(s.type==='intro')      wrap.innerHTML = tplIntro(s);
+  else if(s.type==='choice')wrap.innerHTML = tplChoice(s);
+  else if(s.type==='final') { renderFinal(wrap); stage.appendChild(wrap); return; }
+  else                      wrap.innerHTML = tplInput(s);
+  stage.appendChild(wrap);
+  bind(s);
+}
+
+/* ---------- templates ---------- */
+function tplIntro(s){
+  return `<h1>${s.h}</h1>
+    ${s.prova?`<div class="intro-prova">${s.prova}</div>`:''}
+    <ul class="intro-list">${s.list.map(i=>`<li>${i}</li>`).join('')}</ul>
+    <p class="intro-note">${s.note}</p>
+    <button class="btn btn-continue" data-next>${s.cta}&nbsp;&nbsp;→</button>`;
+}
+function reqStar(s){return s.required?' <span class="req">*</span>':''}
+function subHtml(s){return s.subtitle?`<p class="subtitle">${s.subtitle}</p>`:''}
+
+function tplInput(s){
+  let fieldHtml;
+  if(s.type==='phone'){
+    fieldHtml = `<div class="phone-row">
+        <div class="cc"><span class="flag">🇧🇷</span>
+          <select><option>+55</option><option>+1</option><option>+351</option></select>
+        </div>
+        <input class="txt" type="tel" id="inp" placeholder="${s.placeholder||''}" autocomplete="off">
+      </div>`;
+  } else {
+    fieldHtml = `<input class="txt" type="${s.type==='email'?'email':'text'}" id="inp" autocomplete="off">`;
+  }
+  return `<h1>${s.h}${reqStar(s)}</h1>
+    ${subHtml(s)}
+    <div class="field">${fieldHtml}
+      <div class="err" id="err">Este campo é obrigatório</div>
+    </div>
+    <button class="btn btn-continue" data-next>Continuar</button>
+    <div class="hint">pressione <kbd>Enter ↵</kbd></div>`;
+}
+
+function tplChoice(s){
+  const letters='ABCDEFG';
+  return `<h1>${s.h}${reqStar(s)}</h1>
+    ${subHtml(s)}
+    <div class="choices" id="choices">
+      ${s.options.map((o,i)=>`<button class="choice" data-i="${i}">
+          <span class="badge">${letters[i]}</span><span>${o}</span></button>`).join('')}
+    </div>
+    <div class="err" id="err">Este campo é obrigatório</div>
+    <button class="btn btn-continue" data-next>Continuar</button>
+    <div class="hint">pressione <kbd>Enter ↵</kbd></div>`;
+}
+
+/* ---------- passo final: envia CRM e ramifica ---------- */
+function renderFinal(wrap){
+  finalReached=true; updateProgress();
+  var fc=faixaCod();
+  /* ABAIXO DO CORTE (< R$50 mil): arquiva direto (salvo na base, SEM mensagem/cadência) + tela honesta com o canal do YouTube. */
+  if(['0-15','15-30'].indexOf(fc)>=0){
+    pushEvent('lp_youtube_view',pedEv({faixa:fc}));
+    if(!leadSent){ leadSent=true; enviarCRM({status:'arquivado',destino:'arquivado'}); }
+    wrap.innerHTML = tplYoutube();
+    stage.appendChild(wrap);
+    var yb=document.getElementById('ytBtn'); if(yb) yb.addEventListener('click',function(){ pushEvent('lp_youtube_click'); });
+    return;
+  }
+  var qualified=isQualified();
+  if(qualified){
+    if(!qualifiedTracked){ qualifiedTracked=true; pushEvent('qualified_lead',pedEv({faixa:fc})); }
+    pushEvent('lead_submit',{qualificado:true});
+    if(!leadSent){ leadSent=true; enviarCRM({status:'qualificado',reuniao_agendada:'nao'}); }
+    /* P1: etapa de COMPROMISSO antes do calendário (reduz no-show) */
+    pushEvent('qualificado_apto_agenda',{faixa:fc});
+    wrap.innerHTML = tplCompromisso();
+    stage.className='stage wide cal';
+    stage.appendChild(wrap);
+    pushEvent('viu_compromisso',{faixa:fc});
+    (function(){
+      var ck=document.getElementById('cpCheck'), bt=document.getElementById('cpBtn');
+      if(ck&&bt){ ck.addEventListener('change',function(){ bt.disabled=!ck.checked; bt.style.opacity=ck.checked?'1':'.45'; bt.style.cursor=ck.checked?'pointer':'default'; }); }
+      if(bt){ bt.addEventListener('click',function(){
+        if(bt.disabled) return;
+        pushEvent('abriu_calendario',{faixa:fc});
+        wrap.innerHTML = tplCalendar();
+        pushEvent('schedule_view',{faixa:fc});
+        initAgendador(closerPorFaixa(fc));
+        try{ wrap.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
+      }); }
+    })();
+  } else { /* >=50k não quer investir -> conscientização (tem contato) -> lead ativo */
+    pushEvent('lead_submit',{qualificado:false});
+    if(!leadSent){ leadSent=true; enviarCRM({status:'nao-qualificado',prioridade:'media',destino:'conscientizacao'}); }
+    pushEvent('conscientizacao_view',{faixa:fc});
+    wrap.innerHTML = tplConscientizacao();
+    stage.className='stage wide cal';
+    stage.appendChild(wrap);
+    pushEvent('schedule_view',{faixa:fc});
+    initAgendador(closerPorFaixa(fc));
+  }
+}
+
+function waDuvidasBtn(){
+  var n=(CONFIG.AGENDA&&CONFIG.AGENDA.waDuvidas)||'5531986187980';
+  var msg=encodeURIComponent('Olá! Vim pela análise de tráfego da Audens e queria tirar uma dúvida antes de agendar.');
+  return '<a id="waDuvidas" href="https://wa.me/'+n+'?text='+msg+'" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;padding:13px 16px;border-radius:12px;background:#25D366;color:#fff;font-weight:700;text-decoration:none;font-size:15px;box-shadow:0 2px 8px rgba(37,211,102,.3)">💬 Ficou com dúvida? Fale no WhatsApp</a>';
+}
+/* atualiza o número do botão de dúvidas com o cadastrado no CRM (config/contatos_equipe/lucas) */
+function _refreshWaDuvidas(){
+  try{
+    _getJSON(CONFIG.FIREBASE_URL+'/config/contatos_equipe.json',4000).then(function(c){
+      if(!c||!c.lucas) return;
+      var n=(''+c.lucas).replace(/\D/g,''); if(!n) return;
+      var full=n.length<=11?('55'+n):n;
+      var a=document.getElementById('waDuvidas');
+      if(a){ var msg=encodeURIComponent('Olá! Vim pela análise de tráfego da Audens e queria tirar uma dúvida antes de agendar.'); a.href='https://wa.me/'+full+'?text='+msg; }
+    });
+  }catch(e){}
+}
+function tplCompromisso(){
+  fill.style.width='90%';
+  return `<h1>Você tem perfil. Antes de marcar, um combinado 🤝</h1>
+    <div class="meet-card">
+      <div class="meet-ico">🎯</div>
+      <div><div class="t">Diagnóstico Estratégico de Tráfego</div>
+      <div class="d">🎥 Chamada de vídeo · ⏱ 50 minutos · 🌐 Horário de Brasília</div></div>
+    </div>
+    <p style="font-size:15px;line-height:1.55;color:#333;margin:16px 2px 0">Não é uma call genérica. É uma <b>análise estratégica da sua operação</b> — a gente abre o seu funil, cardápio e números pra mostrar onde está travando o seu crescimento. Por ser aprofundada, é feita só pra <b>operações selecionadas</b> e leva ~50 minutos de verdade.</p>
+    <p style="font-size:15px;line-height:1.55;color:#333;margin:12px 2px 0">Escolha um horário em que <b>você (e seu sócio, se tiver)</b> possam participar com calma — sem estar no meio do pico, dirigindo ou na correria. É esse tempo com atenção total que faz a análise valer.</p>
+    <label for="cpCheck" style="display:flex;gap:10px;align-items:flex-start;margin:18px 2px 0;font-size:14.5px;color:#222;cursor:pointer;background:#f5f3ff;border:1px solid #e3dcff;border-radius:12px;padding:14px">
+      <input type="checkbox" id="cpCheck" style="margin-top:3px;width:18px;height:18px;flex:0 0 auto;accent-color:#7c3aed">
+      <span>Me comprometo a estar presente no horário que eu escolher — e a avisar antes se precisar remarcar.</span>
+    </label>
+    <button id="cpBtn" disabled style="width:100%;margin-top:16px;padding:16px;border:0;border-radius:12px;background:#7c3aed;color:#fff;font-weight:800;font-size:16px;cursor:default;opacity:.45;transition:opacity .2s">ESCOLHER MEU HORÁRIO →</button>`;
+}
+function tplCalendar(){
+  fill.style.width='95%';
+  return `<h1>Quase lá! Escolha o melhor horário ↓</h1>
+    <div class="meet-card">
+      <div class="meet-ico">📅</div>
+      <div><div class="t">Diagnóstico Estratégico de Tráfego</div>
+      <div class="d">🎥 Chamada de vídeo · ⏱ 50 minutos · 🌐 Horário de Brasília</div></div>
+    </div>
+    <div class="agenda" id="agendaBox"></div>
+    ${waDuvidasBtn()}`;
+}
+
+function _escFV2(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
+function videoDepoimentos(){
+  var list=(window.AUDENS_DEPOIMENTOS&&window.AUDENS_DEPOIMENTOS.length)?window.AUDENS_DEPOIMENTOS:[];
+  var items=list.map(function(v){ if(!v||!v.video) return ''; var m=String(v.video).match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})/); if(!m) return '';
+    return '<div style="flex:0 0 auto;width:188px;scroll-snap-align:start">'+
+      '<div style="position:relative;width:100%;aspect-ratio:9/16;border-radius:14px;overflow:hidden;background:#000;box-shadow:0 6px 18px rgba(0,0,0,.12)">'+
+      '<iframe src="https://www.youtube.com/embed/'+m[1]+'" title="depoimento" frameborder="0" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe></div>'+
+      (v.quote?'<p style="font-size:13px;margin:8px 2px 0;font-weight:600;line-height:1.35;text-align:left">“'+_escFV2(v.quote)+'”</p>':'')+
+      '<p style="font-size:12px;color:#777;margin:2px;text-align:left">'+_escFV2(v.role||v.name||'')+'</p></div>';
+  }).filter(Boolean).join('');
+  if(!items) return '';
+  return '<div style="display:flex;gap:12px;overflow-x:auto;padding:6px 2px 12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch">'+items+'</div>';
+}
+function tplConscientizacao(){
+  fill.style.width='95%';
+  var card=function(n,r){return '<div style="background:#fff;border:1px solid #ececf2;border-radius:12px;padding:12px 14px;text-align:left"><b style="display:block">'+n+'</b><span style="color:#555;font-size:14px">'+r+'</span></div>';};
+  var fallback='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0">'+
+    card('Perto do Fogo','R$27 mil → <b style="color:#16a34a">R$224 mil</b>/mês')+
+    card('Gerrá Burguer','R$37 mil → <b style="color:#16a34a">R$120 mil</b>/mês')+
+    card('63 Hamburgueria','Dobrou o faturamento em <b style="color:#16a34a">60 dias</b>')+
+    card("Naliati'S",'R$37,6 mil → <b style="color:#16a34a">R$73,1 mil</b> em 60 dias')+'</div>';
+  var provas = videoDepoimentos() || fallback;
+  return '<h1>Antes de decidir, veja quem já passou por isso 👇</h1>'+
+    '<p class="subtitle">A gente entende o receio de investir em tráfego. Veja no vídeo o que donos como você conseguiram — e, se fizer sentido, marque um diagnóstico gratuito e sem compromisso.</p>'+
+    provas+
+    '<p class="subtitle" style="margin-top:14px">Você sai do diagnóstico com o que mudar primeiro — e investe só se quiser.</p>'+
+    '<div class="meet-card"><div class="meet-ico">📅</div><div><div class="t">Diagnóstico Estratégico de Tráfego</div><div class="d">🎥 Chamada de vídeo · ⏱ 50 minutos · 🌐 Horário de Brasília · 100% gratuito</div></div></div>'+
+    '<div class="agenda" id="agendaBox"></div>'+waDuvidasBtn();
+}
+function tplCurso(){
+  fill.style.width='100%';
+  return `<div class="yt-wrap">
+    <div class="yt-ico">🎓</div>
+    <h1>Esse é o seu próximo passo 👇</h1>
+    <p class="subtitle">No momento, investir em anúncios e assessoria pode não ser o ideal pra você — pelo custo e pela fase do negócio. Sem problema: o caminho agora é dominar <b>gestão, precificação e vendas</b> e finalmente ter lucro de verdade.</p>
+    <div class="yt-card">
+      <p class="subtitle" style="margin-top:0"><b>🎓 Vivendo de Delivery</b> — a formação acessível pra você dominar gestão, precificação e vendas e ter lucro de verdade, no seu ritmo e por conta própria (sem depender de investir pesado em anúncio agora).</p>
+      <a class="btn cta" id="cursoBtn" href="${CONFIG.LP_VIVENDO_URL}" rel="noopener" style="display:inline-block;text-decoration:none;margin-top:18px">Conhecer o Vivendo de Delivery →</a>
+    </div>
+  </div>`;
+}
+function tplYoutube(){
+  fill.style.width='100%';
+  return `<div class="yt-wrap">
+    <div class="yt-ico">🤝</div>
+    <h1>Vamos ser sinceros com você</h1>
+    <p class="subtitle">Pelo que você respondeu, o faturamento da sua operação ainda está <b>abaixo do ponto</b> onde uma assessoria de marketing faz sentido financeiro agora.</p>
+    <p class="subtitle">E a gente fala isso <b>de dono pra dono</b> — também tocamos hamburgueria. Trazer um time pra cuidar do seu marketing é um investimento, e a gente se preocupa demais com a <b>saúde financeira</b> do seu negócio pra te empurrar algo na hora errada.</p>
+    <div class="yt-card">
+      <p class="subtitle" style="margin-top:0">A boa notícia: no nosso <b>canal do YouTube</b> tem um monte de conteúdo gratuito pra te ajudar a vender mais e chegar no ponto certo. Quando o momento chegar, a gente vai estar aqui. 🚀</p>
+      <a class="btn cta" id="ytBtn" href="${CONFIG.YOUTUBE_URL}" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;margin-top:18px">▶&nbsp; Assistir no nosso canal do YouTube</a>
+    </div>
+  </div>`;
+}
+
+/* ---------- binding / validation ---------- */
+function bind(s){
+  const nextBtn = stage.querySelector('[data-next]');
+  if(nextBtn) nextBtn.onclick = ()=>attemptNext(s);
+
+  if(s.type==='intro'){ /* dispara início ao sair da intro é feito no attemptNext */ }
+
+  if(['text','email','phone'].includes(s.type)){
+    const inp=document.getElementById('inp');
+    if(inp){ inp.focus(); inp.value=answers[s.key]||'';
+      inp.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();attemptNext(s);} };
+    }
+  }
+  if(s.type==='choice'){
+    const chs=[...stage.querySelectorAll('.choice')];
+    chs.forEach(c=>c.onclick=()=>{
+      chs.forEach(x=>x.classList.remove('sel'));
+      c.classList.add('sel');
+      answers[s.key]=s.options[+c.dataset.i];
+      pushEvent('quiz_answer',{pergunta:s.key});
+      document.getElementById('err').classList.remove('show');
+    });
+    if(answers[s.key]){ const i=s.options.indexOf(answers[s.key]); if(i>=0)chs[i].classList.add('sel'); }
+  }
+}
+
+var started=false;
+var qualifiedTracked=false;
+function attemptNext(s){
+  if(s.type==='intro' && !started){ started=true; pushEvent('quiz_start'); }
+  if(['text','email','phone'].includes(s.type)){
+    const inp=document.getElementById('inp');
+    const v=(inp.value||'').trim();
+    if(s.required && !v){ document.getElementById('err').classList.add('show'); inp.focus(); return; }
+    if(s.type==='email' && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){
+      const e=document.getElementById('err'); e.textContent='Digite um email válido'; e.classList.add('show'); return;
+    }
+    answers[s.key]=v;
+  }
+  if(s.type==='choice'){
+    if(s.required && !answers[s.key]){ document.getElementById('err').classList.add('show'); return; }
+  }
+  /* Contato (nome+WhatsApp) já foi coletado no início — aqui só roteia a qualificação. */
+  /* Abaixo do corte (< R$50 mil): não precisa de disposto/Instagram -> vai direto pro final (tela YouTube + arquiva) */
+  if(s.key==='faturamento' && ['0-15','15-30'].indexOf(faixaCod())>=0){ go(steps.length-1); return; }
+  /* Ao terminar a qualificação (disposto): marca o qualificado e decide se ainda pede Instagram */
+  if(s.key==='disposto'){
+    if(isQualified() && !qualifiedTracked){ qualifiedTracked=true; pushEvent('qualified_lead',pedEv({faixa:faixaCod()})); }
+    /* quem vai pro curso Vivendo (15-50k que não quer investir) pula o Instagram e vai direto pro final */
+    if(!precisaContato()){ go(steps.length-1); return; }
+  }
+  go(idx+1);
+}
+
+/* =======================================================================
+   AGENDADOR NATIVO — lê disponibilidade no CRM (Firebase), gera horários
+   livres do closer, grava a reunião e dispara a confirmação por WhatsApp.
+   ======================================================================= */
+function closerPorFaixa(f){ return (f==='50-100'||f==='100-300'||f==='300+') ? 'Lucas' : 'Gustavo'; }
+var _p2=function(n){ return (n<10?'0':'')+n; };
+var _MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+var _DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+var AG={ closer:'Gustavo', dias:[], sel:null, busy:[], saving:false };
+
+/* horários já ocupados do closer (meetings + kanban do CRM) → lista de instantes UTC (ms) */
+function _getJSON(url,ms){
+  return new Promise(function(res){
+    var done=false, to=setTimeout(function(){ if(!done){done=true;res({});} }, ms||6000);
+    fetch(url,{cache:'no-store'}).then(function(x){return x.json();})
+      .then(function(j){ if(!done){done=true;clearTimeout(to);res(j||{});} })
+      .catch(function(){ if(!done){done=true;clearTimeout(to);res({});} });
+  });
+}
+async function fetchBusy(closer){
+  /* Firebase trancado (login + allowlist): horários ocupados agora vêm do servidor (admin). */
+  try{
+    var j = await _getJSON(CONFIG.CRM_ENDPOINT+'/busy?closer='+encodeURIComponent(closer)+'&secret='+encodeURIComponent(CONFIG.CRM_SECRET), 6000);
+    return (j && Array.isArray(j.busy)) ? j.busy : [];
+  }catch(e){ return []; }
+}
+function _slotLivre(startUTC){ var dur=CONFIG.AGENDA.duracaoMin*60000; for(var i=0;i<AG.busy.length;i++){ if(Math.abs(AG.busy[i]-startUTC)<dur) return false; } return true; }
+
+function gerarDias(){
+  var A=CONFIG.AGENDA, off=(-A.tzOffsetH)*3600000; /* BRT->UTC add 3h */
+  var now=Date.now(), minMs=now + A.antecedenciaH*3600000;
+  var brt=new Date(now - off); /* campos UTC deste Date = relógio de Brasília */
+  var y=brt.getUTCFullYear(), mo=brt.getUTCMonth(), d0=brt.getUTCDate();
+  var dias=[];
+  var _fer=A.feriados||[];
+  for(var i=0;i<28 && dias.length<A.horizonteDias;i++){
+    var day=new Date(Date.UTC(y,mo,d0+i));
+    var dow=day.getUTCDay(); if(dow===0||dow===6) continue; /* sem sábado nem domingo */
+    var yy=day.getUTCFullYear(), mm=day.getUTCMonth(), dd=day.getUTCDate();
+    var iso=yy+'-'+('0'+(mm+1)).slice(-2)+'-'+('0'+dd).slice(-2);
+    if(_fer.indexOf(iso)>=0) continue; /* sem feriado nacional */
+    var horas=A.horasSemana, slots=[];
+    horas.forEach(function(H){
+      var startUTC=Date.UTC(yy,mm,dd,H+off/3600000,0,0);
+      if(startUTC<minMs) return;
+      if(!_slotLivre(startUTC)) return;
+      slots.push({y:yy,m:mm,d:dd,H:H,startUTC:startUTC});
+    });
+    if(slots.length) dias.push({dow:dow,y:yy,m:mm,d:dd,slots:slots});
+  }
+  return dias;
+}
+
+async function initAgendador(closer){
+  AG.closer=closer||'Gustavo'; AG.sel=null; AG.saving=false;
+  var box=document.getElementById('agendaBox'); if(!box) return;
+  box.innerHTML='<div class="ag-load">Carregando horários disponíveis…</div>';
+  AG.busy=await fetchBusy(AG.closer);
+  AG.dias=gerarDias();
+  renderAgenda();
+  _refreshWaDuvidas();
+}
+function renderAgenda(){
+  var box=document.getElementById('agendaBox'); if(!box) return;
+  if(!AG.dias.length){ box.innerHTML='<div class="ag-empty">Estamos com a agenda cheia nos próximos dias. Nossa equipe vai te chamar no WhatsApp pra encaixar um horário. 🤝</div>'; return; }
+  if(AG.sel==null) AG.sel={di:0,si:null};
+  var dia=AG.dias[AG.sel.di];
+  var chips=AG.dias.map(function(d,i){
+    return '<button class="ag-day'+(i===AG.sel.di?' on':'')+'" data-di="'+i+'">'+
+      '<span class="dw">'+_DIAS[d.dow]+'</span><span class="dn">'+d.d+'</span><span class="dm">'+_MESES[d.m]+'</span></button>';
+  }).join('');
+  var slots=dia.slots.map(function(s,i){
+    return '<button class="ag-slot'+(AG.sel.si===i?' on':'')+'" data-si="'+i+'">'+_p2(s.H)+':00</button>';
+  }).join('');
+  var podeConfirmar=AG.sel.si!=null;
+  box.innerHTML=
+    '<div class="ag-label">1. Escolha o dia</div>'+
+    '<div class="ag-days">'+chips+'</div>'+
+    '<div class="ag-label">2. Escolha o horário <span class="ag-tz">(Brasília)</span></div>'+
+    '<div class="ag-slots">'+slots+'</div>'+
+    '<button class="btn ag-confirm" id="agConfirm"'+(podeConfirmar?'':' disabled')+'>'+
+      (AG.saving?'Reservando…':(podeConfirmar?('Confirmar '+_DIAS[dia.dow]+' '+dia.d+'/'+_p2(dia.m+1)+' às '+_p2(dia.slots[AG.sel.si].H)+':00'):'Selecione um horário'))+'</button>';
+  [].forEach.call(box.querySelectorAll('.ag-day'),function(b){ b.onclick=function(){ AG.sel={di:+b.dataset.di,si:null}; renderAgenda(); }; });
+  [].forEach.call(box.querySelectorAll('.ag-slot'),function(b){ b.onclick=function(){ AG.sel.si=+b.dataset.si; renderAgenda(); }; });
+  var cf=document.getElementById('agConfirm'); if(cf) cf.onclick=confirmarAgendamento;
+}
+async function confirmarAgendamento(){
+  if(AG.saving || AG.sel==null || AG.sel.si==null) return;
+  AG.saving=true; renderAgenda();
+  var dia=AG.dias[AG.sel.di], slot=dia.slots[AG.sel.si];
+  /* revalida: horário pode ter sido tomado enquanto o lead escolhia */
+  AG.busy=await fetchBusy(AG.closer);
+  if(!_slotLivre(slot.startUTC)){ AG.saving=false; AG.sel.si=null; AG.dias=gerarDias(); renderAgenda();
+    var bx=document.getElementById('agendaBox'); if(bx){ var w=document.createElement('div'); w.className='ag-warn'; w.textContent='Ops, esse horário acabou de ser preenchido. Escolha outro, por favor.'; bx.insertBefore(w,bx.firstChild); } return; }
+  var disp=await gravarReuniao(slot, AG.closer);
+  try{ if(typeof fbq==='function') fbq('track','Schedule'); }catch(e){}
+  pushEvent('meeting_booked',{faixa:faixaCod(),responsavel:AG.closer});
+  showConfirmacao(disp, AG.closer);
+}
+async function gravarReuniao(slot, closer){
+  /* Firebase trancado: a reunião agora é gravada pelo servidor (admin) via /lp-agendou,
+     que também dispara o WhatsApp de confirmação. Sem escrita direta no Firebase e sem /agendar (evita msg duplicada). */
+  var tel=(answers.whatsapp||'').replace(/\D/g,''); var key=tel||('lp_'+Date.now());
+  var mid='km_'+key+'_'+Date.now();
+  var iso=new Date(slot.startUTC).toISOString();
+  var disp=_p2(slot.d)+'/'+_p2(slot.m+1)+'/'+slot.y+' '+_p2(slot.H)+':00';
+  var payload={
+    telefone:tel, nome:(answers.nome||''), faixa:faixaCod(), responsavel:closer,
+    meetingISO:iso, meetingDisplay:disp, meetingId:mid,
+    email:(answers.email||'').trim(), instagram:(answers.instagram||'').trim(),
+    faturamento:(answers.faturamento||FAIXA_FAT[faixaCod()]||''), segmento:(answers.segmento||''),
+    investimento:dispostoSim()?'sim':'nao', ja_investiu:(answers.investiu||''),
+    ad:utmv('utm_content','ad'), campanha:utmv('utm_campaign','campaign'), conjunto:utmv('utm_medium','adset'),
+    campaign_id:utmv('campaign_id'), adset_id:utmv('adset_id'), ad_id:utmv('ad_id'),
+    campaign_name:utmv('campaign_name','utm_campaign'), adset_name:utmv('adset_name','utm_medium'), ad_name:utmv('ad_name','utm_content'),
+    variante_lp:'quiz-fv2', experiment_id:CONFIG.EXPERIMENT_ID, first_touch:(window.__audensAttrib||{}).first_touch||null, last_touch:(window.__audensAttrib||{}).last_touch||null,
+    origem:'lp-audens-quiz-fv2'
+  };
+  try{
+    await fetch(CONFIG.CRM_ENDPOINT+'/lp-agendou?secret='+encodeURIComponent(CONFIG.CRM_SECRET),{
+      method:'POST', mode:'cors', keepalive:true,
+      headers:{'Content-Type':'application/json','X-Webhook-Secret':CONFIG.CRM_SECRET},
+      body:JSON.stringify(payload)
+    });
+  }catch(e){}
+  return disp;
+}
+function showConfirmacao(disp, closer){
+  finalReached=true; fill.style.width='100%'; back.style.display='none';
+  stage.className='stage';
+  var pnome=(answers.nome||'').split(' ')[0];
+  var quando = disp ? ('<div class="meet-card" style="margin-top:20px;text-align:left"><div class="meet-ico">🗓️</div><div><div class="t">'+_escFV2(disp)+(closer?(' · com '+_escFV2(closer)):'')+'</div><div class="d">Horário de Brasília · chamada de vídeo de 50 min</div></div></div>') : '';
+  stage.innerHTML=`<div class="step active" id="done">
+    <div class="check">✓</div>
+    <h1>Horário reservado${pnome? ', '+_escFV2(pnome):''}!</h1>
+    <p class="subtitle">Seu <b>Diagnóstico Estratégico</b> é uma <b>chamada de vídeo de 50 minutos</b>, olhando o seu negócio de perto. Enviamos os detalhes pro seu WhatsApp e e-mail.</p>
+    ${quando}
+    <div class="meet-card" style="margin-top:14px;text-align:left">
+      <div class="meet-ico">📞</div>
+      <div><div class="t">Vamos te ligar pra confirmar</div>
+      <div class="d">Precisamos dessa confirmação pra reservar esse horário <b>exclusivamente pra você</b> — é só uma vaga por horário.</div></div>
+    </div>
+    <p class="subtitle" style="margin-top:18px">Na reunião, <b>chame quem decide com você</b>: sócio(s), esposo(a) ou o time. A análise rende muito mais com todo mundo junto. 🤝</p>
+  </div>`;
+}
+
+/* =======================================================================
+   START
+   ======================================================================= */
+pushEvent('lp_view',{path:location.pathname,variante:'quiz-fv2'});
+render();
+</script>
+</body>
+</html>
