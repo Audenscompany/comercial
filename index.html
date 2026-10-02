@@ -10952,10 +10952,10 @@ function renderReunioes(){
   (function(){
     var RISK_H = 12; // janela de risco (horas) — reunião <12h sem confirmar = risco
     var nowMs = now.getTime();
-    function _fatOf(m){ var f=getFat(m)||0; if(!f && m.icp_fatmin) f=Number(m.icp_fatmin)||0; return f; }
-    function _filaIcp(m){ var f=_fatOf(m); if(f>=60000||m.icp==='PREMIUM') return 'PREMIUM'; if(f>=50000||m.icp==='ALTO') return 'ALTO'; return ''; }
+    function _fatOf(m){ var f=getFat(m)||0; if(!f && m.tag_fatmin) f=Number(m.tag_fatmin)||0; return f; }
+    function _filaTag(m){ var f=_fatOf(m); if(f>=100000||m.tag==='Elite') return 'Elite'; if(f>=60000||m.tag==='Premium') return 'Premium'; return 'Starter'; }
     function _vivo(m){ var st=(m.status||'').toLowerCase(); return st!=='cancelado'&&st!=='cancelled'&&st!=='reagendado'; }
-    var fila = allM.filter(function(m){ if(!m.dtISO||!_vivo(m)) return false; var d=new Date(m.dtISO).getTime(); if(isNaN(d)||d<nowMs) return false; if(isReal(m)||isNs(m)) return false; return !!_filaIcp(m); })
+    var fila = allM.filter(function(m){ if(!m.dtISO||!_vivo(m)) return false; var d=new Date(m.dtISO).getTime(); if(isNaN(d)||d<nowMs) return false; if(isReal(m)||isNs(m)) return false; return true; })
       .sort(function(a,b){ return (a.dtISO||'').localeCompare(b.dtISO||''); });
     var semStatus = allM.filter(function(m){ if(!m.dtISO||!_vivo(m)) return false; var d=new Date(m.dtISO).getTime(); if(isNaN(d)) return false; if(d>nowMs-24*3600*1000||d<nowMs-14*24*3600*1000) return false; return !isReal(m)&&!isNs(m); })
       .sort(function(a,b){ return (b.dtISO||'').localeCompare(a.dtISO||''); });
@@ -10963,14 +10963,14 @@ function renderReunioes(){
     if(fila.length||semStatus.length){
       H+='<div style="background:var(--card);border:1px solid var(--border);border-left:3px solid #f59e0b;border-radius:12px;padding:16px 18px;margin-bottom:18px;">';
       H+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">'
-        +'<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--white);">&#128737;&#65039; Fila de Confirmação · ICP &#8805;50k</div>'
+        +'<div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--white);">&#128737;&#65039; Fila de Confirmação</div>'
         +'<div style="font-size:11px;color:var(--muted);">'+fila.length+' reunião(ões) futura(s) · '+(nRisco?('<span style="color:#f87171;font-weight:700;">'+nRisco+' em risco (&lt;12h)</span>'):'<span style="color:#4ade80;">sem risco</span>')+'</div>'
         +'</div>';
       if(fila.length){
         H+='<div style="display:flex;flex-direction:column;gap:8px;">';
         fila.slice(0,15).forEach(function(m){
           var d=new Date(m.dtISO); var hMs=d.getTime()-nowMs; var hrs=hMs/3600000;
-          var conf=isConf(m); var risco=!conf && hMs<=RISK_H*3600*1000; var icp=_filaIcp(m);
+          var conf=isConf(m); var risco=!conf && hMs<=RISK_H*3600*1000; var tag=_filaTag(m);
           var quando=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
           var faltam=hrs<24?('em '+Math.max(0,Math.round(hrs))+'h'):('em '+Math.round(hrs/24)+'d');
           var bg=risco?'rgba(239,68,68,0.07)':(conf?'rgba(34,197,94,0.05)':'transparent');
@@ -10982,7 +10982,7 @@ function renderReunioes(){
             +'<div style="flex:0 0 auto;">'+av(m.responsavel||'',30)+'</div>'
             +'<div style="flex:1;min-width:140px;"><div style="font-size:13px;font-weight:700;color:var(--white);">'+(m.nome||'—')+'</div>'
               +'<div style="font-size:11px;color:var(--muted);">'+quando+' · '+faltam+' · '+(m.responsavel||'—')+'</div></div>'
-            +'<span style="flex:0 0 auto;font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;background:'+(icp==='PREMIUM'?'rgba(168,85,247,0.18)':'rgba(6,182,212,0.15)')+';color:'+(icp==='PREMIUM'?'#c084fc':'var(--cyan)')+';">'+icp+(_fatOf(m)?(' · '+fmtR(_fatOf(m))):'')+'</span>'
+            +'<span style="flex:0 0 auto;font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;background:'+(tag==='Elite'?'rgba(168,85,247,0.18)':(tag==='Premium'?'rgba(6,182,212,0.15)':'rgba(245,158,11,0.12)'))+';color:'+(tag==='Elite'?'#c084fc':(tag==='Premium'?'var(--cyan)':'#f59e0b'))+';">'+tag+(_fatOf(m)?(' · '+fmtR(_fatOf(m))):'')+'</span>'
             +selo
             +'</div>';
         });
@@ -10994,7 +10994,7 @@ function renderReunioes(){
         H+='<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">'
           +'<div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:6px;">&#9200; '+semStatus.length+' reunião(ões) sem resultado há +24h — registre o desfecho</div>'
           +'<div style="font-size:11px;color:var(--muted);line-height:1.6;">'
-          + semStatus.slice(0,10).map(function(m){ var d=new Date(m.dtISO); return (m.nome||'—')+' ('+d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+(_filaIcp(m)?(' · '+_filaIcp(m)):'')+')'; }).join(' · ')
+          + semStatus.slice(0,10).map(function(m){ var d=new Date(m.dtISO); return (m.nome||'—')+' ('+d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+(_filaTag(m)?(' · '+_filaTag(m)):'')+')'; }).join(' · ')
           +'</div></div>';
       }
       H+='</div>';
@@ -11004,13 +11004,13 @@ function renderReunioes(){
   // ═══ SHOW-RATE ≥50k / ≥60k (Plano Mestre P2) ═══
   (function(){
     function _sr(arr){ var e=arr.filter(function(m){return isReal(m)||isNs(m);}); var r=e.filter(isReal).length; return e.length?{p:Math.round(r/e.length*100),n:e.length}:{p:null,n:0}; }
-    function _f(m){ return (getFat(m)||Number(m.icp_fatmin)||0); }
-    var a=_sr(rows), a50=_sr(rows.filter(function(m){return _f(m)>=50000;})), a60=_sr(rows.filter(function(m){return _f(m)>=60000;}));
+    function _f(m){ return (getFat(m)||Number(m.tag_fatmin)||0); }
+    var a=_sr(rows), a50=_sr(rows.filter(function(m){return _f(m)>=60000;})), a60=_sr(rows.filter(function(m){return _f(m)>=100000;}));
     function _c(p){ return p===null?'var(--muted)':(p>=55?'#4ade80':(p>=40?'#fbbf24':'#f87171')); }
     function _cell(lbl,o){ return '<div style="flex:1;min-width:100px;"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);">'+lbl+'</div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;color:'+_c(o.p)+';line-height:1.1;">'+(o.p===null?'—':o.p+'%')+'</div><div style="font-size:10px;color:var(--muted);">'+o.n+' reuniões</div></div>'; }
     H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;">'
       +'<div style="font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);min-width:80px;">Show-rate<br><span style="font-weight:500;letter-spacing:0;text-transform:none;">'+mesLabel+'</span></div>'
-      +_cell('Total',a)+_cell('ICP ≥50k',a50)+_cell('ICP ≥60k',a60)
+      +_cell('Total',a)+_cell('Premium+ ≥60k',a50)+_cell('Elite ≥100k',a60)
       +'</div>';
   })();
 
