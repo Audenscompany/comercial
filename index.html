@@ -2912,9 +2912,12 @@ function normalizeStr(s){
 function categorizeOrigem(o){
   if(!o)return'Indicacoes / Outros';
   var l=normalizeStr(o);
-  // Landing pages de captação (lp-..., quiz, fv2, assessoriaaudens) = Tráfego Pago
-  if(l.includes('trafego')||l.includes('pago')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('lp-')||l.includes('quiz')||l.includes('fv2')||l.includes('fvqualifica')||l.includes('assessoriaaudens'))return'Trafego Pago';
-  if(l.includes('organico')||l.includes('organic')||l.includes('organik'))return'Trafego Organico';
+  // Landing pages de captação (lp-..., quiz, fv1/fv2, assessoriaaudens) = Tráfego Pago
+  if(l.includes('trafego')||l.includes('pago')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('lp-')||l.includes('quiz')||l.includes('fv1')||l.includes('fv2')||l.includes('fvqualifica')||l.includes('assessoriaaudens')||l.includes('campanha'))return'Trafego Pago';
+  // Indicação explícita
+  if(l.includes('indic')||l.includes('referral')||l.includes('indica'))return'Indicacoes / Outros';
+  // Orgânico: perfil, bio, stories, direct, reels, instagram/tiktok/youtube sem ser ads
+  if(l.includes('organic')||l.includes('organik')||l.includes('organico')||l.includes('perfil')||l.includes('bio')||l.includes('stories')||l.includes('story')||l.includes('direct')||l.includes('reels')||l.includes('instagram')||l.includes('insta')||l.includes('tiktok')||l.includes('youtube')||l.includes('@'))return'Trafego Organico';
   return'Indicacoes / Outros';
 }
 function normCloserName(n){
@@ -14518,7 +14521,7 @@ function buildAnaliseAdsHTML(data){
     if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,noshow:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
-    if(fat>=20000) d.qualif++;
+    if(fat>=40000) d.qualif++;
     d.fats.push(fat);
   });
 
@@ -14884,7 +14887,7 @@ function buildAnaliseAdsHTML(data){
     funilFech=_n; totFech=funilFech;
   })();
   var totQualif=_allLeadsTrafego.filter(function(r){
-    return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
+    return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000;
   }).length;
   var totQ50=_allLeadsTrafego.filter(function(r){ return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=50000; }).length;
   var totQ60=_allLeadsTrafego.filter(function(r){ return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=60000; }).length;
@@ -14903,7 +14906,7 @@ function buildAnaliseAdsHTML(data){
     return categorizeOrigem(orig)==='Trafego Pago'||(ad2&&ad2!=='-'&&ad2!=='(sem ad)');
   });
   var _prevTotL=_prevLeads.length;
-  var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;}).length;
+  var _prevTotQ=_prevLeads.filter(function(r){return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000;}).length;
   var _prevReal=(data.reunioes&&data.reunioes.rows||[]).filter(function(r){
     var d=parseBRDate(col(r,['DATA','Data','data','DATA DE AGENDAMENTO','Data de Agendamento']));
     if(!inPrevAR(d))return false;
@@ -14943,7 +14946,7 @@ function buildAnaliseAdsHTML(data){
     var o2=(adField&&adField!=='-'&&adField!=='(sem ad)')?'Trafego Pago':categorizeOrigem(col(r,['Origem','ORIGEM','origem']));
     if(_origD[o2]){
       _origD[o2].leads++;
-      if(parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000)_origD[o2].qualif++;
+      if(parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=40000)_origD[o2].qualif++;
     }
   });
   (data.reunioes&&data.reunioes.rows||[]).forEach(function(r){
@@ -15020,7 +15023,7 @@ function buildAnaliseAdsHTML(data){
   var _kj=[
     {label:'Investido',val:fmtBRL3(gastoAds),sub:'',delta:adsDelta2(gastoAds,_prevGastoAds,false),icon:'ti-coins',bg:'rgba(245,158,11,0.15)',cl:'var(--amber)'},
     {label:'Leads',val:String(totLeads||0),sub:'CPL '+fmtBRL3(_cpl2),delta:adsDelta2(totLeads,_prevTotL,false),icon:'ti-users',bg:'rgba(123,47,255,0.15)',cl:'var(--purple3)'},
-    {label:'Qualificados 20k+',val:String(totQualif||0),sub:'≥50k '+totQ50+' · CPQL50 '+fmtBRL3(_cpql50)+' · ≥60k '+totQ60,delta:adsDelta2(totQualif,_prevTotQ,false),icon:'ti-user-check',bg:'rgba(6,182,212,0.15)',cl:'var(--cyan)'},
+    {label:'Qualificados 40k+',val:String(totQualif||0),sub:'≥50k '+totQ50+' · CPQL50 '+fmtBRL3(_cpql50)+' · ≥60k '+totQ60,delta:adsDelta2(totQualif,_prevTotQ,false),icon:'ti-user-check',bg:'rgba(6,182,212,0.15)',cl:'var(--cyan)'},
     {label:'Agendadas',val:String(funilAgend||0),sub:'Custo '+fmtBRL3(_custoAgend),delta:adsDelta2(funilAgend,_prevAgend,false),icon:'ti-calendar-plus',bg:'rgba(245,158,11,0.12)',cl:'var(--amber)'},
     {label:'Realizadas',val:String(funilReal||0),sub:'Custo '+fmtBRL3(_cpr2),delta:adsDelta2(funilReal,_prevReal,false),icon:'ti-calendar-check',bg:'rgba(6,182,212,0.12)',cl:'var(--cyan)'},
     {label:'Vendas',val:String(funilFech||0),sub:'CAC '+fmtBRL3(_cac2),delta:adsDelta2(funilFech,_prevFech,false),icon:'ti-cash',bg:'rgba(34,197,94,0.12)',cl:'var(--green)'}
@@ -15169,7 +15172,7 @@ function buildAnaliseAdsHTML(data){
   html+='</div>';
 
   // ===== BLOCO 4: RANKING DE PERFORMANCE | PERFORMANCE POR ORIGEM =====
-  html+='<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin-bottom:18px;">';
+  html+='<div style="display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:18px;">';
 
   var _rk=adsSorted.slice().filter(function(a){var k=String(a.ad||'');return k!=='(sem ad)'&&k!=='-'&&k!=='';}).map(function(a){return {a:a,dec:_adDecide(a)};}).sort(function(x,y){return (x.dec.w-y.dec.w)||((y.a.score||0)-(x.a.score||0))||((y.a.leads||0)-(x.a.leads||0));}).slice(0,12);
   html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;">'+
