@@ -2315,13 +2315,30 @@ function _sdrTaskLead(t){
 }
 function sdrTaskRowHtml(t,showDate){
   var _tl=_sdrTaskLead(t);
+  var _isCall=_isLigacaoTask(t._key,t);
+  var _telHref=(typeof formatTelLigar==='function'&&_tl.telefone)?formatTelLigar(_tl.telefone):(_tl.telefone||'');
+  // Botões de ação (só para tarefas de LIGAÇÃO do João): Ligar / Liguei / Áudio
+  var _acts='';
+  if(_isCall && !t.done){
+    _acts='<div class="sdr-task-acts" style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+
+      (_telHref?'<a href="tel:'+_telHref+'" class="btn btn-reg" style="font-size:11px;padding:5px 10px;text-decoration:none;" title="Ligar para '+_telHref+'"><i class="ti ti-phone"></i> Ligar</a>':'')+
+      '<button class="btn btn-task" style="font-size:11px;padding:5px 10px;" onclick="sdrMarcarContato(\''+t._key+'\',\'ligou\')" title="Marcar que já liguei"><i class="ti ti-phone-check"></i> Liguei</button>'+
+      '<button class="btn btn-outline" style="font-size:11px;padding:5px 10px;" onclick="sdrMarcarContato(\''+t._key+'\',\'audio\')" title="Marquei que enviei áudio"><i class="ti ti-microphone"></i> Áudio</button>'+
+    '</div>';
+  }
+  // Quando concluída, mostra COMO foi o contato
+  var _viaBadge='';
+  if(t.done && t.via){
+    _viaBadge=t.via==='audio'?'<span class="badge b-cyan" style="font-size:10px;"><i class="ti ti-microphone"></i> Áudio enviado</span>':'<span class="badge b-green" style="font-size:10px;"><i class="ti ti-phone-check"></i> Ligou</span>';
+  }
   return '<div class="sdr-task-row'+(t.done?' done':'')+'">'+
     '<label class="sdr-task-check"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleSdrTarefa(\''+t._key+'\',this.checked)"><span class="sdr-check-mark"></span></label>'+
     '<div class="sdr-task-icon"><i class="ti '+(t.icon||'ti-checkbox')+'"></i></div>'+
     '<div class="sdr-task-info">'+
       '<div class="sdr-task-lead">'+_chEscSafe(_leadDisplayName({_key:(_tl.leadKey||_tl.telefone),nome:_tl.nome,telefone:_tl.telefone,empresa:_tl.empresa,instagram:_tl.instagram}))+'</div>'+
-      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(_tl.telefone?' &middot; '+_tl.telefone:'')+'</div>'+
+      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(_tl.telefone?' &middot; '+_tl.telefone:'')+(_viaBadge?' &middot; '+_viaBadge:'')+'</div>'+
     '</div>'+
+    _acts+
     (showDate?'<div class="sdr-task-date">'+fmtDateBR(t.dataISO)+'</div>':'')+
   '</div>';
 }
@@ -2347,7 +2364,7 @@ function renderMinhasTarefas(){
   }
 
   var html='<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 20 mil)</div></div></div>'+
+    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 40 mil) · 10 dias</div></div></div>'+
     '<div class="tarefas-board">'+
       colHtml('Atrasadas',atrasadas,'tarefas-hd-red',true,'Nenhuma tarefa atrasada')+
       colHtml('Hoje',hojeT,'tarefas-hd-purple',false,'Nenhuma tarefa para hoje')+
@@ -2380,6 +2397,11 @@ function renderDesempenhoSDR(){
   var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
   var pendHoje=all.filter(function(t){return !t.done && t.dataISO===hojeISO;}).length;
   var pct=total?Math.round(done/total*100):0;
+  // Métricas de contato (botões Liguei/Áudio): leads com pelo menos 1 contato registrado
+  var _leadsAll={}, _leadsContatados={}, _audios=0, _ligou=0;
+  all.forEach(function(t){ if(t.leadKey) _leadsAll[t.leadKey]=1; if(t.via){ if(t.leadKey)_leadsContatados[t.leadKey]=1; if(t.via==='audio')_audios++; else _ligou++; } });
+  var _nLeads=Object.keys(_leadsAll).length, _nCont=Object.keys(_leadsContatados).length;
+  var _pctCont=_nLeads?Math.round(_nCont/_nLeads*100):0;
 
   var byLead={};
   all.forEach(function(t){
@@ -2399,6 +2421,8 @@ function renderDesempenhoSDR(){
       sdrKpiBoxHtml('Concluidas',done+' ('+pct+'%)','var(--green)')+
       sdrKpiBoxHtml('Pendentes Hoje',pendHoje,'var(--cyan)')+
       sdrKpiBoxHtml('Atrasadas',atrasadas,'var(--red)')+
+      sdrKpiBoxHtml('Leads contatados',_nCont+'/'+_nLeads+' ('+_pctCont+'%)','var(--amber)')+
+      sdrKpiBoxHtml('Ligações / Áudios',_ligou+' / '+_audios,'var(--purple3)')+
     '</div>'+
     '<div class="cb"><div class="cb-hd"><span class="cb-title">Desempenho por Lead</span></div>'+
     (leadRows.length?('<div class="t-scroll"><table><thead><tr><th>Lead</th><th>Telefone</th><th>Concluidas</th><th>Total</th><th>%</th><th>Atrasadas</th></tr></thead><tbody>'+
@@ -2438,7 +2462,7 @@ var webhookVendaSecret=localStorage.getItem('webhookVendaSecret')||'';
 // Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card (agora 20 mil)
 var KANBAN_FAT_DESTAQUE=20000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
-var KANBAN_TASK_FAT_MIN=20000;
+var KANBAN_TASK_FAT_MIN=40000;
 // Estado das tarefas de cadencia (SDR)
 var sdrTarefas={};
 // Conjunto de leads ATIVOS na cadência (fonte de verdade do backend) — só esses geram tarefa do João
@@ -2456,7 +2480,7 @@ function _leadNaCadencia5d(k){
   var sa=cadenciaAtivos[k].startedAt;
   if(!sa)return true;
   var d=new Date(sa+'T12:00:00'); if(isNaN(d.getTime()))return true;
-  return (Date.now()-d.getTime())/86400000 < 5;
+  return (Date.now()-d.getTime())/86400000 < 10;
 }
 function _isLigacaoTask(tk,t){ t=t||{}; return /liga/i.test(t.tipo||''); }
 function _isReplyTask(tk,t){ t=t||{}; return /_resposta$/.test(tk||'')||/respond/i.test(t.tipo||''); }
@@ -2537,7 +2561,17 @@ var CADENCIA_SDR=[
   {dia:4,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
   {dia:4,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
   {dia:5,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
-  {dia:5,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'}
+  {dia:5,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:6,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:6,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:7,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:7,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:8,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:8,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:9,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:9,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:10,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:10,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'}
 ];
 function slugify(s){
   return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_');
@@ -2588,6 +2622,28 @@ function syncJoaoCallTasks(){
     var ca=(cadenciaAtivos&&cadenciaAtivos[leadKey])||{};
     generateCadenciaTasks({nome:kb.nome||ca.nome||ca.primeiroNome||'',telefone:kb.telefone||ca.telefone||ca.phone||'',empresa:kb.empresa||ca.empresa||'',faturamento:kb.faturamento||ca.faturamento||''},leadKey,true);
   });
+}
+// Marca a tarefa de ligação como concluída registrando COMO foi o contato (ligou/audio)
+// Usado pelos botões "Liguei" e "Áudio" — alimenta as métricas de 1ª ligação/resposta.
+function sdrMarcarContato(taskId,via){
+  if(!sdrTarefas[taskId]) return;
+  var now=Date.now();
+  sdrTarefas[taskId].done=true;
+  sdrTarefas[taskId].doneAt=now;
+  sdrTarefas[taskId].via=via||'ligou';
+  sdrTarefas[taskId].contatoAt=now;
+  localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+  if(fbDb || initFirebase()){
+    fbDb.ref('sdr_tarefas/'+taskId).update({done:true,doneAt:now,via:sdrTarefas[taskId].via,contatoAt:now});
+  }
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='minhas-tarefas') showPage('minhas-tarefas');
+  var tnav=document.getElementById('nav-minhas-tarefas');
+  if(tnav){
+    var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+    if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+    else if(ex)ex.remove();
+  }
 }
 // Marca/desmarca uma tarefa de cadencia como concluida
 function toggleSdrTarefa(taskId,doneVal){
@@ -4556,7 +4612,6 @@ function buildNav(){
   // Definições de navs com suporte a grupos
   var gestorDef=[
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
-    {id:'pregao',icon:'ti-flame',label:'Pregão'},
     {id:'metas',icon:'ti-target',label:'Metas'},
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {group:'Análise',icon:'ti-ad-2',items:[
@@ -4620,7 +4675,6 @@ function buildNav(){
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
-    {id:'pregao',icon:'ti-flame',label:'Pregão'},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
       {id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
@@ -4820,7 +4874,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao
+    'followup':renderFollowup
   };
   var area=document.getElementById('content');
   if(typeof FIN_PAGES!=='undefined'&&FIN_PAGES.indexOf(id)>=0&&!_finUnlocked){
@@ -4834,7 +4888,6 @@ function showPage(id){
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
-    if(id==='pregao'){ if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='pregao'&&typeof _pgRefresh==='function')_pgRefresh(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
     if(id==='reunioes'||id==='reunioes-noshow') setTimeout(loadFunilReunioes,50);
     if(id==='reativacao') setTimeout(loadReativacao,50);
@@ -17686,108 +17739,6 @@ function _fuBuildUniverse(){
   return universe.sort(function(a,b){return b.score-a.score;});
 }
 
-var _pgDe='',_pgAte='',_pgMot='all',_pgBusca='',_pgCloser='all',_pgFat='all';
-var _PG_MOT={preco:'Preço alto',tempo:'Sem tempo',concorrente:'Foi com concorrente',nao_convenceu:'Não se convenceu',socio:'Consultar sócio',outro:'Outro',retorno:'Em retorno','':'Sem motivo'};
-function _pgDate(x){ if(!x) return ''; if(/^\d{4}-\d{2}-\d{2}/.test(x)) return String(x).slice(0,10); var m=String(x).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; return ''; }
-function _pgISO(d){ try{ var x=(d instanceof Date)?d:new Date(d); if(isNaN(x)) return ''; var b=new Date(x.getTime()); return b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-'+String(b.getDate()).padStart(2,'0'); }catch(e){ return ''; } }
-function _pregaoLista(){
-  if(typeof _fuBuildUniverse!=='function') return [];
-  var uni=[]; try{ uni=_fuBuildUniverse()||[]; }catch(e){ console.error('pregao universe',e); return []; }
-  return uni.filter(function(l){ return l.category==='nao_fechou'||l.category==='perdido'; }).map(function(l){
-    var fu=l.fu||{};
-    var motivo=(fu.resultado==='retorno')?'retorno':(fu.motivo||'');
-    var fatStr=l.faturamento?('R$ '+Number(l.faturamento).toLocaleString('pt-BR')):'';
-    return {
-      fid:l.fid||l.id, nome:l.nome||'—',
-      empresa:(l.empresa&&l.empresa!==l.nome)?l.empresa:'',
-      tel:String(l.tel||'').replace(/\D/g,''),
-      data:l.meetDate?_pgISO(l.meetDate):'',
-      closer:l.closer||'',
-      fat:fatStr, fatNum:(Number(l.faturamento)||0),
-      motivo:motivo,
-      resultado:(fu.resultado|| (l.category==='perdido'?'perdida':'nao_fechou'))
-    };
-  }).sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
-}
-function _pgFatOk(v){
-  if(_pgFat==='all') return true;
-  if(_pgFat==='sem') return !v;
-  if(_pgFat==='100') return v>=100000;
-  if(_pgFat==='60') return v>=60000;
-  if(_pgFat==='50') return v>=50000;
-  if(_pgFat==='40') return v>=40000;
-  if(_pgFat==='lt50') return v>0 && v<50000;
-  return true;
-}
-function _pgPred(r){
-  var bus=(_pgBusca||'').toLowerCase();
-  if(_pgDe && (!r.data || r.data < _pgDe)) return false;
-  if(_pgAte && (!r.data || r.data > _pgAte)) return false;
-  if(_pgMot!=='all' && (r.motivo||'')!==_pgMot) return false;
-  if(_pgCloser!=='all' && (r.closer||'')!==_pgCloser) return false;
-  if(!_pgFatOk(r.fatNum||0)) return false;
-  if(bus && !((r.nome||'').toLowerCase().includes(bus)||(r.empresa||'').toLowerCase().includes(bus)||(r.tel||'').includes(bus))) return false;
-  return true;
-}
-function _pregaoFiltrada(){ return _pregaoLista().filter(_pgPred); }
-function pregaoBaixarCSV(){
-  var rows=[['nome','empresa','telefone','data_reuniao','closer','faturamento','motivo','resultado']];
-  _pregaoFiltrada().forEach(function(r){rows.push([r.nome,r.empresa,r.tel,r.data,r.closer,r.fat,(_PG_MOT[r.motivo]||r.motivo),r.resultado]);});
-  var csv=rows.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
-  var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='pregao_recuperacao.csv';document.body.appendChild(a);a.click();a.remove();
-}
-function _pgRefresh(){var a=document.getElementById('content');if(a)a.innerHTML=renderPregao();}
-function renderPregao(){
-  var all=_pregaoLista();
-  var list=all.filter(_pgPred);
-  var byMot={}; list.forEach(function(r){var k=r.motivo||'';byMot[k]=(byMot[k]||0)+1;});
-  var preco=byMot['preco']||0, retorno=byMot['retorno']||0;
-  var kpi=function(l,v,c){return '<div style="flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:26px;font-weight:800;color:'+(c||'var(--white)')+';line-height:1;">'+v+'</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:6px;">'+l+'</div></div>';};
-  var inp='background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;';
-  var motOpts='<option value="all">Todos os motivos</option>'+Object.keys(_PG_MOT).map(function(k){return '<option value="'+k+'"'+(_pgMot===k?' selected':'')+'>'+_PG_MOT[k]+'</option>';}).join('');
-  var closersU={}; all.forEach(function(r){ if(r.closer) closersU[r.closer]=1; });
-  var closerOpts='<option value="all">Todos os closers</option>'+Object.keys(closersU).sort().map(function(c){return '<option value="'+esc(c)+'"'+(_pgCloser===c?' selected':'')+'>'+esc(c)+'</option>';}).join('');
-  var _fatO=[['all','Todo faturamento'],['100','≥ R$100 mil'],['60','≥ R$60 mil'],['50','≥ R$50 mil'],['40','≥ R$40 mil'],['lt50','< R$50 mil'],['sem','Sem faturamento']];
-  var fatOpts=_fatO.map(function(o){return '<option value="'+o[0]+'"'+(_pgFat===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
-  var H='<div class="page active" style="padding:22px;max-width:1500px;margin:0 auto;">'+
-    '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="page-title"><i class="ti ti-flame" style="color:#f59e0b;margin-right:6px;"></i>Pregão · Recuperação</div><div class="page-sub">Quem fez reunião e NÃO fechou — base para reativar com oferta. Filtre por período e por motivo.</div></div>'+
-      '<button onclick="pregaoBaixarCSV()" class="btn btn-outline" style="font-size:12px;padding:8px 13px;"><i class="ti ti-download"></i> Baixar CSV</button></div>'+
-    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;">'+kpi('Não fecharam (filtro)',list.length,'#f59e0b')+kpi('Perdidos por preço',preco,'var(--red)')+kpi('Em retorno',retorno,'var(--cyan)')+'</div>'+
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">'+
-      '<label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Reunião de</label>'+
-      '<input type="date" value="'+_pgDe+'" onchange="_pgDe=this.value;_pgRefresh();" style="'+inp+'">'+
-      '<span style="color:var(--muted);font-size:12px;">até</span>'+
-      '<input type="date" value="'+_pgAte+'" onchange="_pgAte=this.value;_pgRefresh();" style="'+inp+'">'+
-      '<select onchange="_pgMot=this.value;_pgRefresh();" style="'+inp+'">'+motOpts+'</select>'+
-      '<select onchange="_pgCloser=this.value;_pgRefresh();" style="'+inp+'">'+closerOpts+'</select>'+
-      '<select onchange="_pgFat=this.value;_pgRefresh();" style="'+inp+'">'+fatOpts+'</select>'+
-      '<input placeholder="🔍 nome, empresa ou telefone" value="'+esc(_pgBusca)+'" oninput="_pgBusca=this.value;clearTimeout(window._pgT);window._pgT=setTimeout(_pgRefresh,250);" style="'+inp+'flex:1;min-width:200px;">'+
-    '</div>';
-  if(!list.length){
-    H+='<div class="empty-st" style="padding:40px;text-align:center;color:var(--muted);"><i class="ti ti-inbox" style="font-size:32px;"></i><p>Nenhuma reunião não-fechada nesse filtro.</p></div>';
-  } else {
-    var rows=list.map(function(r){
-      var motLbl=_PG_MOT[r.motivo]||r.motivo||'—';
-      var motColor=r.motivo==='preco'?'var(--red)':r.motivo==='retorno'?'var(--cyan)':'var(--muted)';
-      var dataBR=r.data?r.data.split('-').reverse().join('/'):'—';
-      var wa=r.tel?('https://wa.me/'+(r.tel.length<=11?'55'+r.tel:r.tel)):'';
-      return '<tr style="border-bottom:1px solid rgba(255,255,255,.05);">'+
-        '<td style="padding:9px 10px;font-weight:600;font-size:13px;">'+esc(r.nome)+(r.empresa?'<div style="font-size:11px;color:var(--muted);font-weight:400;">'+esc(r.empresa)+'</div>':'')+'</td>'+
-        '<td style="padding:9px 10px;font-size:12.5px;font-variant-numeric:tabular-nums;">'+esc(r.tel||'—')+(r.tel?' <button onclick="navigator.clipboard.writeText(\''+r.tel+'\').catch(function(){});" style="background:none;border:none;color:var(--cyan);cursor:pointer;" title="Copiar"><i class="ti ti-copy"></i></button>':'')+'</td>'+
-        '<td style="padding:9px 10px;color:var(--muted);font-size:12.5px;">'+dataBR+'</td>'+
-        '<td style="padding:9px 10px;font-size:12.5px;">'+esc(r.closer||'—')+'</td>'+
-        '<td style="padding:9px 10px;font-size:12px;color:var(--muted);">'+esc(r.fat||'—')+'</td>'+
-        '<td style="padding:9px 10px;font-size:12.5px;color:'+motColor+';font-weight:600;">'+esc(motLbl)+'</td>'+
-        '<td style="padding:9px 10px;text-align:right;">'+(wa?'<a href="'+wa+'" target="_blank" class="btn btn-outline" style="padding:4px 9px;font-size:11px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+'</td>'+
-      '</tr>';
-    }).join('');
-    H+='<div style="overflow-x:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;"><table style="width:100%;border-collapse:collapse;">'+
-      '<thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);"><th style="text-align:left;padding:9px 10px;">Cliente</th><th style="text-align:left;padding:9px 10px;">WhatsApp</th><th style="text-align:left;padding:9px 10px;">Reunião</th><th style="text-align:left;padding:9px 10px;">Closer</th><th style="text-align:left;padding:9px 10px;">Faturamento</th><th style="text-align:left;padding:9px 10px;">Motivo</th><th></th></tr></thead>'+
-      '<tbody>'+rows+'</tbody></table></div>';
-  }
-  H+='</div>';
-  return H;
-}
 function renderFollowup(){
   var tab=window._fuTab||'visao-geral';
   // Start real-time lock listener
