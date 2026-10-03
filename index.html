@@ -4834,6 +4834,7 @@ function showPage(id){
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
+    if(id==='pregao'){ if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='pregao'&&typeof _pgRefresh==='function')_pgRefresh(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
     if(id==='reunioes'||id==='reunioes-noshow') setTimeout(loadFunilReunioes,50);
     if(id==='reativacao') setTimeout(loadReativacao,50);
@@ -17688,27 +17689,25 @@ function _fuBuildUniverse(){
 var _pgDe='',_pgAte='',_pgMot='all',_pgBusca='';
 var _PG_MOT={preco:'Preço alto',tempo:'Sem tempo',concorrente:'Foi com concorrente',nao_convenceu:'Não se convenceu',socio:'Consultar sócio',outro:'Outro',retorno:'Em retorno','':'Sem motivo'};
 function _pgDate(x){ if(!x) return ''; if(/^\d{4}-\d{2}-\d{2}/.test(x)) return String(x).slice(0,10); var m=String(x).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; return ''; }
+function _pgISO(d){ try{ var x=(d instanceof Date)?d:new Date(d); if(isNaN(x)) return ''; var b=new Date(x.getTime()); return b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-'+String(b.getDate()).padStart(2,'0'); }catch(e){ return ''; } }
 function _pregaoLista(){
-  var out=[];
-  Object.keys(followups||{}).forEach(function(fid){
-    var fu=followups[fid]; if(!fu) return;
-    var res=fu.resultado||'';
-    if(res==='venda'||res==='noshow') return;
-    var realizou=(fu.comparecimento==='sim')||res==='perdida'||res==='retorno';
-    if(!realizou) return;
-    var m=(meetings&&(meetings[fu.meetingId]||meetings[fid]))||{};
-    var kb=(m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey])?kanbanData[m.kanbanKey]:{};
-    var tel=String(fu.tel||m.tel||kb.telefone||'').replace(/\D/g,'');
-    var nome=fu.nome||m.nome||kb.nome||'—';
-    var empresa=m.empresa||kb.empresa||'';
-    var dataISO=_pgDate(m.dtISO||'')||_pgDate(fu.dt||'');
-    var closer=m.responsavel||'';
-    var fat=m.faturamentoLead||kb.faturamento||'';
-    var motivo=res==='retorno'?'retorno':(fu.motivo||'');
-    out.push({fid:fid,nome:nome,empresa:empresa,tel:tel,data:dataISO,closer:closer,fat:fat,motivo:motivo,resultado:res});
-  });
-  out.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
-  return out;
+  if(typeof _fuBuildUniverse!=='function') return [];
+  var uni=[]; try{ uni=_fuBuildUniverse()||[]; }catch(e){ console.error('pregao universe',e); return []; }
+  return uni.filter(function(l){ return l.category==='nao_fechou'||l.category==='perdido'; }).map(function(l){
+    var fu=l.fu||{};
+    var motivo=(fu.resultado==='retorno')?'retorno':(fu.motivo||'');
+    var fatStr=l.faturamento?('R$ '+Number(l.faturamento).toLocaleString('pt-BR')):'';
+    return {
+      fid:l.fid||l.id, nome:l.nome||'—',
+      empresa:(l.empresa&&l.empresa!==l.nome)?l.empresa:'',
+      tel:String(l.tel||'').replace(/\D/g,''),
+      data:l.meetDate?_pgISO(l.meetDate):'',
+      closer:l.closer||'',
+      fat:fatStr,
+      motivo:motivo,
+      resultado:(fu.resultado|| (l.category==='perdido'?'perdida':'nao_fechou'))
+    };
+  }).sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
 }
 function _pregaoFiltrada(){
   var all=_pregaoLista();
