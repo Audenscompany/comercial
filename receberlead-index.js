@@ -68,6 +68,14 @@ function mensagemQuizQualificado(nomeCompleto) {
     "Você já conseguiu escolher um horário ou ficou com alguma dúvida pra agendar?";
 }
 
+// Momento 0 — abertura de curiosidade (método Gregori): só o nome + "?" pra provocar
+// resposta. Usada SÓ no ramo não-quiz (LP Nova / lead frio). Leads de quiz (FV1/FV2)
+// seguem recebendo a mensagemQuizQualificado — a experiência da LP V2 não muda.
+function mensagemMomento0(nomeCompleto) {
+  var primeiroNome = primeiroNomeDe(nomeCompleto);
+  return primeiroNome + "?";
+}
+
 // Primeira parte da confirmacao de reuniao (texto antes das imagens)
 function mensagemConfirmacaoParte1(nomeCompleto) {
   if (!CONFIRMACAO_CRIACAO_ATIVA) return "";
@@ -424,6 +432,121 @@ function checaSecret(req) {
   return Boolean(process.env.WEBHOOK_SECRET) && secret === process.env.WEBHOOK_SECRET;
 }
 
+// ===== GASTO DE ADS (Meta) p/ CPQL — armazenado por dia: gasto_ads/{YYYY-MM-DD}/{ad_id} =====
+const META_AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || "506760095105257"; // CA - Assessoria
+const META_ADS_TOKEN = process.env.META_ADS_TOKEN || process.env.META_CAPI_TOKEN || "";
+// ===== ICP (Plano Mestre P2): ALTO >=50k, PREMIUM >=60k — a partir da faixa/faturamento =====
+function _fatMinSrv(faixa, faturamento){
+  var f = String(faixa || "").trim();
+  var m = f.match(/^(\d+)\s*-\s*(\d+)$/); if (m) return parseInt(m[1], 10) * 1000;
+  if (/^\d+\+$/.test(f)) return parseInt(f, 10) * 1000;
+  var s = String(faturamento || "").toLowerCase().trim(); if (!s) return 0;
+  if (/^\s*(r\$)?\s*(at[eé]|menos de|abaixo|no m[aá]ximo)/.test(s)) return 0;
+  var raw = s.match(/\d[\d.,]*/g); if (!raw) return 0;
+  var nums = raw.map(function (t) { t = t.replace(/\.(?=\d{3}\b)/g, "").replace(/,(?=\d{3}\b)/g, "").replace(",", "."); return parseFloat(t) || 0; }).filter(function (x) { return x > 0; });
+  if (!nums.length) return 0;
+  var mn = Math.min.apply(null, nums);
+  if (s.indexOf("milh") !== -1) mn = mn * 1e6; else if (s.indexOf("mil") !== -1 && mn < 1000) mn = mn * 1000;
+  return mn;
+}
+function _tagOf(faixa, faturamento){ var fm = _fatMinSrv(faixa, faturamento); return { fm: fm, tag: fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : "Starter") }; }
+const NOTIF_JOAO_LEAD = (process.env.NOTIF_JOAO_LEAD || "1") !== "0";
+function _gkeyDate(x){ var s=String(x||"").trim(); var m=s.match(/(\d{4})[-\/.](\d{2})[-\/.](\d{2})/); if(m) return m[1]+"-"+m[2]+"-"+m[3]; var m2=s.match(/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/); if(m2) return m2[3]+"-"+m2[2]+"-"+m2[1]; return ""; }
+function _gnum(x){ if(x===null||x===undefined) return 0; var s=String(x).replace(/[^\d.,-]/g,""); if(!s) return 0; var lc=s.lastIndexOf(","), ld=s.lastIndexOf("."); if(lc>-1 && ld>-1){ if(lc>ld){ s=s.replace(/\./g,"").replace(",","."); } else { s=s.replace(/,/g,""); } } else if(lc>-1){ if(/,\d{1,2}$/.test(s)) s=s.replace(",","."); else s=s.replace(/,/g,""); } else if(ld>-1){ if(/\.\d{3}$/.test(s) && !/\.\d{1,2}$/.test(s)) s=s.replace(/\./g,""); } var n=parseFloat(s); return isFinite(n)?n:0; }
+
+// POST /gasto-import  (header x-webhook-secret)  body: {ym?, rows:[{date|ym, ad_id, ad_name?, adset_id?, adset_name?, campaign_id?, campaign_name?, spend, impressions?}]}
+async function handleGastoImport(req, res){
+  if(!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b=req.body||{}; if(typeof b==="string"){ try{b=JSON.parse(b);}catch(e){b={};} }
+  var rows=Array.isArray(b.rows)?b.rows:(Array.isArray(b)?b:[]);
+  if(!rows.length) return res.status(400).json({ok:false,error:"envie {rows:[{date|ym, ad_id, spend, ...}]}"});
+  var defYm=String(b.ym||""); var updates={}, n=0, skipped=0;
+  rows.forEach(function(r){
+    var adid=String(r.ad_id||r.adId||"").trim();
+    var date=_gkeyDate(r.date||r.day||r.dia||"");
+    if(!date && /^\d{4}-\d{2}$/.test(String(r.ym||defYm))) date=String(r.ym||defYm)+"-01";
+    if(!adid || !date){ skipped++; return; }
+    updates["gasto_ads/"+date+"/"+adid]={ ad_id:adid, date:date,
+      ad_name:(String(r.ad_name||r.ad||"").trim()||null),
+      adset_id:(String(r.adset_id||"").trim()||null),
+      adset_name:(String(r.adset_name||r.conjunto||"").trim()||null),
+      campaign_id:(String(r.campaign_id||"").trim()||null),
+      campaign_name:(String(r.campaign_name||r.campanha||"").trim()||null),
+      spend:_gnum(r.spend!==undefined?r.spend:(r.valor_gasto!==undefined?r.valor_gasto:r.amount_spent)),
+      impressions:Math.round(_gnum(r.impressions!==undefined?r.impressions:r.impressoes)),
+      source:String(r.source||"csv"), updatedAt:Date.now() };
+    n++;
+  });
+  if(Object.keys(updates).length) await db.ref().update(updates);
+  return res.status(200).json({ok:true, gravados:n, ignorados:skipped});
+}
+
+// GET/POST /gasto-sync?since=YYYY-MM-DD&until=YYYY-MM-DD[&account=<id>]  (header x-webhook-secret)
+async function handleGastoSync(req, res){
+  if(!checaSecret(req)) return res.status(401).send("Unauthorized");
+  if(!META_ADS_TOKEN) return res.status(400).json({ok:false,error:"configure META_ADS_TOKEN (ou META_CAPI_TOKEN c/ ads_read) no Cloud Run"});
+  var acct=String(req.query.account||META_AD_ACCOUNT_ID).replace(/^act_/,"");
+  var since=String(req.query.since||req.query.from||""), until=String(req.query.until||req.query.to||"");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(since)||!/^\d{4}-\d{2}-\d{2}$/.test(until)){
+    var now=new Date(Date.now()-3*3600*1000); var y=now.getUTCFullYear(), mo=String(now.getUTCMonth()+1).padStart(2,"0");
+    since=/^\d{4}-\d{2}-\d{2}$/.test(since)?since:(y+"-"+mo+"-01");
+    until=/^\d{4}-\d{2}-\d{2}$/.test(until)?until:(y+"-"+mo+"-"+String(now.getUTCDate()).padStart(2,"0"));
+  }
+  var base="https://graph.facebook.com/v21.0/act_"+acct+"/insights?level=ad&time_increment=1&limit=500"
+    +"&fields=ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,impressions"
+    +"&time_range="+encodeURIComponent(JSON.stringify({since:since,until:until}))
+    +"&access_token="+encodeURIComponent(META_ADS_TOKEN);
+  var url=base, all=[], guard=0;
+  try{
+    while(url && guard<60){ guard++; var r=await fetch(url); var j=await r.json();
+      if(j.error){ return res.status(200).json({ok:false, meta_error:j.error, dica:"se a conta estiver UNSETTLED/pendente, o Meta bloqueia a leitura ate regularizar o pagamento"}); }
+      (j.data||[]).forEach(function(d){ all.push(d); });
+      url=(j.paging&&j.paging.next)?j.paging.next:""; }
+  }catch(e){ return res.status(200).json({ok:false, error:String((e&&e.message)||e)}); }
+  var updates={}, n=0;
+  all.forEach(function(d){ var adid=String(d.ad_id||"").trim(); var date=String(d.date_start||"").slice(0,10);
+    if(!adid||!date) return;
+    updates["gasto_ads/"+date+"/"+adid]={ ad_id:adid, date:date, ad_name:d.ad_name||null, adset_id:d.adset_id||null, adset_name:d.adset_name||null, campaign_id:d.campaign_id||null, campaign_name:d.campaign_name||null, spend:_gnum(d.spend), impressions:Math.round(_gnum(d.impressions)), source:"meta_api", updatedAt:Date.now() };
+    n++; });
+  if(Object.keys(updates).length) await db.ref().update(updates);
+  return res.status(200).json({ok:true, periodo:{since:since,until:until}, dias_ads_gravados:n, conta:acct});
+}
+
+// ===== /risco-tick (Plano Mestre P2): reuniões ICP >=50k sem confirmar dentro da janela -> tarefa p/ João + notifica =====
+// Agende no Cloud Scheduler (ex.: de hora em hora). ?h=12 define a janela de risco em horas.
+async function runRiscoTick(RISK_H, dry) {
+  if (!isFinite(RISK_H) || RISK_H <= 0) RISK_H = 12;
+  var M = (await db.ref("meetings").once("value")).val() || {};
+  var now = Date.now(); var criadas = 0, notificadas = 0, lista = [];
+  for (var mid in M) {
+    var m = M[mid]; if (!m || m._retorno || !m.dtISO) continue;
+    var st = String(m.status || "").toLowerCase(); if (st === "cancelado" || st === "reagendado" || st === "cancelled") continue;
+    var dms = new Date(m.dtISO).getTime(); if (isNaN(dms)) continue;
+    var hLeft = (dms - now) / 3600000; if (hLeft < 0 || hLeft > RISK_H) continue;
+    var fm = Number(m.tag_fatmin || 0) || _fatMinSrv(m.faixa || "", m.faturamentoLead || m.faturamento || "");
+    if (fm < 40000) continue; // só reuniões qualificadas (>=40k)
+    var tag = m.tag || (fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : "Starter"));
+    var su = m.showup || {}; var conf = !!(m.confirmado || m.confirmacao || su.confirmado || su.status === "confirmado"); if (conf) continue;
+    lista.push({ nome: m.nome || "", tel: m.tel || "", quando: m.dtDisplay || m.dtISO, tag: tag, closer: m.responsavel || "", faltam_h: Math.round(hLeft) });
+    if (!dry) {
+      var taskKey = String(m.kanbanKey || mid).replace(/[.#$\[\]]/g, "_") + "_risco";
+      var existing = (await db.ref("sdr_tarefas/" + taskKey).once("value")).val();
+      if (!existing) {
+        await db.ref("sdr_tarefas/" + taskKey).set({ leadKey: String(m.kanbanKey || mid), nome: m.nome || "", telefone: m.tel || "", empresa: "", tipo: "⚠️ Confirmar reunião " + tag + " — " + (m.dtDisplay || ""), icon: "ti-alarm", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
+        criadas++;
+        try { await suNotificarJoao("⚠️ *Reunião " + tag + " em risco* — sem confirmar, falta ~" + Math.round(hLeft) + "h\nCliente: " + (m.nome || "") + "\nQuando: " + (m.dtDisplay || m.dtISO || "") + "\nCloser: " + (m.responsavel || "") + "\n📱 " + (m.tel || "") + "\nLigar pra confirmar."); notificadas++; } catch (e) {}
+      }
+    }
+  }
+  return { ok: true, janela_h: RISK_H, em_risco: lista.length, tarefas_criadas: criadas, notificadas: notificadas, lista: lista.slice(0, 30) };
+}
+async function handleRiscoTick(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var RISK_H = parseFloat(req.query.h || "12");
+  var dry = req.query.dryrun === "1";
+  return res.status(200).json(await runRiscoTick(RISK_H, dry));
+}
+
 // ===== Rota principal: recebe lead da LP (Elementor) =====
 async function handleReceberLead(req, res) {
   if (req.method !== "POST") {
@@ -454,6 +577,29 @@ async function handleReceberLead(req, res) {
   const jaInvestiu = pick(body, ["ja_investiu", "investiu", "ja_investiu_trafego"]);
   const instagram = pick(body, ["instagram", "insta", "instagram_handle"]);
 
+  const campaign_id = pick(body, ["campaign_id", "campaignId"]);
+  const adset_id = pick(body, ["adset_id", "adsetId"]);
+  const ad_id = pick(body, ["ad_id", "adId"]);
+  const campaign_name = pick(body, ["campaign_name", "campaignName"]) || campanha;
+  const adset_name = pick(body, ["adset_name", "adsetName"]) || conjunto;
+  const ad_name = pick(body, ["ad_name", "adName"]) || ad;
+  const variante_lp = pick(body, ["variante_lp", "variante", "lp_variant", "variant"]);
+  const experiment_id = pick(body, ["experiment_id", "experimentId"]);
+  const compromisso_v = pick(body, ["compromisso_v", "compromissoV"]);
+  const fonte = pick(body, ["fonte"]);
+  const refOrigin = pick(body, ["ref", "referrer"]);
+  const first_touch = (body && body.first_touch) || null;
+  const last_touch = (body && body.last_touch) || null;
+  // ===== P0 Plano Mestre: Lead CRM é fonte de verdade; sinaliza (não bloqueia) dados incompletos =====
+  const _ehTrafego = /meta|trafego|tr\u00e1fego|lp-|quiz|ad/i.test(String(origem)) || !!ad || !!campanha || !!(body.fbclid || body.fbc);
+  const _temFat = !!(String(faturamento || "").trim() || String(faixa || "").trim());
+  const tracking_incompleto = _ehTrafego && !(campaign_id && adset_id && ad_id);
+  const _exc = [];
+  if (_ehTrafego && !campaign_id && !ad) _exc.push("sem_anuncio");
+  if (/\{\{[^}]*\}\}/.test(String(ad_name || "")) || /\{\{[^}]*\}\}/.test(String(campaign_name || ""))) _exc.push("placeholder_meta");
+  if (ad_id && !ad_name) _exc.push("id_sem_nome");
+  if (ad_id && !adset_id) _exc.push("anuncio_sem_conjunto");
+  if (_ehTrafego && !_temFat) _exc.push("sem_faturamento");
   const isBrowser = (req.headers.accept || "").includes("text/html");
 
   if (!nome || !telefoneRaw) {
@@ -471,6 +617,7 @@ async function handleReceberLead(req, res) {
   const key = (tel || "lead_" + Date.now()).replace(/[.#$\[\]]/g, "_");
 
   const faixa = pick(body, ["faixa", "faturamento_faixa"]);
+  var _tagInfo = _tagOf(faixa, faturamento); var tag = _tagInfo.tag;
   const leadData = {
     nome: String(nome),
     telefone: tel,
@@ -488,6 +635,24 @@ async function handleReceberLead(req, res) {
     investimento: String(investimento || ""),
     ja_investiu: String(jaInvestiu || ""),
     instagram: String(instagram || ""),
+    campaign_id: String(campaign_id || ""),
+    adset_id: String(adset_id || ""),
+    ad_id: String(ad_id || ""),
+    campaign_name: String(campaign_name || ""),
+    adset_name: String(adset_name || ""),
+    ad_name: String(ad_name || ""),
+    variante_lp: String(variante_lp || ""),
+    experiment_id: String(experiment_id || ""),
+    compromisso_v: String(compromisso_v || ""),
+    tag: tag,
+    tag_fatmin: _tagInfo.fm,
+    fonte: String(fonte || ""),
+    ref: String(refOrigin || ""),
+    first_touch: first_touch || null,
+    last_touch: last_touch || null,
+    faturamento_capturado: _temFat,
+    tracking_incompleto: tracking_incompleto,
+    _ts: { entrada: Date.now() },
     _source: String(origem),
     _createdAt: Date.now(),
   };
@@ -497,6 +662,17 @@ async function handleReceberLead(req, res) {
   const isQuizQualificado = /quiz/i.test(String(origem));
 
   await db.ref("leads/" + key).set(leadData);
+  try { if (NOTIF_JOAO_LEAD && String(pick(body, ["status"]) || "").toLowerCase() !== "arquivado") { await suNotificarJoao("\uD83C\uDD95 *Novo lead* \u2014 " + (leadData.nome || "(sem nome)") + "\n\uD83D\uDCF1 " + (leadData.telefone || "") + "\n\uD83D\uDCB0 " + (leadData.faturamento || leadData.faixa || "?") + (tag ? (" \u00b7 *" + tag + "*") : "") + "\n\uD83C\uDFAF " + (leadData._source || String(origem) || "") + (leadData.variante_lp ? ("\n\uD83D\uDD17 " + leadData.variante_lp) : "")); } } catch (e) { console.error("notifJoao novoLead:", e); }
+  if (_exc.length || tracking_incompleto) {
+    try {
+      await db.ref("tracking_excecoes/" + key).set({
+        key: key, telefone: tel, origem: String(origem), variante_lp: String(variante_lp || ""), experiment_id: String(experiment_id || ""),
+        ad: String(ad || ""), ad_id: String(ad_id || ""), campanha: String(campanha || ""),
+        campaign_id: String(campaign_id || ""), adset_id: String(adset_id || ""),
+        motivos: _exc, tracking_incompleto: tracking_incompleto, faturamento_capturado: _temFat, ts: Date.now()
+      });
+    } catch (e) { console.error("tracking_excecoes:", e); }
+  }
   // Inicia estado da cadência automática (envio só ocorre se config/cadencia/enabled=true)
   try { await cadStart(key, leadData); } catch (e) { console.error("cadStart intake:", e); }
 
@@ -514,7 +690,14 @@ async function handleReceberLead(req, res) {
   const _naoQuer = _invLC === "nao" || _invLC.indexOf("prioridade") >= 0 || _invLC.indexOf("não pretendo") >= 0 || _invLC.indexOf("nao pretendo") >= 0 || _invLC.indexOf("não consigo") >= 0 || _invLC.indexOf("nao consigo") >= 0;
   const faixaBaixa = ["ate-15", "0-15", "ate-20"].includes(String(faixa || "")) || (_naoQuer && ["15-20", "20-50", "15-30", "30-50"].includes(String(faixa || "")));
   if (!faixaBaixa) {
-    await enviarMensagemWhatsapp(tel, isQuizQualificado ? mensagemQuizQualificado(nome) : mensagemPrimeiroContato(nome));
+    if (isQuizQualificado) {
+      // LP V2 / FV1 (quiz): experiência preservada — mensagem de agendamento como sempre.
+      await enviarMensagemWhatsapp(tel, mensagemQuizQualificado(nome));
+    } else {
+      // LP Nova / lead frio: Momento 0 (curiosidade) + mensagem de valor logo em seguida.
+      await enviarMensagemWhatsapp(tel, mensagemMomento0(nome));
+      try { await enviarMensagemWhatsapp(tel, mensagemPrimeiroContato(nome)); } catch (e) { console.error("momento0 valor:", e); }
+    }
   }
 
   if (isBrowser) {
@@ -621,8 +804,9 @@ async function handleAgendar(req, res) {
 // a confirmação de reunião no WhatsApp (voz Audens). NÃO cria evento no Google Agenda
 // (o Calendly já cria, conectado à agenda) para evitar duplicidade.
 function closerPorFaixa(faixa) {
-  // Todas as reuniões vão para o Lucas (Gustavo saiu da distribuição — 23/09/26)
-  return "Lucas";
+  // 40-60k -> João · 60k+ -> Lucas (SDR sempre João) — 02/10/26
+  var fm = _fatMinSrv(String(faixa || ""), "");
+  return fm >= 60000 ? "Lucas" : "João";
 }
 async function handleQuizAgendou(req, res) {
   if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).send("Method Not Allowed"); }
@@ -656,6 +840,17 @@ async function handleQuizAgendou(req, res) {
     _set("ad", L.ad);
     _set("campanha", L.campanha);
     _set("conjunto", L.conjunto);
+    _set("campaign_id", L.campaign_id);
+    _set("adset_id", L.adset_id);
+    _set("ad_id", L.ad_id);
+    _set("campaign_name", L.campaign_name);
+    _set("adset_name", L.adset_name);
+    _set("ad_name", L.ad_name);
+    _set("variante_lp", L.variante_lp);
+    _set("experiment_id", L.experiment_id);
+    _set("compromisso_v", L.compromisso_v);
+    _set("tag", L.tag);
+    _set("fonte", L.fonte);
     _set("segmento", L.segmento);
     _set("canal", L.canal);
     _set("desafio", L.desafio);
@@ -693,7 +888,7 @@ async function handleLpAgendou(req, res) {
   try { L = (await db.ref("leads/" + key).once("value")).val() || {}; } catch (e) {}
   function _pref(campo, fromBody) { var v = fromBody != null ? String(fromBody) : ""; if (v && v.trim() !== "") return v; return (L[campo] != null ? String(L[campo]) : ""); }
   var kb = {
-    status: "reuniao", statusAt: Date.now(), responsavel: responsavel, sdrName: "LP", sdr: "LP",
+    status: "reuniao", statusAt: Date.now(), responsavel: responsavel, sdrName: "João", sdr: "João",
     meetingISO: meetingISO, meetingDisplay: meetingDisplay, meetingId: mid,
     lembretes: { h1: false, h2: false, m10: false },
     faixa: faixa || L.faixa || "", nome: nome || L.nome || "", telefone: tel,
@@ -706,16 +901,28 @@ async function handleLpAgendou(req, res) {
     ad: _pref("ad", pick(b, ["ad"])),
     campanha: _pref("campanha", pick(b, ["campanha"])),
     conjunto: _pref("conjunto", pick(b, ["conjunto"])),
+    campaign_id: _pref("campaign_id", pick(b, ["campaign_id"])),
+    adset_id: _pref("adset_id", pick(b, ["adset_id"])),
+    ad_id: _pref("ad_id", pick(b, ["ad_id"])),
+    campaign_name: _pref("campaign_name", pick(b, ["campaign_name"])),
+    adset_name: _pref("adset_name", pick(b, ["adset_name"])),
+    ad_name: _pref("ad_name", pick(b, ["ad_name"])),
+    variante_lp: _pref("variante_lp", pick(b, ["variante_lp", "variante"])),
+    experiment_id: _pref("experiment_id", pick(b, ["experiment_id"])),
+    compromisso_v: _pref("compromisso_v", pick(b, ["compromisso_v"])),
+    tag: _pref("tag", pick(b, ["tag"])),
+    fonte: _pref("fonte", pick(b, ["fonte"])),
     origem: pick(b, ["origem"]) || "lp-audens-quiz-fv2",
     _viaLP: true, _createdAt: (L._createdAt || Date.now())
   };
   var mrec = {
     id: mid, tel: tel, nome: (nome || L.nome || ""), dtISO: meetingISO, dtDisplay: meetingDisplay,
-    status: "pending", responsavel: responsavel, kanbanKey: key, sdrName: "LP", origem: "trafego pago",
-    faturamentoLead: kb.faturamento || "", guestEmail: kb.email || "", scheduledAt: Date.now(), _viaLP: true
+    status: "pending", responsavel: responsavel, kanbanKey: key, sdrName: "João", origem: "trafego pago",
+    faturamentoLead: kb.faturamento || "", guestEmail: kb.email || "", ad_id: kb.ad_id || "", campaign_id: kb.campaign_id || "", adset_id: kb.adset_id || "", variante_lp: kb.variante_lp || "", experiment_id: kb.experiment_id || "", compromisso_v: kb.compromisso_v || "", tag: kb.tag || "", fonte: kb.fonte || "", scheduledAt: Date.now(), _viaLP: true
   };
   try { await db.ref("kanban/" + key).update(kb); } catch (e) { console.error("lp-agendou kanban:", e); }
   try { await db.ref("meetings/" + mid).set(mrec); } catch (e) { console.error("lp-agendou meeting:", e); }
+  try { await suNotificarJoao("\uD83D\uDCC5 *Reuni\u00e3o agendada (FV2)* \u2014 " + (mrec.nome || "") + "\n\uD83D\uDDD3 " + (mrec.dtDisplay || meetingDisplay || "") + "\n\uD83D\uDC64 " + (mrec.responsavel || "") + (mrec.tag ? ("\n\uD83C\uDFF7 " + mrec.tag) : "") + "\n\uD83D\uDCF1 " + (mrec.tel || "")); } catch (e) {}
   try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadReatStop(key, "meeting_scheduled"); } catch (e) {}
@@ -1087,6 +1294,7 @@ async function handleCalendlyWebhook(req, res) {
         faturamentoLead: lead.faturamento || kb.faturamento || "", origem: "Tráfego",
         kanbanKey: key, sdrName: "JOÃO", meetLink: meetLink, scheduledAt: Date.now(), _viaCalendly: true
       });
+      try { var _tagC = _tagOf(faixa, lead.faturamento || kb.faturamento || "").tag; await suNotificarJoao("\uD83D\uDCC5 *Reuni\u00e3o agendada (Calendly)* \u2014 " + (nome || "") + "\n\uD83D\uDDD3 " + (meetingDisplay || "") + "\n\uD83D\uDC64 " + (responsavel || "") + (_tagC ? ("\n\uD83C\uDFF7 " + _tagC) : "") + "\n\uD83D\uDCF1 " + (telFinal || "")); } catch (e) {}
     } catch (e) { console.error("calendly-webhook meeting:", e); }
     try { await cadStop(key, "meeting_scheduled"); } catch (e) {}
   try { await cadNsStop(key, "meeting_scheduled"); } catch (e) {}
@@ -2309,11 +2517,13 @@ async function suHandleInbound(leadKey, lead, text, tel) {
   if (r.kind === "confirmar") {
     await db.ref("meetings/" + mid + "/showup").update({ confirmado: true });
     await suLog(mid, "confirmado", "✅ Confirmou presença (respondeu: " + String(text).slice(0, 60) + ")");
+    try { await suNotificarJoao("\u2705 *Lead confirmou presen\u00e7a* \u2014 " + (m.nome || "") + "\n\uD83D\uDDD3 " + (m.dtDisplay || m.dtISO || "") + "\n\uD83D\uDC64 " + (m.responsavel || "") + (m.tag ? ("\n\uD83C\uDFF7 " + m.tag) : "")); } catch (e) {}
     try { await enviarMensagemWhatsapp(tel, suMsgConfirmOK(m.nome)); } catch (e) {}
     return true;
   }
   if (r.kind === "remarcar") {
     await suLog(mid, "remarcada", "🔁 Pediu para remarcar (respondeu: " + String(text).slice(0, 60) + ")");
+    try { await suNotificarJoao("\uD83D\uDD01 *Lead pediu para remarcar* \u2014 " + (m.nome || "") + "\n\uD83D\uDDD3 era " + (m.dtDisplay || m.dtISO || "") + "\n\uD83D\uDC64 " + (m.responsavel || "") + "\nAssumir o reagendamento."); } catch (e) {}
     try { await enviarMensagemWhatsapp(tel, suMsgRemarcar(m.nome)); } catch (e) {}
     try { await db.ref("leads/" + leadKey).update({ needsHumanAttention: true }); } catch (e) {}
     return true;
@@ -2408,7 +2618,8 @@ async function handleShowupTick(req, res) {
     if (!sent.link && Hmin <= 15 && Hmin > 0 && (su.confirmado || su.status === "confirmado")) {
       await send(() => enviarMensagemWhatsapp(alvo, suMsgLink(nome, m.meetLink || m.link || "")), "link", "confirmado", "🔗 Link enviado (quase começando)"); continue; }
   }
-  return res.status(200).json({ ok: true, dry: dry, total: Object.keys(M).length, acoes });
+  var _risco = null; try { if (!dry) _risco = await runRiscoTick(12, false); } catch (e) { console.error("risco-tick (via showup):", e); }
+  return res.status(200).json({ ok: true, dry: dry, total: Object.keys(M).length, acoes, risco: _risco });
 }
 
 // ---- /showup-init : semeia showup nas reuniões futuras (backfill) ----
@@ -2633,7 +2844,7 @@ async function handleCockpitProxy(req, res) {
   }
 }
 
-const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 2, "cond": false, "intake": true, "text": "Oi, {{primeiroNome}}! Tudo bem? 👋\n\nAqui é o João, da Audens 🙂 Vi seu cadastro agora.\n\nEu sou o responsável por fazer esse primeiro contato e tentar conseguir um horário seu com o {{especialistaNome}}, que é um dos nossos especialistas.\n\nQueria entender rapidinho seu momento.\n\nHoje você consegue falar por alguns minutos?", "media": []}, "d1_tarde": {"day": 1, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}! João aqui de novo 👊\n\nDei uma olhada no seu cadastro e, pelo seu momento, quero tentar te colocar para conversar direto com o {{especialistaNome}}.\n\nEle também é dono de operação de delivery e vive isso na prática 🍔\n\nPara você costuma ser melhor falar de manhã ou à tarde?", "media": []}, "d2_manha": {"day": 2, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nUma pergunta rápida antes de eu olhar a agenda do {{especialistaNome}}:\n\nHoje, qual é o principal ponto que você gostaria de melhorar no seu delivery? 📈\n\nPode me responder bem resumido mesmo.", "media": []}, "d2_tarde": {"day": 2, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nTe perguntei porque aqui na Audens quem conversa com você não é alguém que conhece delivery só na teoria.\n\nO {{especialistaNome}} também vive operação no dia a dia 🔥\n\nSe fizer sentido, eu consigo olhar alguns horários na agenda dele para vocês conversarem.\n\nQuer que eu veja? 📅", "media": [{"url": "https://audenscompany.github.io/comercial/assets/faturamento-anterior.jpeg", "caption": ""}, {"url": "https://audenscompany.github.io/comercial/assets/faturamento-atual.jpeg", "caption": "Resultado real de um cliente com um delivery parecido com o seu 🚀 Hoje vende mais de 140 mil/mês com o Método Audens. É esse tipo de virada que o {{especialistaNome}} pode te ajudar a construir."}]}, "d3_manha": {"day": 3, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou organizando alguns horários com o {{especialistaNome}} e lembrei do seu cadastro.\n\nSe eu conseguir encaixar vocês, qual período seria mais tranquilo para você?\n\nManhã ou tarde? 🕐", "media": []}, "d3_tarde": {"day": 3, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nSó para te dar um pouco mais de contexto: a Audens foi criada por gente que também é dona de delivery 🍔\n\nO Lucas e o Gustavo têm operação própria e vivem na prática os desafios de gestão e crescimento desse mercado.\n\nPor isso achei válido tentar colocar você para falar com o {{especialistaNome}}.\n\nQuer que eu procure um horário? 📅", "media": []}, "d4_manha": {"day": 4, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nQueria só entender uma coisa para eu não ficar te chamando sem necessidade 🙏\n\nVocê ainda quer conversar sobre como melhorar os resultados do seu delivery?\n\nSe sim, eu vejo um horário com o {{especialistaNome}} para você.", "media": []}, "d4_tarde": {"day": 4, "period": "tarde", "version": 2, "cond": true, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nPra facilitar, já olhei a agenda do {{especialistaNome}} e separei alguns horários pra vocês conversarem 👇\n\n{{horarios}}\n\nMe responde qual fica melhor pra você que eu já confirmo com ele 👍", "media": []}, "d5_manha": {"day": 5, "period": "manha", "version": 2, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️\n\nEstou fechando meus acompanhamentos e seu contato ainda ficou aqui comigo.\n\nAntes de encerrar, queria tentar uma última vez te colocar para conversar com o {{especialistaNome}}.\n\nSe ainda fizer sentido para você, me responde \"sim\" que eu já olho a agenda dele 👍", "media": []}, "d5_tarde": {"day": 5, "period": "tarde", "version": 2, "cond": false, "intake": false, "text": "Oi, {{primeiroNome}}!\n\nVou encerrar meus contatos por aqui para não ficar insistindo com você 🙂\n\nSe quiser conversar com o {{especialistaNome}} depois, pode responder essa mensagem que eu mesmo vejo um horário para vocês.\n\nAbraço,\nJoão 👊", "media": []}};
+const CAD_TEMPLATES = {"d1_manha": {"day": 1, "period": "manha", "version": 2, "cond": false, "intake": true, "text": "Oi, {{primeiroNome}}! Tudo bem? 👋\n\nAqui é o João, da Audens 🙂 Vi seu cadastro agora.\n\nEu sou o responsável por fazer esse primeiro contato e tentar conseguir um horário seu com o {{especialistaNome}}, que é um dos nossos especialistas.\n\nQueria entender rapidinho seu momento.\n\nHoje você consegue falar por alguns minutos?", "media": []}, "d1_tarde": {"day": 1, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, sei que a rotina do delivery é uma correria 🍔 Por isso eu deixo tudo mastigado pra você. Me responde aqui que o {{especialistaNome}} te mostra, de graça, onde o seu delivery está travando.", "media": []}, "d2_manha": {"day": 2, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Um caso real pra você: a Gerrá saiu de R$37 mil pra mais de R$120 mil/mês com a gente. Dá pra construir algo parecido no seu delivery — quer entender como?", "media": []}, "d2_tarde": {"day": 2, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, a diferença não é só \"fazer tráfego\". É estruturar tráfego + conteúdo que gera desejo + cardápio preparado pra vender. É isso que falta na maioria dos deliverys — e é o que a gente monta pra você.", "media": []}, "d3_manha": {"day": 3, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Olha essa: a Naliati's saiu de R$37 mil pra R$73 mil em 60 dias com o método Audens. São donos como você, no mesmo mercado.", "media": []}, "d3_tarde": {"day": 3, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "Pergunta rápida, {{primeiroNome}}: hoje as suas vendas dependem do iFood? A gente constrói uma base própria pra você parar de alugar cliente e ficar com a margem no seu bolso.", "media": []}, "d4_manha": {"day": 4, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Mais um: a Burguerhein cresceu +44% (de R$35 mil pra R$50 mil) e teve 51% mais pedidos. Resultado real, delivery real.", "media": []}, "d4_tarde": {"day": 4, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "Quem vive o balcão sabe, {{primeiroNome}}: tem um horário de ouro pro anúncio e um produto âncora no cardápio. A gente ajusta isso no seu delivery — quer que o {{especialistaNome}} te mostre?", "media": []}, "d5_manha": {"day": 5, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Uma coisa importante: o {{especialistaNome}} é dono de delivery de verdade, fatura R$500 mil/mês no próprio. A conversa é de dono pra dono, não de vendedor pra lead.", "media": []}, "d5_tarde": {"day": 5, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, não quero te encher 🙏 Se fizer sentido pra você, me responde um \"quero\" que eu já te encaixo numa análise gratuita do seu delivery com o {{especialistaNome}}.", "media": []}, "d6_manha": {"day": 6, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Posso te mandar o antes/depois de faturamento de um cliente bem parecido com o seu? É pra você ver na prática o tipo de virada que a gente constrói.", "media": []}, "d6_tarde": {"day": 6, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, enquanto você está no balcão resolvendo o pico, a gente fica de olho no seu dashboard e nos números. É esse tipo de sócio que a Audens é 👊", "media": []}, "d7_manha": {"day": 7, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Uma das coisas que mais mudam o jogo é tirar a dependência do iFood e melhorar a margem. Quer que o {{especialistaNome}} te mostre como a gente faz isso no seu caso?", "media": []}, "d7_tarde": {"day": 7, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, me fala honestamente: o que te seguraria pra marcar só 15 minutos com o {{especialistaNome}}? Seja franco que eu resolvo por aqui.", "media": []}, "d8_manha": {"day": 8, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ O método em uma linha: tráfego que traz pedido + conteúdo que gera desejo + cardápio preparado + retenção pra recomprar. Simples e validado no nosso próprio delivery.", "media": []}, "d8_tarde": {"day": 8, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, essa semana o {{especialistaNome}} abriu alguns horários. Quer que eu veja um pra vocês conversarem? 📅", "media": []}, "d9_manha": {"day": 9, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Recapitulando: Santo Burger, Gerrá, Naliati's, Burguerhein — todos deliverys reais, como o seu, que cresceram com a gente. Dá pra você ser o próximo.", "media": []}, "d9_tarde": {"day": 9, "period": "tarde", "version": 3, "cond": true, "intake": false, "text": "{{primeiroNome}}, essa é a última semana que eu consigo priorizar o seu encaixe na agenda do {{especialistaNome}}. Me responde que eu já organizo 👍", "media": []}, "d10_manha": {"day": 10, "period": "manha", "version": 3, "cond": false, "intake": false, "text": "Bom dia, {{primeiroNome}}! ☀️ Separei de verdade um tempo pra analisar o SEU delivery. A análise é gratuita e você sai dela com um plano prático pra vender mais — quer aproveitar?", "media": []}, "d10_tarde": {"day": 10, "period": "tarde", "version": 3, "cond": false, "intake": false, "text": "{{primeiroNome}}, vou pausar meus contatos por aqui pra não ficar insistindo 🙂 Quando quiser a análise gratuita do seu delivery, é só responder essa mensagem que eu te encaixo na hora. Abraço, João 👊", "media": []}};
 
 // ===================== CADÊNCIA AUTOMÁTICA (Fase 1) =====================
 // Nasce DESLIGADA. Ativar em: config/cadencia { enabled:true, testPhone:"55...", intervalSeconds:300 }
@@ -2897,7 +3108,7 @@ async function cadStart(leadKey, lead) {
 function cadTouchFor(cad, period, todayDate) {
   if (!cad || cad.status !== "active" || !cad.startedAt) return null;
   var day = cadDaysBetween(cad.startedAt, todayDate) + 1;
-  if (day < 1 || day > 5) return null;
+  if (day < 1 || day > 10) return null;
   var id = "d" + day + "_" + period;
   var tpl = CAD_TEMPLATES[id];
   if (!tpl || tpl.intake) return null; // d1_manha é do intake
@@ -4033,6 +4244,21 @@ http('receberLead', async (req, res) => {
     if (path === "/camp-drain") {
       return await handleCampDrain(req, res);
     }
+    if (path === "/risco-tick") {
+      return await handleRiscoTick(req, res);
+    }
+    if (path === "/cad-sync-defaults") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var _payload = {}; Object.keys(CAD_TEMPLATES).forEach(function(k){ if(k!=="d1_manha") _payload[k]=CAD_TEMPLATES[k]; });
+      try { await db.ref("config/cadencia_templates").update(_payload); } catch(e){ return res.status(200).json({ok:false,error:String(e)}); }
+      return res.status(200).json({ ok:true, atualizados:Object.keys(_payload).length, nota:"d1_manha preservado (intake). Teste com config/cadencia.testPhone antes de liberar geral." });
+    }
+    if (path === "/gasto-import") {
+      return await handleGastoImport(req, res);
+    }
+    if (path === "/gasto-sync") {
+      return await handleGastoSync(req, res);
+    }
     if (path === "/read") {
       var _rs = process.env.READ_SECRET || "";
       var _given = String(req.query.rsecret || req.get("x-read-secret") || "");
@@ -4105,7 +4331,7 @@ http('receberLead', async (req, res) => {
 
       // ===== LEADS =====
       var leads = (await db.ref("leads").once("value")).val() || {};
-      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0, leadsSemDado = 0, adAgg = {}, cjAgg = {};
+      var leadsMes = 0, leadsBand = {}, leadsGte50 = 0, leadsGte60 = 0, leadsSemDado = 0, adAgg = {}, cjAgg = {}, adIdAgg = {}, cjIdAgg = {}, leadsTrkIncompleto = 0, varAgg = {};
       Object.keys(leads).forEach(function (k) {
         var l = leads[k]; if (!l) return;
         if (!inPeriodMs(l._createdAt)) return;
@@ -4122,6 +4348,19 @@ http('receberLead', async (req, res) => {
         if (!cjAgg[_cjn]) cjAgg[_cjn] = { conjunto: _cjn, leads: 0, gte50k: 0, gte60k: 0, semdado: 0 };
         cjAgg[_cjn].leads++;
         if (v === null) cjAgg[_cjn].semdado++; else { if (v >= 50000) cjAgg[_cjn].gte50k++; if (v >= 60000) cjAgg[_cjn].gte60k++; }
+        if (l.tracking_incompleto === true) leadsTrkIncompleto++;
+        var _adid = String(l.ad_id || "").trim(); var _adkey = _adid || _adn;
+        if (!adIdAgg[_adkey]) adIdAgg[_adkey] = { ad_id: _adid, ad: _adn, campaign_id: String(l.campaign_id || ""), leads: 0, gte50k: 0, gte60k: 0, semdado: 0 };
+        adIdAgg[_adkey].leads++;
+        if (v === null) adIdAgg[_adkey].semdado++; else { if (v >= 50000) adIdAgg[_adkey].gte50k++; if (v >= 60000) adIdAgg[_adkey].gte60k++; }
+        var _cjid = String(l.adset_id || "").trim(); var _cjkey = _cjid || _cjn;
+        if (!cjIdAgg[_cjkey]) cjIdAgg[_cjkey] = { adset_id: _cjid, conjunto: _cjn, leads: 0, gte50k: 0, gte60k: 0, semdado: 0 };
+        cjIdAgg[_cjkey].leads++;
+        if (v === null) cjIdAgg[_cjkey].semdado++; else { if (v >= 50000) cjIdAgg[_cjkey].gte50k++; if (v >= 60000) cjIdAgg[_cjkey].gte60k++; }
+        var _vl = String((l.variante_lp || "(sem variante)"));
+        if (!varAgg[_vl]) varAgg[_vl] = { variante: _vl, leads: 0, gte50k: 0, gte60k: 0, agendadas: 0, realizadas: 0, no_show: 0 };
+        varAgg[_vl].leads++;
+        if (v !== null) { if (v >= 50000) varAgg[_vl].gte50k++; if (v >= 60000) varAgg[_vl].gte60k++; }
       });
 
       // ===== REUNIOES =====
@@ -4166,16 +4405,52 @@ http('receberLead', async (req, res) => {
         else if (cat === "realizada") { R.realizadas++; realBand[ab] = (realBand[ab] || 0) + 1; if (v !== null && v >= 50000) R.real_gte50=(R.real_gte50||0)+1; if (v !== null && v >= 60000) R.real_gte60=(R.real_gte60||0)+1; }
         else if (cat === "pendente") R.pendentes++;
         else R.outras++;
+        var _vlm = String((m.variante_lp || (_ld && _ld.variante_lp) || "(sem variante)"));
+        if (!varAgg[_vlm]) varAgg[_vlm] = { variante: _vlm, leads: 0, gte50k: 0, gte60k: 0, agendadas: 0, realizadas: 0, no_show: 0 };
+        varAgg[_vlm].agendadas++;
+        if (cat === "no_show") varAgg[_vlm].no_show++; else if (cat === "realizada") varAgg[_vlm].realizadas++;
       });
       var nsGte50 = nsList.filter(function (x) { return x.fatMin !== null && x.fatMin >= 50000; }).length;
       var nsGte60 = nsList.filter(function (x) { return x.fatMin !== null && x.fatMin >= 60000; }).length;
       var nsSemDado = nsList.filter(function (x) { return x.fatMin === null; }).length;
 
+      // ===== GASTO / CPQL (join por ad_id e adset_id) =====
+      var gastoAll = (await db.ref("gasto_ads").once("value")).val() || {};
+      var gastoByAd = {}, gastoByCj = {}, gastoTotal = 0, gastoDias = 0;
+      Object.keys(gastoAll).forEach(function (date) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+        var inP = useRange ? (date >= dFrom && date <= dTo) : (date.slice(0, 7) === ym);
+        if (!inP) return;
+        var day = gastoAll[date] || {}; gastoDias++;
+        Object.keys(day).forEach(function (adid) {
+          var g = day[adid] || {}; var sp = Number(g.spend) || 0; gastoTotal += sp;
+          if (!gastoByAd[adid]) gastoByAd[adid] = { spend: 0, impressions: 0, ad_name: "", adset_id: "" };
+          gastoByAd[adid].spend += sp; gastoByAd[adid].impressions += Number(g.impressions) || 0;
+          if (g.ad_name) gastoByAd[adid].ad_name = g.ad_name; if (g.adset_id) gastoByAd[adid].adset_id = g.adset_id;
+          var cj = String(g.adset_id || ""); if (cj) { if (!gastoByCj[cj]) gastoByCj[cj] = { spend: 0, impressions: 0, adset_name: "" }; gastoByCj[cj].spend += sp; gastoByCj[cj].impressions += Number(g.impressions) || 0; if (g.adset_name) gastoByCj[cj].adset_name = g.adset_name; }
+        });
+      });
+      function cpql(spend, q) { return (q > 0 && spend > 0) ? Math.round((spend / q) * 100) / 100 : null; }
+      function r2(x){ return Math.round(x*100)/100; }
+      Object.keys(adIdAgg).forEach(function (k) {
+        var e = adIdAgg[k]; var g = gastoByAd[e.ad_id] || null;
+        if (g) { e.spend = r2(g.spend); e.impressions = g.impressions; e.cpl = cpql(g.spend, e.leads); e.cpql50 = cpql(g.spend, e.gte50k); e.cpql60 = cpql(g.spend, e.gte60k); if ((!e.ad || e.ad === "sem anúncio") && g.ad_name) e.ad = g.ad_name; }
+        else { e.spend = null; e.cpl = null; e.cpql50 = null; e.cpql60 = null; }
+      });
+      Object.keys(cjIdAgg).forEach(function (k) {
+        var e = cjIdAgg[k]; var g = gastoByCj[e.adset_id] || null;
+        if (g) { e.spend = r2(g.spend); e.impressions = g.impressions; e.cpl = cpql(g.spend, e.leads); e.cpql50 = cpql(g.spend, e.gte50k); e.cpql60 = cpql(g.spend, e.gte60k); if ((!e.conjunto || e.conjunto === "sem conjunto") && g.adset_name) e.conjunto = g.adset_name; }
+        else { e.spend = null; e.cpl = null; e.cpql50 = null; e.cpql60 = null; }
+      });
+
       return res.status(200).json({
         ok: true, periodo: periodo, ym: ym,
-        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, porFaixa: leadsBand, por_anuncio: (req.query.byad==='1' ? Object.keys(adAgg).map(function(k){return adAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined), por_conjunto: (req.query.byad==='1' ? Object.keys(cjAgg).map(function(k){return cjAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined) },
+        leads: { total: leadsMes, gte50k: leadsGte50, gte60k: leadsGte60, sem_dado: leadsSemDado, tracking_incompleto: leadsTrkIncompleto, porFaixa: leadsBand, por_anuncio: (req.query.byad==='1' ? Object.keys(adAgg).map(function(k){return adAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined), por_conjunto: (req.query.byad==='1' ? Object.keys(cjAgg).map(function(k){return cjAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined), por_anuncio_id: (req.query.byad==='1' ? Object.keys(adIdAgg).map(function(k){return adIdAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined), por_conjunto_id: (req.query.byad==='1' ? Object.keys(cjIdAgg).map(function(k){return cjIdAgg[k];}).sort(function(a,b){return b.gte60k-a.gte60k || b.leads-a.leads;}) : undefined) },
         reunioes: { agendadas: R.agendadas, realizadas: R.realizadas, no_show: R.no_show, pendentes: R.pendentes, outras: R.outras, agendadas_gte50k: R.ag_gte50||0, agendadas_gte60k: R.ag_gte60||0, realizadas_gte50k: R.real_gte50||0, realizadas_gte60k: R.real_gte60||0, porFaixa_agendadas: agBand, porFaixa_realizadas: realBand, por_origem_agendadas: agOrigem },
-        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, por_origem: nsOrigem, lista: nsList.slice(0, 80) }
+        no_shows: { total: R.no_show, gte50k: nsGte50, gte60k: nsGte60, sem_dado: nsSemDado, porFaixa: nsBand, por_origem: nsOrigem, lista: nsList.slice(0, 80) },
+        por_variante: Object.keys(varAgg).map(function(k){return varAgg[k];}).sort(function(a,b){return b.leads-a.leads;}),
+        show_rate: (function(){ function _r(a,b){return b>0?Math.round(a/b*100):null;} var _e=R.realizadas+R.no_show, _e50=(R.real_gte50||0)+nsGte50, _e60=(R.real_gte60||0)+nsGte60; return { elegiveis:_e, total:_r(R.realizadas,_e), gte50k:_r(R.real_gte50||0,_e50), gte60k:_r(R.real_gte60||0,_e60), no_show_total:_r(R.no_show,_e), no_show_gte50k:_r(nsGte50,_e50), no_show_gte60k:_r(nsGte60,_e60) }; })(),
+        gasto: { total: r2(gastoTotal), dias_com_gasto: gastoDias, ads_com_gasto: Object.keys(gastoByAd).length, cpl_geral: cpql(gastoTotal, leadsMes), cpql50_geral: cpql(gastoTotal, leadsGte50), cpql60_geral: cpql(gastoTotal, leadsGte60), fonte: (Object.keys(gastoByAd).length ? "ok" : "sem_gasto_importado") }
       });
     }
     if (path === "/camp-templates") {
