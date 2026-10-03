@@ -17686,7 +17686,7 @@ function _fuBuildUniverse(){
   return universe.sort(function(a,b){return b.score-a.score;});
 }
 
-var _pgDe='',_pgAte='',_pgMot='all',_pgBusca='';
+var _pgDe='',_pgAte='',_pgMot='all',_pgBusca='',_pgCloser='all',_pgFat='all';
 var _PG_MOT={preco:'Preço alto',tempo:'Sem tempo',concorrente:'Foi com concorrente',nao_convenceu:'Não se convenceu',socio:'Consultar sócio',outro:'Outro',retorno:'Em retorno','':'Sem motivo'};
 function _pgDate(x){ if(!x) return ''; if(/^\d{4}-\d{2}-\d{2}/.test(x)) return String(x).slice(0,10); var m=String(x).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; return ''; }
 function _pgISO(d){ try{ var x=(d instanceof Date)?d:new Date(d); if(isNaN(x)) return ''; var b=new Date(x.getTime()); return b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-'+String(b.getDate()).padStart(2,'0'); }catch(e){ return ''; } }
@@ -17703,23 +17703,33 @@ function _pregaoLista(){
       tel:String(l.tel||'').replace(/\D/g,''),
       data:l.meetDate?_pgISO(l.meetDate):'',
       closer:l.closer||'',
-      fat:fatStr,
+      fat:fatStr, fatNum:(Number(l.faturamento)||0),
       motivo:motivo,
       resultado:(fu.resultado|| (l.category==='perdido'?'perdida':'nao_fechou'))
     };
   }).sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
 }
-function _pregaoFiltrada(){
-  var all=_pregaoLista();
-  var bus=(_pgBusca||'').toLowerCase();
-  return all.filter(function(r){
-    if(_pgDe && (!r.data || r.data < _pgDe)) return false;
-    if(_pgAte && (!r.data || r.data > _pgAte)) return false;
-    if(_pgMot!=='all' && (r.motivo||'')!==_pgMot) return false;
-    if(bus && !((r.nome||'').toLowerCase().includes(bus)||(r.empresa||'').toLowerCase().includes(bus)||(r.tel||'').includes(bus))) return false;
-    return true;
-  });
+function _pgFatOk(v){
+  if(_pgFat==='all') return true;
+  if(_pgFat==='sem') return !v;
+  if(_pgFat==='100') return v>=100000;
+  if(_pgFat==='60') return v>=60000;
+  if(_pgFat==='50') return v>=50000;
+  if(_pgFat==='40') return v>=40000;
+  if(_pgFat==='lt50') return v>0 && v<50000;
+  return true;
 }
+function _pgPred(r){
+  var bus=(_pgBusca||'').toLowerCase();
+  if(_pgDe && (!r.data || r.data < _pgDe)) return false;
+  if(_pgAte && (!r.data || r.data > _pgAte)) return false;
+  if(_pgMot!=='all' && (r.motivo||'')!==_pgMot) return false;
+  if(_pgCloser!=='all' && (r.closer||'')!==_pgCloser) return false;
+  if(!_pgFatOk(r.fatNum||0)) return false;
+  if(bus && !((r.nome||'').toLowerCase().includes(bus)||(r.empresa||'').toLowerCase().includes(bus)||(r.tel||'').includes(bus))) return false;
+  return true;
+}
+function _pregaoFiltrada(){ return _pregaoLista().filter(_pgPred); }
 function pregaoBaixarCSV(){
   var rows=[['nome','empresa','telefone','data_reuniao','closer','faturamento','motivo','resultado']];
   _pregaoFiltrada().forEach(function(r){rows.push([r.nome,r.empresa,r.tel,r.data,r.closer,r.fat,(_PG_MOT[r.motivo]||r.motivo),r.resultado]);});
@@ -17728,12 +17738,17 @@ function pregaoBaixarCSV(){
 }
 function _pgRefresh(){var a=document.getElementById('content');if(a)a.innerHTML=renderPregao();}
 function renderPregao(){
-  var list=_pregaoFiltrada();
+  var all=_pregaoLista();
+  var list=all.filter(_pgPred);
   var byMot={}; list.forEach(function(r){var k=r.motivo||'';byMot[k]=(byMot[k]||0)+1;});
   var preco=byMot['preco']||0, retorno=byMot['retorno']||0;
   var kpi=function(l,v,c){return '<div style="flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:26px;font-weight:800;color:'+(c||'var(--white)')+';line-height:1;">'+v+'</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:6px;">'+l+'</div></div>';};
   var inp='background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;';
   var motOpts='<option value="all">Todos os motivos</option>'+Object.keys(_PG_MOT).map(function(k){return '<option value="'+k+'"'+(_pgMot===k?' selected':'')+'>'+_PG_MOT[k]+'</option>';}).join('');
+  var closersU={}; all.forEach(function(r){ if(r.closer) closersU[r.closer]=1; });
+  var closerOpts='<option value="all">Todos os closers</option>'+Object.keys(closersU).sort().map(function(c){return '<option value="'+esc(c)+'"'+(_pgCloser===c?' selected':'')+'>'+esc(c)+'</option>';}).join('');
+  var _fatO=[['all','Todo faturamento'],['100','≥ R$100 mil'],['60','≥ R$60 mil'],['50','≥ R$50 mil'],['40','≥ R$40 mil'],['lt50','< R$50 mil'],['sem','Sem faturamento']];
+  var fatOpts=_fatO.map(function(o){return '<option value="'+o[0]+'"'+(_pgFat===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
   var H='<div class="page active" style="padding:22px;max-width:1500px;margin:0 auto;">'+
     '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="page-title"><i class="ti ti-flame" style="color:#f59e0b;margin-right:6px;"></i>Pregão · Recuperação</div><div class="page-sub">Quem fez reunião e NÃO fechou — base para reativar com oferta. Filtre por período e por motivo.</div></div>'+
       '<button onclick="pregaoBaixarCSV()" class="btn btn-outline" style="font-size:12px;padding:8px 13px;"><i class="ti ti-download"></i> Baixar CSV</button></div>'+
@@ -17744,6 +17759,8 @@ function renderPregao(){
       '<span style="color:var(--muted);font-size:12px;">até</span>'+
       '<input type="date" value="'+_pgAte+'" onchange="_pgAte=this.value;_pgRefresh();" style="'+inp+'">'+
       '<select onchange="_pgMot=this.value;_pgRefresh();" style="'+inp+'">'+motOpts+'</select>'+
+      '<select onchange="_pgCloser=this.value;_pgRefresh();" style="'+inp+'">'+closerOpts+'</select>'+
+      '<select onchange="_pgFat=this.value;_pgRefresh();" style="'+inp+'">'+fatOpts+'</select>'+
       '<input placeholder="🔍 nome, empresa ou telefone" value="'+esc(_pgBusca)+'" oninput="_pgBusca=this.value;clearTimeout(window._pgT);window._pgT=setTimeout(_pgRefresh,250);" style="'+inp+'flex:1;min-width:200px;">'+
     '</div>';
   if(!list.length){
