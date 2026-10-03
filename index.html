@@ -2330,13 +2330,30 @@ function _sdrTaskLead(t){
 }
 function sdrTaskRowHtml(t,showDate){
   var _tl=_sdrTaskLead(t);
+  var _isCall=_isLigacaoTask(t._key,t);
+  var _telHref=(typeof formatTelLigar==='function'&&_tl.telefone)?formatTelLigar(_tl.telefone):(_tl.telefone||'');
+  // Botões de ação (só para tarefas de LIGAÇÃO do João): Ligar / Liguei / Áudio
+  var _acts='';
+  if(_isCall && !t.done){
+    _acts='<div class="sdr-task-acts" style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+
+      (_telHref?'<a href="tel:'+_telHref+'" class="btn btn-reg" style="font-size:11px;padding:5px 10px;text-decoration:none;" title="Ligar para '+_telHref+'"><i class="ti ti-phone"></i> Ligar</a>':'')+
+      '<button class="btn btn-task" style="font-size:11px;padding:5px 10px;" onclick="sdrMarcarContato(\''+t._key+'\',\'ligou\')" title="Marcar que já liguei"><i class="ti ti-phone-check"></i> Liguei</button>'+
+      '<button class="btn btn-outline" style="font-size:11px;padding:5px 10px;" onclick="sdrMarcarContato(\''+t._key+'\',\'audio\')" title="Marquei que enviei áudio"><i class="ti ti-microphone"></i> Áudio</button>'+
+    '</div>';
+  }
+  // Quando concluída, mostra COMO foi o contato
+  var _viaBadge='';
+  if(t.done && t.via){
+    _viaBadge=t.via==='audio'?'<span class="badge b-cyan" style="font-size:10px;"><i class="ti ti-microphone"></i> Áudio enviado</span>':'<span class="badge b-green" style="font-size:10px;"><i class="ti ti-phone-check"></i> Ligou</span>';
+  }
   return '<div class="sdr-task-row'+(t.done?' done':'')+'">'+
     '<label class="sdr-task-check"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleSdrTarefa(\''+t._key+'\',this.checked)"><span class="sdr-check-mark"></span></label>'+
     '<div class="sdr-task-icon"><i class="ti '+(t.icon||'ti-checkbox')+'"></i></div>'+
     '<div class="sdr-task-info">'+
       '<div class="sdr-task-lead">'+_chEscSafe(_leadDisplayName({_key:(_tl.leadKey||_tl.telefone),nome:_tl.nome,telefone:_tl.telefone,empresa:_tl.empresa,instagram:_tl.instagram}))+'</div>'+
-      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(_tl.telefone?' &middot; '+_tl.telefone:'')+'</div>'+
+      '<div class="sdr-task-tipo">'+t.tipo+' &middot; Dia '+t.dia+(_tl.telefone?' &middot; '+_tl.telefone:'')+(_viaBadge?' &middot; '+_viaBadge:'')+'</div>'+
     '</div>'+
+    _acts+
     (showDate?'<div class="sdr-task-date">'+fmtDateBR(t.dataISO)+'</div>':'')+
   '</div>';
 }
@@ -2362,7 +2379,7 @@ function renderMinhasTarefas(){
   }
 
   var html='<div class="page active">'+
-    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 20 mil)</div></div></div>'+
+    '<div class="page-header"><div><div class="page-title">Minhas Tarefas</div><div class="page-sub">Cadencia de contato dos leads qualificados (faturamento >= R$ 40 mil) · 10 dias</div></div></div>'+
     '<div class="tarefas-board">'+
       colHtml('Atrasadas',atrasadas,'tarefas-hd-red',true,'Nenhuma tarefa atrasada')+
       colHtml('Hoje',hojeT,'tarefas-hd-purple',false,'Nenhuma tarefa para hoje')+
@@ -2395,6 +2412,25 @@ function renderDesempenhoSDR(){
   var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
   var pendHoje=all.filter(function(t){return !t.done && t.dataISO===hojeISO;}).length;
   var pct=total?Math.round(done/total*100):0;
+  // Métricas de contato (botões Liguei/Áudio): leads com pelo menos 1 contato registrado
+  var _leadsAll={}, _leadsContatados={}, _audios=0, _ligou=0;
+  all.forEach(function(t){ if(t.leadKey) _leadsAll[t.leadKey]=1; if(t.via){ if(t.leadKey)_leadsContatados[t.leadKey]=1; if(t.via==='audio')_audios++; else _ligou++; } });
+  var _nLeads=Object.keys(_leadsAll).length, _nCont=Object.keys(_leadsContatados).length;
+  var _pctCont=_nLeads?Math.round(_nCont/_nLeads*100):0;
+  // Métricas finas (plano): % 1ª ligação em <1h (entrada do lead -> 1º contato) e % que agendou pela cadência.
+  var _rapidas=0,_rapBase=0,_agend=0;
+  var _kb=(typeof kanbanData!=='undefined'&&kanbanData)||{};
+  Object.keys(_leadsAll).forEach(function(lk){
+    var kb=_kb[lk]||null;
+    var entry=kb?(kb._createdAt||kb.statusAt||0):0;
+    var firstC=0;
+    all.forEach(function(t){ if(t.leadKey===lk && t.via && t.contatoAt){ if(!firstC||t.contatoAt<firstC) firstC=t.contatoAt; } });
+    if(firstC && entry){ _rapBase++; if(firstC-entry < 3600000) _rapidas++; }
+    var st=kb?(kb.status||''):''; var sh=(kb&&kb.statusHistory)||{};
+    if(sh['reuniao']||st==='reuniao'||st==='proposta'||st==='fechado'||st==='recuperacao') _agend++;
+  });
+  var _pctRap=_rapBase?Math.round(_rapidas/_rapBase*100):0;
+  var _pctAg=_nLeads?Math.round(_agend/_nLeads*100):0;
 
   var byLead={};
   all.forEach(function(t){
@@ -2414,6 +2450,10 @@ function renderDesempenhoSDR(){
       sdrKpiBoxHtml('Concluidas',done+' ('+pct+'%)','var(--green)')+
       sdrKpiBoxHtml('Pendentes Hoje',pendHoje,'var(--cyan)')+
       sdrKpiBoxHtml('Atrasadas',atrasadas,'var(--red)')+
+      sdrKpiBoxHtml('Leads contatados',_nCont+'/'+_nLeads+' ('+_pctCont+'%)','var(--amber)')+
+      sdrKpiBoxHtml('Ligações / Áudios',_ligou+' / '+_audios,'var(--purple3)')+
+      sdrKpiBoxHtml('1ª ligação < 1h',_pctRap+'%'+(_rapBase?' ('+_rapidas+'/'+_rapBase+')':''),'var(--green)')+
+      sdrKpiBoxHtml('Agendaram (cadência)',_pctAg+'% ('+_agend+'/'+_nLeads+')','var(--cyan)')+
     '</div>'+
     '<div class="cb"><div class="cb-hd"><span class="cb-title">Desempenho por Lead</span></div>'+
     (leadRows.length?('<div class="t-scroll"><table><thead><tr><th>Lead</th><th>Telefone</th><th>Concluidas</th><th>Total</th><th>%</th><th>Atrasadas</th></tr></thead><tbody>'+
@@ -2453,7 +2493,7 @@ var webhookVendaSecret=localStorage.getItem('webhookVendaSecret')||'';
 // Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card (agora 20 mil)
 var KANBAN_FAT_DESTAQUE=20000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
-var KANBAN_TASK_FAT_MIN=20000;
+var KANBAN_TASK_FAT_MIN=40000;
 // Estado das tarefas de cadencia (SDR)
 var sdrTarefas={};
 // Conjunto de leads ATIVOS na cadência (fonte de verdade do backend) — só esses geram tarefa do João
@@ -2471,7 +2511,7 @@ function _leadNaCadencia5d(k){
   var sa=cadenciaAtivos[k].startedAt;
   if(!sa)return true;
   var d=new Date(sa+'T12:00:00'); if(isNaN(d.getTime()))return true;
-  return (Date.now()-d.getTime())/86400000 < 5;
+  return (Date.now()-d.getTime())/86400000 < 10;
 }
 function _isLigacaoTask(tk,t){ t=t||{}; return /liga/i.test(t.tipo||''); }
 function _isReplyTask(tk,t){ t=t||{}; return /_resposta$/.test(tk||'')||/respond/i.test(t.tipo||''); }
@@ -2552,7 +2592,17 @@ var CADENCIA_SDR=[
   {dia:4,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
   {dia:4,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
   {dia:5,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
-  {dia:5,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'}
+  {dia:5,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:6,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:6,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:7,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:7,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:8,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:8,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:9,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:9,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'},
+  {dia:10,periodo:'manha',tipo:'Ligacao (Manha)',icon:'ti-phone'},
+  {dia:10,periodo:'tarde',tipo:'Ligacao (Tarde)',icon:'ti-phone'}
 ];
 function slugify(s){
   return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_');
@@ -2603,6 +2653,28 @@ function syncJoaoCallTasks(){
     var ca=(cadenciaAtivos&&cadenciaAtivos[leadKey])||{};
     generateCadenciaTasks({nome:kb.nome||ca.nome||ca.primeiroNome||'',telefone:kb.telefone||ca.telefone||ca.phone||'',empresa:kb.empresa||ca.empresa||'',faturamento:kb.faturamento||ca.faturamento||''},leadKey,true);
   });
+}
+// Marca a tarefa de ligação como concluída registrando COMO foi o contato (ligou/audio)
+// Usado pelos botões "Liguei" e "Áudio" — alimenta as métricas de 1ª ligação/resposta.
+function sdrMarcarContato(taskId,via){
+  if(!sdrTarefas[taskId]) return;
+  var now=Date.now();
+  sdrTarefas[taskId].done=true;
+  sdrTarefas[taskId].doneAt=now;
+  sdrTarefas[taskId].via=via||'ligou';
+  sdrTarefas[taskId].contatoAt=now;
+  localStorage.setItem('audens_sdr_tarefas', JSON.stringify(sdrTarefas));
+  if(fbDb || initFirebase()){
+    fbDb.ref('sdr_tarefas/'+taskId).update({done:true,doneAt:now,via:sdrTarefas[taskId].via,contatoAt:now});
+  }
+  var area=document.getElementById('content');
+  if(area && area.getAttribute('data-page')==='minhas-tarefas') showPage('minhas-tarefas');
+  var tnav=document.getElementById('nav-minhas-tarefas');
+  if(tnav){
+    var p=getPendingSdrTarefas().length;var ex=tnav.querySelector('.nav-badge');
+    if(p>0){if(ex)ex.textContent=p;else tnav.insertAdjacentHTML('beforeend','<span class="nav-badge">'+p+'</span>');}
+    else if(ex)ex.remove();
+  }
 }
 // Marca/desmarca uma tarefa de cadencia como concluida
 function toggleSdrTarefa(taskId,doneVal){
