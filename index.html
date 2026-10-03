@@ -4619,6 +4619,7 @@ function buildNav(){
     {id:'dash-comercial',icon:'ti-chart-bar',label:'Dashboard Comercial'},
     {id:'vendas',icon:'ti-cash-register',label:'Vendas'},
     {id:'followup',icon:'ti-refresh-alert',label:'Follow-up'},
+    {id:'pregao',icon:'ti-flame',label:'Pregão'},
     {id:'meu-hist',icon:'ti-list-check',label:'Meu Historico'},
     {group:'Reunioes',icon:'ti-calendar-check',items:[
       {id:'reunioes',icon:'ti-layout-dashboard',label:'Visão Geral'},
@@ -4818,7 +4819,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup
+    'followup':renderFollowup,'pregao':renderPregao
   };
   var area=document.getElementById('content');
   if(typeof FIN_PAGES!=='undefined'&&FIN_PAGES.indexOf(id)>=0&&!_finUnlocked){
@@ -17683,6 +17684,93 @@ function _fuBuildUniverse(){
   return universe.sort(function(a,b){return b.score-a.score;});
 }
 
+var _pgDe='',_pgAte='',_pgMot='all',_pgBusca='';
+var _PG_MOT={preco:'Preço alto',tempo:'Sem tempo',concorrente:'Foi com concorrente',nao_convenceu:'Não se convenceu',socio:'Consultar sócio',outro:'Outro',retorno:'Em retorno','':'Sem motivo'};
+function _pgDate(x){ if(!x) return ''; if(/^\d{4}-\d{2}-\d{2}/.test(x)) return String(x).slice(0,10); var m=String(x).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; return ''; }
+function _pregaoLista(){
+  var out=[];
+  Object.keys(followups||{}).forEach(function(fid){
+    var fu=followups[fid]; if(!fu) return;
+    var res=fu.resultado||'';
+    if(res==='venda'||res==='noshow') return;
+    var realizou=(fu.comparecimento==='sim')||res==='perdida'||res==='retorno';
+    if(!realizou) return;
+    var m=(meetings&&(meetings[fu.meetingId]||meetings[fid]))||{};
+    var kb=(m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey])?kanbanData[m.kanbanKey]:{};
+    var tel=String(fu.tel||m.tel||kb.telefone||'').replace(/\D/g,'');
+    var nome=fu.nome||m.nome||kb.nome||'—';
+    var empresa=m.empresa||kb.empresa||'';
+    var dataISO=_pgDate(m.dtISO||'')||_pgDate(fu.dt||'');
+    var closer=m.responsavel||'';
+    var fat=m.faturamentoLead||kb.faturamento||'';
+    var motivo=res==='retorno'?'retorno':(fu.motivo||'');
+    out.push({fid:fid,nome:nome,empresa:empresa,tel:tel,data:dataISO,closer:closer,fat:fat,motivo:motivo,resultado:res});
+  });
+  out.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+  return out;
+}
+function _pregaoFiltrada(){
+  var all=_pregaoLista();
+  var bus=(_pgBusca||'').toLowerCase();
+  return all.filter(function(r){
+    if(_pgDe && (!r.data || r.data < _pgDe)) return false;
+    if(_pgAte && (!r.data || r.data > _pgAte)) return false;
+    if(_pgMot!=='all' && (r.motivo||'')!==_pgMot) return false;
+    if(bus && !((r.nome||'').toLowerCase().includes(bus)||(r.empresa||'').toLowerCase().includes(bus)||(r.tel||'').includes(bus))) return false;
+    return true;
+  });
+}
+function pregaoBaixarCSV(){
+  var rows=[['nome','empresa','telefone','data_reuniao','closer','faturamento','motivo','resultado']];
+  _pregaoFiltrada().forEach(function(r){rows.push([r.nome,r.empresa,r.tel,r.data,r.closer,r.fat,(_PG_MOT[r.motivo]||r.motivo),r.resultado]);});
+  var csv=rows.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='pregao_recuperacao.csv';document.body.appendChild(a);a.click();a.remove();
+}
+function renderPregao(){
+  var area=document.getElementById('content'); if(!area) return;
+  var list=_pregaoFiltrada();
+  var byMot={}; list.forEach(function(r){var k=r.motivo||'';byMot[k]=(byMot[k]||0)+1;});
+  var preco=byMot['preco']||0, retorno=byMot['retorno']||0;
+  var kpi=function(l,v,c){return '<div style="flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:26px;font-weight:800;color:'+(c||'var(--white)')+';line-height:1;">'+v+'</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:6px;">'+l+'</div></div>';};
+  var inp='background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;padding:7px 10px;';
+  var motOpts='<option value="all">Todos os motivos</option>'+Object.keys(_PG_MOT).map(function(k){return '<option value="'+k+'"'+(_pgMot===k?' selected':'')+'>'+_PG_MOT[k]+'</option>';}).join('');
+  var H='<div class="page active" style="padding:22px;max-width:1500px;margin:0 auto;">'+
+    '<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="page-title"><i class="ti ti-flame" style="color:#f59e0b;margin-right:6px;"></i>Pregão · Recuperação</div><div class="page-sub">Quem fez reunião e NÃO fechou — base para reativar com oferta. Filtre por período e por motivo.</div></div>'+
+      '<button onclick="pregaoBaixarCSV()" class="btn btn-outline" style="font-size:12px;padding:8px 13px;"><i class="ti ti-download"></i> Baixar CSV</button></div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;">'+kpi('Não fecharam (filtro)',list.length,'#f59e0b')+kpi('Perdidos por preço',preco,'var(--red)')+kpi('Em retorno',retorno,'var(--cyan)')+'</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">'+
+      '<label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Reunião de</label>'+
+      '<input type="date" value="'+_pgDe+'" onchange="_pgDe=this.value;renderPregao();" style="'+inp+'">'+
+      '<span style="color:var(--muted);font-size:12px;">até</span>'+
+      '<input type="date" value="'+_pgAte+'" onchange="_pgAte=this.value;renderPregao();" style="'+inp+'">'+
+      '<select onchange="_pgMot=this.value;renderPregao();" style="'+inp+'">'+motOpts+'</select>'+
+      '<input placeholder="🔍 nome, empresa ou telefone" value="'+esc(_pgBusca)+'" oninput="_pgBusca=this.value;clearTimeout(window._pgT);window._pgT=setTimeout(renderPregao,250);" style="'+inp+'flex:1;min-width:200px;">'+
+    '</div>';
+  if(!list.length){
+    H+='<div class="empty-st" style="padding:40px;text-align:center;color:var(--muted);"><i class="ti ti-inbox" style="font-size:32px;"></i><p>Nenhuma reunião não-fechada nesse filtro.</p></div>';
+  } else {
+    var rows=list.map(function(r){
+      var motLbl=_PG_MOT[r.motivo]||r.motivo||'—';
+      var motColor=r.motivo==='preco'?'var(--red)':r.motivo==='retorno'?'var(--cyan)':'var(--muted)';
+      var dataBR=r.data?r.data.split('-').reverse().join('/'):'—';
+      var wa=r.tel?('https://wa.me/'+(r.tel.length<=11?'55'+r.tel:r.tel)):'';
+      return '<tr style="border-bottom:1px solid rgba(255,255,255,.05);">'+
+        '<td style="padding:9px 10px;font-weight:600;font-size:13px;">'+esc(r.nome)+(r.empresa?'<div style="font-size:11px;color:var(--muted);font-weight:400;">'+esc(r.empresa)+'</div>':'')+'</td>'+
+        '<td style="padding:9px 10px;font-size:12.5px;font-variant-numeric:tabular-nums;">'+esc(r.tel||'—')+(r.tel?' <button onclick="navigator.clipboard.writeText(\''+r.tel+'\').catch(function(){});" style="background:none;border:none;color:var(--cyan);cursor:pointer;" title="Copiar"><i class="ti ti-copy"></i></button>':'')+'</td>'+
+        '<td style="padding:9px 10px;color:var(--muted);font-size:12.5px;">'+dataBR+'</td>'+
+        '<td style="padding:9px 10px;font-size:12.5px;">'+esc(r.closer||'—')+'</td>'+
+        '<td style="padding:9px 10px;font-size:12px;color:var(--muted);">'+esc(r.fat||'—')+'</td>'+
+        '<td style="padding:9px 10px;font-size:12.5px;color:'+motColor+';font-weight:600;">'+esc(motLbl)+'</td>'+
+        '<td style="padding:9px 10px;text-align:right;">'+(wa?'<a href="'+wa+'" target="_blank" class="btn btn-outline" style="padding:4px 9px;font-size:11px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+'</td>'+
+      '</tr>';
+    }).join('');
+    H+='<div style="overflow-x:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;"><table style="width:100%;border-collapse:collapse;">'+
+      '<thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);"><th style="text-align:left;padding:9px 10px;">Cliente</th><th style="text-align:left;padding:9px 10px;">WhatsApp</th><th style="text-align:left;padding:9px 10px;">Reunião</th><th style="text-align:left;padding:9px 10px;">Closer</th><th style="text-align:left;padding:9px 10px;">Faturamento</th><th style="text-align:left;padding:9px 10px;">Motivo</th><th></th></tr></thead>'+
+      '<tbody>'+rows+'</tbody></table></div>';
+  }
+  H+='</div>';
+  area.innerHTML=H; area.setAttribute('data-page','pregao');
+}
 function renderFollowup(){
   var tab=window._fuTab||'visao-geral';
   // Start real-time lock listener
