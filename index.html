@@ -17727,8 +17727,8 @@ function pregaoBaixarCSV(){
   var csv=rows.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='pregao_recuperacao.csv';document.body.appendChild(a);a.click();a.remove();
 }
+function _pgRefresh(){var a=document.getElementById('content');if(a)a.innerHTML=renderPregao();}
 function renderPregao(){
-  var area=document.getElementById('content'); if(!area) return;
   var list=_pregaoFiltrada();
   var byMot={}; list.forEach(function(r){var k=r.motivo||'';byMot[k]=(byMot[k]||0)+1;});
   var preco=byMot['preco']||0, retorno=byMot['retorno']||0;
@@ -17741,11 +17741,11 @@ function renderPregao(){
     '<div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;">'+kpi('Não fecharam (filtro)',list.length,'#f59e0b')+kpi('Perdidos por preço',preco,'var(--red)')+kpi('Em retorno',retorno,'var(--cyan)')+'</div>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">'+
       '<label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Reunião de</label>'+
-      '<input type="date" value="'+_pgDe+'" onchange="_pgDe=this.value;renderPregao();" style="'+inp+'">'+
+      '<input type="date" value="'+_pgDe+'" onchange="_pgDe=this.value;_pgRefresh();" style="'+inp+'">'+
       '<span style="color:var(--muted);font-size:12px;">até</span>'+
-      '<input type="date" value="'+_pgAte+'" onchange="_pgAte=this.value;renderPregao();" style="'+inp+'">'+
-      '<select onchange="_pgMot=this.value;renderPregao();" style="'+inp+'">'+motOpts+'</select>'+
-      '<input placeholder="🔍 nome, empresa ou telefone" value="'+esc(_pgBusca)+'" oninput="_pgBusca=this.value;clearTimeout(window._pgT);window._pgT=setTimeout(renderPregao,250);" style="'+inp+'flex:1;min-width:200px;">'+
+      '<input type="date" value="'+_pgAte+'" onchange="_pgAte=this.value;_pgRefresh();" style="'+inp+'">'+
+      '<select onchange="_pgMot=this.value;_pgRefresh();" style="'+inp+'">'+motOpts+'</select>'+
+      '<input placeholder="🔍 nome, empresa ou telefone" value="'+esc(_pgBusca)+'" oninput="_pgBusca=this.value;clearTimeout(window._pgT);window._pgT=setTimeout(_pgRefresh,250);" style="'+inp+'flex:1;min-width:200px;">'+
     '</div>';
   if(!list.length){
     H+='<div class="empty-st" style="padding:40px;text-align:center;color:var(--muted);"><i class="ti ti-inbox" style="font-size:32px;"></i><p>Nenhuma reunião não-fechada nesse filtro.</p></div>';
@@ -17770,7 +17770,7 @@ function renderPregao(){
       '<tbody>'+rows+'</tbody></table></div>';
   }
   H+='</div>';
-  area.innerHTML=H; area.setAttribute('data-page','pregao');
+  return H;
 }
 function renderFollowup(){
   var tab=window._fuTab||'visao-geral';
