@@ -386,7 +386,7 @@ window.onerror=function(msg,src,line,col,err){
 var USERS={
   'lucas@audens.com':{pw:'audens2025',role:'gestor',name:'Lucas Siqueira',initials:'LS',closer:'Lucas',funcao:'gestor'},
   'gustavo@audens.com':{pw:'closer2025',role:'atendente',name:'Gustavo Pimenta',initials:'GP',closer:'Gustavo',funcao:'closer'},
-  'joao@audens.com':{pw:'sdr2025',role:'atendente',name:'João Silva',initials:'JS',closer:'João',funcao:'sdr'},
+  'joao@audens.com':{pw:'sdr2025',role:'gestor',name:'João Silva',initials:'JS',closer:'João',funcao:'sdr'},
   'arthur@audens.com':{pw:'audens2025',role:'gestor',name:'Arthur Menezes',initials:'AM',closer:'Arthur',funcao:'gestor'}
 };
 // Senhas originais do código — nunca sobrescritas pelo Firebase
@@ -4791,6 +4791,11 @@ function buildNav(){
   ];
 
   var _baseDef=CU.role==='gestor'?gestorDef:(CU.funcao==='sdr'?sdrDef:closerDef);
+  // João: acesso completo (nível gestor), menos as 5 abas do Financeiro (Dashboard, Receitas, Despesas, Lançamentos, Contas)
+  var _JOAO_FIN_BLOCK=['fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas','financeiro'];
+  if(CU&&CU.email==='joao@audens.com'){
+    _baseDef=_baseDef.map(function(it){ if(it&&it.group&&Array.isArray(it.items)){ var ni=Object.assign({},it); ni.items=it.items.filter(function(x){return _JOAO_FIN_BLOCK.indexOf(x.id)===-1;}); return ni; } return it; }).filter(function(it){ return !(it&&it.id&&_JOAO_FIN_BLOCK.indexOf(it.id)>=0) && !(it&&it.group&&Array.isArray(it.items)&&it.items.length===0); });
+  }
   // Aplica permissões customizadas (se gestor tiver definido para este usuário)
   var _allowed=CU.role!=='gestor'&&_navPermissions&&_navPermissions[CU.email]?_navPermissions[CU.email]:null;
   var def;
@@ -4958,6 +4963,7 @@ function showPage(id){
     'followup':renderFollowup,'pregao':renderPregao
   };
   var area=document.getElementById('content');
+  if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
   if(typeof FIN_PAGES!=='undefined'&&FIN_PAGES.indexOf(id)>=0&&!_finUnlocked){
     if(area){area.innerHTML=finLockScreen(id);area.setAttribute('data-page',id);setTimeout(function(){var _e=document.getElementById('fin-pass-inp');if(_e)_e.focus();},60);}
     return;
