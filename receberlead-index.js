@@ -694,9 +694,16 @@ async function handleReceberLead(req, res) {
       // LP V2 / FV1 (quiz): experiência preservada — mensagem de agendamento como sempre.
       await enviarMensagemWhatsapp(tel, mensagemQuizQualificado(nome));
     } else {
-      // LP Nova / lead frio: Momento 0 (curiosidade) + mensagem de valor logo em seguida.
+      // LP Nova / lead frio: Momento 0 (curiosidade) sempre.
       await enviarMensagemWhatsapp(tel, mensagemMomento0(nome));
-      try { await enviarMensagemWhatsapp(tel, mensagemPrimeiroContato(nome)); } catch (e) { console.error("momento0 valor:", e); }
+      // Régua de nurturing (Gregori): se LIGADA e lead QUALIFICADO (>=40k), entra na régua —
+      // a msg de valor vem +5min DEPOIS do João ligar (não agora). Senão, comportamento antigo.
+      var _nurtOn = false; try { _nurtOn = ((await db.ref("config/nurturing/enabled").once("value")).val() === true); } catch (e) {}
+      var _nr = { qualified: false };
+      if (_nurtOn) { try { _nr = await nurtStart(key, leadData); } catch (e) { console.error("nurtStart:", e); } }
+      if (!_nr.qualified) {
+        try { await enviarMensagemWhatsapp(tel, mensagemPrimeiroContato(nome)); } catch (e) { console.error("momento0 valor:", e); }
+      }
     }
   }
 
@@ -3202,6 +3209,7 @@ async function handleCadenciaDrain(req, res) {
   var out = { enabled: cfg.enabled, processed: 0, sent: 0, cancelled: 0, failed: 0, testPhone: cfg.testPhone ? cadMask(cfg.testPhone) : "" };
   try { out.camp = await campDrainCore(); } catch (e) { console.error("campDrain:", e); }
   try { out.audensday = await adDrainCore(); } catch (e) { console.error("adDrain:", e); }
+  try { out.nurturing = await nurtTickCore(); } catch (e) { console.error("nurtTickCore:", e); } // independe da cadencia principal
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
   var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
   if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
@@ -4161,6 +4169,122 @@ async function campDrainCore() {
   return out;
 }
 
+// ═══════════════════════ RÉGUA DE NURTURING (lead entrou e NÃO agendou) ═══════════════════════
+// Plano Gregori. Nasce DESLIGADA. Ligar em config/nurturing { enabled:true, testPhone:"55..." }.
+// Fluxo (só leads QUALIFICADOS >= R$40k, não-quiz): entrada manda só "{{nome}}?" + cria tarefa de
+// ligar imediata. Quando o João marca "Liguei" (contatoAt na tarefa), dispara: +5min msg de valor,
+// +1h nova tarefa de ligar, +1h05 tarefa de áudio. Em paralelo: 10 dias de tarefas de ligar
+// (manhã + tarde). As 10 mensagens automáticas (CAD_TEMPLATES) seguem rodando normalmente.
+const NURT_MIN_FAT = 40000;
+async function nurtCfg() {
+  try { var v = (await db.ref("config/nurturing").once("value")).val() || {};
+    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), dias: parseInt(v.dias, 10) || 10 }; }
+  catch (e) { return { enabled: false, testPhone: "", dias: 10 }; }
+}
+function nurtPeriodoAgora() { return (cadBRT(Date.now()).hour < 13) ? "manha" : "tarde"; }
+function nurtTaskBase(leadKey, lead, tipo, icon, periodo) {
+  return { leadKey: String(leadKey), nome: lead.nome || "", telefone: String(lead.telefone || "").replace(/\D/g, ""),
+    empresa: lead.empresa || "", faturamento: lead.faturamento || lead.faixa || "", tipo: tipo, icon: icon || "ti-phone",
+    dia: 0, periodo: periodo || nurtPeriodoAgora(), dataISO: new Date().toISOString().slice(0, 10),
+    done: false, doneAt: null, nurt: true, createdAt: Date.now() };
+}
+async function nurtCreateTaskOnce(key, lead, tipo, icon, periodo) {
+  var ref = db.ref("sdr_tarefas/" + key);
+  var cur = (await ref.once("value")).val();
+  if (cur) return false;
+  await ref.set(nurtTaskBase(key.replace(/_nurt_.*/, ""), lead, tipo, icon, periodo));
+  return true;
+}
+// Inicia a régua na entrada. Retorna {qualified:true} se entrou na régua (caller NÃO manda a msg de valor).
+async function nurtStart(leadKey, lead) {
+  try {
+    var fm = _fatMinSrv(lead.faixa || "", lead.faturamento || "");
+    if (!fm || fm < NURT_MIN_FAT) return { qualified: false };
+    var now = Date.now();
+    await db.ref("leads/" + leadKey + "/nurt").set({ status: "active", enteredAt: now, fatMin: fm,
+      ligouAt: null, valueSentAt: null, call2Created: false, audioCreated: false, createdAt: now });
+    await db.ref("nurt_ativos/" + leadKey).set({ at: now, tel: String(lead.telefone || "").replace(/\D/g, ""), nome: lead.nome || "" });
+    await nurtCreateTaskOnce(leadKey + "_nurt_call0", lead, "📞 Ligar — novo lead qualificado · " + primeiroNomeDe(lead.nome || ""), "ti-phone", nurtPeriodoAgora());
+    await db.ref("cadencia_events").push({ type: "nurt_started", leadKey: leadKey, fatMin: fm, at: now });
+    return { qualified: true };
+  } catch (e) { console.error("nurtStart:", e); return { qualified: false }; }
+}
+async function nurtStop(leadKey, reason) {
+  try {
+    await db.ref("leads/" + leadKey + "/nurt/status").set("stopped");
+    await db.ref("nurt_ativos/" + leadKey).remove();
+    // remove tarefas de nurturing ainda pendentes (não mexe nas já concluídas)
+    var all = (await db.ref("sdr_tarefas").once("value")).val() || {};
+    var upd = {};
+    Object.keys(all).forEach(function (tk) { if (tk.indexOf(leadKey + "_nurt_") === 0 && all[tk] && !all[tk].done) upd["sdr_tarefas/" + tk] = null; });
+    if (Object.keys(upd).length) await db.ref().update(upd);
+    await db.ref("cadencia_events").push({ type: "nurt_stopped", leadKey: leadKey, reason: reason || "", at: Date.now() });
+  } catch (e) { console.error("nurtStop:", e); }
+}
+// Núcleo do tick: processa a sequência temporizada + gera as tarefas diárias. Chamado pelo drain e por /nurt-tick.
+async function nurtTickCore(cfg) {
+  cfg = cfg || await nurtCfg();
+  var out = { enabled: cfg.enabled, ativos: 0, valor_enviado: 0, call2: 0, audio: 0, diarias: 0, parados: 0 };
+  if (!cfg.enabled) { out.note = "nurturing DESLIGADO"; return out; }
+  var ativos = (await db.ref("nurt_ativos").once("value")).val() || {};
+  var keys = Object.keys(ativos); out.ativos = keys.length;
+  var now = Date.now();
+  for (var i = 0; i < keys.length; i++) {
+    var leadKey = keys[i];
+    var lead = (await db.ref("leads/" + leadKey).once("value")).val();
+    if (!lead || !lead.nurt || lead.nurt.status !== "active") { await db.ref("nurt_ativos/" + leadKey).remove(); continue; }
+    // para se agendou / saiu das colunas / opt-out
+    var kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {};
+    var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+    if ((opt && opt.optOut) || (kb.status && !CAD_COLUNAS_OK[kb.status])) {
+      await nurtStop(leadKey, (opt && opt.optOut) ? "opt_out" : (kb.status === "reuniao" ? "meeting_scheduled" : "left_columns"));
+      out.parados++; continue;
+    }
+    var nurt = lead.nurt;
+    var alvo = cfg.testPhone || String(lead.telefone || "").replace(/\D/g, "");
+    // 1) detecta a 1ª ligação feita (tarefa call0 concluída -> contatoAt)
+    if (!nurt.ligouAt) {
+      var t0 = (await db.ref("sdr_tarefas/" + leadKey + "_nurt_call0").once("value")).val();
+      if (t0 && t0.done && (t0.contatoAt || t0.doneAt)) {
+        nurt.ligouAt = t0.contatoAt || t0.doneAt;
+        await db.ref("leads/" + leadKey + "/nurt/ligouAt").set(nurt.ligouAt);
+      }
+    }
+    // 2) +5min após ligar -> mensagem de valor
+    if (nurt.ligouAt && !nurt.valueSentAt && now >= (nurt.ligouAt + 5 * 60000)) {
+      try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE nurt valor] " : "") + mensagemPrimeiroContato(lead.nome || "")); } catch (e) {}
+      await db.ref("leads/" + leadKey + "/nurt/valueSentAt").set(now); out.valor_enviado++;
+    }
+    // 3) +1h após ligar -> nova tarefa de ligar
+    if (nurt.ligouAt && !nurt.call2Created && now >= (nurt.ligouAt + 60 * 60000)) {
+      await nurtCreateTaskOnce(leadKey + "_nurt_call2", lead, "📞 Ligar 2ª vez · " + primeiroNomeDe(lead.nome || ""), "ti-phone", nurtPeriodoAgora());
+      await db.ref("leads/" + leadKey + "/nurt/call2Created").set(true); out.call2++;
+    }
+    // 4) +1h05 após ligar -> tarefa de áudio (João grava e manda)
+    if (nurt.ligouAt && !nurt.audioCreated && now >= (nurt.ligouAt + 65 * 60000)) {
+      await nurtCreateTaskOnce(leadKey + "_nurt_audio", lead, "🎙️ Gravar e mandar áudio curto · " + primeiroNomeDe(lead.nome || ""), "ti-microphone", nurtPeriodoAgora());
+      await db.ref("leads/" + leadKey + "/nurt/audioCreated").set(true); out.audio++;
+    }
+    // 5) 10 dias de tarefas de ligar (manhã + tarde) — idempotente por chave determinística
+    var sd = cadBRT(nurt.enteredAt).date;
+    var dia = cadDaysBetween(sd, cadBRT(now).date) + 1;
+    if (dia >= 1 && dia <= (cfg.dias || 10)) {
+      var perNow = nurtPeriodoAgora();
+      var created = await nurtCreateTaskOnce(leadKey + "_nurt_d" + dia + "_" + perNow, lead, "📞 Ligar (dia " + dia + " · " + (perNow === "manha" ? "manhã" : "tarde") + ") · " + primeiroNomeDe(lead.nome || ""), "ti-phone", perNow);
+      if (created) out.diarias++;
+    } else if (dia > (cfg.dias || 10)) {
+      await db.ref("leads/" + leadKey + "/nurt/status").set("completed");
+      await db.ref("nurt_ativos/" + leadKey).remove(); out.parados++;
+    }
+  }
+  return out;
+}
+async function handleNurtTick(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  return res.status(200).json(await nurtTickCore());
+}
+// ═══════════════════════ FIM RÉGUA DE NURTURING ═══════════════════════
+
 http('receberLead', async (req, res) => {
   // CORS: o CRM (index.html) chama /agendar via fetch POST com
   // Content-Type: application/json, o que faz o navegador disparar um
@@ -4554,6 +4678,21 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/wa-inbound") {
       return await handleWaInbound(req, res);
+    }
+    if (path === "/nurt-tick") {
+      return await handleNurtTick(req, res);
+    }
+    if (path === "/nurt-config") {
+      if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+      var _nb = req.body || {}; if (typeof _nb === "string") { try { _nb = JSON.parse(_nb); } catch (e) { _nb = {}; } }
+      var _nu = {};
+      if (_nb.enabled !== undefined) _nu.enabled = (_nb.enabled === true || _nb.enabled === "true");
+      if (_nb.testPhone !== undefined) _nu.testPhone = String(_nb.testPhone || "").replace(/\D/g, "");
+      if (_nb.dias !== undefined) _nu.dias = parseInt(_nb.dias, 10) || 10;
+      _nu.at = Date.now();
+      await db.ref("config/nurturing").update(_nu);
+      var _cur = (await db.ref("config/nurturing").once("value")).val() || {};
+      return res.status(200).json({ ok: true, config: _cur });
     }
     if (path === "/cockpit-venda") {
       return await handleCockpitProxy(req, res);

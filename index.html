@@ -2513,7 +2513,7 @@ function _leadNaCadencia5d(k){
   var d=new Date(sa+'T12:00:00'); if(isNaN(d.getTime()))return true;
   return (Date.now()-d.getTime())/86400000 < 10;
 }
-function _isLigacaoTask(tk,t){ t=t||{}; return /liga/i.test(t.tipo||''); }
+function _isLigacaoTask(tk,t){ t=t||{}; return /liga/i.test(t.tipo||'') || /_nurt_/.test(tk||'') || t.nurt===true; }
 function _isReplyTask(tk,t){ t=t||{}; return /_resposta$/.test(tk||'')||/respond/i.test(t.tipo||''); }
 function _isJoaoTask(tk,t){ return _isLigacaoTask(tk,t)||_isReplyTask(tk,t); }
 // João só tem tarefas de LIGAÇÃO — apaga qualquer outra (resposta, horário lotado, etc.)
@@ -33339,6 +33339,8 @@ function renderCadenciaPainel(){
     '<button onclick="cadPainelSimAgendamento()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Testar agendamento</button>'+
     '<button onclick="cadPainelBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.4);">Inscrever leads</button>'+
     '<button onclick="cadPainelNoshowBackfill()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#a78bfa;border-color:rgba(167,139,250,.4);">Recontatar no-shows</button>'+
+    '<button onclick="nurtPainelToggle(true)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#22c55e;border-color:rgba(34,197,94,.45);">🔥 Régua Nurturing · LIGAR</button>'+
+    '<button onclick="nurtPainelToggle(false)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:var(--red);border-color:rgba(239,68,68,.4);">Nurturing · desligar</button>'+
     '<button onclick="cadPainelAudensBase()" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">⭐ Audens Day · montar base</button>'+
     '<button onclick="cadPainelAudensSend(1)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">Audens Day · enfileirar dia 1</button>'+
     '<button onclick="cadPainelAudensSend(2)" class="btn btn-outline" style="font-size:11px;padding:7px 11px;color:#eab308;border-color:rgba(234,179,8,.45);">dia 2</button>'+
@@ -33357,6 +33359,24 @@ function renderCadenciaPainel(){
   '</div>';
 }
 
+async function nurtPainelToggle(on){
+  var st=document.getElementById('cadp-status');
+  var testPhone='';
+  if(on){
+    var usar=confirm('Ligar a Régua de Nurturing?\n\nLeads novos QUALIFICADOS (≥ R$40k) passam a receber só "{{nome}}?" na entrada + tarefa de ligar pro João. A mensagem de valor sai 5min depois que o João marcar que ligou.\n\nOK = ligar em MODO TESTE (todas as mensagens vão pra 1 número só)\nCancelar = ligar PRA VALER (mensagens vão pros leads reais)');
+    if(usar){ testPhone=prompt('Número de teste (DDD+número, só dígitos). TODAS as mensagens da régua irão pra ele:','')||''; testPhone=testPhone.replace(/\D/g,''); if(testPhone && testPhone.length<10){ alert('Número inválido. Cancelado.'); return; } }
+  } else {
+    if(!confirm('Desligar a Régua de Nurturing? Para de criar tarefas e de mandar as mensagens da régua.')) return;
+  }
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> '+(on?'Ligando':'Desligando')+' a régua…';}
+  try{
+    var body={enabled:!!on}; if(on) body.testPhone=testPhone;
+    var r=await fetch(RECEBERLEAD_URL+'/nurt-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var j={};try{j=await r.json();}catch(e){}
+    if(j&&j.ok){ if(st){st.style.color=on?'var(--green)':'var(--muted)';st.textContent='✓ Régua de Nurturing '+(on?('LIGADA'+(j.config&&j.config.testPhone?(' · modo teste → '+j.config.testPhone):' · PRA VALER')):'desligada')+'.';} }
+    else { if(st){st.style.color='var(--amber)';st.textContent='Não consegui aplicar — a rota /nurt-config já está no deploy do receberlead?';} }
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
 async function cadPainelAudensBase(){
   var st=document.getElementById('cadp-status');
   if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Montando base do Audens Day…';}
