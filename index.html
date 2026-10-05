@@ -2363,7 +2363,7 @@ function renderMinhasTarefas(){
   var amanha=new Date(hoje); amanha.setDate(amanha.getDate()+1);
   var amanhaISO=amanha.toISOString().split('T')[0];
 
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(t.nurt===true||/_nurt_/.test(t._key||''))return true;if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
   var pend=all.filter(function(t){return !t.done;});
   var atrasadas=pend.filter(function(t){return t.dataISO<hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
   var hojeT=pend.filter(function(t){return t.dataISO===hojeISO;});
@@ -2406,7 +2406,7 @@ function sdrKpiBoxHtml(label,value,colorVar){
 }
 function renderDesempenhoSDR(){
   var hojeISO=new Date().toISOString().split('T')[0];
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(t.nurt===true||/_nurt_/.test(t._key||''))return true;if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
   var total=all.length;
   var done=all.filter(function(t){return t.done;}).length;
   var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
@@ -4714,6 +4714,7 @@ function buildNav(){
       {id:'reunioes-noshow',icon:'ti-user-off',label:'No-show'}
     ]},
     {group:'SDR',icon:'ti-report-analytics',items:[
+      {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
       {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
       {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
