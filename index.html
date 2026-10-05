@@ -4969,7 +4969,7 @@ function showPage(id){
   if(map[id]){try{area.innerHTML=map[id]();}catch(e){area.innerHTML='<div style="color:#f87171;padding:30px;font-family:monospace;font-size:13px;"><b>Erro ao renderizar página ('+id+'):</b><br>'+e.message+'<br><pre>'+e.stack+'</pre></div>';console.error('showPage error['+id+']:',e);}area.setAttribute('data-page',id);
     // Auto-load async pages
     if(id==='sdr-hoje') setTimeout(loadSDRHoje,50);
-    if(id==='pregao'){ if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='pregao'&&typeof _pgRefresh==='function')_pgRefresh(); }).catch(function(){_fuSheetLoading=false;}); } }
+    if(id==='pregao'){ _pgLoadMotivos(function(){ if(window._currentPage==='pregao'&&typeof _pgRefresh==='function')_pgRefresh(); }); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='pregao'&&typeof _pgRefresh==='function')_pgRefresh(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='sdr-reunioes') setTimeout(loadSDRAll,50);
     if(id==='reunioes'||id==='reunioes-noshow') setTimeout(loadFunilReunioes,50);
     if(id==='reunioes') setTimeout(function(){_suLoadInbound(function(){var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='reunioes')showPage('reunioes');});},80);
@@ -18194,6 +18194,9 @@ function _fuBuildUniverse(){
 }
 
 var _pgDe='',_pgAte='',_pgMot='all',_pgBusca='',_pgCloser='all',_pgFat='all';
+var _pgMotivos={};
+function _pgLoadMotivos(cb){ try{ if(!(fbDb||initFirebase())){ if(cb)cb(); return; } fbDb.ref('pregao_motivos').once('value').then(function(s){ _pgMotivos=s.val()||{}; if(cb)cb(); }).catch(function(){ if(cb)cb(); }); }catch(e){ if(cb)cb(); } }
+function pregaoSetMotivo(key,val){ if(!key) return; _pgMotivos[key]=val; try{ if(fbDb||initFirebase()) fbDb.ref('pregao_motivos/'+key).set(val); }catch(e){} _pgRefresh(); }
 var _PG_MOT={preco:'Preço alto',tempo:'Sem tempo',concorrente:'Foi com concorrente',nao_convenceu:'Não se convenceu',socio:'Consultar sócio',outro:'Outro',retorno:'Em retorno','':'Sem motivo'};
 function _pgDate(x){ if(!x) return ''; if(/^\d{4}-\d{2}-\d{2}/.test(x)) return String(x).slice(0,10); var m=String(x).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) return m[3]+'-'+m[2]+'-'+m[1]; return ''; }
 function _pgISO(d){ try{ var x=(d instanceof Date)?d:new Date(d); if(isNaN(x)) return ''; var b=new Date(x.getTime()); return b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-'+String(b.getDate()).padStart(2,'0'); }catch(e){ return ''; } }
@@ -18202,9 +18205,11 @@ function _pregaoLista(){
   var uni=[]; try{ uni=_fuBuildUniverse()||[]; }catch(e){ console.error('pregao universe',e); return []; }
   return uni.filter(function(l){ return l.category==='nao_fechou'||l.category==='perdido'; }).map(function(l){
     var fu=l.fu||{};
-    var motivo=(fu.resultado==='retorno')?'retorno':(fu.motivo||'');
+    var _pk=String(l.tel||'').replace(/\D/g,'')||String(l.fid||l.id||'');
+    var motivo=(_pgMotivos[_pk]!=null)?_pgMotivos[_pk]:((fu.resultado==='retorno')?'retorno':(fu.motivo||''));
     var fatStr=l.faturamento?('R$ '+Number(l.faturamento).toLocaleString('pt-BR')):'';
     return {
+      pk:_pk,
       fid:l.fid||l.id, nome:l.nome||'—',
       empresa:(l.empresa&&l.empresa!==l.nome)?l.empresa:'',
       tel:String(l.tel||'').replace(/\D/g,''),
@@ -18284,7 +18289,7 @@ function renderPregao(){
         '<td style="padding:9px 10px;color:var(--muted);font-size:12.5px;">'+dataBR+'</td>'+
         '<td style="padding:9px 10px;font-size:12.5px;">'+esc(r.closer||'—')+'</td>'+
         '<td style="padding:9px 10px;font-size:12px;color:var(--muted);">'+esc(r.fat||'—')+'</td>'+
-        '<td style="padding:9px 10px;font-size:12.5px;color:'+motColor+';font-weight:600;">'+esc(motLbl)+'</td>'+
+        '<td style="padding:6px 8px;"><select onchange="pregaoSetMotivo(\''+r.pk+'\',this.value)" title="Editar motivo" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:'+motColor+';font-size:12px;font-weight:600;padding:4px 6px;max-width:160px;cursor:pointer;">'+Object.keys(_PG_MOT).map(function(k){return '<option value="'+k+'"'+(r.motivo===k?' selected':'')+'>'+_PG_MOT[k]+'</option>';}).join('')+'</select></td>'+
         '<td style="padding:9px 10px;text-align:right;">'+(wa?'<a href="'+wa+'" target="_blank" class="btn btn-outline" style="padding:4px 9px;font-size:11px;"><i class="ti ti-brand-whatsapp"></i></a>':'')+'</td>'+
       '</tr>';
     }).join('');
