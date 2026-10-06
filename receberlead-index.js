@@ -4265,14 +4265,11 @@ async function nurtTickCore(cfg) {
       await nurtCreateTaskOnce(leadKey + "_nurt_audio", lead, "🎙️ Gravar e mandar áudio curto · " + primeiroNomeDe(lead.nome || ""), "ti-microphone", nurtPeriodoAgora());
       await db.ref("leads/" + leadKey + "/nurt/audioCreated").set(true); out.audio++;
     }
-    // 5) 10 dias de tarefas de ligar (manhã + tarde) — idempotente por chave determinística
+    // 5) Encerra a régua após o período. As tarefas de ligar diárias (manhã + tarde por 10 dias)
+    //    são geradas pelo CADENCIA_SDR do CRM (não aqui) — evita duplicar com o motor de nurturing.
     var sd = cadBRT(nurt.enteredAt).date;
     var dia = cadDaysBetween(sd, cadBRT(now).date) + 1;
-    if (dia >= 1 && dia <= (cfg.dias || 10)) {
-      var perNow = nurtPeriodoAgora();
-      var created = await nurtCreateTaskOnce(leadKey + "_nurt_d" + dia + "_" + perNow, lead, "📞 Ligar (dia " + dia + " · " + (perNow === "manha" ? "manhã" : "tarde") + ") · " + primeiroNomeDe(lead.nome || ""), "ti-phone", perNow);
-      if (created) out.diarias++;
-    } else if (dia > (cfg.dias || 10)) {
+    if (dia > (cfg.dias || 10)) {
       await db.ref("leads/" + leadKey + "/nurt/status").set("completed");
       await db.ref("nurt_ativos/" + leadKey).remove(); out.parados++;
     }
