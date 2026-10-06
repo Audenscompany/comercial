@@ -616,6 +616,7 @@ function startRealtimeSync(){
     kanbanData = fbKanban;
     try{ purgeArchivedLeadTasks(); }catch(e){}
     try{ autoArquivarLeadsAntigos(); }catch(e){}
+    try{ autoArquivarLeadsBaixoFat(); }catch(e){}
     var changed = JSON.stringify(kanbanData) !== prev;
     if(changed){
       localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -2365,7 +2366,7 @@ function renderMinhasTarefas(){
   var amanha=new Date(hoje); amanha.setDate(amanha.getDate()+1);
   var amanhaISO=amanha.toISOString().split('T')[0];
 
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(t.nurt===true||/_nurt_/.test(t._key||''))return true;if(isCall){var _fv=parseFaturamentoValue(t.faturamento||'');var _kb=(typeof kanbanData!=='undefined'&&kanbanData[t.leadKey])||null;if(_kb){var _kv=parseFaturamentoValue(_kb.faturamento||'');if(_kv>_fv)_fv=_kv;}if(_fv<KANBAN_TASK_FAT_MIN)return false;}if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(t.nurt===true||/_nurt_/.test(t._key||''))return true;if(isCall){var _kb=(typeof kanbanData!=='undefined'&&kanbanData[t.leadKey])||null;var _faix=(_kb&&_kb.faixa)||'',_fat=t.faturamento||(_kb&&_kb.faturamento)||'';if(!_qual40(_faix,_fat))return false;}if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
   var pend=all.filter(function(t){return !t.done;});
   var atrasadas=pend.filter(function(t){return t.dataISO<hojeISO;}).sort(function(a,b){return a.dataISO.localeCompare(b.dataISO);});
   var hojeT=pend.filter(function(t){return t.dataISO===hojeISO;});
@@ -2408,7 +2409,7 @@ function sdrKpiBoxHtml(label,value,colorVar){
 }
 function renderDesempenhoSDR(){
   var hojeISO=new Date().toISOString().split('T')[0];
-  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(t.nurt===true||/_nurt_/.test(t._key||''))return true;if(isCall){var _fv=parseFaturamentoValue(t.faturamento||'');var _kb=(typeof kanbanData!=='undefined'&&kanbanData[t.leadKey])||null;if(_kb){var _kv=parseFaturamentoValue(_kb.faturamento||'');if(_kv>_fv)_fv=_kv;}if(_fv<KANBAN_TASK_FAT_MIN)return false;}if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
+  var all=Object.keys(sdrTarefas||{}).map(function(k){var o=Object.assign({},sdrTarefas[k]);o._key=k;return o;}).filter(function(t){var isCall=_isLigacaoTask(t._key,t),isReply=_isReplyTask(t._key,t);if(!isCall&&!isReply)return false;if(t.nurt===true||/_nurt_/.test(t._key||''))return true;if(isCall){var _kb=(typeof kanbanData!=='undefined'&&kanbanData[t.leadKey])||null;var _faix=(_kb&&_kb.faixa)||'',_fat=t.faturamento||(_kb&&_kb.faturamento)||'';if(!_qual40(_faix,_fat))return false;}if(!(cadenciaAtivos&&Object.keys(cadenciaAtivos).length))return true;if(!cadenciaAtivos[t.leadKey])return false;return isCall?_leadNaCadencia5d(t.leadKey):true;});
   var total=all.length;
   var done=all.filter(function(t){return t.done;}).length;
   var atrasadas=all.filter(function(t){return !t.done && t.dataISO<hojeISO;}).length;
@@ -2496,6 +2497,50 @@ var webhookVendaSecret=localStorage.getItem('webhookVendaSecret')||'';
 var KANBAN_FAT_DESTAQUE=20000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
 var KANBAN_TASK_FAT_MIN=40000;
+// Piso de faturamento (mesma logica do servidor _fatMinSrv): trata "ate X"/"menos de" como TETO (=0),
+// faixa "50-100" como 50000, e usa o menor valor do intervalo. "Ate R$40 mil" => 0 (NAO qualifica).
+function _fatFloorCli(faixa,faturamento){
+  var f=String(faixa||'').trim();
+  var m=f.match(/^(\d+)\s*-\s*(\d+)$/); if(m) return parseInt(m[1],10)*1000;
+  if(/^\d+\+$/.test(f)) return parseInt(f,10)*1000;
+  var s=String(faturamento||'').toLowerCase().trim(); if(!s) return 0;
+  if(/^\s*(r\$)?\s*(at[eé]|menos de|abaixo|no m[aá]ximo)/.test(s)) return 0;
+  var raw=s.match(/\d[\d.,]*/g); if(!raw) return 0;
+  var nums=raw.map(function(t){t=t.replace(/\.(?=\d{3}\b)/g,'').replace(/,(?=\d{3}\b)/g,'').replace(',','.');return parseFloat(t)||0;}).filter(function(x){return x>0;});
+  if(!nums.length) return 0;
+  var mn=Math.min.apply(null,nums);
+  if(s.indexOf('milh')!==-1) mn=mn*1e6; else if(s.indexOf('mil')!==-1 && mn<1000) mn=mn*1000;
+  return mn;
+}
+// Lead QUALIFICADO (>= R$40 mil) — piso. "Ate 40 mil" e sem-dado NAO qualificam.
+function _qual40(faixa,fat){ return _fatFloorCli(faixa,fat)>=KANBAN_TASK_FAT_MIN; }
+// Faturamento é CONHECIDO e abaixo de 40k (para arquivar). Sem-dado => false (nao arquiva).
+function _fatConhecidoBaixo(faixa,fat){ var temDado=!!(String(faixa||'').trim()||String(fat||'').trim()); return temDado && !_qual40(faixa,fat); }
+var _autoArqFatBusy=false;
+// Arquiva automaticamente leads com faturamento CONHECIDO < R$40 mil (em Novo/Qualificado),
+// pra nao poluir o kanban nem gerar tarefa. Sem-dado fica no funil.
+function autoArquivarLeadsBaixoFat(){
+  if(_autoArqFatBusy)return; if(!fbDb && !initFirebase())return;
+  if(typeof kanbanData==='undefined'||!kanbanData)return;
+  var now=Date.now(), updates={}, arq=[];
+  Object.keys(kanbanData).forEach(function(k){
+    var e=kanbanData[k]; if(!e)return;
+    var st=e.status||'novo'; if(st!=='novo'&&st!=='qualificado')return;
+    var _rec=(typeof _leadRec==='function')?_leadRec(e):null;
+    var faix=e.faixa||(_rec&&_rec.faixa)||''; var fat=e.faturamento||(_rec&&_rec.faturamento)||'';
+    if(!_fatConhecidoBaixo(faix,fat))return;
+    e.status='arquivado'; e.statusAt=now; var _sh=e.statusHistory||{}; _sh['arquivado']=now; e.statusHistory=_sh;
+    updates['kanban/'+k+'/status']='arquivado'; updates['kanban/'+k+'/statusAt']=now; updates['kanban/'+k+'/statusHistory']=_sh;
+    arq.push(k);
+  });
+  if(arq.length){
+    _autoArqFatBusy=true;
+    try{ fbDb.ref().update(updates); }catch(e){}
+    try{ localStorage.setItem('audens_kanban',JSON.stringify(kanbanData)); }catch(e){}
+    arq.forEach(function(k){ try{_arquivarLeadCadencia(k);}catch(e){} });
+    setTimeout(function(){_autoArqFatBusy=false;},2500);
+  }
+}
 // Estado das tarefas de cadencia (SDR)
 var sdrTarefas={};
 // Conjunto de leads ATIVOS na cadência (fonte de verdade do backend) — só esses geram tarefa do João
@@ -2621,8 +2666,7 @@ function kanbanBusinessDay(baseDate,n){
 // Gera as tarefas de cadencia para o Joao quando um lead qualificado (>= R$20 mil) entra no funil
 function generateCadenciaTasks(lead,leadKey,forced){
   if(!fbDb && !initFirebase()) return;
-  var fatVal=parseFaturamentoValue(lead.faturamento);
-  if(!forced && fatVal<KANBAN_TASK_FAT_MIN) return;
+  if(!forced && !_qual40(lead.faixa,lead.faturamento)) return;
   var base=new Date();
   // Se o lead chegou após as 17h (ou em fim de semana), tarefas começam no próximo dia útil
   if(base.getHours()>=17 || !checkDay(base).ok){
@@ -2653,10 +2697,9 @@ function purgeLowFatCallTasks(){
     var t=sdrTarefas[tk]; if(!t) return;
     if(!_isLigacaoTask(tk,t)) return;
     if(/_nurt_/.test(tk)||t.nurt===true) return;
-    var fv=parseFaturamentoValue(t.faturamento||'');
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[t.leadKey])||null;
-    if(kb){ var kv=parseFaturamentoValue(kb.faturamento||''); if(kv>fv) fv=kv; }
-    if(fv>=KANBAN_TASK_FAT_MIN) return;
+    var faix=(kb&&kb.faixa)||'', fat=t.faturamento||(kb&&kb.faturamento)||'';
+    if(_qual40(faix,fat)) return; // >=40k fica
     upd['sdr_tarefas/'+tk]=null; delete sdrTarefas[tk]; n++;
   });
   if(n){ try{ fbDb.ref().update(upd); }catch(e){} try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
@@ -2671,7 +2714,7 @@ function syncJoaoCallTasks(){
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[leadKey])||{};
     var ca=(cadenciaAtivos&&cadenciaAtivos[leadKey])||{};
     // Só gera tarefa de ligação para lead QUALIFICADO (>= R$40 mil). Nada de tarefa em lead <40k.
-    if(parseFaturamentoValue(kb.faturamento||ca.faturamento||'')<KANBAN_TASK_FAT_MIN) return;
+    if(!_qual40(kb.faixa||ca.faixa||'', kb.faturamento||ca.faturamento||'')) return;
     generateCadenciaTasks({nome:kb.nome||ca.nome||ca.primeiroNome||'',telefone:kb.telefone||ca.telefone||ca.phone||'',empresa:kb.empresa||ca.empresa||'',faturamento:kb.faturamento||ca.faturamento||''},leadKey);
   });
 }
