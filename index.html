@@ -12205,7 +12205,7 @@ function buildDashComHTML(data){
 
   // ---- BASE METRICS ----
   var totalLeads=leadsF.length;
-  var leadsQ=leadsF.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
+  var leadsQ=leadsF.filter(function(l){return _qual40('', col(l,['Faturamento','FATURAMENTO','faturamento']));}).length;
 
   // ---- TRÁFEGO METRICS (Fonte = Anúncios) ----
   var leadsTrafego=leadsF.filter(function(l){
@@ -12213,7 +12213,7 @@ function buildDashComHTML(data){
     return ad && ad!=='-';
   });
   var leadsTrafegoCount=leadsTrafego.length;
-  var leadsTrafegoQ=leadsTrafego.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
+  var leadsTrafegoQ=leadsTrafego.filter(function(l){return _qual40('', col(l,['Faturamento','FATURAMENTO','faturamento']));}).length;
   var txQualifTrafego=leadsTrafegoCount>0?Math.round(leadsTrafegoQ/leadsTrafegoCount*100):0;
 
   // Meetings de-duplicadas (deve estar antes de reunRealTrafego)
@@ -12248,7 +12248,7 @@ function buildDashComHTML(data){
   // ---- RANKING DE ADS ----
   var adMap={};
   leadsTrafego.filter(function(l){
-    return parseFaturamentoLead(l)>=20000;
+    return _qual40('', col(l,['Faturamento','FATURAMENTO','faturamento']));
   }).forEach(function(l){
     var ad=(col(l,['Ad','AD','ad'])||'').trim();
     if(!ad||ad==='-'||ad==='') return;
@@ -12347,7 +12347,7 @@ function buildDashComHTML(data){
     return ad && ad!=='-';
   });
   var leadsTrafegoCountP=leadsTrafegoP.length;
-  var leadsTrafegoQP=leadsTrafegoP.filter(function(l){return parseFaturamentoLead(l)>=20000;}).length;
+  var leadsTrafegoQP=leadsTrafegoP.filter(function(l){return _qual40('', col(l,['Faturamento','FATURAMENTO','faturamento']));}).length;
   var reunRealP=reunioesFP.filter(function(r){return isRealizada(col(r,['STATUS REUNIÃO','STATUS REUNIAO','Status Reuniao','STATUS','Status']));}).length;
   var novosClientesP=clientesFP.length;
   var valorVendidoP=clientesFP.reduce(function(s,c){
@@ -12465,7 +12465,7 @@ function buildDashComHTML(data){
     var k=ad+'||'+camp+'||'+conj;
     if(!byAd[k])byAd[k]={ad:ad,camp:camp,conj:conj,count:0,q:0};
     byAd[k].count++;
-    if(parseFaturamentoLead(l)>=20000)byAd[k].q++;
+    if(_qual40('', col(l,['Faturamento','FATURAMENTO','faturamento'])))byAd[k].q++;
   });
   // Vendas por anúncio: mapeia tel → adKey via leadsF, depois conta followups de venda
   var _telToAdKey={};
@@ -12683,7 +12683,7 @@ function buildDashComHTML(data){
           '<div style="display:flex;align-items:center;padding:0 6px;color:var(--muted);font-size:18px;">&#8594;</div>'+
           // Qualificados
           '<div style="flex:1;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.25);border-radius:10px;padding:12px 10px;text-align:center;">'+
-            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Qualificados (20k+)</div>'+
+            '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Qualificados (40k+)</div>'+
             '<div style="font-family:Bebas Neue,sans-serif;font-size:30px;color:var(--cyan);line-height:1;">'+leadsQ+'</div>'+
           '</div>'+
           '<div style="display:flex;align-items:center;padding:0 6px;color:var(--muted);font-size:18px;">&#8594;</div>'+
@@ -12773,7 +12773,7 @@ function buildDashComHTML(data){
         '</div>'+
         // Leads Qualificados
         '<div style="background:var(--bg3);border:1px solid rgba(56,189,248,0.2);border-radius:10px;padding:14px;text-align:center;">'+
-          '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Qualificados (20k+)</div>'+
+          '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Qualificados (40k+)</div>'+
           '<div style="font-family:Bebas Neue,sans-serif;font-size:34px;color:var(--cyan);line-height:1;">'+leadsTrafegoQ+'</div>'+
           '<div style="font-family:Barlow Condensed,sans-serif;font-size:10px;color:var(--muted);margin-top:4px;">'+delta(leadsTrafegoQ,leadsTrafegoQP,false)+'</div>'+
         '</div>'+
@@ -15146,7 +15146,7 @@ function buildAnaliseAdsHTML(data){
     if(!adData[ad]) adData[ad]={ad:ad,campanha:campanha,conjunto:conjunto,leads:0,qualif:0,reunioes:0,realizadas:0,fechamentos:0,mrr:0,fats:[]};
     var d=adData[ad];
     d.leads++;
-    if(fat>=20000) d.qualif++;
+    if(_qual40('', col(l,['Faturamento','FATURAMENTO','faturamento']))) d.qualif++;
     d.fats.push(fat);
   });
 
@@ -15510,7 +15510,7 @@ function buildAnaliseAdsHTML(data){
     funilFech=_n; totFech=funilFech;
   })();
   var totQualif=_allLeadsTrafego.filter(function(r){
-    return parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000;
+    return _qual40('', col(r,['Faturamento','FATURAMENTO','faturamento']));
   }).length;
 
   // ===== PREVIOUS PERIOD COMPUTATIONS =====
@@ -15567,7 +15567,7 @@ function buildAnaliseAdsHTML(data){
     var o2=(adField&&adField!=='-'&&adField!=='(sem ad)')?'Trafego Pago':categorizeOrigem(col(r,['Origem','ORIGEM','origem']));
     if(_origD[o2]){
       _origD[o2].leads++;
-      if(parseFaturamento(col(r,['Faturamento','FATURAMENTO','faturamento']))>=20000)_origD[o2].qualif++;
+      if(_qual40('', col(r,['Faturamento','FATURAMENTO','faturamento'])))_origD[o2].qualif++;
     }
   });
   (data.reunioes&&data.reunioes.rows||[]).forEach(function(r){
