@@ -767,6 +767,7 @@ async function handleTrack(req, res) {
     const sessRef = db.ref("analytics/sessions/" + sid);
     await sessRef.update({
       page: body.page || "", device: body.device || "", ref: body.ref || "",
+      variante: body.variante || "",
       utm_source: (body.utms && body.utms.source) || "", utm_medium: (body.utms && body.utms.medium) || "",
       utm_campaign: (body.utms && body.utms.campaign) || "", utm_content: (body.utms && body.utms.content) || "",
       lastSeen: now,

@@ -118,6 +118,7 @@
     <div class="right">
       <div class="seg" id="lpmode">
         <button data-m="nova" class="on">LP nova</button>
+        <button data-m="v3">LP V3</button>
         <button data-m="quiz">Quiz FV1</button>
         <button data-m="quizfv2">Quiz FV2</button>
         <button data-m="antiga">LP antiga</button>
@@ -327,7 +328,8 @@ Array.prototype.forEach.call(el('lpmode').querySelectorAll('button'), function(b
 /* ===== Render ===== */
 var MANUAL = {'whatsapp':1,'extrato_pdf':1,'extrato_manual':1,'manual':1,'':1};
 function isNova(src){ return src==='lp-audens'; }
-function isAntiga(src){ return src!=='lp-audens' && !MANUAL[src]; }
+function isV3(src){ return src==='lp-v3'; }
+function isAntiga(src){ return src!=='lp-audens' && src!=='lp-v3' && !MANUAL[src]; }
 
 function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.card'); if(card){ var h=card.querySelector('h2'); if(h) h.textContent=text; } } }
 
@@ -337,6 +339,7 @@ function render(){
   setH2('funnel','Funil da LP');
   setH2('abandono','Abandono por seção (onde pararam)');
   var antiga = (MODE==='antiga');
+  var v3 = (MODE==='v3');
   var now = Date.now();
   var cut = RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000);
 
@@ -344,7 +347,7 @@ function render(){
   var sess = [];
   if(!antiga){
     var S = cache.sessions||{};
-    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t>=cut) sess.push(v); }
+    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(v3 && String(v.variante||'')!=='lp-v3') continue; sess.push(v); }
   }
   var total = sess.length;
   var reachedForm = sess.filter(function(s){return s.reachedForm;}).length;
@@ -355,7 +358,7 @@ function render(){
   /* leads no período — filtrados pela LP escolhida */
   var leads = [];
   var L = cache.leads||{};
-  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||''; var ok = antiga?isAntiga(src):isNova(src); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||''; var ok = antiga?isAntiga(src):(v3?isV3(src):isNova(src)); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
   var nLeads = leads.length;
 
   /* KPIs */
@@ -452,7 +455,7 @@ function render(){
   }
 
   renderAdsDist(cut);
-  var lpLabel = antiga ? 'LP antiga (Elementor)' : 'LP nova (audens-lp)';
+  var lpLabel = antiga ? 'LP antiga (Elementor)' : (v3 ? 'LP V3 (lp-v3)' : 'LP nova (audens-lp)');
   var per = (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
     ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
@@ -465,7 +468,7 @@ function renderQuiz(variant){
   var VPAGE = variant==='fv2'?'fv2qualificacao':'fv1qualificacao';
   var VVAR  = 'quiz-'+variant;
   var VNAME = variant==='fv2'?'Quiz FV2':'Quiz FV1';
-  var QUAL_LBL = variant==='fv2'?'Qualificaram (acima de R$50 mil)':'Qualificaram (acima de R$20 mil)';
+  var QUAL_LBL = variant==='fv2'?'Qualificaram (acima de R$15 mil)':'Qualificaram (acima de R$20 mil)';
   var ORDER = variant==='fv2' ? ['investiu','segmento','pedidos','disposto'] : ['segmento','faturamento','canal','desafio','investimento'];
   var QLABELS = variant==='fv2'
     ? {investiu:'1 · Já investiu?',segmento:'2 · Segmento',pedidos:'3 · Pedidos/mês',disposto:'4 · Investir R$1.500'}
