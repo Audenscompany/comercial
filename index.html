@@ -33478,6 +33478,8 @@ function renderFria(){
      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Cole uma linha por contato: <b>telefone, nome</b> (nome opcional). Aceita só o número também. DDD obrigatório; sem 55 eu completo.</div>'+
      '<textarea id="fria-import-ta" placeholder="11999998888, João da Silva&#10;21988887777, Maria&#10;11955554444" style="width:100%;min-height:120px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:10px;font-family:monospace;font-size:12px;resize:vertical;"></textarea>'+
      '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">'+
+     '<label style="font-size:12px;color:var(--muted);">Prioridade desta leva:</label>'+
+     '<select id="fria-import-prio" style="background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px 10px;font-size:12px;"><option value="0">0 — dispara primeiro (ex: DDD 31)</option><option value="1">1 — depois (ex: casa dos 30)</option><option value="2">2 — por último (resto)</option><option value="3">3</option></select>'+
      '<button onclick="friaImport()" class="btn" style="background:var(--purple);color:#fff;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">Importar lista</button>'+
      '<span id="fria-import-st" style="font-size:12px;color:var(--muted);"></span></div></div>';
   // Mensagens
@@ -33523,7 +33525,8 @@ async function friaImport(){
   var ta=document.getElementById('fria-import-ta'), st=document.getElementById('fria-import-st');
   var raw=(ta&&ta.value||'').trim(); if(!raw){ if(st){st.style.color='var(--amber)';st.textContent='Cole a lista primeiro.';} return; }
   var linhas=raw.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
-  var lista=linhas.map(function(l){ var p=l.split(/[,;\t]/); var tel=(p[0]||'').replace(/\D/g,''); var nome=(p.slice(1).join(' ')||'').trim(); return {tel:tel,nome:nome}; }).filter(function(x){return x.tel.length>=10;});
+  var _prio=parseInt((document.getElementById('fria-import-prio')||{}).value||'0',10)||0;
+  var lista=linhas.map(function(l){ var p=l.split(/[,;\t]/); var tel=(p[0]||'').replace(/\D/g,''); var nome=(p.slice(1).join(' ')||'').trim(); return {tel:tel,nome:nome,prio:_prio}; }).filter(function(x){return x.tel.length>=10;});
   if(!lista.length){ if(st){st.style.color='var(--amber)';st.textContent='Nenhum telefone válido encontrado.';} return; }
   if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Importando '+lista.length+'…';}
   try{
