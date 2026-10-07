@@ -18,7 +18,10 @@ const REDIRECT_OK = "https://audenscompany.com.br/obrigado-assessoria-audens-com
 const REDIRECT_ERR = "https://audenscompany.com.br/assessoria-audens-company/";
 // Link da MENTORIA (leads abaixo de R$40k / sem faturamento são direcionados pra cá).
 // Pode ser sobrescrito ao vivo em config/mentoria/link no Firebase (sem redeploy).
-const MENTORIA_LINK = "https://audenscompany.com.br/mentoria"; // TODO: confirmar URL real da mentoria
+const MENTORIA_LINK = "https://assessoriaaudens.com.br/mentoria-delivery-growth.html";
+// UTMs por canal pra saber de onde o lead abaixo de 40k veio (WhatsApp do João x redirect da LP).
+const MENTORIA_LINK_WHATS = MENTORIA_LINK + "?utm_source=whatsapp&utm_medium=sdr-joao&utm_campaign=mentoria-lead-abaixo40k";
+const MENTORIA_LINK_REDIRECT = MENTORIA_LINK + "?utm_source=lp-assessoria&utm_medium=redirect&utm_campaign=mentoria-lead-abaixo40k";
 
 // Webhook do Make.com (mesma automacao que antes era disparada pelo Sellflux)
 const MAKE_WEBHOOK_URL = "https://hook.us2.make.com/5k0ii6irppno9fst3x208d1pjkfbff6u";
@@ -709,11 +712,13 @@ async function handleReceberLead(req, res) {
   // Acima de 40k segue o fluxo normal (quiz qualificado / primeiro contato + nurturing).
   var _fmEntry = _fatMinSrv(String(faixa || ""), String(faturamento || ""));
   var _mentoriaLead = (_fmEntry < NURT_MIN_FAT);
-  var _mentoriaLink = MENTORIA_LINK;
-  if (_mentoriaLead) { try { var _mlv = (await db.ref("config/mentoria/link").once("value")).val(); if (_mlv) _mentoriaLink = String(_mlv); } catch (e) {} }
+  var _mentoriaBase = MENTORIA_LINK, _mentoriaWhats = MENTORIA_LINK_WHATS, _mentoriaRedir = MENTORIA_LINK_REDIRECT;
+  if (_mentoriaLead) {
+    try { var _mlv = (await db.ref("config/mentoria/link").once("value")).val(); if (_mlv) { _mentoriaBase = String(_mlv); var _sep = (_mentoriaBase.indexOf("?") >= 0 ? "&" : "?"); _mentoriaWhats = _mentoriaBase + _sep + "utm_source=whatsapp&utm_medium=sdr-joao&utm_campaign=mentoria-lead-abaixo40k"; _mentoriaRedir = _mentoriaBase + _sep + "utm_source=lp-assessoria&utm_medium=redirect&utm_campaign=mentoria-lead-abaixo40k"; } } catch (e) {}
+  }
   if (_mentoriaLead) {
     // Abaixo de 40k / sem faturamento: direciona pra mentoria (WhatsApp). Sem assessoria, sem nurturing.
-    try { await enviarMensagemWhatsapp(tel, mensagemMentoria(nome, _mentoriaLink)); } catch (e) { console.error("mentoria msg:", e); }
+    try { await enviarMensagemWhatsapp(tel, mensagemMentoria(nome, _mentoriaWhats)); } catch (e) { console.error("mentoria msg:", e); }
   } else if (!faixaBaixa) {
     if (isQuizQualificado) {
       // LP V2 / FV1 (quiz): experiência preservada — mensagem de agendamento como sempre.
@@ -733,7 +738,7 @@ async function handleReceberLead(req, res) {
   }
 
   if (isBrowser) {
-    return res.redirect(302, _mentoriaLead ? _mentoriaLink : REDIRECT_OK);
+    return res.redirect(302, _mentoriaLead ? _mentoriaRedir : REDIRECT_OK);
   }
   return res.status(200).json({ ok: true, key });
 }
