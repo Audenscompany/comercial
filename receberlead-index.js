@@ -2574,14 +2574,10 @@ async function handleShowupTick(req, res) {
     // init
     if (!su.initAt) { await db.ref("meetings/" + mid + "/showup").update({ initAt: now, status: su.status || "agendado" }); }
 
-    // ── PÓS-REUNIÃO (no-show) ──
-    if (Hmin <= -5) {
-      if (st !== "done" && cfg.noshowAuto && !su.confirmadoPresente) {
-        if (!sent.ns5 && Hmin > -20) { await send(() => enviarMensagemWhatsapp(alvo, suMsgNoShow5(nome)), "ns5", "no_show", "🚪 Ninguém apareceu — enviado 'tô na sala'"); }
-        else if (!sent.ns20 && Hmin <= -20 && Hmin > -240) { await send(() => enviarMensagemWhatsapp(alvo, suMsgNoShow20(nome)), "ns20", "no_show", "🔁 Oferecida remarcação pós no-show"); }
-      }
-      continue;
-    }
+    // ── PÓS-REUNIÃO ── Nada é enviado automaticamente. A mensagem "tô na sala te esperando"
+    //    só sai quando o no-show é marcado MANUALMENTE no CRM (ver handleNoshowStart).
+    //    Evita mandar mensagem para quem ainda está entrando/participando da reunião.
+    if (Hmin <= -5) { continue; }
 
     // ── PRÉ-REUNIÃO ──
     // S1 · @ da loja (assim que possível)
@@ -3489,6 +3485,14 @@ async function handleNoshowStart(req, res) {
   var phone = (req.query.phone || (req.body && req.body.phone) || "").toString();
   if (!leadKey && !phone) return res.status(400).json({ ok: false, error: "lead ou phone obrigatorio" });
   var r = await cadNsStart(leadKey, phone);
+  // "Tô na sala te esperando" — enviada SO aqui (no-show marcado manualmente), nunca automatica.
+  try {
+    var _lk = (r && r.leadKey) || leadKey || "";
+    var _lead = _lk ? ((await db.ref("leads/" + _lk).once("value")).val() || {}) : {};
+    var _tel = String(_lead.telefone || phone || "").replace(/\D/g, "");
+    var _cfg = await suCfg(); var _alvo = _cfg.testPhone || _tel;
+    if (_alvo) await enviarMensagemWhatsapp(_alvo, suMsgNoShow5(_lead.nome || ""));
+  } catch (e) { console.error("noshow-start msg 'tô na sala':", e); }
   return res.status(200).json(r);
 }
 
