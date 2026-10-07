@@ -3112,6 +3112,7 @@ async function handleWaInbound(req, res) {
     if (isGroup) return res.status(200).send("ok");
     var phone = String(body.phone || body.sender || "").replace(/\D/g, "");
     var text = (body.text && body.text.message) || body.message || "";
+    try { var _fr = await friaMarkReply(phone, text); if (_fr) return res.status(200).send("ok"); } catch (e) { console.error("friaMarkReply(inbound):", e); }
     await cadHandleInbound(phone, text);
   } catch (e) { console.error("wa-inbound:", e); }
   return res.status(200).send("ok");
@@ -3236,6 +3237,7 @@ async function handleCadenciaDrain(req, res) {
   try { out.camp = await campDrainCore(); } catch (e) { console.error("campDrain:", e); }
   try { out.audensday = await adDrainCore(); } catch (e) { console.error("adDrain:", e); }
   try { out.nurturing = await nurtTickCore(); } catch (e) { console.error("nurtTickCore:", e); } // independe da cadencia principal
+  try { out.fria = await friaDrainCore(); } catch (e) { console.error("friaDrainCore:", e); } // prospecção fria: independe da cadencia principal
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
   var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
   if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
@@ -4316,6 +4318,173 @@ async function handleNurtTick(req, res) {
 }
 // ═══════════════════════ FIM RÉGUA DE NURTURING ═══════════════════════
 
+// ═══════════════════════ PROSPECÇÃO FRIA (lista grande — gerar 1ª interação) ═══════════════════════
+// Nasce DESLIGADA. Ligar em config/fria { enabled:true, maxPerDay:50, testPhone:"55..." }.
+// Inscreve até maxPerDay NOVOS contatos/dia; cada um recebe 3 toques (dia 0, 2, 5).
+// 1 msg a cada intervalSeconds (300s) entre TODOS os disparos fria; janela startHour-endHour BRT.
+// Quem responde → status "respondeu", para a sequência e vira tarefa pro João (sdr_tarefas).
+const FRIA_TEMPLATES = {
+  f1: { idx: 0, dia: 0, text: "Oi {{primeiroNome}}! Tudo certo? 🙌 Aqui é o João, da Audens. Rapidinho: você toca algum delivery ou restaurante hoje?" },
+  f2: { idx: 1, dia: 2, text: "{{primeiroNome}}, uma dúvida sincera: hoje suas vendas dependem muito do iFood, ou você já tem um canal próprio rodando?" },
+  f3: { idx: 2, dia: 5, text: "{{primeiroNome}}, prometo que é a última 🙂 Se fizer sentido, eu te mostro sem compromisso como uns deliverys parecidos com o seu destravaram as vendas. Posso te mandar?" }
+};
+const FRIA_ORDER = ["f1", "f2", "f3"];
+async function friaCfg() {
+  try {
+    var v = (await db.ref("config/fria").once("value")).val() || {};
+    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 50, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20 };
+  } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 50, intervalSeconds: 300, startHour: 9, endHour: 20 }; }
+}
+async function friaGetTemplate(id) {
+  var base = FRIA_TEMPLATES[id]; if (!base) return null;
+  var ov = null; try { ov = (await db.ref("config/fria_templates/" + id).once("value")).val(); } catch (e) {}
+  return { text: (ov && ov.text) || base.text, dia: (ov && ov.dia != null) ? ov.dia : base.dia, idx: base.idx };
+}
+function friaRender(text, nome) { var pn = primeiroNomeDe(nome) || "tudo bem"; return String(text).replace(/\{\{\s*primeiroNome\s*\}\}/g, pn); }
+function friaClampWindow(ts, cfg) {
+  var b = cadBRT(ts);
+  if (b.hour >= (cfg.endHour || 20)) return new Date(cadAddDaysStr(b.date, 1) + "T" + String(cfg.startHour || 9).padStart(2, "0") + ":00:00-03:00").getTime();
+  if (b.hour < (cfg.startHour || 9)) return new Date(b.date + "T" + String(cfg.startHour || 9).padStart(2, "0") + ":00:00-03:00").getTime();
+  return ts;
+}
+// Importa a lista (POST /fria-import body {lista:[{tel,nome}]}). Grava fria_contatos/<key>, dedup por telefone.
+async function handleFriaImport(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var lista = Array.isArray(b.lista) ? b.lista : (Array.isArray(b) ? b : []);
+  if (!lista.length) return res.status(400).json({ ok: false, error: "envie {lista:[{tel,nome}]}" });
+  var existentes = (await db.ref("fria_contatos").once("value")).val() || {};
+  var updates = {}, n = 0, dup = 0, inval = 0;
+  lista.forEach(function (x) {
+    var tel = String(x.tel || x.telefone || x.phone || x.numero || "").replace(/\D/g, "");
+    if (tel.length < 10) { inval++; return; }
+    if (tel.length === 10 || tel.length === 11) tel = "55" + tel; // assume BR
+    if (tel.length < 12 || tel.length > 13) { inval++; return; }
+    var key = tel.replace(/[.#$\[\]]/g, "_");
+    if (existentes[key] || updates["fria_contatos/" + key]) { dup++; return; }
+    updates["fria_contatos/" + key] = { tel: tel, nome: String(x.nome || x.name || "").trim(), status: "novo", importedAt: Date.now() };
+    n++;
+  });
+  var keys = Object.keys(updates);
+  for (var i = 0; i < keys.length; i += 500) { var chunk = {}; keys.slice(i, i + 500).forEach(function (k) { chunk[k] = updates[k]; }); await db.ref().update(chunk); }
+  return res.status(200).json({ ok: true, importados: n, duplicados: dup, invalidos: inval });
+}
+// Inscreve até maxPerDay novos/dia + enfileira os toques devidos de hoje. Roda 1x/dia (flag fria_control/lastBuild).
+async function friaDailyBuild(cfg) {
+  var hoje = cadBRT(Date.now()).date;
+  var ctrlRef = db.ref("fria_control/lastBuild");
+  var last = (await ctrlRef.once("value")).val();
+  if (last === hoje) return { skipped: true };
+  await ctrlRef.set(hoje);
+  var out = { enrolled: 0, queued: 0 };
+  var contatos = (await db.ref("fria_contatos").once("value")).val() || {};
+  var novos = Object.keys(contatos).filter(function (k) { return contatos[k] && contatos[k].status === "novo"; });
+  var lim = Math.min(novos.length, cfg.maxPerDay || 50);
+  for (var i = 0; i < lim; i++) {
+    var k = novos[i];
+    await db.ref("fria_contatos/" + k).update({ status: "ativo", startedAt: hoje, touchIndex: 0, enrolledAt: Date.now() });
+    contatos[k].status = "ativo"; contatos[k].startedAt = hoje; contatos[k].touchIndex = 0;
+    out.enrolled++;
+  }
+  var ativos = Object.keys(contatos).filter(function (k) { return contatos[k] && contatos[k].status === "ativo"; });
+  for (var j = 0; j < ativos.length; j++) {
+    var kk = ativos[j], cc = contatos[kk];
+    var dia = cadDaysBetween(cc.startedAt, hoje);
+    var tid = FRIA_ORDER.find(function (id) { return FRIA_TEMPLATES[id].dia === dia; });
+    if (!tid) continue;
+    var already = (await db.ref("fria_msg/" + kk + "/" + tid).once("value")).val();
+    if (already && already.status) continue;
+    var itemRef = db.ref("fria_fila/" + kk + "_" + tid);
+    var created = false;
+    await itemRef.transaction(function (cur) { if (cur) return; created = true; return { key: kk, tel: cc.tel, nome: cc.nome || "", tid: tid, status: "queued", scheduledAt: 0, createdAt: Date.now() }; });
+    if (!created) continue;
+    var sa = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
+    await itemRef.update({ scheduledAt: sa });
+    await db.ref("fria_msg/" + kk + "/" + tid).set({ status: "queued", scheduledAt: sa });
+    out.queued++;
+  }
+  return out;
+}
+// Drena 1 mensagem por chamada (respeita intervalSeconds + janela). Chamado pelo cadencia-drain (1/min).
+async function friaDrainCore() {
+  var cfg = await friaCfg();
+  var out = { enabled: cfg.enabled, enviados: 0 };
+  if (!cfg.enabled) return out;
+  try { out.build = await friaDailyBuild(cfg); } catch (e) { console.error("friaDailyBuild:", e); }
+  var last = (await db.ref("fria_lastSentAt").once("value")).val() || 0;
+  if (Date.now() - last < ((cfg.intervalSeconds || 300) - 10) * 1000) return out;
+  var bnow = cadBRT(Date.now());
+  if (bnow.hour < (cfg.startHour || 9) || bnow.hour >= (cfg.endHour || 20)) { out.note = "fora da janela"; return out; }
+  var fila = (await db.ref("fria_fila").once("value")).val() || {};
+  var now = Date.now();
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  if (!ids.length) return out;
+  ids.sort(function (a, b) { return (fila[a].scheduledAt || 0) - (fila[b].scheduledAt || 0); });
+  var id = ids[0], it = fila[id], ref = db.ref("fria_fila/" + id);
+  var locked = false;
+  await ref.transaction(function (c) { if (!c || c.status !== "queued") return c; c.status = "processing"; locked = true; return c; });
+  if (!locked) return out;
+  var c = (await db.ref("fria_contatos/" + it.key).once("value")).val();
+  if (!c || c.status !== "ativo") { await ref.update({ status: "cancelled" }); return out; }
+  var tpl = await friaGetTemplate(it.tid);
+  var alvo = cfg.testPhone || it.tel;
+  try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE fria] " : "") + friaRender(tpl.text, it.nome)); } catch (e) {}
+  await ref.update({ status: "sent", sentAt: Date.now() });
+  await db.ref("fria_msg/" + it.key + "/" + it.tid).update({ status: "sent", sentAt: Date.now() });
+  await db.ref("fria_lastSentAt").set(Date.now());
+  var idx = FRIA_TEMPLATES[it.tid].idx;
+  var patch = { lastTouchAt: Date.now(), touchIndex: idx + 1 };
+  if (idx + 1 >= FRIA_ORDER.length) patch.status = "concluido";
+  await db.ref("fria_contatos/" + it.key).update(patch);
+  await db.ref("fria_events").push({ type: "sent", key: it.key, tid: it.tid, at: Date.now() });
+  out.enviados = 1; out.para = it.nome;
+  return out;
+}
+// Resposta de contato frio → para a sequência + tarefa pro João. Chamado pelo /wa-inbound.
+async function friaMarkReply(phone, text) {
+  try {
+    var tel = String(phone || "").replace(/\D/g, ""); if (tel.length < 10) return false;
+    var cands = [tel]; if (tel.indexOf("55") === 0) cands.push(tel.slice(2)); else cands.push("55" + tel);
+    var found = null, fkey = null;
+    for (var i = 0; i < cands.length; i++) { var k = cands[i].replace(/[.#$\[\]]/g, "_"); var c = (await db.ref("fria_contatos/" + k).once("value")).val(); if (c) { found = c; fkey = k; break; } }
+    if (!found || found.status === "respondeu") return false;
+    await db.ref("fria_contatos/" + fkey).update({ status: "respondeu", respondeuAt: Date.now(), respostaTexto: String(text || "").slice(0, 200) });
+    var fila = (await db.ref("fria_fila").once("value")).val() || {};
+    var upd = {};
+    Object.keys(fila).forEach(function (id) { if (fila[id] && fila[id].key === fkey && fila[id].status === "queued") upd["fria_fila/" + id + "/status"] = "cancelled_reply"; });
+    if (Object.keys(upd).length) await db.ref().update(upd);
+    await db.ref("sdr_tarefas/" + fkey + "_fria").set({ leadKey: fkey, nome: found.nome || "", telefone: found.tel || tel, empresa: "", faturamento: "", tipo: "🧊 Lead frio respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
+    await db.ref("fria_events").push({ type: "reply", key: fkey, at: Date.now() });
+    return true;
+  } catch (e) { console.error("friaMarkReply:", e); return false; }
+}
+async function handleFriaStats(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var c = (await db.ref("fria_contatos").once("value")).val() || {};
+  var st = { novo: 0, ativo: 0, respondeu: 0, concluido: 0, total: 0 };
+  var hoje = cadBRT(Date.now()).date, enrolledToday = 0;
+  Object.keys(c).forEach(function (k) { st.total++; var s = c[k].status || "novo"; st[s] = (st[s] || 0) + 1; if (c[k].startedAt === hoje) enrolledToday++; });
+  var cfg = await friaCfg();
+  var taxa = (st.ativo + st.concluido + st.respondeu) > 0 ? Math.round(st.respondeu / (st.ativo + st.concluido + st.respondeu) * 100) : 0;
+  return res.status(200).json({ ok: true, stats: st, enrolledToday: enrolledToday, taxaResposta: taxa, config: cfg });
+}
+async function handleFriaConfig(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var u = {};
+  if (b.enabled !== undefined) u.enabled = (b.enabled === true || b.enabled === "true");
+  if (b.maxPerDay !== undefined) u.maxPerDay = parseInt(b.maxPerDay, 10) || 50;
+  if (b.testPhone !== undefined) u.testPhone = String(b.testPhone || "").replace(/\D/g, "");
+  if (b.startHour !== undefined) u.startHour = parseInt(b.startHour, 10) || 9;
+  if (b.endHour !== undefined) u.endHour = parseInt(b.endHour, 10) || 20;
+  u.at = Date.now();
+  await db.ref("config/fria").update(u);
+  if (b.templates && typeof b.templates === "object") { await db.ref("config/fria_templates").update(b.templates); }
+  var cur = (await db.ref("config/fria").once("value")).val() || {};
+  return res.status(200).json({ ok: true, config: cur });
+}
+// ═══════════════════════ FIM PROSPECÇÃO FRIA ═══════════════════════
+
 http('receberLead', async (req, res) => {
   // CORS: o CRM (index.html) chama /agendar via fetch POST com
   // Content-Type: application/json, o que faz o navegador disparar um
@@ -4712,6 +4881,15 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/nurt-tick") {
       return await handleNurtTick(req, res);
+    }
+    if (path === "/fria-import") {
+      return await handleFriaImport(req, res);
+    }
+    if (path === "/fria-config") {
+      return await handleFriaConfig(req, res);
+    }
+    if (path === "/fria-stats") {
+      return await handleFriaStats(req, res);
     }
     if (path === "/nurt-config") {
       if (!checaSecret(req)) return res.status(401).send("Unauthorized");

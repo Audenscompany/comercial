@@ -4781,6 +4781,7 @@ function buildNav(){
       {id:'minhas-tarefas',icon:'ti-checkbox',label:'Minhas Tarefas',badge:pendSDR},
       {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
       {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
+      {id:'fria',icon:'ti-snowflake',label:'Prospecção Fria'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
     ]},
     {id:'busca-ia',icon:'ti-building-store',label:'BDR Inteligente'},
@@ -5025,7 +5026,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -5049,6 +5050,7 @@ function showPage(id){
     if(id==='asaas') setTimeout(loadAsaasPage,50);
     if(id==='contratos') setTimeout(loadContratosPage,50);
     if(id==='audens-day') setTimeout(adDayInit,50);
+    if(id==='fria') setTimeout(friaLoadStats,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
@@ -33440,6 +33442,131 @@ function renderCadenciaPainel(){
     '<div id="cadp-body"></div>'+
   '</div>';
 }
+
+// ═══════════ PROSPECÇÃO FRIA (lista grande — 50/dia, 3 toques) ═══════════
+var _friaStats=null;
+function renderFria(){
+  var c=_friaStats||{stats:{total:0,novo:0,ativo:0,respondeu:0,concluido:0},enrolledToday:0,taxaResposta:0,config:{enabled:false,maxPerDay:50,startHour:9,endHour:20,testPhone:''}};
+  var s=c.stats||{}, cfg=c.config||{};
+  function card(lbl,val,cor){return '<div style="flex:1;min-width:120px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div></div>';}
+  var ligado=cfg.enabled===true;
+  var H='<div class="page active"><div style="max-width:1000px;margin:0 auto;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:var(--purple3);font-weight:700;">PROSPECÇÃO</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">🧊 Prospecção Fria</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Lista grande → 50 novos/dia · 3 toques (dia 0, 2, 5) · 1 msg a cada 5min · janela '+(cfg.startHour||9)+'h–'+(cfg.endHour||20)+'h. Quem responde vira tarefa pro João.</div></div>'+
+     '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO'+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div>'+
+     '</div>';
+  // Aviso
+  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ Risco de ban:</b> lista fria em massa é o padrão que o WhatsApp mais penaliza. Mantenha 50/dia, sem link nos primeiros toques, e acompanhe. Se o número começar a cair, pare e espere.</div>';
+  // Cards
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">'+
+     card('Total na lista', (s.total||0).toLocaleString('pt-BR'))+
+     card('Não iniciados', (s.novo||0).toLocaleString('pt-BR'),'var(--silver)')+
+     card('Em sequência', (s.ativo||0).toLocaleString('pt-BR'),'#c084fc')+
+     card('Responderam', (s.respondeu||0).toLocaleString('pt-BR'),'#22c55e')+
+     card('Concluídos s/ resp.', (s.concluido||0).toLocaleString('pt-BR'),'var(--muted)')+
+     '</div>';
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
+     card('Iniciados hoje', (c.enrolledToday||0)+' / '+(cfg.maxPerDay||50),(c.enrolledToday>=(cfg.maxPerDay||50)?'#22c55e':'var(--white)'))+
+     card('Taxa de resposta', (c.taxaResposta||0)+'%','#22c55e')+
+     card('Dias p/ lista toda', (cfg.maxPerDay>0?Math.ceil((s.novo||0)/(cfg.maxPerDay||50)):'—'),'var(--silver)')+
+     '</div>';
+  // Importar
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:8px;">1 · Importar contatos</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Cole uma linha por contato: <b>telefone, nome</b> (nome opcional). Aceita só o número também. DDD obrigatório; sem 55 eu completo.</div>'+
+     '<textarea id="fria-import-ta" placeholder="11999998888, João da Silva&#10;21988887777, Maria&#10;11955554444" style="width:100%;min-height:120px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:10px;font-family:monospace;font-size:12px;resize:vertical;"></textarea>'+
+     '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">'+
+     '<button onclick="friaImport()" class="btn" style="background:var(--purple);color:#fff;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">Importar lista</button>'+
+     '<span id="fria-import-st" style="font-size:12px;color:var(--muted);"></span></div></div>';
+  // Mensagens
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">2 · Sequência de mensagens</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. Toque 1 = dia 0, Toque 2 = dia 2, Toque 3 = dia 5.</div>';
+  var tpl=(cfg.templates||{});
+  [['f1','Toque 1 (dia 0)'],['f2','Toque 2 (dia 2)'],['f3','Toque 3 (dia 5)']].forEach(function(t){
+    var tx=(tpl[t[0]]&&tpl[t[0]].text)||_friaDefaultMsg(t[0]);
+    H+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:var(--silver);font-weight:700;">'+t[1]+'</label>'+
+       '<textarea id="fria-tpl-'+t[0]+'" style="width:100%;min-height:60px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:10px;font-size:13px;resize:vertical;margin-top:4px;">'+tx.replace(/</g,'&lt;')+'</textarea></div>';
+  });
+  H+='<button onclick="friaSaveMsgs()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar mensagens</button> <span id="fria-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  // Controle
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:12px;">3 · Controle</div>'+
+     '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Novos por dia</label><input id="fria-max" type="number" value="'+(cfg.maxPerDay||50)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Janela (h)</label><input id="fria-h1" type="number" value="'+(cfg.startHour||9)+'" style="width:60px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"> às <input id="fria-h2" type="number" value="'+(cfg.endHour||20)+'" style="width:60px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<button onclick="friaSaveCfg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar ajustes</button>'+
+     '</div>'+
+     '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+     '<button onclick="friaToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar disparo</button>'+
+     '<button onclick="friaToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
+     '<button onclick="friaLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
+     '</div><div id="fria-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
+  H+='</div></div>';
+  return H;
+}
+function _friaDefaultMsg(id){
+  return ({f1:"Oi {{primeiroNome}}! Tudo certo? 🙌 Aqui é o João, da Audens. Rapidinho: você toca algum delivery ou restaurante hoje?",
+    f2:"{{primeiroNome}}, uma dúvida sincera: hoje suas vendas dependem muito do iFood, ou você já tem um canal próprio rodando?",
+    f3:"{{primeiroNome}}, prometo que é a última 🙂 Se fizer sentido, eu te mostro sem compromisso como uns deliverys parecidos com o seu destravaram as vendas. Posso te mandar?"})[id]||'';
+}
+async function friaLoadStats(){
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/fria-stats?secret='+WEBHOOK_SECRET,{method:'POST'});
+    var j=await r.json(); if(j&&j.ok){ _friaStats=j; }
+  }catch(e){}
+  var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='fria') a.innerHTML=renderFria();
+}
+async function friaImport(){
+  var ta=document.getElementById('fria-import-ta'), st=document.getElementById('fria-import-st');
+  var raw=(ta&&ta.value||'').trim(); if(!raw){ if(st){st.style.color='var(--amber)';st.textContent='Cole a lista primeiro.';} return; }
+  var linhas=raw.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  var lista=linhas.map(function(l){ var p=l.split(/[,;\t]/); var tel=(p[0]||'').replace(/\D/g,''); var nome=(p.slice(1).join(' ')||'').trim(); return {tel:tel,nome:nome}; }).filter(function(x){return x.tel.length>=10;});
+  if(!lista.length){ if(st){st.style.color='var(--amber)';st.textContent='Nenhum telefone válido encontrado.';} return; }
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Importando '+lista.length+'…';}
+  try{
+    // envia em blocos de 2000 pra não estourar a request
+    var tot={importados:0,duplicados:0,invalidos:0};
+    for(var i=0;i<lista.length;i+=2000){
+      var r=await fetch(RECEBERLEAD_URL+'/fria-import?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lista:lista.slice(i,i+2000)})});
+      var j=await r.json(); if(j&&j.ok){ tot.importados+=j.importados||0; tot.duplicados+=j.duplicados||0; tot.invalidos+=j.invalidos||0; }
+      if(st) st.innerHTML='<i class="ti ti-loader"></i> '+(i+2000>lista.length?lista.length:i+2000)+'/'+lista.length+'…';
+    }
+    if(st){st.style.color='#22c55e';st.textContent='✓ '+tot.importados+' importados · '+tot.duplicados+' duplicados · '+tot.invalidos+' inválidos.';}
+    if(ta) ta.value='';
+    friaLoadStats();
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function friaSaveMsgs(){
+  var st=document.getElementById('fria-msg-st');
+  var templates={}; ['f1','f2','f3'].forEach(function(id){ var e=document.getElementById('fria-tpl-'+id); if(e) templates[id]={text:e.value}; });
+  if(st){st.style.color='var(--muted)';st.textContent='Salvando…';}
+  try{ var r=await fetch(RECEBERLEAD_URL+'/fria-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templates:templates})}); var j=await r.json(); if(j&&j.ok){ if(st){st.style.color='#22c55e';st.textContent='✓ Mensagens salvas.';} } else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-config já está no deploy?';} } }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function friaSaveCfg(){
+  var st=document.getElementById('fria-ctrl-st');
+  var body={maxPerDay:parseInt((document.getElementById('fria-max')||{}).value||'50',10),startHour:parseInt((document.getElementById('fria-h1')||{}).value||'9',10),endHour:parseInt((document.getElementById('fria-h2')||{}).value||'20',10)};
+  if(st){st.style.color='var(--muted)';st.textContent='Salvando ajustes…';}
+  try{ var r=await fetch(RECEBERLEAD_URL+'/fria-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); var j=await r.json(); if(j&&j.ok){ if(st){st.style.color='#22c55e';st.textContent='✓ Ajustes salvos.';} friaLoadStats(); } else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-config já está no deploy?';} } }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function friaToggle(on){
+  var st=document.getElementById('fria-ctrl-st');
+  var testPhone='';
+  if(on){
+    var teste=confirm('Ligar a Prospecção Fria?\n\nOK = MODO TESTE (todas as mensagens vão pra 1 número só)\nCancelar = PRA VALER (mensagens vão pros contatos da lista)');
+    if(teste){ testPhone=(prompt('Número de teste (DDD+número):','')||'').replace(/\D/g,''); if(testPhone&&testPhone.length<10){ alert('Número inválido.'); return; } }
+    else { if(!confirm('⚠️ PRA VALER: vai começar a mandar pra lista fria real (50/dia). Confirmar?')) return; }
+  } else { if(!confirm('Desligar a Prospecção Fria? Para de inscrever e de enviar.')) return; }
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> '+(on?'Ligando':'Desligando')+'…';}
+  try{ var body={enabled:!!on}; if(on) body.testPhone=testPhone;
+    var r=await fetch(RECEBERLEAD_URL+'/fria-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); var j=await r.json();
+    if(j&&j.ok){ if(st){st.style.color=on?'#22c55e':'var(--muted)';st.textContent='✓ Prospecção Fria '+(on?('LIGADA'+(j.config&&j.config.testPhone?(' · teste → '+j.config.testPhone):' · PRA VALER')):'desligada')+'.';} friaLoadStats(); }
+    else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-config já está no deploy do receberlead?';} }
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+// ═══════════ FIM PROSPECÇÃO FRIA ═══════════
 
 async function nurtPainelToggle(on){
   var st=document.getElementById('cadp-status');
