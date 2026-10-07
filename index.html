@@ -33506,8 +33506,96 @@ function renderFria(){
      '<button onclick="friaToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
      '<button onclick="friaLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
      '</div><div id="fria-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
+  // 4 · Contatos importados (tabela + filtros)
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
+       '<div class="" style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);">4 · Contatos importados</div>'+
+       '<button onclick="friaLoadContatos()" class="btn btn-outline" style="font-size:12px;padding:7px 12px;"><i class="ti ti-refresh"></i> Carregar / Atualizar</button>'+
+     '</div>'+
+     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">'+
+       '<input id="fria-ct-busca" oninput="friaCtFiltrar()" placeholder="Buscar nome ou telefone…" style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;">'+
+       '<select id="fria-ct-status" onchange="friaCtFiltrar()" style="background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;"><option value="">Todos status</option><option value="novo">Não iniciados</option><option value="ativo">Em sequência</option><option value="respondeu">Responderam</option><option value="concluido">Concluídos</option></select>'+
+       '<input id="fria-ct-ddd" oninput="friaCtFiltrar()" maxlength="2" placeholder="DDD" style="width:70px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;">'+
+       '<select id="fria-ct-prio" onchange="friaCtFiltrar()" style="background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;"><option value="">Toda prioridade</option><option value="0">Prio 0</option><option value="1">Prio 1</option><option value="2">Prio 2</option><option value="3">Prio 3</option></select>'+
+     '</div>'+
+     '<div id="fria-ct-box" style="font-size:12px;color:var(--muted);">Clique em <b>Carregar</b> para ver os contatos.</div>'+
+     '</div>';
   H+='</div></div>';
   return H;
+}
+var _friaContatos=null,_friaCtPage=0;
+function friaStatusLabel(s){return ({novo:'Não iniciado',ativo:'Em sequência',respondeu:'Respondeu',concluido:'Concluído'})[s]||s||'—';}
+function friaStatusCor(s){return ({novo:'var(--silver)',ativo:'#c084fc',respondeu:'#22c55e',concluido:'var(--muted)'})[s]||'var(--muted)';}
+async function friaLoadContatos(){
+  var box=document.getElementById('fria-ct-box'); if(box) box.innerHTML='<i class="ti ti-loader"></i> Carregando contatos…';
+  try{
+    var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase())); if(!db){ if(box)box.innerHTML='<span style="color:var(--amber)">Firebase não inicializado.</span>'; return; }
+    var snap=await db.ref('fria_contatos').once('value');
+    var v=snap.val()||{}; var arr=[];
+    Object.keys(v).forEach(function(k){ var c=v[k]||{}; arr.push({key:k,tel:String(c.tel||'').replace(/\D/g,''),nome:c.nome||'',status:c.status||'novo',prio:(c.prio||0),ddd:String(c.tel||'').replace(/\D/g,'').replace(/^55/,'').slice(0,2),importedAt:c.importedAt||0,respostaTexto:c.respostaTexto||''}); });
+    arr.sort(function(a,b){ if((a.prio||0)!==(b.prio||0)) return (a.prio||0)-(b.prio||0); return (a.importedAt||0)-(b.importedAt||0); });
+    _friaContatos=arr; _friaCtPage=0;
+    friaCtFiltrar();
+  }catch(e){ if(box)box.innerHTML='<span style="color:var(--red)">Erro: '+e.message+'</span>'; }
+}
+function _friaCtFiltrados(){
+  if(!_friaContatos) return [];
+  var q=(document.getElementById('fria-ct-busca')||{}).value||''; q=q.toLowerCase().trim();
+  var qd=q.replace(/\D/g,'');
+  var st=(document.getElementById('fria-ct-status')||{}).value||'';
+  var ddd=((document.getElementById('fria-ct-ddd')||{}).value||'').replace(/\D/g,'');
+  var prio=(document.getElementById('fria-ct-prio')||{}).value||'';
+  return _friaContatos.filter(function(c){
+    if(st && c.status!==st) return false;
+    if(ddd && c.ddd!==ddd) return false;
+    if(prio!=='' && String(c.prio)!==prio) return false;
+    if(q){ var okNome=c.nome.toLowerCase().indexOf(q)>=0; var okTel=qd&&c.tel.indexOf(qd)>=0; if(!okNome&&!okTel) return false; }
+    return true;
+  });
+}
+function friaCtFiltrar(){ _friaCtPage=0; friaCtRender(); }
+function friaCtPage(d){ _friaCtPage+=d; friaCtRender(); }
+function friaCtRender(){
+  var box=document.getElementById('fria-ct-box'); if(!box) return;
+  if(!_friaContatos){ box.innerHTML='Clique em <b>Carregar</b> para ver os contatos.'; return; }
+  var rows=_friaCtFiltrados();
+  var perPage=50, tot=rows.length, pages=Math.max(1,Math.ceil(tot/perPage));
+  if(_friaCtPage>=pages)_friaCtPage=pages-1; if(_friaCtPage<0)_friaCtPage=0;
+  var slice=rows.slice(_friaCtPage*perPage,(_friaCtPage+1)*perPage);
+  function E(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  var h='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+tot.toLocaleString('pt-BR')+' contato(s) no filtro · página '+(_friaCtPage+1)+'/'+pages+'</div>';
+  h+='<div style="overflow:auto;border:1px solid var(--border);border-radius:10px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'+
+     '<thead><tr style="background:var(--card);">'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Nome</th>'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Telefone</th>'+
+     '<th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:700;">DDD</th>'+
+     '<th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:700;">Status</th>'+
+     '<th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:700;">Prio</th>'+
+     '<th style="padding:8px 10px;"></th>'+
+     '</tr></thead><tbody>';
+  if(!slice.length){ h+='<tr><td colspan="6" style="padding:18px;text-align:center;color:var(--muted);">Nenhum contato no filtro.</td></tr>'; }
+  slice.forEach(function(c){
+    var telFmt=c.tel.replace(/^55/,'');
+    h+='<tr style="border-top:1px solid rgba(255,255,255,0.05);">'+
+       '<td style="padding:8px 10px;color:var(--white);">'+E(c.nome||'—')+(c.respostaTexto?'<div style="font-size:10px;color:#22c55e;margin-top:2px;">💬 '+E(c.respostaTexto.slice(0,60))+'</div>':'')+'</td>'+
+       '<td style="padding:8px 10px;color:var(--silver);font-family:monospace;">'+E(telFmt)+'</td>'+
+       '<td style="padding:8px 10px;text-align:center;color:var(--muted);">'+E(c.ddd)+'</td>'+
+       '<td style="padding:8px 10px;text-align:center;"><span style="color:'+friaStatusCor(c.status)+';font-weight:700;">'+friaStatusLabel(c.status)+'</span></td>'+
+       '<td style="padding:8px 10px;text-align:center;color:var(--muted);">'+c.prio+'</td>'+
+       '<td style="padding:8px 10px;text-align:right;white-space:nowrap;">'+
+         '<button onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+c.tel+'\');this.textContent=\'✓\';" title="Copiar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:3px 8px;font-size:11px;cursor:pointer;">copiar</button> '+
+         '<a href="https://wa.me/'+c.tel+'" target="_blank" style="background:none;border:1px solid rgba(34,197,94,.4);border-radius:6px;color:#22c55e;padding:3px 8px;font-size:11px;cursor:pointer;text-decoration:none;">WhatsApp</a>'+
+       '</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(pages>1){
+    h+='<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px;">'+
+       '<button onclick="friaCtPage(-1)" '+(_friaCtPage<=0?'disabled':'')+' class="btn btn-outline" style="font-size:12px;padding:6px 12px;'+(_friaCtPage<=0?'opacity:.4;':'')+'">‹ Anterior</button>'+
+       '<span style="font-size:12px;color:var(--muted);">'+(_friaCtPage+1)+' / '+pages+'</span>'+
+       '<button onclick="friaCtPage(1)" '+(_friaCtPage>=pages-1?'disabled':'')+' class="btn btn-outline" style="font-size:12px;padding:6px 12px;'+(_friaCtPage>=pages-1?'opacity:.4;':'')+'">Próxima ›</button>'+
+       '</div>';
+  }
+  box.innerHTML=h;
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",
