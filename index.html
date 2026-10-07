@@ -10002,7 +10002,7 @@ function renderFollowupBody(){
             '<option value="premium">Premium</option>'+
             '<option value="elite">Elite</option>'+
           '</select></div>'+
-          '<div id="fu-duracao-wrap"><label class="f-label">Duracao (meses)</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()"><option value="3">3 meses</option><option value="6" selected>6 meses</option></select></div>'+
+          '<div id="fu-duracao-wrap">'+_fuDuracaoSelect('6')+'</div>'+
         '</div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Data de inicio do contrato</label><input class="f-input" type="date" id="fu-data-inicio" style="margin-bottom:12px;"></div>'+
@@ -10089,20 +10089,18 @@ function fuToggleSegLoja(){
     btn.style.background  = open ? 'rgba(123,47,255,0.1)' : 'rgba(123,47,255,0.18)';
   }
 }
+// Seletor de duração: Mensal (1) / Trimestral (3) / Semestral (6) — vale para todos os planos
+function _fuDuracaoSelect(cur){
+  cur=String(cur||'6');
+  function o(v,l){return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+l+'</option>';}
+  return '<label class="f-label">Duração</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()">'+o('1','Mensal')+o('3','Trimestral')+o('6','Semestral')+'</select>';
+}
 function fuOnPlanoChange(){
   var plano=(document.getElementById('fu-plano')||{}).value||'';
   var duracaoWrap=document.getElementById('fu-duracao-wrap');
   var tipoEl=document.getElementById('fu-tipo-valor');
-  // Starter agora é plano normal (TCV/trimestral/semestral/recorrente, em meses), igual aos demais
-  if(duracaoWrap){
-    var curVal='6';
-    duracaoWrap.innerHTML=
-      '<label class="f-label">Duracao (meses)</label>'+
-      '<select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()">'+
-      '<option value="3"'+(curVal==='3'?' selected':'')+'>3 meses</option>'+
-      '<option value="6"'+(curVal!=='3'?' selected':'')+'>6 meses</option>'+
-      '</select>';
-  }
+  // Starter agora é plano normal (TCV/trimestral/semestral/recorrente), igual aos demais
+  if(duracaoWrap){ var _cur=(document.getElementById('fu-duracao')||{}).value||'6'; duracaoWrap.innerHTML=_fuDuracaoSelect(_cur); }
   toggleMensalidadeField();
   // Adicionais são exclusivos dos planos Starter e Premium
   var _adicWrap=document.getElementById('fu-adic-wrap');
@@ -10128,11 +10126,7 @@ function toggleMensalidadeField(){
   var duracaoWrap=document.getElementById('fu-duracao-wrap');
   if(duracaoWrap){
     var curVal=(document.getElementById('fu-duracao')||{}).value||'6';
-    if(isTCV){
-      duracaoWrap.innerHTML='<label class="f-label">Duracao (meses)</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()"><option value="3"'+(curVal==='3'?' selected':'')+'>3 meses</option><option value="6"'+(curVal!=='3'?' selected':'')+'>6 meses</option></select>';
-    } else {
-      duracaoWrap.innerHTML='<label class="f-label">Duracao (meses)</label><input class="f-input" type="number" id="fu-duracao" value="'+curVal+'" min="1" style="margin-bottom:12px;" oninput="updateBonusPreview()">';
-    }
+    duracaoWrap.innerHTML=_fuDuracaoSelect(curVal);
   }
   updateBonusPreview();
 }
