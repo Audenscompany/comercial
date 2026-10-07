@@ -33454,7 +33454,7 @@ function renderFria(){
   H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
      '<div><div style="font-size:11px;letter-spacing:2px;color:var(--purple3);font-weight:700;">PROSPECÇÃO</div>'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">🧊 Prospecção Fria</div>'+
-     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Lista grande → 50 novos/dia · 3 toques (dia 0, 2, 5) · 1 msg a cada 5min · janela '+(cfg.startHour||9)+'h–'+(cfg.endHour||20)+'h. Quem responde vira tarefa pro João.</div></div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">50 novos/dia · Toque 1: <b>"{{nome}}?"</b> (curiosidade) · Toque 2: <b>valor da Audens +30min</b> · 1 msg a cada 5min · janela '+(cfg.startHour||9)+'h–'+(cfg.endHour||20)+'h. Quem responde vira tarefa pro João.</div></div>'+
      '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO'+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div>'+
      '</div>';
   // Aviso
@@ -33485,9 +33485,9 @@ function renderFria(){
   // Mensagens
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">2 · Sequência de mensagens</div>'+
-     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. Toque 1 = dia 0, Toque 2 = dia 2, Toque 3 = dia 5.</div>';
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. Toque 1 = imediato (gera curiosidade), Toque 2 = +30 min (valor da Audens).</div>';
   var tpl=(cfg.templates||{});
-  [['f1','Toque 1 (dia 0)'],['f2','Toque 2 (dia 2)'],['f3','Toque 3 (dia 5)']].forEach(function(t){
+  [['f1','Toque 1 — imediato (curiosidade: "{{nome}}?")'],['f2','Toque 2 — +30 min (valor da Audens)']].forEach(function(t){
     var tx=(tpl[t[0]]&&tpl[t[0]].text)||_friaDefaultMsg(t[0]);
     H+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:var(--silver);font-weight:700;">'+t[1]+'</label>'+
        '<textarea id="fria-tpl-'+t[0]+'" style="width:100%;min-height:60px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:10px;font-size:13px;resize:vertical;margin-top:4px;">'+tx.replace(/</g,'&lt;')+'</textarea></div>';
@@ -33510,9 +33510,8 @@ function renderFria(){
   return H;
 }
 function _friaDefaultMsg(id){
-  return ({f1:"Oi {{primeiroNome}}! Tudo certo? 🙌 Aqui é o João, da Audens. Rapidinho: você toca algum delivery ou restaurante hoje?",
-    f2:"{{primeiroNome}}, uma dúvida sincera: hoje suas vendas dependem muito do iFood, ou você já tem um canal próprio rodando?",
-    f3:"{{primeiroNome}}, prometo que é a última 🙂 Se fizer sentido, eu te mostro sem compromisso como uns deliverys parecidos com o seu destravaram as vendas. Posso te mandar?"})[id]||'';
+  return ({f1:"{{primeiroNome}}?",
+    f2:"{{primeiroNome}}, aqui é o João 🙌 Sou do time da Audens — a gente é especializada em fazer delivery e restaurante venderem mais (tráfego que traz pedido + cardápio que converte + recorrência). Já pegamos cliente de R$37 mil e levamos pra mais de R$120 mil/mês. Posso te mostrar, sem compromisso, como isso se aplicaria no seu negócio?"})[id]||'';
 }
 async function friaLoadStats(){
   try{
@@ -33544,7 +33543,7 @@ async function friaImport(){
 }
 async function friaSaveMsgs(){
   var st=document.getElementById('fria-msg-st');
-  var templates={}; ['f1','f2','f3'].forEach(function(id){ var e=document.getElementById('fria-tpl-'+id); if(e) templates[id]={text:e.value}; });
+  var templates={}; ['f1','f2'].forEach(function(id){ var e=document.getElementById('fria-tpl-'+id); if(e) templates[id]={text:e.value}; });
   if(st){st.style.color='var(--muted)';st.textContent='Salvando…';}
   try{ var r=await fetch(RECEBERLEAD_URL+'/fria-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templates:templates})}); var j=await r.json(); if(j&&j.ok){ if(st){st.style.color='#22c55e';st.textContent='✓ Mensagens salvas.';} } else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-config já está no deploy?';} } }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }

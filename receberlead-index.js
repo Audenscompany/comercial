@@ -4323,12 +4323,12 @@ async function handleNurtTick(req, res) {
 // Inscreve até maxPerDay NOVOS contatos/dia; cada um recebe 3 toques (dia 0, 2, 5).
 // 1 msg a cada intervalSeconds (300s) entre TODOS os disparos fria; janela startHour-endHour BRT.
 // Quem responde → status "respondeu", para a sequência e vira tarefa pro João (sdr_tarefas).
+// Toque 1: só "{{nome}}?" (gera curiosidade/resposta). Toque 2: valor da Audens, +30min depois.
 const FRIA_TEMPLATES = {
-  f1: { idx: 0, dia: 0, text: "Oi {{primeiroNome}}! Tudo certo? 🙌 Aqui é o João, da Audens. Rapidinho: você toca algum delivery ou restaurante hoje?" },
-  f2: { idx: 1, dia: 2, text: "{{primeiroNome}}, uma dúvida sincera: hoje suas vendas dependem muito do iFood, ou você já tem um canal próprio rodando?" },
-  f3: { idx: 2, dia: 5, text: "{{primeiroNome}}, prometo que é a última 🙂 Se fizer sentido, eu te mostro sem compromisso como uns deliverys parecidos com o seu destravaram as vendas. Posso te mandar?" }
+  f1: { idx: 0, offsetMin: 0, text: "{{primeiroNome}}?" },
+  f2: { idx: 1, offsetMin: 30, text: "{{primeiroNome}}, aqui é o João 🙌 Sou do time da Audens — a gente é especializada em fazer delivery e restaurante venderem mais (tráfego que traz pedido + cardápio que converte + recorrência). Já pegamos cliente de R$37 mil e levamos pra mais de R$120 mil/mês. Posso te mostrar, sem compromisso, como isso se aplicaria no seu negócio?" }
 };
-const FRIA_ORDER = ["f1", "f2", "f3"];
+const FRIA_ORDER = ["f1", "f2"];
 async function friaCfg() {
   try {
     var v = (await db.ref("config/fria").once("value")).val() || {};
@@ -4382,27 +4382,18 @@ async function friaDailyBuild(cfg) {
     .sort(function (a, b) { var pa = contatos[a].prio || 0, pb = contatos[b].prio || 0; if (pa !== pb) return pa - pb; return (contatos[a].importedAt || 0) - (contatos[b].importedAt || 0); });
   var lim = Math.min(novos.length, cfg.maxPerDay || 50);
   for (var i = 0; i < lim; i++) {
-    var k = novos[i];
-    await db.ref("fria_contatos/" + k).update({ status: "ativo", startedAt: hoje, touchIndex: 0, enrolledAt: Date.now() });
-    contatos[k].status = "ativo"; contatos[k].startedAt = hoje; contatos[k].touchIndex = 0;
+    var k = novos[i], c = contatos[k], now = Date.now();
+    await db.ref("fria_contatos/" + k).update({ status: "ativo", startedAt: hoje, touchIndex: 0, enrolledAt: now });
+    // enfileira os 2 toques já na inscrição: f1 imediato (slot 300s), f2 = f1 + 30min
+    var f1sched = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
+    for (var ti = 0; ti < FRIA_ORDER.length; ti++) {
+      var tid = FRIA_ORDER[ti], off = FRIA_TEMPLATES[tid].offsetMin || 0;
+      var sched = (ti === 0) ? f1sched : friaClampWindow(f1sched + off * 60000, cfg);
+      await db.ref("fria_fila/" + k + "_" + tid).set({ key: k, tel: c.tel, nome: c.nome || "", tid: tid, status: "queued", scheduledAt: sched, createdAt: now });
+      await db.ref("fria_msg/" + k + "/" + tid).set({ status: "queued", scheduledAt: sched });
+      out.queued++;
+    }
     out.enrolled++;
-  }
-  var ativos = Object.keys(contatos).filter(function (k) { return contatos[k] && contatos[k].status === "ativo"; });
-  for (var j = 0; j < ativos.length; j++) {
-    var kk = ativos[j], cc = contatos[kk];
-    var dia = cadDaysBetween(cc.startedAt, hoje);
-    var tid = FRIA_ORDER.find(function (id) { return FRIA_TEMPLATES[id].dia === dia; });
-    if (!tid) continue;
-    var already = (await db.ref("fria_msg/" + kk + "/" + tid).once("value")).val();
-    if (already && already.status) continue;
-    var itemRef = db.ref("fria_fila/" + kk + "_" + tid);
-    var created = false;
-    await itemRef.transaction(function (cur) { if (cur) return; created = true; return { key: kk, tel: cc.tel, nome: cc.nome || "", tid: tid, status: "queued", scheduledAt: 0, createdAt: Date.now() }; });
-    if (!created) continue;
-    var sa = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
-    await itemRef.update({ scheduledAt: sa });
-    await db.ref("fria_msg/" + kk + "/" + tid).set({ status: "queued", scheduledAt: sa });
-    out.queued++;
   }
   return out;
 }
