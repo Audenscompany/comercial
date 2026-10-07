@@ -27352,7 +27352,10 @@ function _renderAvalDetail(sc){
   var ng=Math.round(notaGeral*10)/10;
   var cor=notaFinal>=85?'#10b981':notaFinal>=70?'#c084fc':notaFinal>=45?'#f59e0b':'#ef4444';
   var lbl=notaFinal>=85?'Excelente':notaFinal>=70?'Bom':notaFinal>=45?'Regular':'Crítico';
-  var back='<button onclick="_avalSelectedId=null;showPage(\'avaliacoes\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;cursor:pointer;margin-bottom:14px;"><i class="ti ti-arrow-left"></i> Voltar</button>';
+  var back='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'+
+    '<button onclick="_avalSelectedId=null;showPage(\'avaliacoes\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;cursor:pointer;"><i class="ti ti-arrow-left"></i> Voltar</button>'+
+    (sc.id&&CU&&CU.role==='gestor'?'<button onclick="avalReatribuir(\''+sc.id+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:none;color:var(--purple3);font-size:12px;cursor:pointer;"><i class="ti ti-user-edit"></i> Reatribuir closer</button>':'')+
+  '</div>';
   var chips=[sc.closerNome,sc.tipo||sc.segmento,sc.resultado,sc.date].filter(Boolean).map(function(c){return '<span style="background:var(--card2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;color:var(--muted);">'+E(c)+'</span>';}).join(' ');
   function sec(titulo,corTit,inner){ if(!inner) return ''; return '<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:14px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;letter-spacing:.5px;color:'+(corTit||'var(--white)')+';margin-bottom:12px;">'+titulo+'</div>'+inner+'</div>'; }
   var H=back;
@@ -27445,6 +27448,30 @@ function acExcluirAvaliacao(id){
   delete _avaliacoes[id];
   if(_avalSelectedId===id) _avalSelectedId=null;
   if(fbDb||initFirebase()) fbDb.ref('avaliacoes/'+id).remove();
+  showPage('avaliacoes');
+}
+// Reatribuir uma avaliação já salva a outro closer (corrige atribuição errada)
+function avalReatribuir(id){
+  var a=_avaliacoes[id]; if(!a){ alert('Avaliação não encontrada.'); return; }
+  var opts={'lucas@audens.com':'Lucas Siqueira','joao@audens.com':'João Silva','gustavo@audens.com':'Gustavo Pimenta','arthur@audens.com':'Arthur Menezes'};
+  var atual=a.closerNome||a.closerEmail||'—';
+  var lista=Object.keys(opts).map(function(e,i){return (i+1)+') '+opts[e];}).join('\n');
+  var r=prompt('Reatribuir esta avaliação.\nCloser atual: '+atual+'\n\nDigite o número do closer correto:\n'+lista,'');
+  if(r==null) return;
+  var idx=parseInt(String(r).trim(),10)-1;
+  var emails=Object.keys(opts);
+  if(isNaN(idx)||idx<0||idx>=emails.length){ alert('Opção inválida.'); return; }
+  var email=emails[idx], nome=opts[email];
+  a.closerEmail=email; a.closerNome=nome;
+  var closerShort=(({'lucas@audens.com':'Lucas','joao@audens.com':'João','gustavo@audens.com':'Gustavo','arthur@audens.com':'Arthur'})[email])||nome;
+  a.closer=closerShort;
+  if(fbDb||initFirebase()){
+    fbDb.ref('avaliacoes/'+id).update({closerEmail:email,closerNome:nome,closer:closerShort});
+    // Reatribui também a reunião vinculada, se houver
+    if(a.meetingId) fbDb.ref('meetings/'+a.meetingId+'/responsavel').set(closerShort);
+  }
+  if(typeof showSheetToast==='function') showSheetToast('Avaliação reatribuída para '+nome,false);
+  _avalCurrentCloser=email;
   showPage('avaliacoes');
 }
 
