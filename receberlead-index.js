@@ -4362,7 +4362,7 @@ async function handleFriaImport(req, res) {
     if (tel.length < 12 || tel.length > 13) { inval++; return; }
     var key = tel.replace(/[.#$\[\]]/g, "_");
     if (existentes[key] || updates["fria_contatos/" + key]) { dup++; return; }
-    updates["fria_contatos/" + key] = { tel: tel, nome: String(x.nome || x.name || "").trim(), status: "novo", importedAt: Date.now() };
+    updates["fria_contatos/" + key] = { tel: tel, nome: String(x.nome || x.name || "").trim(), status: "novo", prio: (parseInt(x.prio, 10) || 0), importedAt: Date.now() };
     n++;
   });
   var keys = Object.keys(updates);
@@ -4378,7 +4378,8 @@ async function friaDailyBuild(cfg) {
   await ctrlRef.set(hoje);
   var out = { enrolled: 0, queued: 0 };
   var contatos = (await db.ref("fria_contatos").once("value")).val() || {};
-  var novos = Object.keys(contatos).filter(function (k) { return contatos[k] && contatos[k].status === "novo"; });
+  var novos = Object.keys(contatos).filter(function (k) { return contatos[k] && contatos[k].status === "novo"; })
+    .sort(function (a, b) { var pa = contatos[a].prio || 0, pb = contatos[b].prio || 0; if (pa !== pb) return pa - pb; return (contatos[a].importedAt || 0) - (contatos[b].importedAt || 0); });
   var lim = Math.min(novos.length, cfg.maxPerDay || 50);
   for (var i = 0; i < lim; i++) {
     var k = novos[i];
