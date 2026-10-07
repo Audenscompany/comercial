@@ -16,6 +16,9 @@ const META_TEST_EVENT_CODE = process.env.META_TEST_EVENT_CODE || ""; // opcional
 
 const REDIRECT_OK = "https://audenscompany.com.br/obrigado-assessoria-audens-company";
 const REDIRECT_ERR = "https://audenscompany.com.br/assessoria-audens-company/";
+// Link da MENTORIA (leads abaixo de R$40k / sem faturamento são direcionados pra cá).
+// Pode ser sobrescrito ao vivo em config/mentoria/link no Firebase (sem redeploy).
+const MENTORIA_LINK = "https://audenscompany.com.br/mentoria"; // TODO: confirmar URL real da mentoria
 
 // Webhook do Make.com (mesma automacao que antes era disparada pelo Sellflux)
 const MAKE_WEBHOOK_URL = "https://hook.us2.make.com/5k0ii6irppno9fst3x208d1pjkfbff6u";
@@ -66,6 +69,18 @@ function mensagemQuizQualificado(nomeCompleto) {
   return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
     "Vi que você fez o Raio-X do seu delivery e tem perfil pra uma Análise Estratégica com a gente.\n" +
     "Você já conseguiu escolher um horário ou ficou com alguma dúvida pra agendar?";
+}
+
+// Mensagem para leads ABAIXO de R$40k (ou sem faturamento informado): o tráfego pago/assessoria
+// não é o passo indicado agora — direciona pra MENTORIA, com o link no próprio WhatsApp.
+function mensagemMentoria(nomeCompleto, link) {
+  var primeiroNome = primeiroNomeDe(nomeCompleto);
+  var url = link || MENTORIA_LINK;
+  return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
+    "Vi que você se cadastrou com a gente pra conhecer a assessoria de marketing.\n" +
+    "Pelo momento atual do seu delivery, o tráfego pago com assessoria ainda não é o passo mais indicado — ele faz mais sentido a partir de um certo patamar de faturamento.\n\n" +
+    "Mas tenho uma coisa que vai te ajudar AGORA a estruturar e escalar teu delivery até lá: a nossa Mentoria 🚀\n" +
+    "É o passo a passo pra você crescer com o que já tem hoje. Dá uma olhada aqui 👉 " + url;
 }
 
 // Momento 0 — abertura de curiosidade (método Gregori): só o nome + "?" pra provocar
@@ -689,7 +704,17 @@ async function handleReceberLead(req, res) {
   const _invLC = String(investimento || "").toLowerCase();
   const _naoQuer = _invLC === "nao" || _invLC.indexOf("prioridade") >= 0 || _invLC.indexOf("não pretendo") >= 0 || _invLC.indexOf("nao pretendo") >= 0 || _invLC.indexOf("não consigo") >= 0 || _invLC.indexOf("nao consigo") >= 0;
   const faixaBaixa = ["ate-15", "0-15", "ate-20"].includes(String(faixa || "")) || (_naoQuer && ["15-20", "20-50", "15-30", "30-50"].includes(String(faixa || "")));
-  if (!faixaBaixa) {
+  // Regra Lucas: lead ABAIXO de R$40k (ou SEM faturamento informado, fm=0) não recebe a mensagem
+  // de "você tem perfil pra assessoria" — recebe a mensagem da MENTORIA (+ redirect pra LP da mentoria).
+  // Acima de 40k segue o fluxo normal (quiz qualificado / primeiro contato + nurturing).
+  var _fmEntry = _fatMinSrv(String(faixa || ""), String(faturamento || ""));
+  var _mentoriaLead = (_fmEntry < NURT_MIN_FAT);
+  var _mentoriaLink = MENTORIA_LINK;
+  if (_mentoriaLead) { try { var _mlv = (await db.ref("config/mentoria/link").once("value")).val(); if (_mlv) _mentoriaLink = String(_mlv); } catch (e) {} }
+  if (_mentoriaLead) {
+    // Abaixo de 40k / sem faturamento: direciona pra mentoria (WhatsApp). Sem assessoria, sem nurturing.
+    try { await enviarMensagemWhatsapp(tel, mensagemMentoria(nome, _mentoriaLink)); } catch (e) { console.error("mentoria msg:", e); }
+  } else if (!faixaBaixa) {
     if (isQuizQualificado) {
       // LP V2 / FV1 (quiz): experiência preservada — mensagem de agendamento como sempre.
       await enviarMensagemWhatsapp(tel, mensagemQuizQualificado(nome));
@@ -708,7 +733,7 @@ async function handleReceberLead(req, res) {
   }
 
   if (isBrowser) {
-    return res.redirect(302, REDIRECT_OK);
+    return res.redirect(302, _mentoriaLead ? _mentoriaLink : REDIRECT_OK);
   }
   return res.status(200).json({ ok: true, key });
 }
