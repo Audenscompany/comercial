@@ -347,7 +347,7 @@ function render(){
   var sess = [];
   if(!antiga){
     var S = cache.sessions||{};
-    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(v3 && String(v.variante||'')!=='lp-v3') continue; sess.push(v); }
+    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(v3){ var _vv=String(v.variante||''); var _pg=String(v.page||'').toLowerCase(); if(_vv!=='lp-v3' && _pg.indexOf('lpv3')<0) continue; } sess.push(v); }
   }
   var total = sess.length;
   var reachedForm = sess.filter(function(s){return s.reachedForm;}).length;
