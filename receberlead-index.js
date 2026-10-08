@@ -4385,29 +4385,45 @@ async function friaDailyBuild(cfg) {
   for (var i = 0; i < lim; i++) {
     var k = novos[i], c = contatos[k], now = Date.now();
     await db.ref("fria_contatos/" + k).update({ status: "ativo", startedAt: hoje, touchIndex: 0, enrolledAt: now });
-    // enfileira os 2 toques já na inscrição: f1 imediato (slot 300s), f2 = f1 + 30min
+    // SÓ a 1ª mensagem entra na fila anti-ban. A 2ª é disparada 5min após o ENVIO REAL da 1ª (fria_f2_pendentes), fora do throttle.
     var f1sched = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
-    for (var ti = 0; ti < FRIA_ORDER.length; ti++) {
-      var off = (ti === 0) ? 0 : (cfg.gapMin || 5); // 2º toque: intervalo configurável (config/fria/gapMin, padrão 15min)
-      var sched = (ti === 0) ? f1sched : friaClampWindow(f1sched + off * 60000, cfg);
-      await db.ref("fria_fila/" + k + "_" + tid).set({ key: k, tel: c.tel, nome: c.nome || "", tid: tid, status: "queued", scheduledAt: sched, createdAt: now });
-      await db.ref("fria_msg/" + k + "/" + tid).set({ status: "queued", scheduledAt: sched });
-      out.queued++;
-    }
-    out.enrolled++;
+    await db.ref("fria_fila/" + k + "_f1").set({ key: k, tel: c.tel, nome: c.nome || "", tid: "f1", status: "queued", scheduledAt: f1sched, createdAt: now });
+    await db.ref("fria_msg/" + k + "/f1").set({ status: "queued", scheduledAt: f1sched });
+    out.queued++; out.enrolled++;
   }
   return out;
 }
 // Drena 1 mensagem por chamada (respeita intervalSeconds + janela). Chamado pelo cadencia-drain (1/min).
 async function friaDrainCore() {
   var cfg = await friaCfg();
-  var out = { enabled: cfg.enabled, enviados: 0 };
+  var out = { enabled: cfg.enabled, enviados: 0, f2: 0 };
   if (!cfg.enabled) return out;
   try { out.build = await friaDailyBuild(cfg); } catch (e) { console.error("friaDailyBuild:", e); }
+  // (A) 2ª MENSAGEM — dispara 5min após o ENVIO REAL da 1ª, SEM fila/throttle (única regra: +gapMin da 1ª).
+  // Como a 1ª é espaçada pelo throttle, as 2ªs também saem espaçadas (não há rajada).
+  try {
+    var pend = (await db.ref("fria_f2_pendentes").once("value")).val() || {};
+    var now0 = Date.now();
+    var ks = Object.keys(pend).filter(function (k) { return pend[k] && pend[k].dueAt && pend[k].dueAt <= now0; });
+    if (ks.length) {
+      var tpl2 = await friaGetTemplate("f2");
+      for (var x = 0; x < ks.length; x++) {
+        var k2 = ks[x], p2 = pend[k2];
+        var alvo2 = cfg.testPhone || p2.tel;
+        try { await enviarMensagemWhatsapp(alvo2, (cfg.testPhone ? "[TESTE fria] " : "") + friaRender(tpl2.text, p2.nome)); } catch (e) {}
+        await db.ref("fria_f2_pendentes/" + k2).remove();
+        await db.ref("fria_msg/" + k2 + "/f2").set({ status: "sent", sentAt: Date.now() });
+        try { await db.ref("fria_contatos/" + k2).update({ touchIndex: 2, status: "concluido", lastTouchAt: Date.now() }); } catch (e) {}
+        await db.ref("fria_events").push({ type: "sent", key: k2, tid: "f2", at: Date.now() });
+        out.f2++;
+      }
+    }
+  } catch (e) { console.error("fria f2 pendentes:", e); }
+  // (B) 1ª MENSAGEM — fila anti-ban: 1 por intervalo, dentro da janela.
   var last = (await db.ref("fria_lastSentAt").once("value")).val() || 0;
   if (Date.now() - last < ((cfg.intervalSeconds || 300) - 10) * 1000) return out;
   var bnow = cadBRT(Date.now());
-  if (bnow.hour < (cfg.startHour || 9) || bnow.hour >= (cfg.endHour || 20)) { out.note = "fora da janela"; return out; }
+  if (bnow.hour < (cfg.startHour || 9) || bnow.hour >= (cfg.endHour || 20)) { out.note = "fora da janela (1a msg)"; return out; }
   var fila = (await db.ref("fria_fila").once("value")).val() || {};
   var now = Date.now();
   var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
@@ -4425,10 +4441,14 @@ async function friaDrainCore() {
   await ref.update({ status: "sent", sentAt: Date.now() });
   await db.ref("fria_msg/" + it.key + "/" + it.tid).update({ status: "sent", sentAt: Date.now() });
   await db.ref("fria_lastSentAt").set(Date.now());
-  var idx = FRIA_TEMPLATES[it.tid].idx;
-  var patch = { lastTouchAt: Date.now(), touchIndex: idx + 1 };
-  if (idx + 1 >= FRIA_ORDER.length) patch.status = "concluido";
-  await db.ref("fria_contatos/" + it.key).update(patch);
+  if (it.tid === "f1") {
+    // agenda a 2ª mensagem pra +gapMin do ENVIO REAL (fora da fila/throttle)
+    await db.ref("fria_contatos/" + it.key).update({ lastTouchAt: Date.now(), touchIndex: 1 });
+    await db.ref("fria_f2_pendentes/" + it.key).set({ tel: it.tel, nome: it.nome || "", dueAt: Date.now() + (cfg.gapMin || 5) * 60000 });
+  } else {
+    // compat: itens f2 antigos que ainda estavam na fila
+    await db.ref("fria_contatos/" + it.key).update({ lastTouchAt: Date.now(), touchIndex: 2, status: "concluido" });
+  }
   await db.ref("fria_events").push({ type: "sent", key: it.key, tid: it.tid, at: Date.now() });
   out.enviados = 1; out.para = it.nome;
   return out;
