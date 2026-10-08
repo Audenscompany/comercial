@@ -4495,6 +4495,28 @@ async function handleFriaConfig(req, res) {
   var cur = (await db.ref("config/fria").once("value")).val() || {};
   return res.status(200).json({ ok: true, config: cur });
 }
+// Reenvia a 2ª mensagem pra quem recebeu a 1ª HOJE mas ainda não recebeu a 2ª (agenda espaçado, sem rajada).
+async function handleFriaF2Catchup(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var hoje = cadBRT(Date.now()).date;
+  var spacing = 90 * 1000; // 90s entre cada 2ª mensagem do catch-up
+  var contatos = (await db.ref("fria_contatos").once("value")).val() || {};
+  var msgs = (await db.ref("fria_msg").once("value")).val() || {};
+  var pend = (await db.ref("fria_f2_pendentes").once("value")).val() || {};
+  var base = Date.now(), i = 0, n = 0, updates = {};
+  Object.keys(contatos).forEach(function (k) {
+    var c = contatos[k] || {}; if (c.startedAt !== hoje) return;
+    var m = msgs[k] || {};
+    var f1sent = m.f1 && m.f1.status === "sent";
+    var f2sent = m.f2 && m.f2.status === "sent";
+    if (!f1sent || f2sent) return;      // só quem recebeu a 1ª e ainda não a 2ª
+    if (pend[k]) return;                 // já agendada
+    updates["fria_f2_pendentes/" + k] = { tel: c.tel, nome: c.nome || "", dueAt: base + i * spacing, catchup: true };
+    i++; n++;
+  });
+  if (Object.keys(updates).length) await db.ref().update(updates);
+  return res.status(200).json({ ok: true, agendadas: n, intervalo_seg: spacing / 1000, nota: "a 2a mensagem sai espacada (1 a cada " + (spacing / 1000) + "s) pelo drain" });
+}
 // ═══════════════════════ FIM PROSPECÇÃO FRIA ═══════════════════════
 
 http('receberLead', async (req, res) => {
@@ -4902,6 +4924,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/fria-stats") {
       return await handleFriaStats(req, res);
+    }
+    if (path === "/fria-f2-catchup") {
+      return await handleFriaF2Catchup(req, res);
     }
     if (path === "/nurt-config") {
       if (!checaSecret(req)) return res.status(401).send("Unauthorized");

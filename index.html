@@ -33505,6 +33505,7 @@ function renderFria(){
      '<button onclick="friaToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar disparo</button>'+
      '<button onclick="friaToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
      '<button onclick="friaLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
+     '<button onclick="friaF2Catchup()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--purple3);border-color:rgba(147,51,234,.4);">📨 Enviar 2ª msg pros que faltam hoje</button>'+
      '</div><div id="fria-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
   // 4 · Contatos importados (tabela + filtros)
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
@@ -33655,6 +33656,17 @@ async function friaToggle(on){
     var r=await fetch(RECEBERLEAD_URL+'/fria-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); var j=await r.json();
     if(j&&j.ok){ if(st){st.style.color=on?'#22c55e':'var(--muted)';st.textContent='✓ Prospecção Fria '+(on?('LIGADA'+(j.config&&j.config.testPhone?(' · teste → '+j.config.testPhone):' · PRA VALER')):'desligada')+'.';} friaLoadStats(); }
     else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-config já está no deploy do receberlead?';} }
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function friaF2Catchup(){
+  if(!confirm('Enviar a 2ª mensagem (valor da Audens) pra TODOS que receberam a 1ª hoje mas ainda não receberam a 2ª?\n\nVão sair espaçadas (1 a cada ~90s) pra não queimar o número.')) return;
+  var st=document.getElementById('fria-ctrl-st');
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Agendando as 2ªs mensagens…';}
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/fria-f2-catchup?secret='+WEBHOOK_SECRET,{method:'POST'});
+    var j=await r.json();
+    if(j&&j.ok){ if(st){st.style.color='#22c55e';st.textContent='✓ '+j.agendadas+' segunda(s) mensagem(ns) agendada(s) — saindo 1 a cada ~'+j.intervalo_seg+'s.';} friaLoadStats(); }
+    else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-f2-catchup já está no deploy do receberlead?';} }
   }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 // ═══════════ FIM PROSPECÇÃO FRIA ═══════════
