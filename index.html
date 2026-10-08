@@ -33585,6 +33585,7 @@ function friaCtRender(){
        '<td style="padding:8px 10px;text-align:center;"><span style="color:'+(c.respondeu?'#22c55e':friaStatusCor(c.status))+';font-weight:700;">'+(c.respondeu?'Respondeu':friaStatusLabel(c.status))+'</span></td>'+
        '<td style="padding:8px 10px;text-align:center;color:var(--muted);">'+c.prio+'</td>'+
        '<td style="padding:8px 10px;text-align:right;white-space:nowrap;">'+
+         '<button onclick="friaAgendar(\''+c.key+'\')" title="Agendar reunião e jogar no funil" style="background:none;border:1px solid var(--purple);border-radius:6px;color:var(--purple3);padding:3px 8px;font-size:11px;cursor:pointer;">📅 Agendar</button> '+
          '<button onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+c.tel+'\');this.textContent=\'✓\';" title="Copiar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:3px 8px;font-size:11px;cursor:pointer;">copiar</button> '+
          '<a href="https://wa.me/'+c.tel+'" target="_blank" style="background:none;border:1px solid rgba(34,197,94,.4);border-radius:6px;color:#22c55e;padding:3px 8px;font-size:11px;cursor:pointer;text-decoration:none;">WhatsApp</a>'+
        '</td></tr>';
@@ -33657,6 +33658,24 @@ async function friaToggle(on){
     if(j&&j.ok){ if(st){st.style.color=on?'#22c55e':'var(--muted)';st.textContent='✓ Prospecção Fria '+(on?('LIGADA'+(j.config&&j.config.testPhone?(' · teste → '+j.config.testPhone):' · PRA VALER')):'desligada')+'.';} friaLoadStats(); }
     else { if(st){st.style.color='var(--amber)';st.textContent='A rota /fria-config já está no deploy do receberlead?';} }
   }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+// Promove um contato da prospecção fria pro funil normal e abre o mesmo modal de Agendar Reunião
+function friaAgendar(friaKey){
+  var c=(_friaContatos||[]).find(function(x){return x.key===friaKey;});
+  if(!c){ alert('Contato não encontrado. Clique em "Carregar / Atualizar" na lista.'); return; }
+  var kkey=String(c.tel||'').replace(/\D/g,''); if(kkey.length<10){ alert('Telefone inválido.'); return; }
+  if(typeof kanbanData==='undefined'||!kanbanData) window.kanbanData={};
+  var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase()));
+  if(!kanbanData[kkey]){
+    var novo={nome:c.nome||'',telefone:kkey,empresa:'',cnpj:'',cidade:'',email:'',faturamento:'',_source:'prospeccao-fria',_createdAt:Date.now(),status:'qualificado',statusAt:Date.now(),statusHistory:{qualificado:Date.now()},origem:'Prospecção Fria'};
+    kanbanData[kkey]=novo;
+    try{ if(db) db.ref('kanban/'+kkey).set(novo); }catch(e){}
+    try{ if(db) db.ref('leads/'+kkey).update({nome:c.nome||'',telefone:kkey,_source:'prospeccao-fria',origem:'Prospecção Fria',_createdAt:Date.now()}); }catch(e){}
+  }
+  // marca na fria como promovido e para a 2ª mensagem pendente (não faz mais sentido o automático)
+  try{ if(db){ db.ref('fria_contatos/'+friaKey).update({promovido:true,status:'promovido'}); db.ref('fria_f2_pendentes/'+friaKey).remove(); } }catch(e){}
+  if(typeof abrirAgendarReuniao==='function'){ abrirAgendarReuniao(kkey); }
+  else { alert('Contato jogado no Funil de Leads. Abra o Funil pra agendar a reunião.'); }
 }
 async function friaF2Catchup(){
   if(!confirm('Enviar a 2ª mensagem (valor da Audens) pra TODOS que receberam a 1ª hoje mas ainda não receberam a 2ª?\n\nVão sair espaçadas (1 a cada ~90s) pra não queimar o número.')) return;
