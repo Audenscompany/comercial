@@ -4327,14 +4327,14 @@ async function handleNurtTick(req, res) {
 // Toque 1: só "{{nome}}?" (gera curiosidade/resposta). Toque 2: valor da Audens, +30min depois.
 const FRIA_TEMPLATES = {
   f1: { idx: 0, offsetMin: 0, text: "{{primeiroNome}}?" },
-  f2: { idx: 1, offsetMin: 15, text: "{{primeiroNome}}, aqui é o João 🙌 Sou do time da Audens — a gente é especializada em fazer delivery e restaurante venderem mais (tráfego que traz pedido + cardápio que converte + recorrência). Já pegamos cliente de R$37 mil e levamos pra mais de R$120 mil/mês. Posso te mostrar, sem compromisso, como isso se aplicaria no seu negócio?" }
+  f2: { idx: 1, offsetMin: 5, text: "{{primeiroNome}}, aqui é o João 🙌 Sou do time da Audens — a gente é especializada em fazer delivery e restaurante venderem mais (tráfego que traz pedido + cardápio que converte + recorrência). Já pegamos cliente de R$37 mil e levamos pra mais de R$120 mil/mês. Posso te mostrar, sem compromisso, como isso se aplicaria no seu negócio?" }
 };
 const FRIA_ORDER = ["f1", "f2"];
 async function friaCfg() {
   try {
     var v = (await db.ref("config/fria").once("value")).val() || {};
-    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 50, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, gapMin: parseInt(v.gapMin, 10) || 15 };
-  } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 50, intervalSeconds: 300, startHour: 9, endHour: 20, gapMin: 15 }; }
+    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 50, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, gapMin: parseInt(v.gapMin, 10) || 5 };
+  } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 50, intervalSeconds: 300, startHour: 9, endHour: 20, gapMin: 5 }; }
 }
 async function friaGetTemplate(id) {
   var base = FRIA_TEMPLATES[id]; if (!base) return null;
@@ -4388,7 +4388,7 @@ async function friaDailyBuild(cfg) {
     // enfileira os 2 toques já na inscrição: f1 imediato (slot 300s), f2 = f1 + 30min
     var f1sched = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
     for (var ti = 0; ti < FRIA_ORDER.length; ti++) {
-      var off = (ti === 0) ? 0 : (cfg.gapMin || 15); // 2º toque: intervalo configurável (config/fria/gapMin, padrão 15min)
+      var off = (ti === 0) ? 0 : (cfg.gapMin || 5); // 2º toque: intervalo configurável (config/fria/gapMin, padrão 15min)
       var sched = (ti === 0) ? f1sched : friaClampWindow(f1sched + off * 60000, cfg);
       await db.ref("fria_fila/" + k + "_" + tid).set({ key: k, tel: c.tel, nome: c.nome || "", tid: tid, status: "queued", scheduledAt: sched, createdAt: now });
       await db.ref("fria_msg/" + k + "/" + tid).set({ status: "queued", scheduledAt: sched });
@@ -4440,12 +4440,9 @@ async function friaMarkReply(phone, text) {
     var cands = [tel]; if (tel.indexOf("55") === 0) cands.push(tel.slice(2)); else cands.push("55" + tel);
     var found = null, fkey = null;
     for (var i = 0; i < cands.length; i++) { var k = cands[i].replace(/[.#$\[\]]/g, "_"); var c = (await db.ref("fria_contatos/" + k).once("value")).val(); if (c) { found = c; fkey = k; break; } }
-    if (!found || found.status === "respondeu") return false;
-    await db.ref("fria_contatos/" + fkey).update({ status: "respondeu", respondeuAt: Date.now(), respostaTexto: String(text || "").slice(0, 200) });
-    var fila = (await db.ref("fria_fila").once("value")).val() || {};
-    var upd = {};
-    Object.keys(fila).forEach(function (id) { if (fila[id] && fila[id].key === fkey && fila[id].status === "queued") upd["fria_fila/" + id + "/status"] = "cancelled_reply"; });
-    if (Object.keys(upd).length) await db.ref().update(upd);
+    if (!found || found.respondeu) return false;
+    // Marca que respondeu (flag), mas NÃO cancela a fila: o 2º toque é enviado mesmo pra quem respondeu (a pedido do Lucas)
+    await db.ref("fria_contatos/" + fkey).update({ respondeu: true, respondeuAt: Date.now(), respostaTexto: String(text || "").slice(0, 200) });
     await db.ref("sdr_tarefas/" + fkey + "_fria").set({ leadKey: fkey, nome: found.nome || "", telefone: found.tel || tel, empresa: "", faturamento: "", tipo: "🧊 Lead frio respondeu — assumir", icon: "ti-message-2", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() });
     await db.ref("fria_events").push({ type: "reply", key: fkey, at: Date.now() });
     return true;
@@ -4456,9 +4453,10 @@ async function handleFriaStats(req, res) {
   var c = (await db.ref("fria_contatos").once("value")).val() || {};
   var st = { novo: 0, ativo: 0, respondeu: 0, concluido: 0, total: 0 };
   var hoje = cadBRT(Date.now()).date, enrolledToday = 0;
-  Object.keys(c).forEach(function (k) { st.total++; var s = c[k].status || "novo"; st[s] = (st[s] || 0) + 1; if (c[k].startedAt === hoje) enrolledToday++; });
+  Object.keys(c).forEach(function (k) { st.total++; var o = c[k] || {}; var s = o.status || "novo"; if (s === "respondeu") s = "ativo"; st[s] = (st[s] || 0) + 1; if (o.respondeu) st.respondeu++; if (o.startedAt === hoje) enrolledToday++; });
   var cfg = await friaCfg();
-  var taxa = (st.ativo + st.concluido + st.respondeu) > 0 ? Math.round(st.respondeu / (st.ativo + st.concluido + st.respondeu) * 100) : 0;
+  var iniciados = (st.ativo || 0) + (st.concluido || 0);
+  var taxa = iniciados > 0 ? Math.round(st.respondeu / iniciados * 100) : 0;
   return res.status(200).json({ ok: true, stats: st, enrolledToday: enrolledToday, taxaResposta: taxa, config: cfg });
 }
 async function handleFriaConfig(req, res) {
@@ -4470,7 +4468,7 @@ async function handleFriaConfig(req, res) {
   if (b.testPhone !== undefined) u.testPhone = String(b.testPhone || "").replace(/\D/g, "");
   if (b.startHour !== undefined) u.startHour = parseInt(b.startHour, 10) || 9;
   if (b.endHour !== undefined) u.endHour = parseInt(b.endHour, 10) || 20;
-  if (b.gapMin !== undefined) u.gapMin = parseInt(b.gapMin, 10) || 15;
+  if (b.gapMin !== undefined) u.gapMin = parseInt(b.gapMin, 10) || 5;
   u.at = Date.now();
   await db.ref("config/fria").update(u);
   if (b.templates && typeof b.templates === "object") { await db.ref("config/fria_templates").update(b.templates); }

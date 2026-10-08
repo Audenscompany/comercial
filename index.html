@@ -33454,7 +33454,7 @@ function renderFria(){
   H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
      '<div><div style="font-size:11px;letter-spacing:2px;color:var(--purple3);font-weight:700;">PROSPECÇÃO</div>'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">🧊 Prospecção Fria</div>'+
-     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">50 novos/dia · Toque 1: <b>"{{nome}}?"</b> (curiosidade) · Toque 2: <b>valor da Audens +15min</b> · 1 msg a cada 5min · janela '+(cfg.startHour||9)+'h–'+(cfg.endHour||20)+'h. Quem responde vira tarefa pro João.</div></div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">50 novos/dia · Toque 1: <b>"{{nome}}?"</b> (curiosidade) · Toque 2: <b>valor da Audens +5min</b> · 1 msg a cada 5min · janela '+(cfg.startHour||9)+'h–'+(cfg.endHour||20)+'h. Quem responde vira tarefa pro João.</div></div>'+
      '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO'+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div>'+
      '</div>';
   // Aviso
@@ -33485,9 +33485,9 @@ function renderFria(){
   // Mensagens
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">2 · Sequência de mensagens</div>'+
-     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. Toque 1 = imediato (gera curiosidade), Toque 2 = +15 min (valor da Audens).</div>';
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. Toque 1 = imediato (gera curiosidade), Toque 2 = +5 min (valor da Audens).</div>';
   var tpl=(cfg.templates||{});
-  [['f1','Toque 1 — imediato (curiosidade: "{{nome}}?")'],['f2','Toque 2 — +15 min (valor da Audens)']].forEach(function(t){
+  [['f1','Toque 1 — imediato (curiosidade: "{{nome}}?")'],['f2','Toque 2 — +5 min (valor da Audens)']].forEach(function(t){
     var tx=(tpl[t[0]]&&tpl[t[0]].text)||_friaDefaultMsg(t[0]);
     H+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:var(--silver);font-weight:700;">'+t[1]+'</label>'+
        '<textarea id="fria-tpl-'+t[0]+'" style="width:100%;min-height:60px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:10px;font-size:13px;resize:vertical;margin-top:4px;">'+tx.replace(/</g,'&lt;')+'</textarea></div>';
@@ -33532,7 +33532,7 @@ async function friaLoadContatos(){
     var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase())); if(!db){ if(box)box.innerHTML='<span style="color:var(--amber)">Firebase não inicializado.</span>'; return; }
     var snap=await db.ref('fria_contatos').once('value');
     var v=snap.val()||{}; var arr=[];
-    Object.keys(v).forEach(function(k){ var c=v[k]||{}; arr.push({key:k,tel:String(c.tel||'').replace(/\D/g,''),nome:c.nome||'',status:c.status||'novo',prio:(c.prio||0),ddd:String(c.tel||'').replace(/\D/g,'').replace(/^55/,'').slice(0,2),importedAt:c.importedAt||0,respostaTexto:c.respostaTexto||''}); });
+    Object.keys(v).forEach(function(k){ var c=v[k]||{}; arr.push({key:k,tel:String(c.tel||'').replace(/\D/g,''),nome:c.nome||'',status:c.status||'novo',respondeu:!!c.respondeu,prio:(c.prio||0),ddd:String(c.tel||'').replace(/\D/g,'').replace(/^55/,'').slice(0,2),importedAt:c.importedAt||0,respostaTexto:c.respostaTexto||''}); });
     arr.sort(function(a,b){ if((a.prio||0)!==(b.prio||0)) return (a.prio||0)-(b.prio||0); return (a.importedAt||0)-(b.importedAt||0); });
     _friaContatos=arr; _friaCtPage=0;
     friaCtFiltrar();
@@ -33546,7 +33546,8 @@ function _friaCtFiltrados(){
   var ddd=((document.getElementById('fria-ct-ddd')||{}).value||'').replace(/\D/g,'');
   var prio=(document.getElementById('fria-ct-prio')||{}).value||'';
   return _friaContatos.filter(function(c){
-    if(st && c.status!==st) return false;
+    if(st==='respondeu'){ if(!c.respondeu) return false; }
+    else if(st && c.status!==st) return false;
     if(ddd && c.ddd!==ddd) return false;
     if(prio!=='' && String(c.prio)!==prio) return false;
     if(q){ var okNome=c.nome.toLowerCase().indexOf(q)>=0; var okTel=qd&&c.tel.indexOf(qd)>=0; if(!okNome&&!okTel) return false; }
@@ -33580,7 +33581,7 @@ function friaCtRender(){
        '<td style="padding:8px 10px;color:var(--white);">'+E(c.nome||'—')+(c.respostaTexto?'<div style="font-size:10px;color:#22c55e;margin-top:2px;">💬 '+E(c.respostaTexto.slice(0,60))+'</div>':'')+'</td>'+
        '<td style="padding:8px 10px;color:var(--silver);font-family:monospace;">'+E(telFmt)+'</td>'+
        '<td style="padding:8px 10px;text-align:center;color:var(--muted);">'+E(c.ddd)+'</td>'+
-       '<td style="padding:8px 10px;text-align:center;"><span style="color:'+friaStatusCor(c.status)+';font-weight:700;">'+friaStatusLabel(c.status)+'</span></td>'+
+       '<td style="padding:8px 10px;text-align:center;"><span style="color:'+(c.respondeu?'#22c55e':friaStatusCor(c.status))+';font-weight:700;">'+(c.respondeu?'Respondeu':friaStatusLabel(c.status))+'</span></td>'+
        '<td style="padding:8px 10px;text-align:center;color:var(--muted);">'+c.prio+'</td>'+
        '<td style="padding:8px 10px;text-align:right;white-space:nowrap;">'+
          '<button onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+c.tel+'\');this.textContent=\'✓\';" title="Copiar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:3px 8px;font-size:11px;cursor:pointer;">copiar</button> '+
