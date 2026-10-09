@@ -200,7 +200,28 @@ function el(id){return document.getElementById(id);}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(m){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[m];});}
 function leadTel(l){return String((l&&(l.telefone||l.whatsapp||l.tel||l.phone||l.celular))||"").replace(/\D/g,"");}
 /* Onde o lead parou na LP — cruza o roteamento (faixa + investir) com o agendamento REAL (kanban) */
+/* Índice reunião/follow-up por telefone (últimos 9 dígitos) — pra saber o estágio REAL do lead */
+function _meetIndex(){
+  if(cache._meetIdx && cache._meetIdx._for===cache.meetings) return cache._meetIdx;
+  var MI={_for:cache.meetings}; var M=cache.meetings||{}, F=cache.followups||{};
+  function l9(t){t=String(t||'').replace(/\D/g,'');return t.length>9?t.slice(-9):t;}
+  Object.keys(M).forEach(function(id){var m=M[id];if(!m||m._retorno)return;var stt=String(m.status||'').toLowerCase();if(stt==='cancelado'||stt==='reagendado'||stt==='cancelled')return;var t=l9(m.tel||m.telefone);if(!t)return;var when=m.scheduledAt||(m.dtISO?Date.parse(m.dtISO):0);var cur=MI[t];if(!cur||when>cur.when)MI[t]={id:id,m:m,when:when,fu:F[id]||null};});
+  cache._meetIdx=MI; return MI;
+}
+function _destinoReuniao(l){
+  var MI=_meetIndex(); var t=leadTel(l); if(t.length>9)t=t.slice(-9);
+  var mi=MI[t]; if(!mi) return null;
+  var fu=mi.fu; var res=fu&&fu.resultado?String(fu.resultado).toLowerCase():''; var mst=String(mi.m.status||'').toLowerCase();
+  if(res==='venda') return {t:'💰 Venda', bg:'rgba(37,211,102,.25)', fg:'#25d366'};
+  if(res==='retorno') return {t:'🔁 Retorno', bg:'rgba(120,160,255,.18)', fg:'#8ab4ff'};
+  if(res==='noshow'||mst==='noshow'||mst==='no_show') return {t:'🚫 No-show', bg:'rgba(239,68,68,.15)', fg:'#fca5a5'};
+  if(res==='perdida') return {t:'❌ Reunião realizada (não fechou)', bg:'rgba(245,158,11,.16)', fg:'#f59e0b'};
+  if(mst==='done'||mst==='realizada'||(fu&&fu.comparecimento==='sim')) return {t:'✅ Reunião realizada', bg:'rgba(37,211,102,.18)', fg:'#25d366'};
+  return {t:'📅 Reunião agendada', bg:'rgba(37,211,102,.12)', fg:'#7bd88f'};
+}
+/* Onde o lead parou na LP — cruza o roteamento (faixa + investir) com o agendamento REAL (kanban) */
 function destinoLead(l){
+  var _dr=_destinoReuniao(l); if(_dr) return _dr; // teve reunião? mostra o estágio real (agendada/realizada/venda/perdida/no-show)
   var faixa=String(l.faixa||'');
   var KB=cache.kanban||{}; var kb=KB[leadTel(l)]||null; var st=kb&&kb.status;
   var agendouDeFato=(st==='reuniao'||st==='proposta'||st==='fechado');
@@ -309,7 +330,9 @@ function load(){
   var p2 = fbDb.ref('leads').once('value').then(function(s){ cache.leads = s.val()||{}; }).catch(function(e){ cache.leads={}; console.warn('leads:',e.message); });
   var p3 = fbDb.ref('analytics/events').once('value').then(function(s){ cache.events = s.val()||{}; }).catch(function(e){ cache.events={}; console.warn('events:',e.message); });
   var p4 = fbDb.ref('kanban').once('value').then(function(s){ cache.kanban = s.val()||{}; }).catch(function(e){ cache.kanban={}; console.warn('kanban:',e.message); });
-  Promise.all([p1,p2,p3,p4]).then(render);
+  var p5 = fbDb.ref('meetings').once('value').then(function(s){ cache.meetings = s.val()||{}; }).catch(function(e){ cache.meetings={}; console.warn('meetings:',e.message); });
+  var p6 = fbDb.ref('followups').once('value').then(function(s){ cache.followups = s.val()||{}; }).catch(function(e){ cache.followups={}; console.warn('followups:',e.message); });
+  Promise.all([p1,p2,p3,p4,p5,p6]).then(render);
 }
 el('reload').addEventListener('click', load);
 Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b){
