@@ -566,6 +566,68 @@ async function handleRiscoTick(req, res) {
 }
 
 // ===== Rota principal: recebe lead da LP (Elementor) =====
+// ===== PROJETO "Dobrar faturamento de hambúrguer em 90 dias" (BH) =====
+// Inscrições da LP do projeto entram num nó SEPARADO (projetos/bh90/inscricoes),
+// fora de leads/ e fora do pipeline comercial normal. Não dispara WhatsApp,
+// não notifica o João, não entra em cadência.
+async function handleInscricaoProjeto(req, res) {
+  if (req.method !== "POST") {
+    res.set("Allow", "POST");
+    return res.status(405).json({ ok: false, error: "use POST" });
+  }
+  if (!checaSecret(req)) {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
+  }
+  // Robustez: se o corpo vier como texto (ex.: sendBeacon/text-plain),
+  // tenta converter pra JSON antes de ler, pra não perder inscrição.
+  var b = req.body || {};
+  if (typeof b === "string") {
+    try { b = JSON.parse(b); } catch (e) { b = {}; }
+  }
+
+  var nome = String(b.nome || b.name || "").trim();
+  var email = String(b.email || b["e-mail"] || "").trim();
+  var telefone = String(b.telefone || b.whats || b.whatsapp || b.phone || b.celular || "").trim();
+  var instagram = String(b.instagram || b.insta || "").trim();
+
+  if (!nome || !email || !telefone || !instagram) {
+    return res.status(400).json({ ok: false, error: "faltam campos (nome/email/telefone/instagram)" });
+  }
+  if (instagram.charAt(0) !== "@") instagram = "@" + instagram.replace(/^@+/, "");
+
+  var now = Date.now();
+  var rec = {
+    nome: nome,
+    email: email,
+    telefone: telefone,
+    instagram: instagram,
+    cidade: String(b.cidade || b.city || "Belo Horizonte").trim(),
+    projeto: String(b.projeto || "bh-90d").trim(),
+    origem: String(b.origem || b.source || "projeto-bh-90d").trim(),
+    utm_source: String(b.utm_source || "").trim(),
+    utm_medium: String(b.utm_medium || "").trim(),
+    utm_campaign: String(b.utm_campaign || "").trim(),
+    utm_content: String(b.utm_content || "").trim(),
+    utm_term: String(b.utm_term || "").trim(),
+    campaign_id: String(b.campaign_id || b.campaignId || "").trim(),
+    adset_id: String(b.adset_id || b.adsetId || "").trim(),
+    ad_id: String(b.ad_id || b.adId || "").trim(),
+    fbp: String(b.fbp || "").trim(),
+    fbc: String(b.fbc || "").trim(),
+    _createdAt: new Date(now).toISOString(),
+    _ts: now
+  };
+
+  try {
+    var ref = db.ref("projetos/bh90/inscricoes").push();
+    await ref.set(rec);
+    return res.status(200).json({ ok: true, id: ref.key });
+  } catch (e) {
+    console.error("handleInscricaoProjeto erro:", e);
+    return res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+}
+
 async function handleReceberLead(req, res) {
   if (req.method !== "POST") {
     res.set("Allow", "POST");
@@ -4538,6 +4600,9 @@ http('receberLead', async (req, res) => {
 
     if (path === "/agendar") {
       return await handleAgendar(req, res);
+    }
+    if (path === "/inscricao-projeto") {
+      return await handleInscricaoProjeto(req, res);
     }
     if (path === "/cnpj-por-nome") {
       return await handleCnpjPorNome(req, res);

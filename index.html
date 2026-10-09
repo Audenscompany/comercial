@@ -4764,6 +4764,7 @@ function buildNav(){
     ]},
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'funil-aac',icon:'ti-filter',label:'Funil AAC'},
+    {id:'projeto-bh90',icon:'ti-rocket',label:'Projeto 90 dias'},
     {group:'Instagram',icon:'ti-brand-instagram',items:[
       {id:'carrossel',icon:'ti-layout-grid',label:'Carrossel'},
       {id:'carrossel-hist',icon:'ti-books',label:'Carrossel Histórias'},
@@ -5026,7 +5027,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'projeto-bh90':renderProjetoBH90
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -5051,6 +5052,7 @@ function showPage(id){
     if(id==='contratos') setTimeout(loadContratosPage,50);
     if(id==='audens-day') setTimeout(adDayInit,50);
     if(id==='fria') setTimeout(friaLoadStats,50);
+    if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
     if(id==='carrossel') setTimeout(carInitPage,50);
@@ -33599,6 +33601,130 @@ function friaCtRender(){
        '</div>';
   }
   box.innerHTML=h;
+}
+/* ===== PROJETO "Dobrar faturamento de hambúrguer em 90 dias" (BH) =====
+   Inscrições vêm da LP do projeto para o nó projetos/bh90/inscricoes (SEPARADO
+   dos leads do comercial). Esta tela lê direto do Firebase, filtra e exporta CSV. */
+var _projBh=null,_projBhPage=0;
+function renderProjetoBH90(){
+  var H='<div class="page active"><div style="max-width:1100px;margin:0 auto;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:var(--purple3);font-weight:700;">PROJETO</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">🚀 Projeto 90 dias — Hambúrguer</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Inscrições da LP do projeto. Entram num nó <b>separado</b> do funil comercial — não viram lead nem cadência.</div></div>'+
+     '<button onclick="projBhLoad()" class="btn btn-outline" style="font-size:12px;padding:7px 12px;"><i class="ti ti-refresh"></i> Carregar / Atualizar</button>'+
+     '</div>';
+  H+='<div id="proj-bh-cards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>';
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;">'+
+     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">'+
+       '<input id="proj-bh-busca" oninput="projBhFiltrar()" placeholder="Buscar nome, @, email ou telefone…" style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;">'+
+       '<input id="proj-bh-camp" oninput="projBhFiltrar()" placeholder="Campanha / anúncio" style="width:180px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;">'+
+       '<button onclick="projBhExport()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;"><i class="ti ti-download"></i> Exportar CSV</button>'+
+     '</div>'+
+     '<div id="proj-bh-box" style="font-size:12px;color:var(--muted);">Clique em <b>Carregar</b> para ver as inscrições.</div>'+
+     '</div>';
+  H+='</div></div>';
+  return H;
+}
+async function projBhLoad(){
+  var box=document.getElementById('proj-bh-box'); if(box) box.innerHTML='<i class="ti ti-loader"></i> Carregando inscrições…';
+  try{
+    var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase())); if(!db){ if(box)box.innerHTML='<span style="color:var(--amber)">Firebase não inicializado.</span>'; return; }
+    var snap=await db.ref('projetos/bh90/inscricoes').once('value');
+    var v=snap.val()||{}; var arr=[];
+    Object.keys(v).forEach(function(k){ var c=v[k]||{}; arr.push({
+      key:k, nome:c.nome||'', email:c.email||'', instagram:c.instagram||'',
+      tel:String(c.telefone||'').replace(/\D/g,''), cidade:c.cidade||'',
+      origem:c.origem||'', campanha:c.utm_campaign||c.campaign_id||'', anuncio:c.utm_content||c.ad_id||'',
+      ts:c._ts||0, createdAt:c._createdAt||''
+    }); });
+    arr.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+    _projBh=arr; _projBhPage=0;
+    projBhFiltrar();
+  }catch(e){ if(box)box.innerHTML='<span style="color:var(--red)">Erro: '+e.message+'</span>'; }
+}
+function _projBhFiltrados(){
+  if(!_projBh) return [];
+  var q=((document.getElementById('proj-bh-busca')||{}).value||'').toLowerCase().trim();
+  var qd=q.replace(/\D/g,'');
+  var camp=((document.getElementById('proj-bh-camp')||{}).value||'').toLowerCase().trim();
+  return _projBh.filter(function(c){
+    if(camp){ var ch=(c.campanha+' '+c.anuncio).toLowerCase(); if(ch.indexOf(camp)<0) return false; }
+    if(q){
+      var okT=(c.nome+' '+c.email+' '+c.instagram+' '+c.cidade).toLowerCase().indexOf(q)>=0;
+      var okTel=qd&&qd.length>=4&&c.tel.indexOf(qd)>=0;
+      if(!okT&&!okTel) return false;
+    }
+    return true;
+  });
+}
+function projBhFiltrar(){ _projBhPage=0; projBhRender(); }
+function projBhPage(d){ _projBhPage+=d; projBhRender(); }
+function _projBhDiaHoje(c){ var d=new Date(); return (c.createdAt||'').slice(0,10)===d.toISOString().slice(0,10); }
+function projBhRender(){
+  var box=document.getElementById('proj-bh-box'); if(!box) return;
+  var cardsEl=document.getElementById('proj-bh-cards');
+  if(!_projBh){ box.innerHTML='Clique em <b>Carregar</b> para ver as inscrições.'; return; }
+  function E(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  // cards
+  if(cardsEl){
+    var totalGeral=_projBh.length;
+    var hoje=_projBh.filter(_projBhDiaHoje).length;
+    function card(lbl,val,cor){return '<div style="flex:1;min-width:140px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div></div>';}
+    cardsEl.innerHTML=card('Total de inscrições', totalGeral.toLocaleString('pt-BR'),'#c084fc')+card('Inscrições hoje', hoje.toLocaleString('pt-BR'),'#22c55e');
+  }
+  var rows=_projBhFiltrados();
+  var perPage=50, tot=rows.length, pages=Math.max(1,Math.ceil(tot/perPage));
+  if(_projBhPage>=pages)_projBhPage=pages-1; if(_projBhPage<0)_projBhPage=0;
+  var slice=rows.slice(_projBhPage*perPage,(_projBhPage+1)*perPage);
+  var h='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+tot.toLocaleString('pt-BR')+' inscrição(ões) no filtro · página '+(_projBhPage+1)+'/'+pages+'</div>';
+  h+='<div style="overflow:auto;border:1px solid var(--border);border-radius:10px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'+
+     '<thead><tr style="background:var(--card);">'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Nome</th>'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Instagram</th>'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">WhatsApp</th>'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Email</th>'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Cidade</th>'+
+     '<th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;">Origem/Campanha</th>'+
+     '<th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:700;">Quando</th>'+
+     '<th style="padding:8px 10px;"></th>'+
+     '</tr></thead><tbody>';
+  if(!slice.length){ h+='<tr><td colspan="8" style="padding:18px;text-align:center;color:var(--muted);">Nenhuma inscrição no filtro.</td></tr>'; }
+  slice.forEach(function(c){
+    var telFmt=c.tel.replace(/^55/,'');
+    var ig=c.instagram? '<a href="https://instagram.com/'+encodeURIComponent(c.instagram.replace(/^@/,''))+'" target="_blank" style="color:#c084fc;text-decoration:none;">'+E(c.instagram)+'</a>':'—';
+    var quando=c.createdAt? new Date(c.createdAt).toLocaleDateString('pt-BR')+' '+new Date(c.createdAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—';
+    var campTxt=[c.campanha,c.anuncio].filter(Boolean).join(' · ')||c.origem||'—';
+    h+='<tr style="border-top:1px solid rgba(255,255,255,0.05);">'+
+       '<td style="padding:8px 10px;color:var(--white);">'+E(c.nome||'—')+'</td>'+
+       '<td style="padding:8px 10px;">'+ig+'</td>'+
+       '<td style="padding:8px 10px;color:var(--silver);font-family:monospace;">'+E(telFmt||'—')+'</td>'+
+       '<td style="padding:8px 10px;color:var(--silver);">'+E(c.email||'—')+'</td>'+
+       '<td style="padding:8px 10px;color:var(--muted);">'+E(c.cidade||'—')+'</td>'+
+       '<td style="padding:8px 10px;color:var(--muted);font-size:11px;">'+E(campTxt)+'</td>'+
+       '<td style="padding:8px 10px;text-align:center;color:var(--muted);font-size:11px;white-space:nowrap;">'+E(quando)+'</td>'+
+       '<td style="padding:8px 10px;text-align:right;white-space:nowrap;">'+
+         (c.tel?'<a href="https://wa.me/'+c.tel+'" target="_blank" style="background:none;border:1px solid rgba(34,197,94,.4);border-radius:6px;color:#22c55e;padding:3px 8px;font-size:11px;cursor:pointer;text-decoration:none;">WhatsApp</a>':'')+
+       '</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(pages>1){
+    h+='<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px;">'+
+       '<button onclick="projBhPage(-1)" '+(_projBhPage<=0?'disabled':'')+' class="btn btn-outline" style="font-size:12px;padding:6px 12px;'+(_projBhPage<=0?'opacity:.4;':'')+'">‹ Anterior</button>'+
+       '<span style="font-size:12px;color:var(--muted);">'+(_projBhPage+1)+' / '+pages+'</span>'+
+       '<button onclick="projBhPage(1)" '+(_projBhPage>=pages-1?'disabled':'')+' class="btn btn-outline" style="font-size:12px;padding:6px 12px;'+(_projBhPage>=pages-1?'opacity:.4;':'')+'">Próxima ›</button>'+
+       '</div>';
+  }
+  box.innerHTML=h;
+}
+function projBhExport(){
+  var rows=_projBhFiltrados(); if(!rows.length){ alert('Nada pra exportar no filtro atual.'); return; }
+  function q(s){ s=String(s==null?'':s); return '"'+s.replace(/"/g,'""')+'"'; }
+  var head=['Nome','Instagram','WhatsApp','Email','Cidade','Origem','Campanha','Anuncio','DataHora'];
+  var lines=[head.join(',')];
+  rows.forEach(function(c){ lines.push([q(c.nome),q(c.instagram),q(c.tel.replace(/^55/,'')),q(c.email),q(c.cidade),q(c.origem),q(c.campanha),q(c.anuncio),q(c.createdAt)].join(',')); });
+  var blob=new Blob(["﻿"+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='projeto-bh90-inscricoes.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(a.href);},100);
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",
