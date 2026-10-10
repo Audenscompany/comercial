@@ -33636,7 +33636,8 @@ async function projBhLoad(){
       key:k, nome:c.nome||'', email:c.email||'', instagram:c.instagram||'',
       tel:String(c.telefone||'').replace(/\D/g,''), cidade:c.cidade||'',
       origem:c.origem||'', campanha:c.utm_campaign||c.campaign_id||'', anuncio:c.utm_content||c.ad_id||'',
-      ts:c._ts||0, createdAt:c._createdAt||''
+      ts:(typeof c._ts==='number'?c._ts:(c._createdAt?Date.parse(c._createdAt)||0:0)),
+      createdAt:(typeof c._createdAt==='string'?c._createdAt:(typeof c._ts==='number'?new Date(c._ts).toISOString():''))
     }); });
     arr.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
     _projBh=arr; _projBhPage=0;
