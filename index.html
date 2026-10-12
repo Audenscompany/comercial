@@ -11303,6 +11303,7 @@ function renderReunioes(){
 
   var allM=Object.values(meetings).filter(function(m){return !m._retorno;});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
+  function inPer(d){return !!d&&(periodoAtivo?(d>=_perFrom&&d<=_perTo):inMes(d,filtM,filtY));}
   var rows=allM.filter(function(m){if(!m.dtISO)return false;var _d=new Date(m.dtISO);return periodoAtivo?(_d>=_perFrom&&_d<=_perTo):inMes(_d,filtM,filtY);});
   var prevRows;
   if(periodoAtivo){var _span=_perTo.getTime()-_perFrom.getTime();var _pF=new Date(_perFrom.getTime()-_span-86400000),_pT=new Date(_perFrom.getTime()-1);prevRows=allM.filter(function(m){if(!m.dtISO)return false;var _d=new Date(m.dtISO);return _d>=_pF&&_d<=_pT;});}
@@ -11432,7 +11433,7 @@ function renderReunioes(){
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
   // Faixas
@@ -11440,7 +11441,7 @@ function renderReunioes(){
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
   dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inMes(_dt,filtM,filtY))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
   var closerMap={};
@@ -11454,7 +11455,7 @@ function renderReunioes(){
       var dt=(typeof _vendaDate==='function')?_vendaDate(fu,m):null;
       if(!dt&&fu.dataInicio)dt=new Date(fu.dataInicio+'T12:00:00');
       if(!dt&&m&&m.dtISO)dt=new Date(m.dtISO);
-      if(!dt||!inMes(dt,filtM,filtY))return;
+      if(!dt||!inPer(dt))return;
       var raw=(m&&m.responsavel)||(fu.closerNome)||(fu.closer)||(fu.responsavel)||'';
       var c=normCloserName(raw)||'—';
       if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};
@@ -11471,7 +11472,7 @@ function renderReunioes(){
     var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
     if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
     if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
-    if(!dt||!inMes(dt,filtM,filtY))return;
+    if(!dt||!inPer(dt))return;
     // Dedup por telefone — evita contar followup sintético junto com real do mesmo cliente
     var tel=((m&&m.tel)||fu.tel||'').replace(/\D/g,'').slice(-10);
     if(tel&&tel.length>=8){if(_closerVTel[tel])return;_closerVTel[tel]=1;}
