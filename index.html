@@ -4760,7 +4760,8 @@ function buildNav(){
     {id:'tarefas',icon:'ti-bell',label:'Tarefas',badge:pendFU},
     {group:'Análise',icon:'ti-ad-2',items:[
       {id:'analise-ads',icon:'ti-ad-2',label:'Análise de Ads'},
-      {id:'analise-lp',icon:'ti-browser-check',label:'Análise de LP'}
+      {id:'analise-lp',icon:'ti-browser-check',label:'Análise de LP'},
+      {id:'export-dados',icon:'ti-download',label:'Exportar Base'}
     ]},
     {id:'meta-ads',icon:'ti-brand-meta',label:'Meta Ads Center'},
     {id:'funil-aac',icon:'ti-filter',label:'Funil AAC'},
@@ -5027,7 +5028,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'projeto-bh90':renderProjetoBH90
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -33726,6 +33727,97 @@ function projBhExport(){
   rows.forEach(function(c){ lines.push([q(c.nome),q(c.instagram),q(c.tel.replace(/^55/,'')),q(c.email),q(c.cidade),q(c.origem),q(c.campanha),q(c.anuncio),q(c.createdAt)].join(',')); });
   var blob=new Blob(["﻿"+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='projeto-bh90-inscricoes.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(a.href);},100);
+}
+/* ===== EXPORTAR BASE (últimos 180 dias) — roda no navegador, lê Firebase direto,
+   monta Excel multi-abas (Leads, Reuniões, Vendas, Ads→Vendas, Visitas LP, Resumo) e baixa. */
+function renderExportDados(){
+  var H='<div class="page active"><div style="max-width:820px;margin:0 auto;">';
+  H+='<div style="margin-bottom:18px;"><div style="font-size:11px;letter-spacing:2px;color:var(--purple3);font-weight:700;">DADOS</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">📊 Exportar Base (180 dias)</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Gera um Excel com tudo dos últimos 180 dias: leads, reuniões, vendas (contratos), ads que trouxeram venda, visitas da LP e um resumo do funil.</div></div>';
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:20px;">'+
+     '<button onclick="exportarBase180()" id="exp-btn" class="btn" style="background:var(--purple);color:#fff;border:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;"><i class="ti ti-download"></i> Gerar e baixar Excel</button>'+
+     '<div id="exp-st" style="font-size:13px;color:var(--muted);margin-top:14px;">O arquivo é montado aqui no seu navegador e baixado automaticamente.</div>'+
+     '</div></div></div>';
+  return H;
+}
+function _expSt(msg,cor){ var e=document.getElementById('exp-st'); if(e){ e.style.color=cor||'var(--muted)'; e.innerHTML=msg; } }
+function _expLoadXLSX(){ return new Promise(function(res,rej){ if(window.XLSX)return res(); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=function(){rej(new Error('Falha ao carregar biblioteca Excel'));}; document.head.appendChild(s); }); }
+function _expFatMin(str){ if(str==null||String(str).trim()==='')return null; var s=String(str).toLowerCase().trim();
+  var fx=s.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/); if(fx)return parseInt(fx[1],10)*1000;
+  if(/^\s*(r\$)?\s*(at[eé]|menos de|abaixo|no m[aá]ximo)/.test(s))return 0;
+  var raw=s.match(/\d[\d.,]*/g); if(!raw)return null;
+  var nums=raw.map(function(t){t=t.replace(/\.(?=\d{3}\b)/g,'').replace(/,(?=\d{3}\b)/g,'').replace(',','.');return parseFloat(t)||0;});
+  var mn=Math.min.apply(null,nums.filter(function(x){return x>0;}).concat([Infinity])); if(!isFinite(mn))return null;
+  if(s.indexOf('milh')!==-1)mn*=1e6; else if(s.indexOf('mil')!==-1&&mn<1000)mn*=1000; return mn; }
+function _expNorm(t){ t=String(t||'').replace(/\D/g,''); return t.length>9?t.slice(-9):t; }
+async function exportarBase180(){
+  var btn=document.getElementById('exp-btn'); if(btn)btn.disabled=true;
+  try{
+    _expSt('<i class="ti ti-loader"></i> Carregando biblioteca…');
+    await _expLoadXLSX();
+    var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase())); if(!db){ _expSt('Firebase não inicializado.','var(--amber)'); if(btn)btn.disabled=false; return; }
+    var CUT=Date.now()-180*86400*1000; var CUTD=new Date(CUT).toISOString().slice(0,10);
+    _expSt('<i class="ti ti-loader"></i> Baixando dados do Firebase (pode levar alguns segundos)…');
+    var snaps=await Promise.all([
+      db.ref('leads').once('value'), db.ref('meetings').once('value'),
+      db.ref('followups').once('value'), db.ref('contratos').once('value'),
+      db.ref('analytics/sessions').once('value')
+    ]);
+    var leads=snaps[0].val()||{}, meetings=snaps[1].val()||{}, followups=snaps[2].val()||{}, contratos=snaps[3].val()||{}, sessions=snaps[4].val()||{};
+    // sold phones + meeting phones + followup join
+    var soldPhones={}, meetPhones={}, fupByMeet={}, fupByTel={};
+    Object.keys(followups).forEach(function(k){ var f=followups[k]||{}; var res=String(f.resultado||'').toLowerCase(), vd=String(f.venda||'').toLowerCase(); var p=_expNorm(f.tel); if(res==='venda'||vd==='sim'){ if(p)soldPhones[p]=1; } var mid=f.meetingId||k; if(mid)fupByMeet[mid]={res:f.resultado,comp:f.comparecimento,venda:f.venda}; if(p)fupByTel[p]={res:f.resultado,comp:f.comparecimento,venda:f.venda}; });
+    Object.keys(meetings).forEach(function(k){ var m=meetings[k]||{}; var p=_expNorm(m.tel||m.telefone); if(p)meetPhones[p]=1; });
+    function dISO(ms){ var d=new Date(Number(ms)-3*3600*1000); return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
+    var X=window.XLSX, wb=X.utils.book_new();
+    function add(n,a){ X.utils.book_append_sheet(wb,X.utils.aoa_to_sheet(a),n.slice(0,31)); }
+    // LEADS (180d)
+    var la=[['data','source','ad','campanha','conjunto','segmento','faixa','faturamento','fat_min_R$','qual_40k','qual_50k','nome','empresa','cidade','email','telefone','instagram','variante_lp','teve_reuniao','virou_venda']];
+    var nLeads=0, q40=0, q50=0, adAgg={};
+    Object.keys(leads).forEach(function(k){ var l=leads[k]||{}; var ts=typeof l._createdAt==='number'?l._createdAt:Date.parse(l._createdAt||0)||0; if(!ts||ts<CUT)return; nLeads++;
+      var v=_expFatMin(l.faixa||l.faturamento); var ph=_expNorm(l.telefone||k); if(v!=null&&v>=40000)q40++; if(v!=null&&v>=50000)q50++;
+      la.push([dISO(ts),l._source||'',l.ad||'',l.campanha||'',l.conjunto||'',l.segmento||'',l.faixa||'',l.faturamento||'',v==null?'':v,v!=null&&v>=40000?1:0,v!=null&&v>=50000?1:0,l.nome||'',l.empresa||'',l.cidade||'',l.email||'',l.telefone||'',l.instagram||'',l.variante_lp||'',meetPhones[ph]?1:0,soldPhones[ph]?1:0]);
+      var ad=String(l.ad||'(sem anúncio)').trim()||'(sem anúncio)'; if(!adAgg[ad])adAgg[ad]={c:l.campanha||'',leads:0,q40:0,q50:0,reun:0,vendas:0}; var e=adAgg[ad]; e.leads++; if(v!=null&&v>=40000)e.q40++; if(v!=null&&v>=50000)e.q50++; if(meetPhones[ph])e.reun++; if(soldPhones[ph])e.vendas++;
+    });
+    add('Leads',la);
+    // REUNIOES (180d)
+    var ma=[['data','nome','telefone','status','origem','closer','sdr','faturamentoLead','variante_lp','retorno','resultado','compareceu','venda']];
+    var rAg=0,rReal=0,rNs=0;
+    Object.keys(meetings).forEach(function(k){ var m=meetings[k]||{}; if(m._hidden)return; var d=String(m.dtISO||m.data||'').slice(0,10); if(!(d>=CUTD))return; var ph=_expNorm(m.tel||m.telefone); var fu=fupByMeet[k]||fupByTel[ph]||{}; var st=String(m.status||'').toLowerCase(), res=String(fu.res||'').toLowerCase(); rAg++;
+      if(res==='noshow'||st==='noshow'||st==='no_show')rNs++; else if(res==='venda'||res==='retorno'||res==='perdida'||fu.comp==='sim'||st==='done'||st==='realizada')rReal++;
+      ma.push([d,m.nome||'',(m.tel||m.telefone||''),m.status||'',m.origem||'',m.responsavel||'',(m.sdrName||m.sdr||''),m.faturamentoLead||'',m.variante_lp||'',m._retorno?1:0,fu.res||'',fu.comp||'',fu.venda||'']);
+    });
+    add('Reunioes',ma);
+    // VENDAS (contratos)
+    var ca=[['dataInicio','in180d','cliente','plano','duracao_meses','valorMes','valorVendido','closer','sdr','gestor','origem','ativo']]; var c180=0, recMes=0, recV=0;
+    Object.keys(contratos).forEach(function(k){ var c=contratos[k]||{}; var d=String(c.dataInicio||'').slice(0,10); var inP=d>=CUTD?1:0; if(inP){c180++; recMes+=Number(c.valorMes)||0; recV+=Number(c.valorVendido)||0;}
+      ca.push([d,inP,c.cliente||'',c.plano||'',c.planoDuracao||'',c.valorMes||'',c.valorVendido||'',c.closer||'',c.sdr||'',c.gestor||'',c.origem||'',c.ativo?1:0]); });
+    add('Vendas (contratos)',ca);
+    // ADS -> VENDAS
+    var aa=[['anuncio','campanha','leads','leads_40k+','leads_50k+','reunioes','vendas','conv_%']];
+    Object.keys(adAgg).map(function(k){var e=adAgg[k];e.ad=k;return e;}).sort(function(a,b){return b.vendas-a.vendas||b.reun-a.reun||b.leads-a.leads;}).forEach(function(e){ aa.push([e.ad,e.c,e.leads,e.q40,e.q50,e.reun,e.vendas,e.leads?Math.round(e.vendas/e.leads*1000)/10:0]); });
+    add('Ads-Vendas',aa);
+    // VISITAS LP (agregados)
+    var byDay={},byPage={},bySrc={},byCamp={},byDev={}, visitas=0;
+    function cleanPage(p){ p=String(p||'').toLowerCase(); try{ if(p.indexOf('http')===0){var u=new URL(p);p=u.pathname;} }catch(e){} p=p.replace(/\/+$/,''); return p||'(vazio)'; }
+    function inc(o,x){x=x||'(vazio)';o[x]=(o[x]||0)+1;}
+    Object.keys(sessions).forEach(function(k){ var s=sessions[k]||{}; var fs=s.firstSeen; if(!fs||fs<CUT)return; visitas++; inc(byDay,dISO(fs)); inc(byPage,cleanPage(s.page)); inc(bySrc,s.utm_source||'(direto/sem utm)'); inc(byCamp,s.utm_campaign||'(sem campanha)'); inc(byDev,s.device||'(n/d)'); });
+    function toArr(o){return Object.keys(o).map(function(k){return [k,o[k]];}).sort(function(a,b){return b[1]-a[1];});}
+    add('LP por dia',[['dia','visitas']].concat(Object.keys(byDay).sort().map(function(k){return [k,byDay[k]];})));
+    add('LP por pagina',[['pagina','visitas']].concat(toArr(byPage)));
+    add('LP por origem',[['utm_source','visitas']].concat(toArr(bySrc)));
+    add('LP por campanha',[['utm_campaign','visitas']].concat(toArr(byCamp)));
+    add('LP por device',[['device','visitas']].concat(toArr(byDev)));
+    // RESUMO
+    var nSold=Object.keys(soldPhones).length;
+    add('Resumo',[['FUNIL — últimos 180 dias','cutoff '+CUTD],['Visitas LP',visitas],['Leads',nLeads],['Leads ≥40k',q40],['Leads ≥50k',q50],['Reuniões agendadas',rAg],['Reuniões realizadas',rReal],['No-shows',rNs],['Vendas/contratos (180d)',c180],['Receita mensal somada R$',recMes],['Valor vendido somado R$',recV],['',''],['TAXAS',''],['Visita→Lead',(visitas?Math.round(nLeads/visitas*1000)/10:0)+'%'],['Lead→Reunião',(nLeads?Math.round(rAg/nLeads*1000)/10:0)+'%'],['Reunião→Realizada',((rReal+rNs)?Math.round(rReal/(rReal+rNs)*1000)/10:0)+'%'],['',''],['OBS','Sem gasto_ads no Firebase → sem CPL/CPA. Venda por anúncio = cruzamento telefone(lead)×venda(followup); contratos não têm telefone, por isso Vendas(contratos) é a fonte de receita.']]);
+    _expSt('<i class="ti ti-loader"></i> Montando e baixando o arquivo…');
+    var hoje=new Date().toISOString().slice(0,10);
+    X.writeFile(wb,'Audens-dados-180dias-'+hoje+'.xlsx',{compression:true});
+    _expSt('✅ Pronto! Baixado: <b>Audens-dados-180dias-'+hoje+'.xlsx</b> — '+nLeads.toLocaleString('pt-BR')+' leads, '+rAg+' reuniões, '+c180+' vendas, '+visitas.toLocaleString('pt-BR')+' visitas na LP.','#22c55e');
+  }catch(e){ _expSt('Erro: '+(e&&e.message||e),'var(--red)'); }
+  if(btn)btn.disabled=false;
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",
