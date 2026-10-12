@@ -19342,6 +19342,7 @@ var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
 var _reunPeriodo=null; // {from,to} YYYY-MM-DD ou null (período customizado)
 var _reunTab='geral'; // 'geral' | 'noshow'
 var _vendasMesFiltro=null;
+var _vendasPeriodo=null; // {from,to} YYYY-MM-DD ou null (período customizado nas Vendas)
 var _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
 var _vendasPagina=1;
 var _vendasRankingMode='closer';
@@ -29290,11 +29291,19 @@ function renderVisaoGeral(){
 function setVendasMesFiltro(k){
   if(k){var p=k.split('-');_vendasMesFiltro={y:parseInt(p[0]),m:parseInt(p[1])-1};}
   else _vendasMesFiltro=null;
+  _vendasPeriodo=null;
   _vendasFiltros={busca:'',plano:'',closer:'',sdr:'',status:'',origem:''};
-  _vendasPagina=1;
   _vendasPagina=1;
   showPage('vendas');
 }
+function _vendasAplicarPeriodo(){
+  var f=document.getElementById('_vPerFrom'),t=document.getElementById('_vPerTo');
+  if(!f||!t)return; var fv=f.value,tv=t.value;
+  if(!fv||!tv){alert('Selecione as duas datas (De e Até).');return;}
+  if(fv>tv){var _x=fv;fv=tv;tv=_x;}
+  _vendasPeriodo={from:fv,to:tv}; _vendasPagina=1; showPage('vendas');
+}
+function _vendasLimparPeriodo(){_vendasPeriodo=null;_vendasPagina=1;showPage('vendas');}
 function setVendasFiltro(campo,val){
   _vendasFiltros[campo]=val;
   _vendasPagina=1;
@@ -29372,6 +29381,11 @@ function renderVendas(){
   var filtY=_vendasMesFiltro?_vendasMesFiltro.y:now.getFullYear();
   var selectedKey=filtY+'-'+String(filtM+1).padStart(2,'0');
   var _mns=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  // Período customizado (de–até) — quando ativo rege lista/KPIs/ranking/gráfico
+  var _vPerFrom=null,_vPerTo=null;
+  if(_vendasPeriodo&&_vendasPeriodo.from&&_vendasPeriodo.to){_vPerFrom=new Date(_vendasPeriodo.from+'T00:00:00');_vPerTo=new Date(_vendasPeriodo.to+'T23:59:59');if(isNaN(_vPerFrom.getTime())||isNaN(_vPerTo.getTime())){_vPerFrom=null;_vPerTo=null;}}
+  var vPeriodoAtivo=!!(_vPerFrom&&_vPerTo);
+  function _fmtPerBR(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');}
 
   function _fatV(v){if(!v)return 0;if(typeof v==='number')return v;return parseFaturamento(String(v))||0;}
   function _mrrV(fu){if(!fu)return 0;if(fu.tipoValor==='tcv')return _fatV(fu.contrato);return _fatV(fu.mensalidade)||_fatV(fu.contrato);}
@@ -29544,13 +29558,15 @@ function renderVendas(){
     filtM=parseInt(bp[1])-1;filtY=parseInt(bp[0]);selectedKey=best;
     _vendasMesFiltro={y:filtY,m:filtM};
   }
-  var mesLabel=_mns[filtM]+' '+filtY;
+  var mesLabel=vPeriodoAtivo?(_fmtPerBR(_vPerFrom)+' – '+_fmtPerBR(_vPerTo)):(_mns[filtM]+' '+filtY);
   var prevM=filtM===0?11:filtM-1,prevY=filtM===0?filtY-1:filtY;
 
-  // Mês atual e anterior
-  var vendas=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);return dt&&dt.getMonth()===filtM&&dt.getFullYear()===filtY;});
+  // Mês/período atual e anterior
+  var vendas=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);if(!dt)return false;return vPeriodoAtivo?(dt>=_vPerFrom&&dt<=_vPerTo):(dt.getMonth()===filtM&&dt.getFullYear()===filtY);});
   vendas.sort(function(a,b){return(_vendaDate(b.fu,b.m)||0)-(_vendaDate(a.fu,a.m)||0);});
-  var vendasPrev=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);return dt&&dt.getMonth()===prevM&&dt.getFullYear()===prevY;});
+  var vendasPrev;
+  if(vPeriodoAtivo){var _span=_vPerTo.getTime()-_vPerFrom.getTime();var _pF=new Date(_vPerFrom.getTime()-_span-86400000),_pT=new Date(_vPerFrom.getTime()-1);vendasPrev=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);return dt&&dt>=_pF&&dt<=_pT;});}
+  else vendasPrev=todasVendas.filter(function(v){var dt=_vendaDate(v.fu,v.m);return dt&&dt.getMonth()===prevM&&dt.getFullYear()===prevY;});
 
   window._vendasDataCache=vendas;
 
@@ -29560,17 +29576,19 @@ function renderVendas(){
   var ticket=vendas.length>0?Math.round(totalReceita/vendas.length):0;
   var ticketPrev=vendasPrev.length>0?Math.round(totalReceitaPrev/vendasPrev.length):0;
   var meta=_getMetaVendas(filtY,filtM);
+  if(vPeriodoAtivo){meta=0;var _mc=new Date(_vPerFrom.getFullYear(),_vPerFrom.getMonth(),1);while(_mc<=_vPerTo){meta+=_getMetaVendas(_mc.getFullYear(),_mc.getMonth())||0;_mc.setMonth(_mc.getMonth()+1);}}
   var pctMeta=meta>0?Math.round(totalReceita/meta*100):0;
   var pctMetaPrev=meta>0&&totalReceitaPrev>0?Math.round(totalReceitaPrev/meta*100):0;
 
   // Projeção
   var diasDoMes=new Date(filtY,filtM+1,0).getDate();
   var hoje=now;
-  var isCurrentMonth=(filtM===now.getMonth()&&filtY===now.getFullYear());
+  var isCurrentMonth=(filtM===now.getMonth()&&filtY===now.getFullYear())&&!vPeriodoAtivo;
   var diasDecorridos=isCurrentMonth?Math.max(1,now.getDate()):diasDoMes;
   var ritmo=totalReceita/diasDecorridos;
   var projecao=Math.round(ritmo*diasDoMes);
   var projecaoPrev=vendasPrev.length>0?Math.round(totalReceitaPrev):0;
+  if(vPeriodoAtivo){projecao=Math.round(totalReceita);projecaoPrev=Math.round(totalReceitaPrev);}
 
   function dlt(cur,prev,pref){
     if(!prev)return '';
@@ -29590,6 +29608,16 @@ function renderVendas(){
   var metaDaily=Array.from({length:diasDoMes},function(_,i){return Math.round(meta*(i+1)/diasDoMes);});
   var cumulativeData=[];var acc=0;
   dailyData.forEach(function(v){acc+=v;cumulativeData.push(acc);});
+  if(vPeriodoAtivo){
+    var _d0=new Date(_vPerFrom.getFullYear(),_vPerFrom.getMonth(),_vPerFrom.getDate());
+    var _dN=new Date(_vPerTo.getFullYear(),_vPerTo.getMonth(),_vPerTo.getDate());
+    var _ndays=Math.round((_dN-_d0)/86400000)+1; if(_ndays<1)_ndays=1; if(_ndays>370)_ndays=370;
+    dailyData=new Array(_ndays).fill(0);
+    vendas.forEach(function(v){var dt=_vendaDate(v.fu,v.m);if(!dt)return;var idx=Math.floor((new Date(dt.getFullYear(),dt.getMonth(),dt.getDate())-_d0)/86400000);if(idx>=0&&idx<_ndays)dailyData[idx]+=_mrrV(v.fu);});
+    dailyLabels=[];for(var _ci=0;_ci<_ndays;_ci++){var _dd=new Date(_d0.getTime()+_ci*86400000);dailyLabels.push(String(_dd.getDate()).padStart(2,'0')+'/'+String(_dd.getMonth()+1).padStart(2,'0'));}
+    metaDaily=Array.from({length:_ndays},function(_,i){return Math.round(meta*(i+1)/_ndays);});
+    cumulativeData=[];var _acc2=0;dailyData.forEach(function(v){_acc2+=v;cumulativeData.push(_acc2);});
+  }
 
   // Closers, SDRs e Origens disponíveis
   var closerOpts='';
@@ -29611,9 +29639,11 @@ function renderVendas(){
   var sel='background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--white);font-size:12px;outline:none;cursor:pointer;';
   var inp='background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--white);font-size:12px;outline:none;width:180px;';
 
-  var mesSelect='<select onchange="setVendasMesFiltro(this.value)" style="'+sel+'font-size:13px;padding:7px 12px;">'+
+  var mesSelect='<select onchange="setVendasMesFiltro(this.value)" style="'+sel+'font-size:13px;padding:7px 12px;'+(vPeriodoAtivo?'opacity:.5;':'')+'">'+
     sortedKeys.map(function(k){var p=k.split('-');return'<option value="'+k+'"'+(k===selectedKey?' selected':'')+'>'+_mns[parseInt(p[1])-1]+' '+p[0]+'</option>';}).join('')+
   '</select>';
+  var _pvf=(_vendasPeriodo&&_vendasPeriodo.from)||'',_pvt=(_vendasPeriodo&&_vendasPeriodo.to)||'';
+  var periodoBox='<div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid '+(vPeriodoAtivo?'var(--purple3)':'var(--border)')+';border-radius:8px;padding:4px 8px;" title="Filtrar vendas por um intervalo de datas">'+'<i class="ti ti-calendar-stats" style="font-size:13px;color:'+(vPeriodoAtivo?'var(--purple3)':'var(--muted)')+';"></i>'+'<input type="date" id="_vPerFrom" value="'+_pvf+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<span style="color:var(--muted);font-size:10px;">até</span>'+'<input type="date" id="_vPerTo" value="'+_pvt+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<button onclick="_vendasAplicarPeriodo()" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;">OK</button>'+(vPeriodoAtivo?'<button onclick="_vendasLimparPeriodo()" style="background:none;border:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;" title="Limpar período">×</button>':'')+'</div>';
 
   // Status config
   var statusConfig={
@@ -29782,6 +29812,7 @@ function renderVendas(){
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
       mesSelect+
+      periodoBox+
       '<select onchange="setVendasFiltro(\'closer\',this.value);_vendasFiltros.closer=this.value;document.getElementById(\'vf-closer\')&&(document.getElementById(\'vf-closer\').value=this.value);_renderVendasTabela()" style="'+sel+'"><option value="">Todos closers</option>'+closerOpts+'</select>'+
       '<select onchange="_vendasFiltros.sdr=this.value;_vendasPagina=1;_renderVendasTabela()" style="'+sel+'"><option value="">Todos SDRs</option>'+sdrOpts+'</select>'+
       '<select onchange="setVendasFiltro(\'origem\',this.value);document.getElementById(\'vf-origem\')&&(document.getElementById(\'vf-origem\').value=this.value)" style="'+sel+'"><option value="">Todas origens</option>'+origOpts+'</select>'+
