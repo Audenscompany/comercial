@@ -29846,6 +29846,7 @@ function renderVendas(){
       '<select onchange="setVendasFiltro(\'closer\',this.value);_vendasFiltros.closer=this.value;document.getElementById(\'vf-closer\')&&(document.getElementById(\'vf-closer\').value=this.value);_renderVendasTabela()" style="'+sel+'"><option value="">Todos closers</option>'+closerOpts+'</select>'+
       '<select onchange="_vendasFiltros.sdr=this.value;_vendasPagina=1;_renderVendasTabela()" style="'+sel+'"><option value="">Todos SDRs</option>'+sdrOpts+'</select>'+
       '<select onchange="setVendasFiltro(\'origem\',this.value);document.getElementById(\'vf-origem\')&&(document.getElementById(\'vf-origem\').value=this.value)" style="'+sel+'"><option value="">Todas origens</option>'+origOpts+'</select>'+
+      '<button onclick="abrirVendasExcluidas()" title="Ver e restaurar vendas que foram excluídas" style="background:rgba(255,255,255,0.07);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-trash-off"></i> Excluídas</button>'+
       '<button onclick="exportarVendas()" style="background:rgba(255,255,255,0.07);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-download"></i> Exportar</button>'+
       '<button onclick="abrirRegistrarVenda()" style="background:var(--purple3);border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 0 20px rgba(123,47,255,0.4);"><i class="ti ti-plus"></i> Registrar venda</button>'+
     '</div></div>'+
@@ -30388,6 +30389,52 @@ async function removerVenda(fid){
     showSheetToast('Venda removida.',false);
     showPage('vendas');
   }catch(e){alert('Erro ao remover: '+e.message);}
+}
+// ===== RESTAURAR VENDA EXCLUÍDA (reverte removerVenda) =====
+async function restaurarVendaExcluida(sig,nomeKey){
+  try{
+    if(!fbDb)initFirebase();
+    var tel=''; if(sig){var p=sig.split('_'); tel=String(p[1]||'').replace(/\D/g,'');}
+    if(sig){ try{delete _vendasExcluidasSig[sig];}catch(e){} await fbDb.ref('vendas_excluidas_sig/'+sig).remove(); }
+    if(nomeKey){ try{await fbDb.ref('vendas_excluidas_nome/'+nomeKey).remove();}catch(e){} }
+    if(tel){
+      var tl=tel.slice(-11);
+      function _t(x){return String(x||'').replace(/\D/g,'').slice(-11);}
+      var contr=await fbGet('contratos')||{};
+      for(var ck in contr){ var c=contr[ck]||{}; if(_t(c.kanbanKey||c.telefone||c.tel)===tl){ if(c._vendaExcluida) await fbDb.ref('contratos/'+ck+'/_vendaExcluida').remove(); try{delete _vendasExcluidas['contrato_'+ck];}catch(e){} await fbDb.ref('vendas_excluidas/contrato_'+ck).remove(); } }
+      var ass=await fbGet('assinaturas')||{};
+      for(var ak in ass){ var a=ass[ak]||{}; if(_t(a.telefone)===tl){ if(a._vendaExcluida) await fbDb.ref('assinaturas/'+ak+'/_vendaExcluida').remove(); try{delete _vendasExcluidas['assin_'+ak];}catch(e){} await fbDb.ref('vendas_excluidas/assin_'+ak).remove(); } }
+      for(var fk in (followups||{})){ var f=followups[fk]||{}; if(_t(f.tel)===tl){ try{delete _vendasExcluidas[fk];}catch(e){} await fbDb.ref('vendas_excluidas/'+fk).remove(); } }
+    }
+    window._todasVendasCache=null;
+    if(typeof showSheetToast==='function')showSheetToast('Venda restaurada.',false);
+    var ov=document.getElementById('vexcl-overlay'); if(ov)ov.remove();
+    showPage('vendas');
+  }catch(e){ alert('Erro ao restaurar: '+e.message); }
+}
+function abrirVendasExcluidas(){
+  var sigs=Object.keys(_vendasExcluidasSig||{});
+  var rows=sigs.map(function(sg){
+    var p=sg.split('_'); var tel=String(p[1]||'').replace(/\D/g,''); var nome=String(p[2]||'');
+    var telFmt=tel?tel.replace(/^55/,''):'—';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">'+
+      '<div><div style="color:var(--white);font-size:13px;">'+(nome||'(sem nome)')+'</div><div style="color:var(--muted);font-size:11px;font-family:monospace;">'+telFmt+'</div></div>'+
+      '<button onclick="restaurarVendaExcluida(\''+sg+'\',\''+nome.toLowerCase().replace(/[^a-z0-9]/g,'')+'\')" style="background:var(--purple3);border:none;border-radius:7px;color:#fff;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">↩ Restaurar</button>'+
+    '</div>';
+  }).join('');
+  if(!rows)rows='<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Nenhuma venda excluída.</div>';
+  var ov=document.createElement('div'); ov.id='vexcl-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:min(520px,92vw);max-height:80vh;overflow:auto;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);">'+
+      '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:var(--white);">Vendas excluídas ('+sigs.length+')</div>'+
+      '<button onclick="var o=document.getElementById(\'vexcl-overlay\');if(o)o.remove();" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1;">&times;</button>'+
+    '</div>'+
+    '<div>'+rows+'</div>'+
+    '<div style="padding:10px 16px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);">Restaurar tira a venda das listas de exclusão (id, assinatura e nome) e limpa a marca nos contratos/assinaturas do mesmo telefone.</div>'+
+  '</div>';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
 }
 function renderBonus(){
   if(CU.role==='gestor'){
