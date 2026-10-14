@@ -11434,6 +11434,23 @@ function renderReunioes(){
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
   Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+
+  // ===== Performance por LANDING PAGE (agendada / realizada / venda) =====
+  function normLP(raw){var s=String(raw||'').toLowerCase().trim();if(!s||s==='import'||s==='manual')return s==='manual'||s==='import'?'Manual / Import':'Não informado';
+    if(/quiz-?fv2|fv2|lp-audens-quiz/.test(s))return 'Quiz FV2';
+    if(/fv1/.test(s))return 'Quiz FV1';
+    if(/lp-?v3|lpv3/.test(s))return 'LP V3';
+    if(/elementor/.test(s))return 'LP Elementor';
+    if(/50-?comandos/.test(s))return 'LP 50 Comandos';
+    if(/vivendo/.test(s))return 'Vivendo de Delivery';
+    if(/mentoria/.test(s))return 'LP Mentoria';
+    if(/projeto|bh-?90/.test(s))return 'Projeto 90 dias';
+    if(/lp-audens|^lp-|lp_|^lp /.test(s))return 'LP Audens';
+    return raw;}
+  function _lpOf(m){var raw=(m&&m.variante_lp)||'';if(!raw&&m&&m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey]){var kb=kanbanData[m.kanbanKey];raw=kb.variante_lp||kb._source||'';}return normLP(raw);}
+  var lpMap={};
+  dedupedRows.forEach(function(m){var o=_lpOf(m);if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].ag++;if(isReal(m))lpMap[o].real++;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var o=m?_lpOf(m):'Não informado';if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].vend++;lpMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
   // Faixas
@@ -11851,6 +11868,19 @@ function renderReunioes(){
       +(function(){var ha=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.ag;},0);var hv=fatFaixas.filter(function(f){return f.min>=60000;}).reduce(function(s,f){return s+f.vend;},0);return agendadas>0&&ha>0?'<div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:10px;color:var(--muted);">Leads acima de R$60k = <b style="color:#fff;">'+pct(ha,agendadas)+'%</b> das reuniões, mas <b style="color:#22c55e;">'+pct(hv,vendas||1)+'%</b> das vendas.</div>':'';})()+
       '</div>';
     H+='</div>';
+
+    // Performance por Landing Page
+    H+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;">'
+      +'<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">PERFORMANCE POR LANDING PAGE</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Qual LP gerou cada reunião agendada, realizada e venda</div>'
+      +tbl(['Landing Page','Agendadas','Realizadas','Vendas','Conversão','Receita'],
+        Object.keys(lpMap).filter(function(c){return lpMap[c].ag>0;}).sort(function(a,b){return lpMap[b].ag-lpMap[a].ag;}).map(function(c){
+          var d=lpMap[c],cv=pct(d.vend,d.real),tc=pct(d.real,d.ag);
+          return trow(['<span style="display:flex;align-items:center;gap:6px;"><i class="ti ti-browser-check" style="color:var(--purple3);font-size:14px;"></i>'+c+'</span>',d.ag,'<span style="color:'+(tc>=50?'#22c55e':tc>=30?'#f59e0b':'var(--muted)')+';">'+d.real+'</span>','<b style="color:#22c55e;">'+d.vend+'</b>','<span style="color:'+(cv>=25?'#22c55e':cv>=15?'#f59e0b':'#ef4444')+';">'+cv+'%</span>',fmtR(d.rec)]);
+        })
+      )
+      +(function(){var ks=Object.keys(lpMap).filter(function(c){return lpMap[c].ag>0;});if(!ks.length)return '';var bv=ks.slice().sort(function(a,b){return lpMap[b].ag-lpMap[a].ag;})[0];var br=ks.slice().sort(function(a,b){return lpMap[b].real-lpMap[a].real;})[0];var bs=ks.slice().sort(function(a,b){return lpMap[b].vend-lpMap[a].vend;})[0];return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:14px;flex-wrap:wrap;">'+(bv?'<span style="font-size:10px;color:var(--muted);">📊 Mais agendadas: <b style="color:#fff;">'+bv+'</b></span>':'')+(br?'<span style="font-size:10px;color:var(--muted);">✅ Mais realizadas: <b style="color:#fff;">'+br+'</b></span>':'')+(bs&&lpMap[bs].vend>0?'<span style="font-size:10px;color:var(--muted);">💰 Mais vendas: <b style="color:#fff;">'+bs+'</b></span>':'')+'</div>';})()
+      +'</div>';
 
     // Reuniões por origem de cadência (atribuição das automações)
     (function(){
