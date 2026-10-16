@@ -1859,11 +1859,12 @@ function salvarCriarLead(){
     faturamento:faturamento,
     _source:'manual',
     _createdAt:Date.now(),
-    status:'novo',
+    status:(_kanbanBoard==='audensfood'?'af_qualificado':'novo'),
     statusAt:Date.now(),
-    statusHistory:{novo:Date.now()},
-    origem:origem||'Orgânico'
+    statusHistory:(_kanbanBoard==='audensfood'?{af_qualificado:Date.now()}:{novo:Date.now()}),
+    origem:origem||(_kanbanBoard==='audensfood'?'Audens Food':'Orgânico')
   };
+  if(_kanbanBoard==='audensfood'){novo._board='audensfood';}
   kanbanData[key]=novo;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
@@ -2072,12 +2073,14 @@ function kanbanDrop(ev,status){
   _dragKanbanKey=null;
 }
 function renderKanban(){
+  var _board=(_kanbanBoard==='audensfood')?'audensfood':'comercial';
+  var _COLS=(_board==='audensfood')?AUDENSFOOD_COLS:KANBAN_COLS;
   var entries=Object.keys(kanbanData||{}).map(function(k){
     var v=kanbanData[k]||{};
     var o=Object.assign({},v);
     o._key=k;
     return o;
-  });
+  }).filter(function(e){ var b=(e._board==='audensfood')?'audensfood':'comercial'; return b===_board; });
   entries.sort(function(a,b){return (b.statusAt||b._createdAt||0)-(a.statusAt||a._createdAt||0);});
   var pending=pendingLeadsCount();
   var syncBtn=CU&&CU.role==='gestor'
@@ -2086,6 +2089,10 @@ function renderKanban(){
   var html='<div class="page active">'+
     '<div class="page-header"><div><div class="page-title">Funil de Leads</div><div class="page-sub">Kanban - arraste os cards entre as colunas</div></div>'+
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'+
+    '<div style="display:flex;gap:3px;background:var(--card);border:1px solid var(--border2);border-radius:9px;padding:3px;">'+
+      '<button onclick="setKanbanBoard(\'comercial\')" style="padding:7px 14px;border:none;border-radius:7px;font-family:var(--font-bc),sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:'+(_board!=='audensfood'?'var(--purple3)':'transparent')+';color:'+(_board!=='audensfood'?'#fff':'var(--muted)')+';">Comercial</button>'+
+      '<button onclick="setKanbanBoard(\'audensfood\')" style="padding:7px 14px;border:none;border-radius:7px;font-family:var(--font-bc),sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:'+(_board==='audensfood'?'#f59e0b':'transparent')+';color:'+(_board==='audensfood'?'#1a1200':'var(--muted)')+';">🍔 Audens Food</button>'+
+    '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:5px 12px;">'+
       '<i class="ti ti-search" style="color:var(--muted);font-size:14px;"></i>'+
       '<input type="text" id="kanban-search" placeholder="Buscar nome, empresa ou telefone…" oninput="filterKanbanSearch(this.value)" '+
@@ -2123,8 +2130,8 @@ function renderKanban(){
     '</div>'+html;
   })();
 
-  KANBAN_COLS.forEach(function(col,idx){
-    var items=entries.filter(function(e){return (e.status||'novo')===col.id;});
+  _COLS.forEach(function(col,idx){
+    var items=entries.filter(function(e){ var st=(_board==='audensfood')?_afCol(e):(e.status||'novo'); return st===col.id;});
     html+='<div class="kanban-col" data-colid="'+col.id+'">'+
       '<div class="kanban-col-hd"><span>'+col.label+'</span><span class="badge b-'+col.color+'" id="kbadge-'+col.id+'">'+items.length+'</span></div>'+
       '<div class="kanban-col-body" ondragover="kanbanDragOver(event)" ondragleave="kanbanDragLeave(event)" ondrop="kanbanDrop(event,\''+col.id+'\')">'+
@@ -2482,6 +2489,17 @@ var KANBAN_COLS=[
   {id:'captura',label:'Capturas de conteúdo',color:'cyan'},
   {id:'arquivado',label:'Arquivados',color:'muted'}
 ];
+// Quadro "Audens Food" (venda de cardápio) — colunas próprias
+var AUDENSFOOD_COLS=[
+  {id:'af_qualificado',label:'Qualificado',color:'cyan'},
+  {id:'af_negociacao',label:'Em negociação',color:'amber'},
+  {id:'af_fechado',label:'Fechado',color:'gold'},
+  {id:'af_perdido',label:'Perdido',color:'muted'}
+];
+var _kanbanBoard='comercial'; // 'comercial' | 'audensfood'
+function setKanbanBoard(b){_kanbanBoard=(b==='audensfood')?'audensfood':'comercial';showPage('kanban');}
+// Mapeia um lead do Audens Food pra uma coluna do quadro AF, mesmo que tenha status do comercial (reunião/venda)
+function _afCol(e){var s=String((e&&e.status)||'');if(s.indexOf('af_')===0)return s;if(s==='fechado')return 'af_fechado';if(s==='perdido'||s==='arquivado')return 'af_perdido';if(s==='reuniao'||s==='proposta'||s==='recuperacao')return 'af_negociacao';return 'af_qualificado';}
 // Origens possiveis de um lead/reuniao (usado no card do Kanban e na coluna ORIGEM da planilha de reunioes)
 var KANBAN_ORIGENS=['Tráfego','Coldcall','Recuperação','Social Selling','Orgânico','Indicação'];
 // Opcoes de faturamento (mesmas do formulario da LP), usadas no modal de edicao do lead

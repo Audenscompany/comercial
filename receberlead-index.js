@@ -628,6 +628,58 @@ async function handleInscricaoProjeto(req, res) {
   }
 }
 
+// ===== AUDENS FOOD — LP de venda de cardápio =====
+// Lead entra DIRETO no kanban, num quadro separado (_board:"audensfood"),
+// já QUALIFICADO (status af_qualificado). NÃO dispara WhatsApp, cadência nem notificação.
+async function handleLeadAudensFood(req, res) {
+  if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).json({ ok: false, error: "use POST" }); }
+  if (!checaSecret(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
+  var b = req.body || {};
+  if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var nome = String(b.nome || b.name || "").trim();
+  var telRaw = String(b.telefone || b.whatsapp || b.whats || b.tel || b.celular || "").trim();
+  var tel = telRaw.replace(/\D/g, "");
+  var empresa = String(b.restaurante || b.empresa || b.company || "").trim();
+  var cidade = String(b.cidade || b.city || "").trim();
+  var faturamento = String(b.faturamento || b.faturamento_mensal || b["faturamento-atual"] || "").trim();
+  var email = String(b.email || b["e-mail"] || "").trim();
+  if (!nome || !tel) return res.status(400).json({ ok: false, error: "faltam campos (nome/telefone)" });
+  var key = (tel || ("af_" + Date.now())).replace(/[.#$\[\]]/g, "_");
+  var now = Date.now();
+  var ad = String(b.ad || b.utm_content || b.ad_name || "").trim();
+  var campanha = String(b.campanha || b.campaign || b.utm_campaign || "").trim();
+  var conjunto = String(b.conjunto || b.adset || b.utm_medium || "").trim();
+  try {
+    var cur = (await db.ref("kanban/" + key).once("value")).val();
+    if (cur) {
+      // Já existe lead com esse telefone — não duplica; marca como Audens Food/qualificado se ainda não estiver
+      var upd = { _board: "audensfood" };
+      if (!cur.status || String(cur.status).indexOf("af_") !== 0) { upd.status = "af_qualificado"; upd.statusAt = now; }
+      if (empresa && !cur.empresa) upd.empresa = empresa;
+      if (cidade && !cur.cidade) upd.cidade = cidade;
+      if (faturamento && !cur.faturamento) upd.faturamento = faturamento;
+      if (email && !cur.email) upd.email = email;
+      await db.ref("kanban/" + key).update(upd);
+      return res.status(200).json({ ok: true, key: key, dedup: true });
+    }
+    var rec = {
+      nome: nome, telefone: tel, empresa: empresa, cidade: cidade, email: email, faturamento: faturamento,
+      origem: "Audens Food", _source: "audens-food", _board: "audensfood",
+      status: "af_qualificado", statusAt: now, statusHistory: { af_qualificado: now }, _createdAt: now,
+      ad: ad, campanha: campanha, conjunto: conjunto,
+      campaign_id: String(b.campaign_id || b.campaignId || ""),
+      adset_id: String(b.adset_id || b.adsetId || ""),
+      ad_id: String(b.ad_id || b.adId || "")
+    };
+    await db.ref("kanban/" + key).set(rec);
+    try { await db.ref("leads/" + key).update({ nome: nome, telefone: tel, empresa: empresa, cidade: cidade, faturamento: faturamento, email: email, origem: "Audens Food", _source: "audens-food", _board: "audensfood", ad: ad, campanha: campanha, conjunto: conjunto, _createdAt: now }); } catch (e) {}
+    return res.status(200).json({ ok: true, key: key });
+  } catch (e) {
+    console.error("handleLeadAudensFood erro:", e);
+    return res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+}
+
 async function handleReceberLead(req, res) {
   if (req.method !== "POST") {
     res.set("Allow", "POST");
@@ -4603,6 +4655,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/inscricao-projeto") {
       return await handleInscricaoProjeto(req, res);
+    }
+    if (path === "/lead-audensfood") {
+      return await handleLeadAudensFood(req, res);
     }
     if (path === "/cnpj-por-nome") {
       return await handleCnpjPorNome(req, res);
