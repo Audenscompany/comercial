@@ -11319,7 +11319,8 @@ function renderReunioes(){
   var mesLabel=periodoAtivo?(_fmtBRd(_perFrom)+' – '+_fmtBRd(_perTo)):(_mnsL[filtM]+' '+filtY);
   var tab=window._reunOvTab||'hoje';
 
-  var allM=Object.values(meetings).filter(function(m){return !m._retorno;});
+  _afPhonesBuild();
+  var allM=Object.values(meetings).filter(function(m){return !m._retorno && _escMatch(m);});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
   function inPer(d){return !!d&&(periodoAtivo?(d>=_perFrom&&d<=_perTo):inMes(d,filtM,filtY));}
   var rows=allM.filter(function(m){if(!m.dtISO)return false;var _d=new Date(m.dtISO);return periodoAtivo?(_d>=_perFrom&&_d<=_perTo):inMes(_d,filtM,filtY);});
@@ -11451,7 +11452,7 @@ function renderReunioes(){
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt)||!_escMatch(m))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
 
   // ===== Performance por LANDING PAGE (agendada / realizada / venda) =====
   function normLP(raw){var s=String(raw||'').toLowerCase().trim();if(!s||s==='import'||s==='manual')return s==='manual'||s==='import'?'Manual / Import':'Não informado';
@@ -11468,7 +11469,7 @@ function renderReunioes(){
   function _lpOf(m){var raw=(m&&m.variante_lp)||'';if(!raw&&m&&m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey]){var kb=kanbanData[m.kanbanKey];raw=kb.variante_lp||kb._source||'';}return normLP(raw);}
   var lpMap={};
   dedupedRows.forEach(function(m){var o=_lpOf(m);if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].ag++;if(isReal(m))lpMap[o].real++;});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var o=m?_lpOf(m):'Não informado';if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].vend++;lpMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt)||!_escMatch(m))return;var o=m?_lpOf(m):'Não informado';if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].vend++;lpMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
   // Faixas
@@ -11476,7 +11477,7 @@ function renderReunioes(){
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
   dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
+  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt)||!_escMatch(m))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
   var closerMap={};
@@ -11490,7 +11491,7 @@ function renderReunioes(){
       var dt=(typeof _vendaDate==='function')?_vendaDate(fu,m):null;
       if(!dt&&fu.dataInicio)dt=new Date(fu.dataInicio+'T12:00:00');
       if(!dt&&m&&m.dtISO)dt=new Date(m.dtISO);
-      if(!dt||!inPer(dt))return;
+      if(!dt||!inPer(dt)||!_escMatch(m))return;
       var raw=(m&&m.responsavel)||(fu.closerNome)||(fu.closer)||(fu.responsavel)||'';
       var c=normCloserName(raw)||'—';
       if(!closerMap[c])closerMap[c]={real:0,prop:0,vend:0,rec:0};
@@ -11507,7 +11508,7 @@ function renderReunioes(){
     var dt=typeof _vendaDate==='function'?_vendaDate(fu,m):null;
     if(!dt&&fu.dataInicio){dt=new Date(fu.dataInicio+'T12:00:00');}
     if(!dt&&m&&m.dtISO){dt=new Date(m.dtISO);}
-    if(!dt||!inPer(dt))return;
+    if(!dt||!inPer(dt)||!_escMatch(m))return;
     // Dedup por telefone — evita contar followup sintético junto com real do mesmo cliente
     var tel=((m&&m.tel)||fu.tel||'').replace(/\D/g,'').slice(-10);
     if(tel&&tel.length>=8){if(_closerVTel[tel])return;_closerVTel[tel]=1;}
@@ -11582,7 +11583,7 @@ function renderReunioes(){
     +'<div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:2px;">VISÃO GERAL DE REUNIÕES</div>'
     +'<div style="font-size:11px;color:var(--muted);">Panorama completo da performance comercial · '+mesLabel+'</div></div>'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-    +mesSelect+periodoBox
+    +_escopoSelectorHTML()+mesSelect+periodoBox
     +'<button onclick="showPage(\'reunioes\')" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--white);padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:12px;"></i> Atualizar</button>'
     +'</div></div>';
 
@@ -19388,6 +19389,13 @@ async function loadFunilReunioes(){
 // Filtro de mês global para Reuniões
 var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
 var _reunPeriodo=null; // {from,to} YYYY-MM-DD ou null (período customizado)
+// ===== Escopo dos relatórios: Tudo / Comercial / Audens Food =====
+var _escopoComercial='tudo'; // 'tudo' | 'comercial' | 'audensfood'
+function setEscopoComercial(v){_escopoComercial=(v==='comercial'||v==='audensfood')?v:'tudo';var p=window._currentPage||'reunioes';showPage(p);}
+function _afPhonesBuild(){var s={};try{Object.keys(kanbanData||{}).forEach(function(k){var v=kanbanData[k];if(v&&v._board==='audensfood'){var t=String(v.telefone||k).replace(/\D/g,'').slice(-9);if(t)s[t]=1;}});}catch(e){}window._afPhonesCache=s;return s;}
+function _mIsAF(m){if(!m)return false;if(/audens\s*food/i.test(String(m.origem||'')))return true;var kk=m.kanbanKey;if(kk&&typeof kanbanData!=='undefined'&&kanbanData[kk]&&kanbanData[kk]._board==='audensfood')return true;var t=String(m.tel||m.telefone||'').replace(/\D/g,'').slice(-9);if(t&&window._afPhonesCache&&window._afPhonesCache[t])return true;return false;}
+function _escMatch(m){if(_escopoComercial==='tudo')return true;var af=_mIsAF(m);return _escopoComercial==='audensfood'?af:!af;}
+function _escopoSelectorHTML(){var o=[['tudo','Tudo'],['comercial','Comercial'],['audensfood','🍔 Audens Food']];return '<div style="display:flex;gap:3px;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:3px;">'+o.map(function(x){var on=_escopoComercial===x[0];return '<button onclick="setEscopoComercial(\''+x[0]+'\')" style="padding:6px 11px;border:none;border-radius:6px;font-family:var(--font-bc),sans-serif;font-size:12px;font-weight:700;cursor:pointer;background:'+(on?(x[0]==='audensfood'?'#f59e0b':'var(--purple3)'):'transparent')+';color:'+(on?(x[0]==='audensfood'?'#1a1200':'#fff'):'var(--muted)')+';">'+x[1]+'</button>';}).join('')+'</div>';}
 var _reunTab='geral'; // 'geral' | 'noshow'
 var _vendasMesFiltro=null;
 var _vendasPeriodo=null; // {from,to} YYYY-MM-DD ou null (período customizado nas Vendas)
@@ -29590,8 +29598,10 @@ function renderVendas(){
   });
   todasVendas=_todasDedup;
 
-  // Cache global — fonte de dados para cálculos de comissão
+  // Cache global — fonte de dados para cálculos de comissão (sempre completo, sem filtro de escopo)
   window._todasVendasCache=todasVendas; window._todasVendasCacheFull=true;
+  // Filtro de escopo (Tudo / Comercial / Audens Food) só para a exibição desta tela
+  if(_escopoComercial!=='tudo'){ _afPhonesBuild(); todasVendas=todasVendas.filter(function(v){ var af=_mIsAF(v.m)||/audens\s*food/i.test(String((v.origemRaw)||(v.fu&&v.fu.origem)||'')); return _escopoComercial==='audensfood'?af:!af; }); }
 
   // Meses disponíveis
   var mesKeys={};
@@ -29859,6 +29869,7 @@ function renderVendas(){
       '<div class="page-sub">Visão comercial • '+mesLabel+'</div>'+
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+      _escopoSelectorHTML()+
       mesSelect+
       periodoBox+
       '<select onchange="setVendasFiltro(\'closer\',this.value);_vendasFiltros.closer=this.value;document.getElementById(\'vf-closer\')&&(document.getElementById(\'vf-closer\').value=this.value);_renderVendasTabela()" style="'+sel+'"><option value="">Todos closers</option>'+closerOpts+'</select>'+
