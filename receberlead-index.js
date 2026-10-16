@@ -449,6 +449,17 @@ function checaSecret(req) {
   const secret = req.headers["x-webhook-secret"] || req.query.secret;
   return Boolean(process.env.WEBHOOK_SECRET) && secret === process.env.WEBHOOK_SECRET;
 }
+// Senha DEDICADA de captação de leads (LPs públicas). Separada da WEBHOOK_SECRET
+// (que dispara WhatsApp). Se vazar, o pior caso é lead falso — mitigado por dedup
+// e pelo tratamento de "evento: teste". Pode ser sobrescrita por env var LEAD_SECRET.
+const LEAD_SECRET = process.env.LEAD_SECRET || "afdlead_rK7mQ2xP9vT4nL8sZ3wB";
+function checaLeadSecret(req) {
+  const secret = req.headers["x-webhook-secret"] || req.query.secret;
+  if (!secret) return false;
+  if (secret === LEAD_SECRET) return true;
+  if (process.env.WEBHOOK_SECRET && secret === process.env.WEBHOOK_SECRET) return true; // compat
+  return false;
+}
 
 // ===== GASTO DE ADS (Meta) p/ CPQL — armazenado por dia: gasto_ads/{YYYY-MM-DD}/{ad_id} =====
 const META_AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || "506760095105257"; // CA - Assessoria
@@ -633,26 +644,41 @@ async function handleInscricaoProjeto(req, res) {
 // já QUALIFICADO (status af_qualificado). NÃO dispara WhatsApp, cadência nem notificação.
 async function handleLeadAudensFood(req, res) {
   if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).json({ ok: false, error: "use POST" }); }
-  if (!checaSecret(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
+  if (!checaLeadSecret(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
   var b = req.body || {};
   if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+
+  // Botão "Enviar teste" da LP: evento=teste -> responde 200 sem criar card
+  if (String(b.evento || b.event || "").toLowerCase() === "teste") {
+    return res.status(200).json({ ok: true, teste: true });
+  }
+
   var nome = String(b.nome || b.name || "").trim();
   var telRaw = String(b.telefone || b.whatsapp || b.whats || b.tel || b.celular || "").trim();
   var tel = telRaw.replace(/\D/g, "");
   var empresa = String(b.restaurante || b.empresa || b.company || "").trim();
   var cidade = String(b.cidade || b.city || "").trim();
-  var faturamento = String(b.faturamento || b.faturamento_mensal || b["faturamento-atual"] || "").trim();
+  var faturamento = String(b.faturamento || b.faturamento_mensal || b["faturamento-atual"] || "").trim(); // pode vir vazio — ok
   var email = String(b.email || b["e-mail"] || "").trim();
   if (!nome || !tel) return res.status(400).json({ ok: false, error: "faltam campos (nome/telefone)" });
-  var key = (tel || ("af_" + Date.now())).replace(/[.#$\[\]]/g, "_");
+
   var now = Date.now();
   var ad = String(b.ad || b.utm_content || b.ad_name || "").trim();
   var campanha = String(b.campanha || b.campaign || b.utm_campaign || "").trim();
   var conjunto = String(b.conjunto || b.adset || b.utm_medium || "").trim();
+
+  // Dedup pelo "id" do envio (reenvios trazem o mesmo id)
+  var reqId = String(b.id || b.lead_id || b.leadId || "").trim();
+  var reqIdKey = reqId ? reqId.replace(/[.#$\[\]\/]/g, "_").slice(0, 120) : "";
   try {
+    if (reqIdKey) {
+      var seen = (await db.ref("audensfood_ids/" + reqIdKey).once("value")).val();
+      if (seen) return res.status(200).json({ ok: true, dedup: "id", key: (seen && seen.key) || "" });
+    }
+    var key = (tel || ("af_" + now)).replace(/[.#$\[\]]/g, "_");
     var cur = (await db.ref("kanban/" + key).once("value")).val();
     if (cur) {
-      // Já existe lead com esse telefone — não duplica; marca como Audens Food/qualificado se ainda não estiver
+      // Já existe lead com esse telefone — não duplica; só marca como Audens Food/qualificado se ainda não estiver
       var upd = { _board: "audensfood" };
       if (!cur.status || String(cur.status).indexOf("af_") !== 0) { upd.status = "af_qualificado"; upd.statusAt = now; }
       if (empresa && !cur.empresa) upd.empresa = empresa;
@@ -660,19 +686,20 @@ async function handleLeadAudensFood(req, res) {
       if (faturamento && !cur.faturamento) upd.faturamento = faturamento;
       if (email && !cur.email) upd.email = email;
       await db.ref("kanban/" + key).update(upd);
-      return res.status(200).json({ ok: true, key: key, dedup: true });
+      if (reqIdKey) { try { await db.ref("audensfood_ids/" + reqIdKey).set({ key: key, at: now }); } catch (e) {} }
+      return res.status(200).json({ ok: true, key: key, dedup: "tel" });
     }
     var rec = {
       nome: nome, telefone: tel, empresa: empresa, cidade: cidade, email: email, faturamento: faturamento,
       origem: "Audens Food", _source: "audens-food", _board: "audensfood",
       status: "af_qualificado", statusAt: now, statusHistory: { af_qualificado: now }, _createdAt: now,
       ad: ad, campanha: campanha, conjunto: conjunto,
-      campaign_id: String(b.campaign_id || b.campaignId || ""),
-      adset_id: String(b.adset_id || b.adsetId || ""),
-      ad_id: String(b.ad_id || b.adId || "")
+      utm_source: String(b.utm_source || ""), utm_medium: String(b.utm_medium || ""), utm_campaign: String(b.utm_campaign || ""), utm_content: String(b.utm_content || ""),
+      campaign_id: String(b.campaign_id || b.campaignId || ""), adset_id: String(b.adset_id || b.adsetId || ""), ad_id: String(b.ad_id || b.adId || "")
     };
     await db.ref("kanban/" + key).set(rec);
     try { await db.ref("leads/" + key).update({ nome: nome, telefone: tel, empresa: empresa, cidade: cidade, faturamento: faturamento, email: email, origem: "Audens Food", _source: "audens-food", _board: "audensfood", ad: ad, campanha: campanha, conjunto: conjunto, _createdAt: now }); } catch (e) {}
+    if (reqIdKey) { try { await db.ref("audensfood_ids/" + reqIdKey).set({ key: key, at: now }); } catch (e) {} }
     return res.status(200).json({ ok: true, key: key });
   } catch (e) {
     console.error("handleLeadAudensFood erro:", e);
