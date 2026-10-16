@@ -32081,6 +32081,19 @@ function carApplyBatch(){
   _carState.slides=parsed;
   carRebuildGrid();carScheduleSave();carToast(_carState.slides.length+' slides gerados');
 }
+// Pega o texto do carrossel e leva pro Reels 10S pra virar roteiro de 10s
+function carParaReels(){
+  var slides=(_carState&&_carState.slides)||[];
+  var txt='';
+  if(slides.length){
+    txt=slides.map(function(s,i){var t=(s.title||'').trim();var b=(s.body||'').trim();return (i===0?'CAPA: ':'SLIDE '+(i+1)+': ')+t+(b?'\n'+b:'');}).join('\n\n');
+  }
+  if(!txt){ var ta=document.getElementById('car-batch'); txt=ta?ta.value.trim():''; }
+  if(!txt){ carToast('Gere ou aplique o texto do carrossel primeiro.'); return; }
+  var titulo=((slides[0]&&slides[0].title)||(txt.split('\n')[0]||'')).slice(0,90)||'Reels';
+  window._carReelsBase={titulo:titulo,texto:txt};
+  showPage('dicas-rapidas');
+}
 
 function _carLoadImgFile(file){return new Promise(function(res){var r=new FileReader();r.onload=function(e){var img=new Image();img.onload=function(){res(img);};img.src=e.target.result;};r.readAsDataURL(file);});}
 async function carUploadAvatar(inp){if(!inp.files[0])return;_carState.profile.avatar=await _carLoadImgFile(inp.files[0]);var prev=document.getElementById('car-avatar-prev');if(prev){prev.style.backgroundImage='url('+_carState.profile.avatar.src+')';prev.textContent='';}carDrawAll();inp.value='';}
@@ -32897,6 +32910,7 @@ function renderCarrossel(){
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+'<span style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Banco de títulos</span>'+'<span id="car-banco-cont" style="font-size:10px;font-weight:700;color:#39d98a;">0/90 usados</span>'+'</div>'+'<input id="car-banco-busca" oninput="carRenderBanco()" placeholder="Buscar título..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:9px 12px;outline:none;box-sizing:border-box;margin-bottom:6px;">'+'<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px;color:var(--muted);margin-bottom:8px;"><input type="checkbox" id="car-banco-filtro" onchange="carRenderBanco()" style="accent-color:var(--accent);width:14px;height:14px;"> Esconder os que já usei</label>'+'<div id="car-banco-list" style="max-height:280px;overflow-y:auto;padding-right:4px;margin-bottom:8px;"></div>'+'<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:18px;">Clique no título para virar capa (marca como usado). Clique no ✓ para marcar/desmarcar manualmente.</div>'+'<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Texto em lote</div>'+
             '<textarea id="car-batch" style="width:100%;min-height:180px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:11px 12px;outline:none;resize:vertical;line-height:1.5;" placeholder="Título (Linha 1)&#10;Corpo (Linhas seguintes)&#10;&#10;Linha vazia separa slides. 1º bloco = capa."></textarea>'+
             '<button onclick="carApplyBatch()" style="display:block;width:100%;margin-top:10px;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Aplicar texto</button>'+
+            '<button onclick="carParaReels()" title="Pega o texto deste carrossel e gera um roteiro de Reels 10S" style="display:block;width:100%;margin-top:8px;padding:11px 0;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.45);border-radius:10px;color:#a78bfa;font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">🎬 Virar Reels 10S</button>'+
             '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;margin-bottom:18px;">1ª linha = título · restante = corpo · 1º bloco = capa</div>'+
             '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Perfil</div>'+
             '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nome</label><input type="text" id="car-pname" value="" oninput="_carState.profile.name=this.value;carDrawAll();carScheduleSave();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
@@ -34979,6 +34993,27 @@ async function dicaGerarLegenda(){
   }catch(e){if(st){st.style.color='#ff5c7a';st.textContent='Erro: '+e.message;}}
   if(btn){btn.disabled=false;btn.textContent='✨ Gerar legenda com IA';}
 }
+// Transforma o texto de um carrossel num roteiro de Reels de 10s
+async function dicaGerarReelDeCarrossel(b){
+  var claudeKey=localStorage.getItem('audens_claude_key');
+  var st=document.getElementById('dica-ia-status');
+  var titEl=document.getElementById('dica-titulo-atual');
+  var leg=document.getElementById('dica-legenda');
+  _dicaTituloAtual=b.titulo||'Reels'; if(titEl)titEl.textContent=_dicaTituloAtual;
+  if(typeof dicaSwitchTab==='function')dicaSwitchTab('banco');
+  if(!claudeKey){ if(st){st.style.color='#ff5c7a';st.textContent='Configure a Claude API Key em ⚙ Configurações do Jarvis. O texto do carrossel foi carregado abaixo como base.';} if(leg)leg.value='TEXTO DO CARROSSEL (base pro reel):\n\n'+b.texto; return; }
+  if(st){st.style.color='var(--muted)';st.textContent='Transformando o carrossel num roteiro de Reels 10s…';}
+  if(leg)leg.value='Gerando roteiro do reel a partir do carrossel…';
+  try{
+    var sys='Você é roteirista de Reels curtos (cerca de 10 segundos) para o Instagram de uma marca de hamburgueria/delivery. Recebe o conteúdo de um CARROSSEL e transforma na mensagem principal num ÚNICO reels de ~10s, direto e com gancho forte nos 3 primeiros segundos. Responda SEMPRE em português do Brasil, SEM asteriscos e SEM markdown, exatamente neste formato:\n\nGANCHO (0-3s): <frase curta de impacto>\nFALA (~10s): <2 a 4 frases curtas pra narrar>\nTEXTO NA TELA: <2 a 4 textos curtos, um por linha>\nCTA: <chamada final curta>\n\nLEGENDA:\n<legenda pronta pra postar, com quebras de linha e 3 a 5 hashtags no final>';
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,system:sys,messages:[{role:'user',content:'Transforme este carrossel num reels de 10 segundos, aproveitando a mensagem central:\n\n'+b.texto}]})});
+    if(!resp.ok)throw new Error('Claude API '+resp.status);
+    var data=await resp.json();
+    var text=(data.content&&data.content[0]&&data.content[0].text)||'';
+    if(leg)leg.value=text.trim();
+    if(st){st.style.color='#39d98a';st.textContent='Reels 10s pronto a partir do carrossel! Revise e agende.';}
+  }catch(e){ if(leg)leg.value='TEXTO DO CARROSSEL (base pro reel):\n\n'+b.texto; if(st){st.style.color='#ff5c7a';st.textContent='Erro na IA: '+e.message+' — carreguei o texto do carrossel como base.';} }
+}
 function dicaCopiarLegenda(){
   var leg=document.getElementById('dica-legenda');if(!leg||!leg.value.trim()){dicaToast('Gere a legenda primeiro.');return;}
   navigator.clipboard.writeText(leg.value).then(function(){dicaToast('Legenda copiada!');},function(){dicaToast('Não foi possível copiar.');});
@@ -35048,6 +35083,8 @@ async function dicaInitPage(){
   if(!_dicaProg.length)_dicaProg=_dicaGerarProgramacaoBase();
   dicaRenderBanco();
   dicaRenderProg();
+  // Veio do Carrossel ("Virar Reels 10S")? gera o roteiro a partir do texto do carrossel
+  if(window._carReelsBase){ var _b=window._carReelsBase; window._carReelsBase=null; setTimeout(function(){ if(typeof dicaGerarReelDeCarrossel==='function') dicaGerarReelDeCarrossel(_b); },400); }
 }
 
 // ===== RENDER =====
