@@ -639,9 +639,21 @@ async function handleInscricaoProjeto(req, res) {
   }
 }
 
+// Mensagem de boas-vindas do Audens Food (própria da marca; NÃO é a cadência da assessoria)
+function mensagemBoasVindasAudensFood(nome) {
+  var primeiro = String(nome || "").trim().split(/\s+/)[0] || "";
+  var ola = primeiro ? ("Olá, " + primeiro + "! 👋") : "Olá! 👋";
+  return ola + "\n\n" +
+    "Aqui é da *Audens Food* — que bom ter você com a gente! 🙌\n\n" +
+    "Recebemos seu cadastro e *em breve vamos te ligar* pra entender melhor o seu negócio e te mostrar, na prática, como a gente pode ajudar. 📞\n\n" +
+    "A Audens Food é um *cardápio digital feito por donos de hamburgueria e pizzaria*. Criamos ela pra resolver de verdade as maiores necessidades de quem está no balcão todo dia — porque foi gente que entende de verdade do assunto que construiu. 🍔🍕\n\n" +
+    "Qualquer coisa, é só me chamar por aqui. Até já!";
+}
+
 // ===== AUDENS FOOD — LP de venda de cardápio =====
 // Lead entra DIRETO no kanban, num quadro separado (_board:"audensfood"),
-// já QUALIFICADO (status af_qualificado). NÃO dispara WhatsApp, cadência nem notificação.
+// já QUALIFICADO (status af_qualificado). Dispara SÓ a mensagem de boas-vindas
+// do Audens Food (não a cadência da assessoria).
 async function handleLeadAudensFood(req, res) {
   if (req.method !== "POST") { res.set("Allow", "POST"); return res.status(405).json({ ok: false, error: "use POST" }); }
   if (!checaLeadSecret(req)) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -700,6 +712,8 @@ async function handleLeadAudensFood(req, res) {
     await db.ref("kanban/" + key).set(rec);
     try { await db.ref("leads/" + key).update({ nome: nome, telefone: tel, empresa: empresa, cidade: cidade, faturamento: faturamento, email: email, origem: "Audens Food", _source: "audens-food", _board: "audensfood", ad: ad, campanha: campanha, conjunto: conjunto, _createdAt: now }); } catch (e) {}
     if (reqIdKey) { try { await db.ref("audensfood_ids/" + reqIdKey).set({ key: key, at: now }); } catch (e) {} }
+    // Boas-vindas do Audens Food (só no lead novo)
+    try { await enviarMensagemWhatsapp(tel, mensagemBoasVindasAudensFood(nome)); } catch (e) {}
     return res.status(200).json({ ok: true, key: key });
   } catch (e) {
     console.error("handleLeadAudensFood erro:", e);
