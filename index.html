@@ -29538,11 +29538,19 @@ function renderVendas(){
 
   // Step 3: contratos extras pré-carregados (sem followup nem assinatura)
   if(window._contratosVendasExtra&&window._contratosVendasExtra.length){
-    var _tExtraRV={};
-    todasVendas.forEach(function(v){var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tExtraRV[t]=1;_tExtraRV[t.slice(-11)]=1;_tExtraRV[t.slice(-10)]=1;}});
+    var _tExtraRV={}, _nmExtraRV={};
+    todasVendas.forEach(function(v){
+      var t=(v.m&&v.m.tel||v.fu.tel||'').replace(/\D/g,'');if(t){_tExtraRV[t]=1;_tExtraRV[t.slice(-11)]=1;_tExtraRV[t.slice(-10)]=1;}
+      var nm=(typeof _vnNorm==='function')?_vnNorm((v.fu&&v.fu.nome)||(v.m&&v.m.nome)||''):'';if(nm)_nmExtraRV[nm]=1;
+    });
     window._contratosVendasExtra.forEach(function(entry){
-      var telE=(entry.m&&entry.m.tel||'').replace(/\D/g,'');
-      if(!entry.fu._segundaLoja && telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-11)]||_tExtraRV[telE.slice(-10)])) return;
+      if(!entry.fu._segundaLoja){
+        var telE=(entry.m&&entry.m.tel||'').replace(/\D/g,'');
+        if(telE&&(_tExtraRV[telE]||_tExtraRV[telE.slice(-11)]||_tExtraRV[telE.slice(-10)])) return;
+        // Mesmo cliente já tem venda (followup/assinatura) com telefone diferente — não duplica pelo contrato
+        var nmE=(typeof _vnNorm==='function')?_vnNorm((entry.fu&&entry.fu.nome)||(entry.m&&entry.m.nome)||''):'';
+        if(nmE&&_nmExtraRV[nmE]) return;
+      }
       todasVendas.push(entry);
     });
   }
