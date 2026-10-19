@@ -4485,16 +4485,28 @@ const FRIA_TEMPLATES = {
   f2: { idx: 1, offsetMin: 5, text: "{{primeiroNome}}, aqui é o João 🙌 Sou do time da Audens — a gente é especializada em fazer delivery e restaurante venderem mais (tráfego que traz pedido + cardápio que converte + recorrência). Já pegamos cliente de R$37 mil e levamos pra mais de R$120 mil/mês. Posso te mostrar, sem compromisso, como isso se aplicaria no seu negócio?" }
 };
 const FRIA_ORDER = ["f1", "f2"];
+// Templates por campanha (sobrepõem o padrão f1/f2 pra listas específicas, ex.: membros dos grupos VIP)
+const CAMP_TEMPLATES = {
+  "grupo-vip": {
+    f1: { text: "Opa, {{primeiroNome}}! Aqui é o João, da Audens 👊 Vi que você tá num dos nossos grupos de donos de hamburgueria e pizzaria. Posso te oferecer uma coisa boa, rapidinho?" },
+    f2: { text: "A gente liberou um *raio-x gratuito do seu negócio*: um bate-papo direto com o Lucas (fundador da Audens) pra analisar o seu delivery e te mostrar, na prática, onde dá pra vender mais — sem custo e sem compromisso. Quer que eu agende esse papo com você? 📈" }
+  }
+};
 async function friaCfg() {
   try {
     var v = (await db.ref("config/fria").once("value")).val() || {};
     return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 50, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, gapMin: parseInt(v.gapMin, 10) || 5 };
   } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 50, intervalSeconds: 300, startHour: 9, endHour: 20, gapMin: 5 }; }
 }
-async function friaGetTemplate(id) {
+async function friaGetTemplate(id, campanha) {
   var base = FRIA_TEMPLATES[id]; if (!base) return null;
-  var ov = null; try { ov = (await db.ref("config/fria_templates/" + id).once("value")).val(); } catch (e) {}
-  return { text: (ov && ov.text) || base.text, dia: (ov && ov.dia != null) ? ov.dia : base.dia, idx: base.idx };
+  var text = base.text;
+  if (campanha && CAMP_TEMPLATES[campanha] && CAMP_TEMPLATES[campanha][id]) text = CAMP_TEMPLATES[campanha][id].text;
+  try {
+    if (campanha) { var ovc = (await db.ref("config/fria_templates_camp/" + campanha + "/" + id).once("value")).val(); if (ovc && ovc.text) text = ovc.text; }
+    else { var ov = (await db.ref("config/fria_templates/" + id).once("value")).val(); if (ov && ov.text) text = ov.text; }
+  } catch (e) {}
+  return { text: text, idx: base.idx };
 }
 function friaRender(text, nome) { var pn = primeiroNomeDe(nome) || "tudo bem"; return String(text).replace(/\{\{\s*primeiroNome\s*\}\}/g, pn); }
 function friaClampWindow(ts, cfg) {
@@ -4518,12 +4530,100 @@ async function handleFriaImport(req, res) {
     if (tel.length < 12 || tel.length > 13) { inval++; return; }
     var key = tel.replace(/[.#$\[\]]/g, "_");
     if (existentes[key] || updates["fria_contatos/" + key]) { dup++; return; }
-    updates["fria_contatos/" + key] = { tel: tel, nome: String(x.nome || x.name || "").trim(), status: "novo", prio: (parseInt(x.prio, 10) || 0), importedAt: Date.now() };
+    updates["fria_contatos/" + key] = { tel: tel, nome: String(x.nome || x.name || "").trim(), status: "novo", prio: (parseInt(x.prio, 10) || 0), campanha: String(x.campanha || "").trim(), importedAt: Date.now() };
     n++;
   });
   var keys = Object.keys(updates);
   for (var i = 0; i < keys.length; i += 500) { var chunk = {}; keys.slice(i, i + 500).forEach(function (k) { chunk[k] = updates[k]; }); await db.ref().update(chunk); }
   return res.status(200).json({ ok: true, importados: n, duplicados: dup, invalidos: inval });
+}
+// ===== Z-API: ler grupos e participantes, importar pra Prospecção Fria =====
+async function zapiGetJSON(pathAndQuery) {
+  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN) return null;
+  try {
+    var url = "https://api.z-api.io/instances/" + ZAPI_INSTANCE_ID + "/token/" + ZAPI_TOKEN + "/" + pathAndQuery;
+    var resp = await fetch(url, { headers: zapiHeaders() });
+    return await resp.json().catch(function () { return null; });
+  } catch (e) { console.error("zapiGetJSON", pathAndQuery, e); return null; }
+}
+function _digits(x) { return String(x == null ? "" : x).replace(/\D/g, ""); }
+// Lista os grupos do WhatsApp conectado (id + nome)
+async function handleWaGrupos(req, res) {
+  var out = [], seen = {};
+  for (var pg = 1; pg <= 25; pg++) {
+    var chats = await zapiGetJSON("chats?page=" + pg + "&pageSize=100");
+    if (!Array.isArray(chats) || !chats.length) break;
+    chats.forEach(function (c) {
+      var id = String(c.phone || c.id || "");
+      var isG = c.isGroup === true || id.indexOf("-group") >= 0 || id.indexOf("@g.us") >= 0;
+      if (isG && id && !seen[id]) { seen[id] = 1; out.push({ id: id, nome: c.name || c.subject || c.title || "" }); }
+    });
+    if (chats.length < 100) break;
+  }
+  return res.status(200).json({ ok: true, total: out.length, grupos: out, nota: out.length ? "" : "Nenhum grupo retornado — confira se o número conectado está nos grupos e se a Z-API está ativa." });
+}
+// Puxa participantes dos grupos, exclui contatos salvos + clientes fechados, importa pra fria_contatos
+async function handleWaImportarGrupo(req, res) {
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var grupos = Array.isArray(b.grupos) ? b.grupos : (b.grupo ? [b.grupo] : []);
+  if (!grupos.length) return res.status(400).json({ ok: false, error: "envie {grupos:[id1,id2]}" });
+  var campanha = String(b.campanha || "grupo-vip").trim();
+  var prio = parseInt(b.prio, 10) || 0;
+  var excluirSalvos = b.excluirSalvos !== false;
+  var excluirClientes = b.excluirClientes !== false;
+  var dryRun = b.dryRun === true;
+  // 1) participantes
+  var parts = {}, grpInfo = [];
+  for (var gi = 0; gi < grupos.length; gi++) {
+    var gid = String(grupos[gi]);
+    var meta = await zapiGetJSON("group-metadata/" + encodeURIComponent(gid));
+    var ps = (meta && (meta.participants || meta.members)) || [];
+    ps.forEach(function (p) { var t = _digits(p && (p.phone || p.id || p)); if (t.length >= 10) { if (!parts[t]) parts[t] = { tel: t, nome: String((p && (p.name || p.notify || p.short)) || "").trim() }; } });
+    grpInfo.push({ id: gid, nome: (meta && (meta.subject || meta.name)) || "", participantes: ps.length });
+  }
+  // 2) contatos salvos
+  var salvos = {};
+  if (excluirSalvos) {
+    for (var cp = 1; cp <= 60; cp++) {
+      var cts = await zapiGetJSON("contacts?page=" + cp + "&pageSize=200");
+      if (!Array.isArray(cts) || !cts.length) break;
+      cts.forEach(function (c) { var t = _digits(c && (c.phone || c.id)); if (t) salvos[t.slice(-11)] = 1; });
+      if (cts.length < 200) break;
+    }
+  }
+  // 3) clientes fechados (contratos ativos + followups de venda)
+  var fechados = {};
+  if (excluirClientes) {
+    try {
+      var contr = (await db.ref("contratos").once("value")).val() || {};
+      Object.keys(contr).forEach(function (k) { var c = contr[k]; if (!c || c.ativo === false) return; var t = _digits(c.kanbanKey || c.telefone || c.tel); if (t) fechados[t.slice(-11)] = 1; });
+      var fups = (await db.ref("followups").once("value")).val() || {};
+      Object.keys(fups).forEach(function (k) { var f = fups[k]; if (f && (f.venda === "sim" || f.resultado === "venda")) { var t = _digits(f.tel); if (t) fechados[t.slice(-11)] = 1; } });
+    } catch (e) {}
+  }
+  // 4) já na fria
+  var jaFria = {};
+  try { var fr = (await db.ref("fria_contatos").once("value")).val() || {}; Object.keys(fr).forEach(function (k) { var t = _digits(fr[k] && fr[k].tel); if (t) jaFria[t.slice(-11)] = 1; }); } catch (e) {}
+  // próprio número conectado
+  var selfNum = ""; try { var me = await zapiGetJSON("me"); selfNum = _digits(me && (me.phone || me.connected || me.me)); } catch (e) {}
+  // 5) filtra e importa
+  var updates = {}, imported = 0, exSalvos = 0, exClientes = 0, exFria = 0, totalPart = 0, amostra = [];
+  Object.keys(parts).forEach(function (t) {
+    totalPart++;
+    var tel = t; if (tel.length === 10 || tel.length === 11) tel = "55" + tel; if (tel.length < 12 || tel.length > 13) return;
+    var last11 = _digits(tel).slice(-11);
+    if (selfNum && last11 === selfNum.slice(-11)) return;
+    if (salvos[last11]) { exSalvos++; return; }
+    if (fechados[last11]) { exClientes++; return; }
+    if (jaFria[last11]) { exFria++; return; }
+    var key = tel.replace(/[.#$\[\]]/g, "_");
+    if (updates["fria_contatos/" + key]) return;
+    if (amostra.length < 5) amostra.push(tel);
+    if (!dryRun) updates["fria_contatos/" + key] = { tel: tel, nome: parts[t].nome || "", status: "novo", prio: prio, campanha: campanha, importedAt: Date.now() };
+    imported++;
+  });
+  if (!dryRun) { var keys = Object.keys(updates); for (var i = 0; i < keys.length; i += 500) { var chunk = {}; keys.slice(i, i + 500).forEach(function (k) { chunk[k] = updates[k]; }); await db.ref().update(chunk); } }
+  return res.status(200).json({ ok: true, dryRun: dryRun, campanha: campanha, grupos: grpInfo, total_participantes: totalPart, excluidos_salvos: exSalvos, excluidos_clientes: exClientes, ja_na_fria: exFria, importados: imported, amostra: amostra });
 }
 // Inscreve até maxPerDay novos/dia + enfileira os toques devidos de hoje. Roda 1x/dia (flag fria_control/lastBuild).
 async function friaDailyBuild(cfg) {
@@ -4542,7 +4642,7 @@ async function friaDailyBuild(cfg) {
     await db.ref("fria_contatos/" + k).update({ status: "ativo", startedAt: hoje, touchIndex: 0, enrolledAt: now });
     // SÓ a 1ª mensagem entra na fila anti-ban. A 2ª é disparada 5min após o ENVIO REAL da 1ª (fria_f2_pendentes), fora do throttle.
     var f1sched = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
-    await db.ref("fria_fila/" + k + "_f1").set({ key: k, tel: c.tel, nome: c.nome || "", tid: "f1", status: "queued", scheduledAt: f1sched, createdAt: now });
+    await db.ref("fria_fila/" + k + "_f1").set({ key: k, tel: c.tel, nome: c.nome || "", tid: "f1", campanha: c.campanha || "", status: "queued", scheduledAt: f1sched, createdAt: now });
     await db.ref("fria_msg/" + k + "/f1").set({ status: "queued", scheduledAt: f1sched });
     out.queued++; out.enrolled++;
   }
@@ -4561,9 +4661,9 @@ async function friaDrainCore() {
     var now0 = Date.now();
     var ks = Object.keys(pend).filter(function (k) { return pend[k] && pend[k].dueAt && pend[k].dueAt <= now0; });
     if (ks.length) {
-      var tpl2 = await friaGetTemplate("f2");
       for (var x = 0; x < ks.length; x++) {
         var k2 = ks[x], p2 = pend[k2];
+        var tpl2 = await friaGetTemplate("f2", p2.campanha);
         var alvo2 = cfg.testPhone || p2.tel;
         try { await enviarMensagemWhatsapp(alvo2, (cfg.testPhone ? "[TESTE fria] " : "") + friaRender(tpl2.text, p2.nome)); } catch (e) {}
         await db.ref("fria_f2_pendentes/" + k2).remove();
@@ -4590,7 +4690,7 @@ async function friaDrainCore() {
   if (!locked) return out;
   var c = (await db.ref("fria_contatos/" + it.key).once("value")).val();
   if (!c || c.status !== "ativo") { await ref.update({ status: "cancelled" }); return out; }
-  var tpl = await friaGetTemplate(it.tid);
+  var tpl = await friaGetTemplate(it.tid, it.campanha);
   var alvo = cfg.testPhone || it.tel;
   try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE fria] " : "") + friaRender(tpl.text, it.nome)); } catch (e) {}
   await ref.update({ status: "sent", sentAt: Date.now() });
@@ -4599,7 +4699,7 @@ async function friaDrainCore() {
   if (it.tid === "f1") {
     // agenda a 2ª mensagem pra +gapMin do ENVIO REAL (fora da fila/throttle)
     await db.ref("fria_contatos/" + it.key).update({ lastTouchAt: Date.now(), touchIndex: 1 });
-    await db.ref("fria_f2_pendentes/" + it.key).set({ tel: it.tel, nome: it.nome || "", dueAt: Date.now() + (cfg.gapMin || 5) * 60000 });
+    await db.ref("fria_f2_pendentes/" + it.key).set({ tel: it.tel, nome: it.nome || "", campanha: it.campanha || "", dueAt: Date.now() + (cfg.gapMin || 5) * 60000 });
   } else {
     // compat: itens f2 antigos que ainda estavam na fila
     await db.ref("fria_contatos/" + it.key).update({ lastTouchAt: Date.now(), touchIndex: 2, status: "concluido" });
@@ -5079,6 +5179,14 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/fria-import") {
       return await handleFriaImport(req, res);
+    }
+    if (path === "/wa-grupos") {
+      var _ws = process.env.READ_SECRET || ""; var _wg = String(req.query.rsecret || req.get("x-read-secret") || ""); if (!_ws || _wg !== _ws) return res.status(401).send("Unauthorized");
+      return await handleWaGrupos(req, res);
+    }
+    if (path === "/wa-importar-grupo") {
+      var _ws2 = process.env.READ_SECRET || ""; var _wg2 = String(req.query.rsecret || req.get("x-read-secret") || ""); if (!_ws2 || _wg2 !== _ws2) return res.status(401).send("Unauthorized");
+      return await handleWaImportarGrupo(req, res);
     }
     if (path === "/fria-config") {
       return await handleFriaConfig(req, res);
