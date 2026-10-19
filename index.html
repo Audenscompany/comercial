@@ -4802,6 +4802,7 @@ function buildNav(){
       {id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
       {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
       {id:'fria',icon:'ti-snowflake',label:'Prospecção Fria'},
+      {id:'prosp-grupo',icon:'ti-users-group',label:'Prospecção Grupo'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
     ]},
     {id:'busca-ia',icon:'ti-building-store',label:'BDR Inteligente'},
@@ -5046,7 +5047,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -5071,6 +5072,7 @@ function showPage(id){
     if(id==='contratos') setTimeout(loadContratosPage,50);
     if(id==='audens-day') setTimeout(adDayInit,50);
     if(id==='fria') setTimeout(friaLoadStats,50);
+    if(id==='prosp-grupo') setTimeout(grupoLoadStats,50);
     if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
@@ -33978,6 +33980,177 @@ async function exportarBase180(){
     _expSt('✅ Pronto! Baixado: <b>Audens-dados-180dias-'+hoje+'.xlsx</b> — '+nLeads.toLocaleString('pt-BR')+' leads, '+rAg+' reuniões, '+c180+' vendas, '+visitas.toLocaleString('pt-BR')+' visitas na LP.','#22c55e');
   }catch(e){ _expSt('Erro: '+(e&&e.message||e),'var(--red)'); }
   if(btn)btn.disabled=false;
+}
+/* ===== PROSPECÇÃO GRUPO — ambiente separado da Fria (membros dos grupos VIP, 30/dia) ===== */
+var _grupoStats=null,_grupoContatos=null,_grupoCtPage=0,_grupoGruposCache=null;
+function _grupoDefaultMsg(id){return ({f1:"Opa, {{primeiroNome}}! Aqui é o João, da Audens 👊 Vi que você tá num dos nossos grupos de donos de hamburgueria e pizzaria. Posso te oferecer uma coisa boa, rapidinho?",f2:"A gente liberou um *raio-x gratuito do seu negócio*: um bate-papo direto com o Lucas (fundador da Audens) pra analisar o seu delivery e te mostrar, na prática, onde dá pra vender mais — sem custo e sem compromisso. Quer que eu agende esse papo com você? 📈"})[id]||'';}
+function renderProspGrupo(){
+  var c=_grupoStats||{stats:{total:0,novo:0,ativo:0,respondeu:0,concluido:0},enrolledToday:0,taxaResposta:0,config:{enabled:false,maxPerDay:30,startHour:9,endHour:20}};
+  var s=c.stats||{},cfg=c.config||{},tpl=(cfg.templates||{});
+  var ligado=cfg.enabled===true;
+  function card(lbl,val,cor){return '<div style="flex:1;min-width:120px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div></div>';}
+  var H='<div class="page active"><div style="max-width:1000px;margin:0 auto;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:var(--purple3);font-weight:700;">PROSPECÇÃO</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">👥 Prospecção Grupo</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Membros dos grupos VIP · 30/dia · oferta do <b>raio-x com o Lucas</b> · quem responde vira tarefa pro João. Ambiente separado da Prospecção Fria (mas dividem a mesma régua do número).</div></div>'+
+     '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO'+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div>'+
+     '</div>';
+  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ Risco de ban:</b> disparo em volume é o que o WhatsApp mais penaliza. 30/dia é mais seguro; acompanhe a entrega e pare se o número cair.</div>';
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
+     card('Na lista',(s.total||0).toLocaleString('pt-BR'))+
+     card('Não iniciados',(s.novo||0).toLocaleString('pt-BR'),'var(--silver)')+
+     card('Em sequência',(s.ativo||0).toLocaleString('pt-BR'),'#c084fc')+
+     card('Responderam',(s.respondeu||0).toLocaleString('pt-BR'),'#22c55e')+
+     card('Iniciados hoje',(c.enrolledToday||0)+' / '+(cfg.maxPerDay||30),(c.enrolledToday>=(cfg.maxPerDay||30)?'#22c55e':'var(--white)'))+
+     '</div>';
+  // 1 · Importar dos grupos
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:6px;">1 · Importar membros dos grupos</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Puxa os participantes via WhatsApp (Z-API) e tira <b>contatos salvos</b> + <b>clientes fechados</b>. Clique em listar, marque os grupos e simule antes de importar.</div>'+
+     '<button onclick="grupoListarGrupos()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;"><i class="ti ti-refresh"></i> Listar meus grupos</button>'+
+     '<div id="grupo-list-box" style="margin-top:12px;font-size:12px;color:var(--muted);">Clique em <b>Listar meus grupos</b>.</div>'+
+     '</div>';
+  // 2 · Mensagens
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">2 · Mensagens (oferta do raio-x)</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. Toque 1 = abertura · Toque 2 = +5 min (a oferta do bate-papo com o Lucas).</div>';
+  [['f1','Toque 1 — abertura'],['f2','Toque 2 — +5 min (oferta raio-x)']].forEach(function(t){
+    var tx=(tpl[t[0]]&&tpl[t[0]].text)||_grupoDefaultMsg(t[0]);
+    H+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:var(--silver);font-weight:700;">'+t[1]+'</label>'+
+       '<textarea id="grupo-tpl-'+t[0]+'" style="width:100%;min-height:70px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:10px;font-size:13px;resize:vertical;margin-top:4px;">'+tx.replace(/</g,'&lt;')+'</textarea></div>';
+  });
+  H+='<button onclick="grupoSaveMsgs()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar mensagens</button> <span id="grupo-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  // 3 · Controle
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:12px;">3 · Controle</div>'+
+     '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Novos por dia</label><input id="grupo-max" type="number" value="'+(cfg.maxPerDay||30)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Janela (h)</label><input id="grupo-h1" type="number" value="'+(cfg.startHour||9)+'" style="width:60px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"> às <input id="grupo-h2" type="number" value="'+(cfg.endHour||20)+'" style="width:60px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Telefone de teste (opcional)</label><input id="grupo-test" type="text" value="'+(cfg.testPhone||'')+'" placeholder="55..." style="width:150px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<button onclick="grupoSaveCfg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar ajustes</button>'+
+     '</div>'+
+     '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+     '<button onclick="grupoToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar disparo</button>'+
+     '<button onclick="grupoToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
+     '<button onclick="grupoLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
+     '</div><div id="grupo-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
+  // 4 · Contatos
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+
+       '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);">4 · Contatos importados</div>'+
+       '<button onclick="grupoLoadContatos()" class="btn btn-outline" style="font-size:12px;padding:7px 12px;"><i class="ti ti-refresh"></i> Carregar / Atualizar</button>'+
+     '</div>'+
+     '<input id="grupo-ct-busca" oninput="grupoCtRender()" placeholder="Buscar nome ou telefone…" style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:8px 10px;font-size:12px;margin-bottom:12px;">'+
+     '<div id="grupo-ct-box" style="font-size:12px;color:var(--muted);">Clique em <b>Carregar</b> para ver os contatos.</div>'+
+     '</div>';
+  H+='</div></div>';
+  return H;
+}
+async function grupoLoadStats(){
+  try{ var r=await fetch(RECEBERLEAD_URL+'/grupo-stats?secret='+WEBHOOK_SECRET,{method:'POST'}); var j=await r.json(); if(j&&j.ok)_grupoStats=j; }catch(e){}
+  var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='prosp-grupo') a.innerHTML=renderProspGrupo();
+}
+async function grupoListarGrupos(){
+  var box=document.getElementById('grupo-list-box'); if(box)box.innerHTML='<i class="ti ti-loader"></i> Buscando seus grupos…';
+  try{ var r=await fetch(RECEBERLEAD_URL+'/wa-grupos?secret='+WEBHOOK_SECRET,{method:'POST'}); var j=await r.json();
+    if(!j||!j.ok){ if(box)box.innerHTML='<span style="color:var(--red)">Erro ao listar grupos.</span>'; return; }
+    _grupoGruposCache=j.grupos||[];
+    if(!_grupoGruposCache.length){ if(box)box.innerHTML='<span style="color:var(--amber)">Nenhum grupo encontrado. Confirme que o número do João está nos grupos e que a Z-API está ativa.</span>'; return; }
+    grupoRenderGrupos();
+  }catch(e){ if(box)box.innerHTML='<span style="color:var(--red)">Erro: '+e.message+'</span>'; }
+}
+function grupoRenderGrupos(){
+  var box=document.getElementById('grupo-list-box'); if(!box)return;
+  function E(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  var h=_grupoGruposCache.map(function(g){ return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="grupo-chk" value="'+E(g.id)+'" style="accent-color:var(--purple3);width:15px;height:15px;"><span style="color:var(--white);font-size:13px;">'+E(g.nome||'(sem nome)')+'</span><span style="color:var(--muted);font-size:10px;margin-left:auto;font-family:monospace;">'+E(g.id)+'</span></label>'; }).join('');
+  h+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;"><button onclick="grupoImportar(true)" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">🔎 Simular (ver números)</button><button onclick="grupoImportar(false)" class="btn" style="background:var(--purple);color:#fff;border:none;padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">Importar selecionados</button></div><div id="grupo-import-res" style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6;"></div>';
+  box.innerHTML=h;
+}
+async function grupoImportar(dry){
+  var chks=Array.prototype.slice.call(document.querySelectorAll('.grupo-chk:checked')).map(function(c){return c.value;});
+  var res=document.getElementById('grupo-import-res');
+  if(!chks.length){ if(res){res.style.color='var(--amber)';res.textContent='Selecione pelo menos um grupo.';} return; }
+  if(res){res.style.color='var(--muted)';res.innerHTML='<i class="ti ti-loader"></i> '+(dry?'Simulando…':'Importando…');}
+  try{ var r=await fetch(RECEBERLEAD_URL+'/wa-importar-grupo?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grupos:chks,dryRun:dry,excluirSalvos:true,excluirClientes:true})});
+    var j=await r.json();
+    if(!j||!j.ok){ if(res){res.style.color='var(--red)';res.textContent='Erro: '+((j&&j.error)||'falhou');} return; }
+    var msg=(dry?'<b>Simulação</b> — nada foi gravado:<br>':'<b style="color:#22c55e;">Importado!</b><br>')+
+      '• Participantes: <b>'+(j.total_participantes||0)+'</b><br>'+
+      '• Saíram (contato salvo): '+(j.excluidos_salvos||0)+'<br>'+
+      '• Saíram (cliente fechado): '+(j.excluidos_clientes||0)+'<br>'+
+      '• Já estavam na lista: '+(j.ja_na_grupo||0)+'<br>'+
+      '• <b style="color:#22c55e;">'+(j.importados||0)+(dry?' entrariam na lista':' adicionados')+'</b>';
+    if(res){res.style.color='var(--white)';res.innerHTML=msg;}
+    if(!dry){ grupoLoadStats(); setTimeout(grupoLoadContatos,600); }
+  }catch(e){ if(res){res.style.color='var(--red)';res.textContent='Erro: '+e.message;} }
+}
+async function grupoSaveMsgs(){
+  var f1=(document.getElementById('grupo-tpl-f1')||{}).value||'',f2=(document.getElementById('grupo-tpl-f2')||{}).value||'';
+  var st=document.getElementById('grupo-msg-st');
+  try{ var r=await fetch(RECEBERLEAD_URL+'/grupo-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templates:{f1:{text:f1},f2:{text:f2}}})}); var j=await r.json(); if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Mensagens salvas!':'Erro ao salvar.';} }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function grupoSaveCfg(){
+  var max=parseInt((document.getElementById('grupo-max')||{}).value||'30',10)||30;
+  var h1=parseInt((document.getElementById('grupo-h1')||{}).value||'9',10);
+  var h2=parseInt((document.getElementById('grupo-h2')||{}).value||'20',10);
+  var test=(document.getElementById('grupo-test')||{}).value||'';
+  var st=document.getElementById('grupo-ctrl-st');
+  try{ var r=await fetch(RECEBERLEAD_URL+'/grupo-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,startHour:h1,endHour:h2,testPhone:test})}); var j=await r.json(); if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Ajustes salvos.':'Erro ao salvar.';} grupoLoadStats(); }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function grupoToggle(on){
+  var st=document.getElementById('grupo-ctrl-st'); if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> '+(on?'Ligando…':'Desligando…');}
+  try{ var r=await fetch(RECEBERLEAD_URL+'/grupo-config?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})}); var j=await r.json(); if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?(on?'Disparo LIGADO.':'Disparo desligado.'):'Erro.';} grupoLoadStats(); }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
+}
+async function grupoLoadContatos(){
+  var box=document.getElementById('grupo-ct-box'); if(box) box.innerHTML='<i class="ti ti-loader"></i> Carregando…';
+  try{ var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase())); if(!db){ if(box)box.innerHTML='<span style="color:var(--amber)">Firebase não inicializado.</span>'; return; }
+    var snap=await db.ref('grupo_contatos').once('value'); var v=snap.val()||{}; var arr=[];
+    Object.keys(v).forEach(function(k){ var c=v[k]||{}; arr.push({key:k,tel:String(c.tel||'').replace(/\D/g,''),nome:c.nome||'',status:c.status||'novo',respondeu:!!c.respondeu,respostaTexto:c.respostaTexto||'',importedAt:c.importedAt||0}); });
+    arr.sort(function(a,b){return (a.importedAt||0)-(b.importedAt||0);});
+    _grupoContatos=arr; _grupoCtPage=0; grupoCtRender();
+  }catch(e){ if(box)box.innerHTML='<span style="color:var(--red)">Erro: '+e.message+'</span>'; }
+}
+function grupoCtRender(){
+  var box=document.getElementById('grupo-ct-box'); if(!box)return;
+  if(!_grupoContatos){ box.innerHTML='Clique em <b>Carregar</b> para ver os contatos.'; return; }
+  function E(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  var q=((document.getElementById('grupo-ct-busca')||{}).value||'').toLowerCase().trim(); var qd=q.replace(/\D/g,'');
+  var rows=_grupoContatos.filter(function(c){ if(!q)return true; return c.nome.toLowerCase().indexOf(q)>=0||(qd&&qd.length>=4&&c.tel.indexOf(qd)>=0); });
+  var perPage=50,tot=rows.length,pages=Math.max(1,Math.ceil(tot/perPage));
+  if(_grupoCtPage>=pages)_grupoCtPage=pages-1; if(_grupoCtPage<0)_grupoCtPage=0;
+  var slice=rows.slice(_grupoCtPage*perPage,(_grupoCtPage+1)*perPage);
+  var lbl={novo:'Não iniciado',ativo:'Em sequência',concluido:'Concluído'};
+  var h='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+tot.toLocaleString('pt-BR')+' contato(s) · página '+(_grupoCtPage+1)+'/'+pages+'</div>';
+  h+='<div style="overflow:auto;border:1px solid var(--border);border-radius:10px;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:var(--card);"><th style="text-align:left;padding:8px 10px;color:var(--muted);">Nome</th><th style="text-align:left;padding:8px 10px;color:var(--muted);">Telefone</th><th style="text-align:center;padding:8px 10px;color:var(--muted);">Status</th><th style="padding:8px 10px;"></th></tr></thead><tbody>';
+  if(!slice.length)h+='<tr><td colspan="4" style="padding:18px;text-align:center;color:var(--muted);">Nenhum contato.</td></tr>';
+  slice.forEach(function(c){ var telFmt=c.tel.replace(/^55/,'');
+    h+='<tr style="border-top:1px solid rgba(255,255,255,0.05);">'+
+       '<td style="padding:8px 10px;color:var(--white);">'+E(c.nome||'—')+(c.respostaTexto?'<div style="font-size:10px;color:#22c55e;margin-top:2px;">💬 '+E(c.respostaTexto.slice(0,60))+'</div>':'')+'</td>'+
+       '<td style="padding:8px 10px;color:var(--silver);font-family:monospace;">'+E(telFmt)+'</td>'+
+       '<td style="padding:8px 10px;text-align:center;"><span style="color:'+(c.respondeu?'#22c55e':'var(--muted)')+';font-weight:700;">'+(c.respondeu?'Respondeu':(lbl[c.status]||c.status))+'</span></td>'+
+       '<td style="padding:8px 10px;text-align:right;white-space:nowrap;">'+
+         '<button onclick="grupoAgendar(\''+c.key+'\')" title="Agendar reunião e jogar no funil" style="background:none;border:1px solid var(--purple);border-radius:6px;color:var(--purple3);padding:3px 8px;font-size:11px;cursor:pointer;">📅 Agendar</button> '+
+         '<a href="https://wa.me/'+c.tel+'" target="_blank" style="background:none;border:1px solid rgba(34,197,94,.4);border-radius:6px;color:#22c55e;padding:3px 8px;font-size:11px;text-decoration:none;">WhatsApp</a>'+
+       '</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(pages>1)h+='<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px;"><button onclick="_grupoCtPage--;grupoCtRender();" '+(_grupoCtPage<=0?'disabled':'')+' class="btn btn-outline" style="font-size:12px;padding:6px 12px;'+(_grupoCtPage<=0?'opacity:.4;':'')+'">‹ Anterior</button><span style="font-size:12px;color:var(--muted);">'+(_grupoCtPage+1)+' / '+pages+'</span><button onclick="_grupoCtPage++;grupoCtRender();" '+(_grupoCtPage>=pages-1?'disabled':'')+' class="btn btn-outline" style="font-size:12px;padding:6px 12px;'+(_grupoCtPage>=pages-1?'opacity:.4;':'')+'">Próxima ›</button></div>';
+  box.innerHTML=h;
+}
+async function grupoAgendar(gKey){
+  try{
+    var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase())); if(!db)return;
+    var snap=await db.ref('grupo_contatos/'+gKey).once('value'); var c=snap.val(); if(!c){alert('Contato não encontrado.');return;}
+    var tel=String(c.tel||'').replace(/\D/g,''); var kkey=tel.replace(/[.#$\[\]]/g,'_');
+    var novo={nome:c.nome||'',telefone:tel,empresa:'',cnpj:'',cidade:'',email:'',faturamento:'',_source:'prospeccao-grupo',_createdAt:Date.now(),status:'qualificado',statusAt:Date.now(),statusHistory:{qualificado:Date.now()},origem:'Prospecção Grupo'};
+    if(typeof kanbanData!=='undefined'){ if(kanbanData[kkey]){kkey=kkey;} kanbanData[kkey]=Object.assign({},kanbanData[kkey]||{},novo); }
+    await db.ref('kanban/'+kkey).update(novo);
+    await db.ref('grupo_contatos/'+gKey).update({promovido:true,status:'concluido'});
+    try{ await db.ref('grupo_f2_pendentes/'+gKey).remove(); }catch(e){}
+    if(typeof abrirAgendarReuniao==='function') abrirAgendarReuniao(kkey);
+    else alert('Lead jogado no funil (Qualificado). Abra o Funil pra agendar.');
+  }catch(e){ alert('Erro ao agendar: '+e.message); }
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",

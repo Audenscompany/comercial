@@ -3269,6 +3269,7 @@ async function handleWaInbound(req, res) {
     var phone = String(body.phone || body.sender || "").replace(/\D/g, "");
     var text = (body.text && body.text.message) || body.message || "";
     try { var _fr = await friaMarkReply(phone, text); if (_fr) return res.status(200).send("ok"); } catch (e) { console.error("friaMarkReply(inbound):", e); }
+    try { var _gr = await grupoMarkReply(phone, text); if (_gr) return res.status(200).send("ok"); } catch (e) { console.error("grupoMarkReply(inbound):", e); }
     await cadHandleInbound(phone, text);
   } catch (e) { console.error("wa-inbound:", e); }
   return res.status(200).send("ok");
@@ -3394,6 +3395,7 @@ async function handleCadenciaDrain(req, res) {
   try { out.audensday = await adDrainCore(); } catch (e) { console.error("adDrain:", e); }
   try { out.nurturing = await nurtTickCore(); } catch (e) { console.error("nurtTickCore:", e); } // independe da cadencia principal
   try { out.fria = await friaDrainCore(); } catch (e) { console.error("friaDrainCore:", e); } // prospecção fria: independe da cadencia principal
+  try { out.grupo = await grupoDrainCore(); } catch (e) { console.error("grupoDrainCore:", e); } // prospecção grupo: ambiente separado, mesma régua do número
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
   var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
   if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
@@ -4601,9 +4603,9 @@ async function handleWaImportarGrupo(req, res) {
       Object.keys(fups).forEach(function (k) { var f = fups[k]; if (f && (f.venda === "sim" || f.resultado === "venda")) { var t = _digits(f.tel); if (t) fechados[t.slice(-11)] = 1; } });
     } catch (e) {}
   }
-  // 4) já na fria
+  // 4) já na Prospecção Grupo
   var jaFria = {};
-  try { var fr = (await db.ref("fria_contatos").once("value")).val() || {}; Object.keys(fr).forEach(function (k) { var t = _digits(fr[k] && fr[k].tel); if (t) jaFria[t.slice(-11)] = 1; }); } catch (e) {}
+  try { var fr = (await db.ref("grupo_contatos").once("value")).val() || {}; Object.keys(fr).forEach(function (k) { var t = _digits(fr[k] && fr[k].tel); if (t) jaFria[t.slice(-11)] = 1; }); } catch (e) {}
   // próprio número conectado
   var selfNum = ""; try { var me = await zapiGetJSON("me"); selfNum = _digits(me && (me.phone || me.connected || me.me)); } catch (e) {}
   // 5) filtra e importa
@@ -4619,11 +4621,127 @@ async function handleWaImportarGrupo(req, res) {
     var key = tel.replace(/[.#$\[\]]/g, "_");
     if (updates["fria_contatos/" + key]) return;
     if (amostra.length < 5) amostra.push(tel);
-    if (!dryRun) updates["fria_contatos/" + key] = { tel: tel, nome: parts[t].nome || "", status: "novo", prio: prio, campanha: campanha, importedAt: Date.now() };
+    if (!dryRun) updates["grupo_contatos/" + key] = { tel: tel, nome: parts[t].nome || "", status: "novo", prio: prio, importedAt: Date.now() };
     imported++;
   });
   if (!dryRun) { var keys = Object.keys(updates); for (var i = 0; i < keys.length; i += 500) { var chunk = {}; keys.slice(i, i + 500).forEach(function (k) { chunk[k] = updates[k]; }); await db.ref().update(chunk); } }
-  return res.status(200).json({ ok: true, dryRun: dryRun, campanha: campanha, grupos: grpInfo, total_participantes: totalPart, excluidos_salvos: exSalvos, excluidos_clientes: exClientes, ja_na_fria: exFria, importados: imported, amostra: amostra });
+  return res.status(200).json({ ok: true, dryRun: dryRun, campanha: campanha, grupos: grpInfo, total_participantes: totalPart, excluidos_salvos: exSalvos, excluidos_clientes: exClientes, ja_na_grupo: exFria, importados: imported, amostra: amostra });
+}
+// ===== PROSPECÇÃO GRUPO — ambiente separado da Fria. Lista/fila/stats próprios (grupo_*).
+// Compartilha SÓ a régua anti-ban do número (cadReserveSlot + fria_lastSentAt), pra não dobrar o risco. =====
+const GRUPO_TEMPLATES = {
+  f1: { idx: 0, offsetMin: 0, text: "Opa, {{primeiroNome}}! Aqui é o João, da Audens 👊 Vi que você tá num dos nossos grupos de donos de hamburgueria e pizzaria. Posso te oferecer uma coisa boa, rapidinho?" },
+  f2: { idx: 1, offsetMin: 5, text: "A gente liberou um *raio-x gratuito do seu negócio*: um bate-papo direto com o Lucas (fundador da Audens) pra analisar o seu delivery e te mostrar, na prática, onde dá pra vender mais — sem custo e sem compromisso. Quer que eu agende esse papo com você? 📈" }
+};
+async function grupoCfg() {
+  try {
+    var v = (await db.ref("config/grupo").once("value")).val() || {};
+    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 30, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, gapMin: parseInt(v.gapMin, 10) || 5 };
+  } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 30, intervalSeconds: 300, startHour: 9, endHour: 20, gapMin: 5 }; }
+}
+async function grupoGetTemplate(id) {
+  var base = GRUPO_TEMPLATES[id]; if (!base) return null;
+  var text = base.text; try { var ov = (await db.ref("config/grupo_templates/" + id).once("value")).val(); if (ov && ov.text) text = ov.text; } catch (e) {}
+  return { text: text, idx: base.idx };
+}
+async function grupoDailyBuild(cfg) {
+  var hoje = cadBRT(Date.now()).date;
+  var ctrlRef = db.ref("grupo_control/lastBuild"); var last = (await ctrlRef.once("value")).val();
+  if (last === hoje) return { skipped: true };
+  await ctrlRef.set(hoje);
+  var out = { enrolled: 0, queued: 0 };
+  var contatos = (await db.ref("grupo_contatos").once("value")).val() || {};
+  var novos = Object.keys(contatos).filter(function (k) { return contatos[k] && contatos[k].status === "novo"; })
+    .sort(function (a, b) { var pa = contatos[a].prio || 0, pb = contatos[b].prio || 0; if (pa !== pb) return pa - pb; return (contatos[a].importedAt || 0) - (contatos[b].importedAt || 0); });
+  var lim = Math.min(novos.length, cfg.maxPerDay || 30);
+  for (var i = 0; i < lim; i++) {
+    var k = novos[i], c = contatos[k], now = Date.now();
+    await db.ref("grupo_contatos/" + k).update({ status: "ativo", startedAt: hoje, touchIndex: 0, enrolledAt: now });
+    var f1sched = friaClampWindow(await cadReserveSlot(cfg.intervalSeconds), cfg);
+    await db.ref("grupo_fila/" + k + "_f1").set({ key: k, tel: c.tel, nome: c.nome || "", tid: "f1", status: "queued", scheduledAt: f1sched, createdAt: now });
+    await db.ref("grupo_msg/" + k + "/f1").set({ status: "queued", scheduledAt: f1sched });
+    out.queued++; out.enrolled++;
+  }
+  return out;
+}
+async function grupoDrainCore() {
+  var cfg = await grupoCfg();
+  var out = { enabled: cfg.enabled, enviados: 0, f2: 0 };
+  if (!cfg.enabled) return out;
+  try { out.build = await grupoDailyBuild(cfg); } catch (e) { console.error("grupoDailyBuild:", e); }
+  try {
+    var pend = (await db.ref("grupo_f2_pendentes").once("value")).val() || {}; var now0 = Date.now();
+    var ks = Object.keys(pend).filter(function (k) { return pend[k] && pend[k].dueAt && pend[k].dueAt <= now0; });
+    for (var x = 0; x < ks.length; x++) {
+      var k2 = ks[x], p2 = pend[k2]; var tpl2 = await grupoGetTemplate("f2"); var alvo2 = cfg.testPhone || p2.tel;
+      try { await enviarMensagemWhatsapp(alvo2, (cfg.testPhone ? "[TESTE grupo] " : "") + friaRender(tpl2.text, p2.nome)); } catch (e) {}
+      await db.ref("grupo_f2_pendentes/" + k2).remove();
+      await db.ref("grupo_msg/" + k2 + "/f2").set({ status: "sent", sentAt: Date.now() });
+      try { await db.ref("grupo_contatos/" + k2).update({ touchIndex: 2, status: "concluido", lastTouchAt: Date.now() }); } catch (e) {}
+      await db.ref("grupo_events").push({ type: "sent", key: k2, tid: "f2", at: Date.now() }); out.f2++;
+    }
+  } catch (e) { console.error("grupo f2 pendentes:", e); }
+  // f1 — compartilha a régua do número (fria_lastSentAt): no máx 1 envio por intervalo somando Fria + Grupo
+  var last = (await db.ref("fria_lastSentAt").once("value")).val() || 0;
+  if (Date.now() - last < ((cfg.intervalSeconds || 300) - 10) * 1000) return out;
+  var bnow = cadBRT(Date.now());
+  if (bnow.hour < (cfg.startHour || 9) || bnow.hour >= (cfg.endHour || 20)) { out.note = "fora da janela"; return out; }
+  var fila = (await db.ref("grupo_fila").once("value")).val() || {}; var now = Date.now();
+  var ids = Object.keys(fila).filter(function (id) { var it = fila[id]; return it && it.status === "queued" && it.scheduledAt && it.scheduledAt <= now; });
+  if (!ids.length) return out;
+  ids.sort(function (a, b) { return (fila[a].scheduledAt || 0) - (fila[b].scheduledAt || 0); });
+  var id = ids[0], it = fila[id], ref = db.ref("grupo_fila/" + id); var locked = false;
+  await ref.transaction(function (c) { if (!c || c.status !== "queued") return c; c.status = "processing"; locked = true; return c; });
+  if (!locked) return out;
+  var c = (await db.ref("grupo_contatos/" + it.key).once("value")).val();
+  if (!c || c.status !== "ativo") { await ref.update({ status: "cancelled" }); return out; }
+  var tpl = await grupoGetTemplate(it.tid); var alvo = cfg.testPhone || it.tel;
+  try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE grupo] " : "") + friaRender(tpl.text, it.nome)); } catch (e) {}
+  await ref.update({ status: "sent", sentAt: Date.now() });
+  await db.ref("grupo_msg/" + it.key + "/" + it.tid).update({ status: "sent", sentAt: Date.now() });
+  await db.ref("fria_lastSentAt").set(Date.now());
+  if (it.tid === "f1") { await db.ref("grupo_contatos/" + it.key).update({ lastTouchAt: Date.now(), touchIndex: 1 }); await db.ref("grupo_f2_pendentes/" + it.key).set({ tel: it.tel, nome: it.nome || "", dueAt: Date.now() + (cfg.gapMin || 5) * 60000 }); }
+  else { await db.ref("grupo_contatos/" + it.key).update({ lastTouchAt: Date.now(), touchIndex: 2, status: "concluido" }); }
+  await db.ref("grupo_events").push({ type: "sent", key: it.key, tid: it.tid, at: Date.now() });
+  out.enviados = 1; out.para = it.nome; return out;
+}
+async function grupoMarkReply(phone, text) {
+  try {
+    var tel = String(phone || "").replace(/\D/g, ""); if (tel.length < 10) return false;
+    var cands = [tel]; if (tel.indexOf("55") === 0) cands.push(tel.slice(2)); else cands.push("55" + tel);
+    var found = null, fkey = null;
+    for (var i = 0; i < cands.length; i++) { var k = cands[i].replace(/[.#$\[\]]/g, "_"); var c = (await db.ref("grupo_contatos/" + k).once("value")).val(); if (c) { found = c; fkey = k; break; } }
+    if (!found) return false;
+    await db.ref("grupo_contatos/" + fkey).update({ respondeu: true, respondeuAt: Date.now(), respostaTexto: String(text || "").slice(0, 200) });
+    try { await db.ref("grupo_f2_pendentes/" + fkey).remove(); } catch (e) {}
+    try { await db.ref("sdr_tarefas/" + fkey + "_grupo_resp").set({ leadKey: fkey, nome: found.nome || "", telefone: found.tel || "", empresa: "", tipo: "💬 Respondeu na Prospecção Grupo — chamar", icon: "ti-brand-whatsapp", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() }); } catch (e) {}
+    return true;
+  } catch (e) { console.error("grupoMarkReply:", e); return false; }
+}
+async function handleGrupoStats(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var c = (await db.ref("grupo_contatos").once("value")).val() || {}; var cfg = await grupoCfg();
+  var s = { total: 0, novo: 0, ativo: 0, respondeu: 0, concluido: 0 };
+  var hoje = cadBRT(Date.now()).date; var enrolledToday = 0, resp = 0;
+  Object.keys(c).forEach(function (k) { var x = c[k] || {}; s.total++; var st = x.status || "novo"; if (st === "novo") s.novo++; else if (st === "ativo") s.ativo++; else if (st === "concluido") s.concluido++; if (x.respondeu) resp++; if (x.startedAt === hoje) enrolledToday++; });
+  s.respondeu = resp;
+  var base = s.ativo + s.concluido + resp;
+  var taxa = base > 0 ? Math.round(resp / base * 100) : 0;
+  return res.status(200).json({ ok: true, stats: s, enrolledToday: enrolledToday, taxaResposta: taxa, config: cfg });
+}
+async function handleGrupoConfig(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var upd = {};
+  if (b.enabled != null) upd.enabled = (b.enabled === true || b.enabled === "true");
+  if (b.maxPerDay != null) upd.maxPerDay = parseInt(b.maxPerDay, 10) || 30;
+  if (b.startHour != null) upd.startHour = parseInt(b.startHour, 10);
+  if (b.endHour != null) upd.endHour = parseInt(b.endHour, 10);
+  if (b.testPhone != null) upd.testPhone = String(b.testPhone).replace(/\D/g, "");
+  if (b.gapMin != null) upd.gapMin = parseInt(b.gapMin, 10) || 5;
+  if (b.templates && typeof b.templates === "object") { for (var t in b.templates) { if (b.templates[t] && b.templates[t].text != null) await db.ref("config/grupo_templates/" + t).set({ text: String(b.templates[t].text) }); } }
+  if (Object.keys(upd).length) await db.ref("config/grupo").update(upd);
+  return res.status(200).json({ ok: true, saved: Object.keys(upd) });
 }
 // Inscreve até maxPerDay novos/dia + enfileira os toques devidos de hoje. Roda 1x/dia (flag fria_control/lastBuild).
 async function friaDailyBuild(cfg) {
@@ -5181,12 +5299,18 @@ http('receberLead', async (req, res) => {
       return await handleFriaImport(req, res);
     }
     if (path === "/wa-grupos") {
-      var _ws = process.env.READ_SECRET || ""; var _wg = String(req.query.rsecret || req.get("x-read-secret") || ""); if (!_ws || _wg !== _ws) return res.status(401).send("Unauthorized");
+      if (!checaSecret(req)) { var _rs = process.env.READ_SECRET || ""; var _rg = String(req.query.rsecret || req.get("x-read-secret") || ""); if (!_rs || _rg !== _rs) return res.status(401).send("Unauthorized"); }
       return await handleWaGrupos(req, res);
     }
     if (path === "/wa-importar-grupo") {
-      var _ws2 = process.env.READ_SECRET || ""; var _wg2 = String(req.query.rsecret || req.get("x-read-secret") || ""); if (!_ws2 || _wg2 !== _ws2) return res.status(401).send("Unauthorized");
+      if (!checaSecret(req)) { var _rs2 = process.env.READ_SECRET || ""; var _rg2 = String(req.query.rsecret || req.get("x-read-secret") || ""); if (!_rs2 || _rg2 !== _rs2) return res.status(401).send("Unauthorized"); }
       return await handleWaImportarGrupo(req, res);
+    }
+    if (path === "/grupo-stats") {
+      return await handleGrupoStats(req, res);
+    }
+    if (path === "/grupo-config") {
+      return await handleGrupoConfig(req, res);
     }
     if (path === "/fria-config") {
       return await handleFriaConfig(req, res);
