@@ -29638,6 +29638,13 @@ function renderVendas(){
 
   window._vendasDataCache=vendas;
 
+  // CAC — contagem de vendas de tráfego (síncrona) + período pra buscar o investimento na Meta
+  var _cacTrafCount=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).length;
+  var _cacTotalCount=vendas.length;
+  var _cacPer=vPeriodoAtivo?null:((filtM+1)+'/'+filtY);
+  var _cacSince=vPeriodoAtivo?_vendasPeriodo.from:null;
+  var _cacUntil=vPeriodoAtivo?_vendasPeriodo.to:null;
+
   // KPIs
   var totalReceita=vendas.reduce(function(s,v){return s+_mrrV(v.fu);},0);
   var totalReceitaPrev=vendasPrev.reduce(function(s,v){return s+_mrrV(v.fu);},0);
@@ -29754,6 +29761,24 @@ function renderVendas(){
     kpiCard('chart-bar','Ticket médio',fmtV(ticket),dlt(ticket,ticketPrev),'#fbbf24','#fbbf24')+
     kpiCard('target','Meta atingida',pctMeta+'%',dlt(pctMeta,pctMetaPrev,'mês ant.'),'#f472b6','#f472b6')+
     kpiCard('trending-up','Projeção do mês',fmtV(projecao),dlt(projecao,projecaoPrev),'#34d399','#34d399');
+
+  // Painel CAC (Custo de Aquisição de Cliente) — investimento ÷ clientes no período
+  function _cacCard(icon,label,valId,sub,color){
+    return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+
+        '<span style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,0.45);">'+label+'</span>'+
+        '<div style="width:30px;height:30px;border-radius:8px;background:'+color+'18;display:flex;align-items:center;justify-content:center;"><i class="ti ti-'+icon+'" style="font-size:14px;color:'+color+';"></i></div>'+
+      '</div>'+
+      '<div id="'+valId+'" style="font-size:28px;font-weight:700;color:'+color+';font-family:\'Bebas Neue\',sans-serif;line-height:1;">…</div>'+
+      '<div id="'+valId+'-sub" style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:6px;">'+sub+'</div>'+
+    '</div>';
+  }
+  var cacPanel='<div style="margin-bottom:6px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);">Custo de Aquisição de Cliente (CAC) <span style="color:var(--purple3);font-size:10px;letter-spacing:1px;">· '+mesLabel+'</span></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">'+
+      _cacCard('wallet','Investimento em tráfego','cac-invest','Gasto com anúncios (Meta) no período','#60a5fa')+
+      _cacCard('users-group','CAC Geral','cac-geral','÷ '+_cacTotalCount+' venda'+(_cacTotalCount===1?'':'s')+' (todas as origens)','#4ade80')+
+      _cacCard('target','CAC de Tráfego','cac-traf','÷ '+_cacTrafCount+' venda'+(_cacTrafCount===1?'':'s')+' de tráfego','#a78bfa')+
+    '</div>';
 
   // Meta comercial panel
   var pctMetaBar=Math.min(100,pctMeta);
@@ -29891,6 +29916,8 @@ function renderVendas(){
     '</div></div>'+
     // KPIs
     '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:18px;">'+kpiGrid+'</div>'+
+    // CAC
+    cacPanel+
     // Gráfico + Meta + Ranking
     '<div style="display:grid;grid-template-columns:1fr 280px 280px;gap:14px;margin-bottom:18px;">'+
       // Gráfico
@@ -29918,9 +29945,33 @@ function renderVendas(){
   setTimeout(function(){
     _renderVendasTabela();
     _initVendasChart(dailyLabels,cumulativeData,metaDaily,meta);
+    _vendasFillCAC(_cacPer,_cacSince,_cacUntil,_cacTotalCount,_cacTrafCount);
   },50);
 
   return html;
+}
+
+// Preenche os cards de CAC: busca o investimento de tráfego na Meta e divide pelos clientes
+async function _vendasFillCAC(period,since,until,totalCount,trafCount){
+  var invEl=document.getElementById('cac-invest'),gEl=document.getElementById('cac-geral'),tEl=document.getElementById('cac-traf');
+  if(!invEl&&!gEl&&!tEl)return;
+  function money(n){if(n==null)return '—';var neg=n<0;n=Math.abs(Math.round(n));var s='R$ '+n.toLocaleString('pt-BR');return neg?('-'+s):s;}
+  var spend=null;
+  try{ if(typeof fetchMetaSpend==='function') spend=await fetchMetaSpend(period,since,until); }catch(e){spend=null;}
+  if(spend==null){
+    if(invEl)invEl.textContent='—';
+    if(gEl)gEl.textContent='—';
+    if(tEl)tEl.textContent='—';
+    var sub=document.getElementById('cac-invest-sub');
+    if(sub)sub.innerHTML='<span style="color:#fbbf24;">Conecte a Meta Ads (Configurações) pra puxar o investimento.</span>';
+    return;
+  }
+  if(invEl)invEl.textContent=money(spend);
+  if(gEl)gEl.textContent=totalCount>0?money(spend/totalCount):'—';
+  if(tEl)tEl.textContent=trafCount>0?money(spend/trafCount):'—';
+  var sg=document.getElementById('cac-geral-sub'),st=document.getElementById('cac-traf-sub');
+  if(totalCount<=0&&sg)sg.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas no período</span>';
+  if(trafCount<=0&&st)st.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas de tráfego no período</span>';
 }
 
 function _empresaCliente(fu,m){
