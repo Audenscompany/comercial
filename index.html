@@ -492,6 +492,7 @@ var firebaseConfig = {
   appId: "1:471063273836:web:fcf4ee7aeaead3a2d95349"
 };
 var fbDb = null;
+var parceirosData = {}; // parceiros de indicação: id -> {nome,tipo,recompensaTipo,recompensaValor,telefone,obs,ativo,createdAt}
 function initFirebase(){
   try{
     if(typeof firebase === 'undefined'){
@@ -904,6 +905,7 @@ function startRealtimeSync(){
   fbDb.ref('audens/config/carreiraPassHash').on('value',function(s){_carreiraPassHash=s.val()||'';});
   fbDb.ref('carrossel_historias_feitas').on('value',function(s){_chFeitas=s.val()||{}; if(document.getElementById('ch-banco'))chRenderBanco();});
   fbDb.ref('audens/config/ticketMedio').on('value',function(s){var _v=parseFloat(s.val()); if(_v>0) TICKET_MEDIO=_v;});
+  fbDb.ref('parceiros').on('value',function(s){parceirosData=s.val()||{}; var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='parceiros'&&typeof renderParceiros==='function'){a.innerHTML=renderParceiros();}});
   fbDb.ref('vendas_excluidas').on('value',function(s){_vendasExcluidas=s.val()||{};});
   fbDb.ref('vendas_excluidas_sig').on('value',function(s){_vendasExcluidasSig=s.val()||{};});
   // Exclusão por NOME puro DESATIVADA: colidia com vendas de mesmo primeiro nome (ex.: dois "Vitor" de
@@ -1821,7 +1823,12 @@ function abrirCriarLead(){
         '<label class="f-label">Empresa</label><input class="f-input" id="cl-empresa" style="margin-bottom:12px;">'+
         '<label class="f-label">E-mail</label><input class="f-input" type="email" id="cl-email" style="margin-bottom:12px;">'+
         '<label class="f-label">Faturamento</label><select class="f-input" id="cl-faturamento" style="margin-bottom:12px;">'+opts+'</select>'+
-        '<label class="f-label">Origem</label><select class="f-input" id="cl-origem" style="margin-bottom:0;">'+origemOpts+'</select>'+
+        '<label class="f-label">Origem</label><select class="f-input" id="cl-origem" style="margin-bottom:0;" onchange="_clToggleParceiro()">'+origemOpts+'</select>'+
+        '<div id="cl-parceiro-wrap" style="display:none;margin-top:12px;">'+
+          '<label class="f-label">Indicado por (parceiro)</label>'+
+          '<select class="f-input" id="cl-parceiro" style="margin-bottom:0;">'+_parceiroOptionsHTML('')+'</select>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Não achou o parceiro? Cadastre na aba <b>Parceiros</b>.</div>'+
+        '</div>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="salvarCriarLead()"><i class="ti ti-check"></i> Criar Lead</button>'+
@@ -1834,6 +1841,21 @@ function abrirCriarLead(){
 function cancelarCriarLead(){
   var el=document.getElementById('modal-criar-lead');
   if(el) el.remove();
+}
+// Opções de parceiro para o <select> (ordenadas por nome, só ativos)
+function _parceiroOptionsHTML(selId){
+  var arr=Object.keys(parceirosData||{}).map(function(id){var p=parceirosData[id]||{};return{id:id,nome:p.nome||'(sem nome)',tipo:p.tipo||'',ativo:p.ativo!==false};}).filter(function(p){return p.ativo;});
+  arr.sort(function(a,b){return a.nome.localeCompare(b.nome);});
+  var tipoLbl={embaixador:'Embaixador',cliente:'Cliente'};
+  return '<option value="">Selecione o parceiro</option>'+arr.map(function(p){return '<option value="'+p.id+'"'+(p.id===selId?' selected':'')+'>'+esc(p.nome)+(p.tipo?(' · '+(tipoLbl[p.tipo]||p.tipo)):'')+'</option>';}).join('');
+}
+// Mostra/esconde o seletor de parceiro conforme a origem = Indicação
+function _clToggleParceiro(){
+  var o=(document.getElementById('cl-origem')||{}).value||'';
+  var wrap=document.getElementById('cl-parceiro-wrap');
+  var isInd=/indica/i.test(o);
+  if(wrap)wrap.style.display=isInd?'block':'none';
+  if(isInd){var sel=document.getElementById('cl-parceiro'); if(sel)sel.innerHTML=_parceiroOptionsHTML(sel.value||'');}
 }
 // Cria um novo card no Kanban (coluna "Novo Lead") com os dados informados manualmente.
 // O card criado tem o mesmo formato dos cards vindos da LP (ensureKanbanEntry),
@@ -1849,6 +1871,13 @@ function salvarCriarLead(){
   if(!telefone){alert('Informe o telefone do lead.');return;}
   var key=telefone.replace(/[.#$\[\]]/g,'_');
   if(kanbanData[key]){alert('Ja existe um lead no funil com esse telefone.');return;}
+  // Parceiro de indicação (só quando origem = Indicação)
+  var _parcId='', _parcNome='';
+  if(/indica/i.test(origem||'')){
+    var _pSel=document.getElementById('cl-parceiro');
+    _parcId=_pSel?_pSel.value:'';
+    if(_parcId&&parceirosData[_parcId])_parcNome=parceirosData[_parcId].nome||'';
+  }
   var novo={
     nome:nome,
     telefone:telefone,
@@ -1864,6 +1893,7 @@ function salvarCriarLead(){
     statusHistory:(_kanbanBoard==='audensfood'?{af_qualificado:Date.now()}:{novo:Date.now()}),
     origem:origem||(_kanbanBoard==='audensfood'?'Audens Food':'Orgânico')
   };
+  if(_parcId){novo.parceiroId=_parcId;novo.parceiroNome=_parcNome;}
   if(_kanbanBoard==='audensfood'){novo._board='audensfood';}
   kanbanData[key]=novo;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -4803,6 +4833,7 @@ function buildNav(){
       {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
       {id:'fria',icon:'ti-snowflake',label:'Prospecção Fria'},
       {id:'prosp-grupo',icon:'ti-users-group',label:'Prospecção Grupo'},
+      {id:'parceiros',icon:'ti-heart-handshake',label:'Parceiros'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
     ]},
     {id:'busca-ia',icon:'ti-building-store',label:'BDR Inteligente'},
@@ -5047,7 +5078,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -34032,6 +34063,158 @@ async function exportarBase180(){
   }catch(e){ _expSt('Erro: '+(e&&e.message||e),'var(--red)'); }
   if(btn)btn.disabled=false;
 }
+/* ===== PARCEIROS DE INDICAÇÃO — cadastro + rastreio de vendas + recompensa ===== */
+function _parcFmtR(n){if(n==null||isNaN(n))return 'R$ 0';return 'R$ '+Math.round(n).toLocaleString('pt-BR');}
+function _parcValVenda(fu){ // valor base da venda pra calcular recompensa % (MRR: mensalidade ou TCV)
+  if(!fu)return 0;
+  function f(v){if(!v)return 0;if(typeof v==='number')return v;return (typeof parseFaturamento==='function'?parseFaturamento(String(v)):parseFloat(String(v).replace(/[^\d]/g,'')))||0;}
+  if(fu.tipoValor==='tcv')return f(fu.contrato);
+  return f(fu.mensalidade)||f(fu.contrato);
+}
+// Agrega, por parceiro: leads indicados, vendas, receita e recompensa a pagar
+function _parcStats(){
+  var out={}; // id -> {leads,vendas,receita,recompensa}
+  Object.keys(parceirosData||{}).forEach(function(id){out[id]={leads:0,vendas:0,receita:0,recompensa:0};});
+  // leads indicados (kanban) + mapa telefone -> parceiroId
+  var telToParc={};
+  Object.keys(kanbanData||{}).forEach(function(k){
+    var e=kanbanData[k]; if(!e||!e.parceiroId)return;
+    if(!out[e.parceiroId])return; // parceiro apagado
+    out[e.parceiroId].leads++;
+    var t=String(e.telefone||'').replace(/\D/g,''); if(t){telToParc[t.slice(-11)]=e.parceiroId;telToParc[t.slice(-10)]=e.parceiroId;telToParc[t.slice(-9)]=e.parceiroId;}
+  });
+  // vendas atribuídas ao parceiro (via telefone do lead)
+  var vc=(typeof ensureVendasCache==='function')?ensureVendasCache():(window._todasVendasCache||[]);
+  (vc||[]).forEach(function(v){
+    var t=String((v.m&&v.m.tel)||(v.fu&&v.fu.tel)||'').replace(/\D/g,''); if(!t)return;
+    var pid=telToParc[t.slice(-11)]||telToParc[t.slice(-10)]||telToParc[t.slice(-9)];
+    if(!pid||!out[pid])return;
+    var val=_parcValVenda(v.fu);
+    out[pid].vendas++; out[pid].receita+=val;
+    var p=parceirosData[pid]||{};
+    var rv=parseFloat(p.recompensaValor)||0;
+    out[pid].recompensa += (p.recompensaTipo==='percentual') ? (val*rv/100) : rv;
+  });
+  return out;
+}
+function renderParceiros(){
+  var stats=_parcStats();
+  var ids=Object.keys(parceirosData||{});
+  ids.sort(function(a,b){return (parceirosData[a].nome||'').localeCompare(parceirosData[b].nome||'');});
+  var totLeads=0,totVendas=0,totReceita=0,totRecomp=0,ativos=0;
+  ids.forEach(function(id){var s=stats[id]||{};totLeads+=s.leads||0;totVendas+=s.vendas||0;totReceita+=s.receita||0;totRecomp+=s.recompensa||0;if(parceirosData[id].ativo!==false)ativos++;});
+  function kpi(icon,label,val,color){return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,0.45);">'+label+'</span><div style="width:30px;height:30px;border-radius:8px;background:'+color+'18;display:flex;align-items:center;justify-content:center;"><i class="ti ti-'+icon+'" style="font-size:14px;color:'+color+';"></i></div></div><div style="font-size:28px;font-weight:700;color:'+color+';font-family:\'Bebas Neue\',sans-serif;line-height:1;">'+val+'</div></div>';}
+  var tipoBadge={embaixador:'<span style="background:rgba(167,139,250,0.15);color:#a78bfa;border:1px solid rgba(167,139,250,0.3);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">Embaixador</span>',cliente:'<span style="background:rgba(96,165,250,0.15);color:#60a5fa;border:1px solid rgba(96,165,250,0.3);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">Cliente</span>'};
+  var rows=ids.map(function(id){
+    var p=parceirosData[id]||{},s=stats[id]||{};
+    var recLbl=p.recompensaValor?(p.recompensaTipo==='percentual'?(p.recompensaValor+'% do contrato'):_parcFmtR(p.recompensaValor)+' / venda'):'—';
+    var conv=s.leads>0?Math.round((s.vendas/s.leads)*100):0;
+    var inativo=p.ativo===false;
+    return '<tr style="border-top:1px solid rgba(255,255,255,0.05);'+(inativo?'opacity:.45;':'')+'">'+
+      '<td style="padding:11px 12px;color:var(--white);font-weight:600;">'+esc(p.nome||'—')+(p.telefone?'<div style="font-size:11px;color:var(--muted);font-weight:400;font-family:monospace;">'+esc(p.telefone)+'</div>':'')+'</td>'+
+      '<td style="padding:11px 12px;">'+(tipoBadge[p.tipo]||'—')+'</td>'+
+      '<td style="padding:11px 12px;color:var(--silver);font-size:12px;">'+recLbl+'</td>'+
+      '<td style="padding:11px 12px;text-align:center;color:var(--white);">'+(s.leads||0)+'</td>'+
+      '<td style="padding:11px 12px;text-align:center;"><span style="color:#4ade80;font-weight:700;">'+(s.vendas||0)+'</span><div style="font-size:10px;color:var(--muted);">'+conv+'% conv.</div></td>'+
+      '<td style="padding:11px 12px;text-align:right;color:var(--white);">'+_parcFmtR(s.receita)+'</td>'+
+      '<td style="padding:11px 12px;text-align:right;color:#fbbf24;font-weight:700;">'+_parcFmtR(s.recompensa)+'</td>'+
+      '<td style="padding:11px 12px;text-align:right;white-space:nowrap;">'+
+        '<button onclick="abrirNovoParceiro(\''+id+'\')" title="Editar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--silver);padding:4px 8px;font-size:12px;cursor:pointer;"><i class="ti ti-pencil"></i></button> '+
+        '<button onclick="excluirParceiro(\''+id+'\')" title="Excluir" style="background:none;border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:var(--red);padding:4px 8px;font-size:12px;cursor:pointer;"><i class="ti ti-trash"></i></button>'+
+      '</td></tr>';
+  }).join('');
+  var H='<div class="page active"><div class="page-header"><div>'+
+    '<div class="page-title">Parceiros de Indicação</div>'+
+    '<div class="page-sub">Embaixadores e clientes que indicam · rastreio de vendas e recompensa</div></div>'+
+    '<div><button class="btn btn-primary" onclick="abrirNovoParceiro()"><i class="ti ti-plus"></i> Novo Parceiro</button></div></div>';
+  H+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;">'+
+    kpi('users-group','Parceiros ativos',ativos,'#a78bfa')+
+    kpi('user-share','Leads indicados',totLeads,'#60a5fa')+
+    kpi('shopping-cart','Vendas de indicação',totVendas,'#4ade80')+
+    kpi('coin','Receita gerada',_parcFmtR(totReceita),'#34d399')+
+    kpi('gift','Recompensa a pagar',_parcFmtR(totRecomp),'#fbbf24')+
+  '</div>';
+  H+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;">';
+  if(!ids.length){
+    H+='<div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-users-group" style="font-size:34px;display:block;margin-bottom:10px;opacity:.5;"></i>Nenhum parceiro cadastrado ainda.<br><br><button class="btn btn-primary" onclick="abrirNovoParceiro()"><i class="ti ti-plus"></i> Cadastrar primeiro parceiro</button></div>';
+  }else{
+    H+='<div style="overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:rgba(255,255,255,0.03);">'+
+      '<th style="text-align:left;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Parceiro</th>'+
+      '<th style="text-align:left;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Tipo</th>'+
+      '<th style="text-align:left;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Recompensa</th>'+
+      '<th style="text-align:center;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Leads</th>'+
+      '<th style="text-align:center;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Vendas</th>'+
+      '<th style="text-align:right;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Receita</th>'+
+      '<th style="text-align:right;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">A pagar</th>'+
+      '<th style="padding:10px 12px;"></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  H+='</div></div>';
+  return H;
+}
+function abrirNovoParceiro(editId){
+  var p=(editId&&parceirosData[editId])?parceirosData[editId]:{};
+  var isEdit=!!(editId&&parceirosData[editId]);
+  var _t=p.tipo||'embaixador', _rt=p.recompensaTipo||'fixo';
+  var html='<div class="modal-ov active" id="modal-parceiro" onclick="if(event.target===this)cancelarParceiro()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-user-plus"></i> '+(isEdit?'Editar Parceiro':'Novo Parceiro')+'</div>'+
+        '<button class="modal-close" onclick="cancelarParceiro()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<input type="hidden" id="pp-id" value="'+(isEdit?esc(editId):'')+'">'+
+        '<label class="f-label">Nome</label><input class="f-input" id="pp-nome" value="'+esc(p.nome||'')+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Tipo</label><select class="f-input" id="pp-tipo" style="margin-bottom:12px;"><option value="embaixador"'+(_t==='embaixador'?' selected':'')+'>Embaixador</option><option value="cliente"'+(_t==='cliente'?' selected':'')+'>Cliente</option></select>'+
+        '<label class="f-label">Telefone (opcional)</label><input class="f-input" id="pp-telefone" value="'+esc(p.telefone||'')+'" placeholder="DDD + número" style="margin-bottom:12px;">'+
+        '<label class="f-label">Recompensa por venda</label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
+          '<select class="f-input" id="pp-rtipo" style="flex:1;margin:0;" onchange="_ppRtipoHint()"><option value="fixo"'+(_rt==='fixo'?' selected':'')+'>Valor fixo (R$)</option><option value="percentual"'+(_rt==='percentual'?' selected':'')+'>% do contrato</option></select>'+
+          '<input class="f-input" id="pp-rvalor" type="number" step="0.01" value="'+(p.recompensaValor!=null?p.recompensaValor:'')+'" placeholder="0" style="width:120px;margin:0;">'+
+        '</div>'+
+        '<div id="pp-rhint" style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:12px;"></div>'+
+        '<label class="f-label">Observação (opcional)</label><input class="f-input" id="pp-obs" value="'+esc(p.obs||'')+'" style="margin-bottom:12px;">'+
+        (isEdit?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--silver);cursor:pointer;"><input type="checkbox" id="pp-ativo" '+(p.ativo!==false?'checked':'')+' style="accent-color:var(--purple3);width:15px;height:15px;"> Parceiro ativo</label>':'')+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="salvarParceiro()"><i class="ti ti-check"></i> Salvar</button>'+
+        '<button class="btn btn-outline" onclick="cancelarParceiro()">Cancelar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  _ppRtipoHint();
+}
+function _ppRtipoHint(){var t=(document.getElementById('pp-rtipo')||{}).value;var h=document.getElementById('pp-rhint');if(h)h.textContent=t==='percentual'?'Ex.: 10 = 10% do valor do contrato a cada venda indicada.':'Ex.: 200 = R$ 200 fixos a cada venda indicada.';}
+function cancelarParceiro(){var el=document.getElementById('modal-parceiro');if(el)el.remove();}
+function salvarParceiro(){
+  var id=(document.getElementById('pp-id')||{}).value||'';
+  var nome=(document.getElementById('pp-nome')||{}).value.trim();
+  if(!nome){alert('Informe o nome do parceiro.');return;}
+  var isEdit=!!(id&&parceirosData[id]);
+  var obj={
+    nome:nome,
+    tipo:(document.getElementById('pp-tipo')||{}).value||'embaixador',
+    telefone:(document.getElementById('pp-telefone')||{}).value.trim(),
+    recompensaTipo:(document.getElementById('pp-rtipo')||{}).value||'fixo',
+    recompensaValor:parseFloat((document.getElementById('pp-rvalor')||{}).value)||0,
+    obs:(document.getElementById('pp-obs')||{}).value.trim(),
+    ativo:isEdit?!!((document.getElementById('pp-ativo')||{}).checked):true,
+    createdAt:isEdit?(parceirosData[id].createdAt||Date.now()):Date.now()
+  };
+  if(!id)id='p_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  parceirosData[id]=obj;
+  if(fbDb||initFirebase()){fbDb.ref('parceiros/'+id).set(obj);}
+  cancelarParceiro();
+  var area=document.getElementById('content');
+  if(area&&area.getAttribute('data-page')==='parceiros')area.innerHTML=renderParceiros();
+}
+function excluirParceiro(id){
+  var p=parceirosData[id]; if(!p)return;
+  if(!confirm('Excluir o parceiro "'+(p.nome||'')+'"? O histórico de leads/vendas já indicados continua no funil, mas deixa de ser atribuído a ele.'))return;
+  delete parceirosData[id];
+  if(fbDb||initFirebase()){fbDb.ref('parceiros/'+id).remove();}
+  var area=document.getElementById('content');
+  if(area&&area.getAttribute('data-page')==='parceiros')area.innerHTML=renderParceiros();
+}
+
 /* ===== PROSPECÇÃO GRUPO — ambiente separado da Fria (membros dos grupos VIP, 30/dia) ===== */
 var _grupoStats=null,_grupoContatos=null,_grupoCtPage=0,_grupoGruposCache=null;
 function _grupoDefaultMsg(id){return ({f1:"Opa, {{primeiroNome}}! Aqui é o João, da Audens 👊 Vi que você tá num dos nossos grupos de donos de hamburgueria e pizzaria. Posso te oferecer uma coisa boa, rapidinho?",f2:"A gente liberou um *raio-x gratuito do seu negócio*: um bate-papo direto com o Lucas (fundador da Audens) pra analisar o seu delivery e te mostrar, na prática, onde dá pra vender mais — sem custo e sem compromisso. Quer que eu agende esse papo com você? 📈"})[id]||'';}
