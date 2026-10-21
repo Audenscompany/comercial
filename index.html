@@ -35382,6 +35382,28 @@ function dicaAgendarNoSlot(){
   var dt=new Date(slot.data+'T12:00:00');
   dicaToast('Agendado para '+dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}));
 }
+// Agenda o Reels na DATA escolhida pelo usuário (usa o slot do dia, ou cria um novo)
+function dicaAgendarNaData(){
+  if(!_dicaTituloAtual){dicaToast('Selecione um título primeiro.');return;}
+  var dEl=document.getElementById('dica-data-post');
+  var data=dEl?dEl.value:'';
+  if(!data){dicaToast('Escolha a data da postagem.');return;}
+  if(!_dicaProg.length)_dicaProg=_dicaGerarProgramacaoBase();
+  var leg=(document.getElementById('dica-legenda')||{}).value||'';
+  var slot=_dicaProg.find(function(s){return (''+s.data).slice(0,10)===data;});
+  if(slot){
+    if(slot.status!=='vazio' && !confirm('Já tem um Reels agendado em '+new Date(data+'T12:00:00').toLocaleDateString('pt-BR')+' ("'+(slot.titulo||'sem título')+'").\n\nSubstituir pelo título atual?')){return;}
+    slot.titulo=_dicaTituloAtual; slot.legenda=leg; slot.status='rascunho';
+  }else{
+    _dicaProg.push({data:data,titulo:_dicaTituloAtual,legenda:leg,status:'rascunho'});
+    _dicaProg.sort(function(a,b){return (''+a.data).localeCompare(''+b.data);});
+  }
+  if(!dicaUsado(_dicaTituloAtual)){_dicaUsados.push(_dicaTituloAtual);_dicaSalvaUsados();dicaRenderBanco();}
+  _dicaSalvaProg();
+  if(typeof dicaRenderProg==='function')dicaRenderProg();
+  var dt=new Date(data+'T12:00:00');
+  dicaToast('Agendado para '+dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}));
+}
 
 // ===== BANCO UI =====
 function dicaFiltrarBanco(pid){_dicaBancoFiltro=pid;dicaRenderBanco();}
@@ -35593,9 +35615,14 @@ function renderDicas(){
         '</div>'+
         '<textarea id="dica-legenda" rows="12" placeholder="A legenda completa aparece aqui. Você pode editar antes de agendar." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:13px;line-height:1.6;padding:12px 14px;outline:none;resize:vertical;box-sizing:border-box;"></textarea>'+
         '<div id="dica-ia-status" style="font-size:11.5px;margin-top:8px;min-height:16px;color:var(--muted);"></div>'+
-        '<div style="display:flex;gap:8px;margin-top:12px;">'+
-          '<button onclick="dicaAgendarNoSlot()" style="flex:2;padding:11px;background:#7c3aed;border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Agendar no próximo slot</button>'+
-          '<button onclick="dicaCopiarLegenda()" style="flex:1;padding:11px;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:9px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-copy"></i> Copiar</button>'+
+        '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'+
+          '<div style="display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:6px 10px;">'+
+            '<i class="ti ti-calendar-event" style="font-size:14px;color:#a78bfa;"></i>'+
+            '<input type="date" id="dica-data-post" style="background:transparent;border:none;color:var(--white);font-size:12px;outline:none;color-scheme:dark;">'+
+          '</div>'+
+          '<button onclick="dicaAgendarNaData()" style="flex:1;min-width:150px;padding:11px;background:#7c3aed;border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-calendar-plus"></i> Agendar na data</button>'+
+          '<button onclick="dicaAgendarNoSlot()" title="Agenda no próximo dia livre da programação" style="padding:11px 14px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.4);border-radius:9px;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;">Próximo slot</button>'+
+          '<button onclick="dicaCopiarLegenda()" style="padding:11px 14px;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:9px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-copy"></i> Copiar</button>'+
         '</div>'+
       '</div>'+
     '</div>'+
