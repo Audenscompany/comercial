@@ -35446,11 +35446,21 @@ async function dicaGerarReelDeCarrossel(b){
   _dicaTituloAtual=b.titulo||'Reels'; if(titEl)titEl.textContent=_dicaTituloAtual;
   if(typeof dicaSwitchTab==='function')dicaSwitchTab('banco');
   if(!claudeKey){ if(st){st.style.color='#ff5c7a';st.textContent='Configure a Claude API Key em ⚙ Configurações do Jarvis. O texto do carrossel foi carregado abaixo como base.';} if(leg)leg.value='TEXTO DO CARROSSEL (base pro reel):\n\n'+b.texto; return; }
-  if(st){st.style.color='var(--muted)';st.textContent='Transformando o carrossel num roteiro de Reels 10s…';}
-  if(leg)leg.value='Gerando roteiro do reel a partir do carrossel…';
+  if(st){st.style.color='var(--muted)';st.textContent='Gerando roteiro de 10s + legenda completa a partir do carrossel…';}
+  if(leg)leg.value='Gerando roteiro do reel e a legenda completa a partir do carrossel…';
   try{
-    var sys='Você é roteirista de Reels curtos (cerca de 10 segundos) para o Instagram de uma marca de hamburgueria/delivery. Recebe o conteúdo de um CARROSSEL e transforma na mensagem principal num ÚNICO reels de ~10s, direto e com gancho forte nos 3 primeiros segundos. Responda SEMPRE em português do Brasil, SEM asteriscos e SEM markdown, exatamente neste formato:\n\nGANCHO (0-3s): <frase curta de impacto>\nFALA (~10s): <2 a 4 frases curtas pra narrar>\nTEXTO NA TELA: <2 a 4 textos curtos, um por linha>\nCTA: <chamada final curta>\n\nLEGENDA:\n<legenda pronta pra postar, com quebras de linha e 3 a 5 hashtags no final>';
-    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,system:sys,messages:[{role:'user',content:'Transforme este carrossel num reels de 10 segundos, aproveitando a mensagem central:\n\n'+b.texto}]})});
+    // Reaproveita a MESMA voz/regras da legenda-que-ensina (_dicaSysLegenda) + um roteiro curto de 10s.
+    // Título do carrossel é mantido como está (já validado) e vira o gancho do reel.
+    var sys='Você recebe o conteúdo de um CARROSSEL já validado e produz DUAS coisas para um Reels de ~10s: (A) um roteiro curto de gravação e (B) a LEGENDA COMPLETA que ensina o tema (é na legenda que o conteúdo acontece de verdade).\n\n'+
+      'TÍTULO VALIDADO (NÃO reescreva, use exatamente como está, ele é o gancho/título do reel):\n"'+(_dicaTituloAtual).replace(/"/g,'\\"')+'"\n\n'+
+      'Responda SEMPRE em PT-BR, SEM asteriscos e SEM markdown, EXATAMENTE neste formato:\n\n'+
+      'GANCHO (0-3s): <o título validado, ou uma fala curtíssima derivada dele sem mudar o sentido>\n'+
+      'FALA (~10s): <2 a 4 frases curtas pra narrar; termine mandando ir ler a legenda, ex: "a explicação completa tá aqui embaixo, corre ler">\n'+
+      'TEXTO NA TELA: <2 a 4 textos curtos, um por linha>\n'+
+      'CTA NO VÍDEO: <chamada curta>\n\n'+
+      'LEGENDA:\n<a legenda completa que ENSINA o tema, seguindo FIELMENTE as regras de voz e estrutura abaixo, baseada no conteúdo do carrossel>\n\n'+
+      '=== REGRAS DA LEGENDA (OBRIGATÓRIAS) ===\n'+_dicaSysLegenda;
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2200,system:sys,messages:[{role:'user',content:'TÍTULO VALIDADO DO REEL (manter): "'+(_dicaTituloAtual)+'"\n\nCONTEÚDO DO CARROSSEL (base da legenda que ensina):\n\n'+b.texto+'\n\nGere o roteiro de 10s e, principalmente, a LEGENDA completa que ensina esse tema por inteiro.'}]})});
     if(!resp.ok)throw new Error('Claude API '+resp.status);
     var data=await resp.json();
     var text=(data.content&&data.content[0]&&data.content[0].text)||'';
