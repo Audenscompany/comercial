@@ -4756,9 +4756,17 @@ async function handleDailyContent(req, res) {
   // Monta só os campos permitidos, com limite de tamanho. Qualquer campo extra é ignorado.
   var out = {};
   var imageStyle = _dcStr(b.imageStyle, 5000); if (imageStyle !== undefined) out.imageStyle = imageStyle;
-  var conceitos = _dcStr(b.conceitos, 5000); if (conceitos !== undefined) out.conceitos = conceitos;
-  var stories = _dcStr(b.stories, 5000); if (stories !== undefined) out.stories = stories;
   var reels = _dcStr(b.reels, 5000); if (reels !== undefined) out.reels = reels;
+  // conceitos: lista de objetos {titulo,angulo,estrutura} OU string
+  if (Array.isArray(b.conceitos)) {
+    out.conceitos = b.conceitos.slice(0, 20).map(function (c) {
+      if (c && typeof c === "object") return { titulo: _dcStr(c.titulo, 5000), angulo: _dcStr(c.angulo, 5000), estrutura: _dcStr(c.estrutura, 5000) };
+      return _dcStr(c, 5000);
+    });
+  } else { var conceitos = _dcStr(b.conceitos, 5000); if (conceitos !== undefined) out.conceitos = conceitos; }
+  // stories: lista de strings OU string
+  if (Array.isArray(b.stories)) { out.stories = b.stories.slice(0, 20).map(function (s) { return _dcStr(s, 5000); }); }
+  else { var stories = _dcStr(b.stories, 5000); if (stories !== undefined) out.stories = stories; }
   // carrosselPronto: objeto com titulo/legenda (strings) + slides (lista de strings)
   if (b.carrosselPronto && typeof b.carrosselPronto === "object") {
     var cp = {};
