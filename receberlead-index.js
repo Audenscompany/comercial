@@ -4743,6 +4743,35 @@ async function handleGrupoConfig(req, res) {
   if (Object.keys(upd).length) await db.ref("config/grupo").update(upd);
   return res.status(200).json({ ok: true, saved: Object.keys(upd) });
 }
+// ===== CONTEÚDO DIÁRIO (Instagram) — grava SÓ em /audens/daily/{YYYY-MM-DD} =====
+// Rota protegida por secret. A rotina diária (Claude na nuvem) manda o conteúdo aqui e o
+// servidor grava via admin SDK. NÃO precisa de login anônimo e NÃO toca em nenhum outro nó.
+function _dcStr(v, max) { if (v == null) return undefined; var s = String(v); return s.length > max ? s.slice(0, max) : s; }
+async function handleDailyContent(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  // data: body.data/date OU hoje (BRT). Precisa ser YYYY-MM-DD.
+  var data = String(b.data || b.date || cadBRT(Date.now()).date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ ok: false, error: "data invalida (use YYYY-MM-DD)" });
+  // Monta só os campos permitidos, com limite de tamanho. Qualquer campo extra é ignorado.
+  var out = {};
+  var imageStyle = _dcStr(b.imageStyle, 5000); if (imageStyle !== undefined) out.imageStyle = imageStyle;
+  var conceitos = _dcStr(b.conceitos, 5000); if (conceitos !== undefined) out.conceitos = conceitos;
+  var stories = _dcStr(b.stories, 5000); if (stories !== undefined) out.stories = stories;
+  var reels = _dcStr(b.reels, 5000); if (reels !== undefined) out.reels = reels;
+  // carrosselPronto: objeto com titulo/legenda (strings) + slides (lista de strings)
+  if (b.carrosselPronto && typeof b.carrosselPronto === "object") {
+    var cp = {};
+    var tit = _dcStr(b.carrosselPronto.titulo, 5000); if (tit !== undefined) cp.titulo = tit;
+    var leg = _dcStr(b.carrosselPronto.legenda, 5000); if (leg !== undefined) cp.legenda = leg;
+    if (Array.isArray(b.carrosselPronto.slides)) cp.slides = b.carrosselPronto.slides.slice(0, 50).map(function (s) { return _dcStr(s, 5000); });
+    if (Object.keys(cp).length) out.carrosselPronto = cp;
+  }
+  if (!Object.keys(out).length) return res.status(400).json({ ok: false, error: "nenhum campo valido enviado" });
+  out.updatedAt = _dcStr(b.updatedAt, 40) || new Date().toISOString();
+  await db.ref("audens/daily/" + data).set(out);
+  return res.status(200).json({ ok: true, data: data, campos: Object.keys(out) });
+}
 // Inscreve até maxPerDay novos/dia + enfileira os toques devidos de hoje. Roda 1x/dia (flag fria_control/lastBuild).
 async function friaDailyBuild(cfg) {
   var hoje = cadBRT(Date.now()).date;
@@ -5311,6 +5340,9 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/grupo-config") {
       return await handleGrupoConfig(req, res);
+    }
+    if (path === "/daily-content") {
+      return await handleDailyContent(req, res);
     }
     if (path === "/fria-config") {
       return await handleFriaConfig(req, res);
