@@ -31433,8 +31433,9 @@ var _planFases=[
 var _planPilarDia={0:'p6',1:'p1',2:'p3',3:'p2',4:'p5',5:'p1',6:'p4'};
 var _planReelDia={0:'📈 Resultado de cliente',1:'🎬 Rotina: planejamento/reunião',2:'💡 Dica rápida',3:'📈 Resultado de cliente',4:'🎬 Rotina: operação real',5:'💡 Dica rápida',6:'🎬 Rotina: sábado de pico'};
 var _planStoryDia={0:'"Fechamento da semana" + enquete',1:'Meta da semana + enquete',2:'Quiz numérico + bastidor',3:'Antes/depois do case',4:'Caixinha temática',5:'Responde-caixinha + prep do pico',6:'Cobertura do pico com números ao vivo'};
-var _ccView='agenda';
+var _ccView='mes';
 var _ccFiltroMes=''; // '' = todos; senão 'YYYY-MM' para filtrar a Agenda por mês
+var _ccSelDay=''; // dia selecionado na grade mensal (YYYY-MM-DD)
 var _planPilarNome={p1:'Como eu faria do zero',p2:'Erros e verdades',p3:'Números e margem',p4:'Case de cliente',p5:'Gestão e rotina',p6:'Opinião quente'};
 function _planFaseDe(iso){for(var i=0;i<_planFases.length;i++){if(iso>=_planFases[i].ini&&iso<=_planFases[i].fim)return _planFases[i];}return null;}
 function _planPickUnused(titulos,used){used=used||[];for(var i=0;i<titulos.length;i++){if(used.indexOf(titulos[i])<0)return titulos[i];}return titulos[0]||'';}
@@ -31616,9 +31617,10 @@ function renderContentCalendar(){
       '<div class="page-sub">Reels 10S + Carrossel · programação de 90 dias</div>'+
     '</div></div>'+
     '<div style="display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--border);">'+
-      '<div id="cc-tab-agenda" onclick="ccSwitchView(\'agenda\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='agenda'?'#e1306c':'transparent')+';color:'+(_ccView==='agenda'?'#fff':'var(--muted)')+';"><i class="ti ti-calendar-event" style="margin-right:5px;"></i>Agenda</div>'+
+      '<div id="cc-tab-mes" onclick="ccSwitchView(\'mes\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='mes'?'#e1306c':'transparent')+';color:'+(_ccView==='mes'?'#fff':'var(--muted)')+';"><i class="ti ti-calendar-month" style="margin-right:5px;"></i>Mês</div>'+
+      '<div id="cc-tab-agenda" onclick="ccSwitchView(\'agenda\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='agenda'?'#e1306c':'transparent')+';color:'+(_ccView==='agenda'?'#fff':'var(--muted)')+';"><i class="ti ti-list" style="margin-right:5px;"></i>Lista</div>'+
       '<div id="cc-tab-plano" onclick="ccSwitchView(\'plano\')" style="padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:2px solid '+(_ccView==='plano'?'#e1306c':'transparent')+';color:'+(_ccView==='plano'?'#fff':'var(--muted)')+';"><i class="ti ti-map-2" style="margin-right:5px;"></i>Plano 90 Dias</div>'+
-      (_ccView==='agenda'?('<div style="margin-left:auto;display:flex;align-items:center;gap:6px;padding-bottom:6px;">'+
+      (_ccView!=='plano'?('<div style="margin-left:auto;display:flex;align-items:center;gap:6px;padding-bottom:6px;">'+
         '<i class="ti ti-filter" style="font-size:13px;color:var(--muted);"></i>'+
         '<input type="month" id="cc-filtro-mes" value="'+(_ccFiltroMes||'')+'" onchange="ccSetFiltroMes(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--white);font-size:12px;padding:5px 8px;outline:none;cursor:pointer;">'+
         (_ccFiltroMes?'<button onclick="ccSetFiltroMes(\'\')" title="Mostrar todos" style="background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;font-size:11px;font-weight:700;padding:5px 9px;cursor:pointer;">Todos</button>':'')+
@@ -31629,10 +31631,12 @@ function renderContentCalendar(){
 }
 function ccSetFiltroMes(v){
   _ccFiltroMes=v||'';
+  _ccSelDay=''; // trocar de mês limpa o dia selecionado
   // re-renderiza o cabeçalho (para o botão Todos aparecer/sumir) + o corpo
   var pg=document.querySelector('[data-page]');
   renderContentCalendarBody();
   var inp=document.getElementById('cc-filtro-mes'); // mantém foco/valor
+  if(inp&&inp.value!==_ccFiltroMes)inp.value=_ccFiltroMes;
   var btnWrap=inp&&inp.parentElement;
   if(btnWrap){
     var hasBtn=btnWrap.querySelector('button');
@@ -31643,9 +31647,10 @@ function ccSetFiltroMes(v){
 }
 function ccSwitchView(v){
   _ccView=v;
-  var a=document.getElementById('cc-tab-agenda'),pl=document.getElementById('cc-tab-plano');
-  if(a){a.style.color=v==='agenda'?'#fff':'var(--muted)';a.style.borderBottom='2px solid '+(v==='agenda'?'#e1306c':'transparent');}
-  if(pl){pl.style.color=v==='plano'?'#fff':'var(--muted)';pl.style.borderBottom='2px solid '+(v==='plano'?'#e1306c':'transparent');}
+  // a grade mensal precisa de um mês definido — se estiver em "Todos", usa o mês atual
+  if(v==='mes'&&!_ccFiltroMes){var n=new Date();_ccFiltroMes=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');}
+  // re-renderiza a página inteira (pra o cabeçalho/seletor de mês acompanhar a aba)
+  if(typeof showPage==='function'){showPage('cal-conteudo');return;}
   renderContentCalendarBody();
 }
 function _ccStatusPill(txt,cor){return '<span style="font-size:9px;font-weight:800;letter-spacing:.5px;color:'+cor+';">'+txt.toUpperCase()+'</span>';}
@@ -31760,9 +31765,81 @@ function ccHojeCard(){
     jaTxt+
   '</div>';
 }
+// Monta a lista de posts (reels + carrosséis) de um mês YYYY-MM, agrupados por dia YYYY-MM-DD
+function _ccPostsDoMes(mesYM){
+  var reels=(_dicaProg||[]).map(function(s){return {kind:'reel',data:(''+s.data).slice(0,10),titulo:s.titulo||'',legenda:s.legenda||'',status:s.status||'vazio'};})
+    .filter(function(r){return r.status!=='vazio'&&r.titulo&&(''+r.data).slice(0,7)===mesYM;});
+  var cars=[];
+  Object.keys(_igCalendario||{}).forEach(function(id){var ev=_igCalendario[id];if(!ev||!ev.dataHora)return;if((''+ev.dataHora).slice(0,7)!==mesYM)return;cars.push({kind:'carrossel',id:id,data:(''+ev.dataHora).slice(0,10),titulo:(ev.slideTitles&&ev.slideTitles[0])||'',legenda:ev.legenda||'',status:ev.status||'rascunho',localKey:ev.localKey||id});});
+  var byDay={};
+  reels.concat(cars).forEach(function(it){var d=(''+it.data).slice(0,10);(byDay[d]=byDay[d]||[]).push(it);});
+  return byDay;
+}
+function renderCcGrid(){
+  var mesYM=_ccFiltroMes||((new Date()).getFullYear()+'-'+String((new Date()).getMonth()+1).padStart(2,'0'));
+  var yp=mesYM.split('-'),y=parseInt(yp[0]),mo=parseInt(yp[1])-1;
+  var monthNames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  var firstDow=new Date(y,mo,1).getDay(),daysInMonth=new Date(y,mo+1,0).getDate();
+  var now=new Date(),todayISO=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  var byDay=_ccPostsDoMes(mesYM);
+  var totReel=0,totCar=0;Object.keys(byDay).forEach(function(d){byDay[d].forEach(function(it){if(it.kind==='reel')totReel++;else totCar++;});});
+  function navBtn(delta,icon){var m2=mo+delta,y2=y;if(m2<0){m2=11;y2--;}if(m2>11){m2=0;y2++;}var ym=y2+'-'+String(m2+1).padStart(2,'0');return '<button onclick="ccSetFiltroMes(\''+ym+'\')" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--white);width:32px;height:32px;cursor:pointer;font-size:14px;"><i class="ti ti-'+icon+'"></i></button>';}
+  var H='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;">'+navBtn(-1,'chevron-left')+
+      '<div style="font-family:var(--font-bn),sans-serif;font-size:20px;color:var(--white);min-width:160px;text-align:center;">'+monthNames[mo]+' '+y+'</div>'+
+      navBtn(1,'chevron-right')+'</div>'+
+    '<div style="display:flex;gap:16px;font-size:12px;color:var(--muted);align-items:center;">'+
+      '<span><span style="display:inline-block;width:10px;height:10px;background:#a78bfa;border-radius:3px;margin-right:5px;vertical-align:middle;"></span>Reel ('+totReel+')</span>'+
+      '<span><span style="display:inline-block;width:10px;height:10px;background:#e1306c;border-radius:3px;margin-right:5px;vertical-align:middle;"></span>Carrossel ('+totCar+')</span>'+
+    '</div></div>';
+  // grade
+  H+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;">';
+  ['DOM','SEG','TER','QUA','QUI','SEX','SÁB'].forEach(function(d){H+='<div style="text-align:center;font-size:10px;font-weight:800;letter-spacing:1px;color:var(--muted);padding:4px 0;">'+d+'</div>';});
+  for(var i=0;i<firstDow;i++)H+='<div></div>';
+  for(var d=1;d<=daysInMonth;d++){
+    var iso=y+'-'+String(mo+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var posts=byDay[iso]||[];
+    var isToday=(iso===todayISO),isSel=(iso===_ccSelDay);
+    var chips=posts.slice(0,3).map(function(it){
+      var isR=it.kind==='reel';var cor=isR?'#a78bfa':'#e1306c';var bg=isR?'rgba(124,58,237,0.15)':'rgba(225,48,108,0.15)';
+      var posted=(it.status==='postado'||it.status==='publicado');
+      var tt=(it.titulo||'').replace(/"/g,'&quot;');
+      return '<div title="'+tt+'" style="display:flex;align-items:center;gap:4px;background:'+bg+';border-left:3px solid '+cor+';border-radius:4px;padding:2px 5px;margin-top:3px;overflow:hidden;'+(posted?'opacity:.55;':'')+'">'+
+        '<span style="font-size:8px;font-weight:800;color:'+cor+';flex-shrink:0;">'+(isR?'R':'C')+'</span>'+
+        '<span style="font-size:10px;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(it.titulo||'(sem título)')+'</span>'+
+        (posted?'<i class="ti ti-check" style="font-size:9px;color:#10b981;flex-shrink:0;margin-left:auto;"></i>':'')+
+      '</div>';
+    }).join('');
+    var mais=posts.length>3?'<div style="font-size:9px;color:var(--muted);margin-top:2px;">+'+(posts.length-3)+' mais</div>':'';
+    H+='<div onclick="ccSelectDay(\''+iso+'\')" style="min-height:92px;background:var(--bg2);border:1px solid '+(isSel?'#e1306c':(isToday?'var(--purple3)':'var(--border)'))+';border-radius:10px;padding:6px 7px;cursor:pointer;display:flex;flex-direction:column;overflow:hidden;'+(isSel?'box-shadow:0 0 0 1px #e1306c;':'')+'">'+
+      '<div style="font-size:12px;font-weight:700;color:'+(isToday?'var(--purple3)':'var(--white)')+';">'+d+(isToday?' <span style="font-size:8px;color:var(--purple3);">hoje</span>':'')+'</div>'+
+      chips+mais+
+    '</div>';
+  }
+  H+='</div>';
+  // painel do dia selecionado
+  H+='<div id="cc-day-detail" style="margin-top:20px;">'+(_ccSelDay?_ccDayDetailHTML(_ccSelDay):'<div style="color:var(--muted);text-align:center;padding:20px;font-size:13px;">Clique num dia pra ver e editar os posts programados.</div>')+'</div>';
+  return H;
+}
+function ccSelectDay(iso){
+  _ccSelDay=(iso===_ccSelDay)?'':iso; // toggle
+  renderContentCalendarBody();
+}
+function _ccDayDetailHTML(iso){
+  var byDay=_ccPostsDoMes((''+iso).slice(0,7));
+  var posts=(byDay[iso]||[]).slice().sort(function(a,b){return a.kind==='reel'?-1:1;});
+  var d=new Date(iso+'T12:00:00');
+  var wd=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][d.getDay()];
+  var head='<div style="font-family:var(--font-bn),sans-serif;font-size:16px;color:var(--white);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;">'+ccFmtDate(iso)+' — '+wd+' <span style="font-size:12px;color:var(--muted);font-family:Inter,sans-serif;">· '+posts.length+' post'+(posts.length===1?'':'s')+'</span></div>';
+  if(!posts.length)return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;">'+head+'<div style="color:var(--muted);text-align:center;padding:10px;font-size:13px;">Nenhum post programado nesse dia.<br><br><button onclick="showPage(\'carrossel\')" style="padding:7px 14px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px;"><i class="ti ti-layout-grid"></i> Criar carrossel</button><button onclick="showPage(\'dicas-rapidas\')" style="padding:7px 14px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:8px;color:#a78bfa;font-size:12px;font-weight:700;cursor:pointer;"><i class="ti ti-bulb"></i> Criar Reels</button></div></div>';
+  _ccItems=_ccItems||[];
+  var cards=posts.map(function(it){var idx=_ccItems.push({titulo:it.titulo,legenda:it.legenda})-1;return it.kind==='reel'?ccReelCard(it,idx):ccCarCard(it,idx);}).join('');
+  return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+head+cards+'</div>';
+}
 function renderContentCalendarBody(){
   var box=document.getElementById('cc-body');if(!box)return;
   if(_ccView==='plano'){box.innerHTML=renderPlano90();return;}
+  if(_ccView==='mes'){ _ccItems=[]; box.innerHTML=renderCcGrid(); return; }
   var reels=(_dicaProg||[]).map(function(s){return {kind:'reel',data:(''+s.data).slice(0,10),titulo:s.titulo||'',legenda:s.legenda||'',status:s.status||'vazio'};});
   var cars=[];
   Object.keys(_igCalendario||{}).forEach(function(id){var ev=_igCalendario[id];if(!ev||!ev.dataHora)return;cars.push({kind:'carrossel',id:id,data:(''+ev.dataHora).slice(0,10),titulo:(ev.slideTitles&&ev.slideTitles[0])||'',legenda:ev.legenda||'',status:ev.status||'rascunho',localKey:ev.localKey||id});});
