@@ -32097,7 +32097,8 @@ function _carDrawCover(ctx,slide){
   _carDrawTopBarCover(ctx);
   var cx=_carW/2,size=_carState.coverSize+8,lines;
   ctx.textAlign='center';ctx.textBaseline='alphabetic';
-  while(true){ctx.font='700 '+size+'px Poppins';lines=_carWL(ctx,slide.title||'',_carW-120);if(lines.length<=5||size<=58)break;size-=4;}
+  var _coverTit=String(slide.title||'').replace(/\*\*?([^*\n]+)\*\*?/g,'$1').replace(/_([^_\n]+)_/g,'$1'); // capa já é bold; tira marcadores
+  while(true){ctx.font='700 '+size+'px Poppins';lines=_carWL(ctx,_coverTit,_carW-120);if(lines.length<=5||size<=58)break;size-=4;}
   var lineH=Math.round(size*1.14);
   var bottomHint=_carH-70,blockBottom=bottomHint-70,titleTop=blockBottom-lines.length*lineH;
   ctx.fillStyle='#fff';ctx.font='700 '+size+'px Poppins';ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=24;
@@ -32147,6 +32148,40 @@ function _carDrawFooterPill(ctx,isLast){
   ctx.fillText(isLast?'':_carState.footerText,mX+fW-40,cy);
   ctx.textAlign='left';ctx.textBaseline='alphabetic';
 }
+// ===== Texto rico no canvas: *negrito* e _itálico_ =====
+function _carParseRich(text){
+  var s=String(text||'').replace(/\*\*(.+?)\*\*/g,'*$1*'); // **x** vira *x*
+  var runs=[],re=/(\*[^*\n]+\*|_[^_\n]+_)/g,last=0,m;
+  while((m=re.exec(s))){
+    if(m.index>last)runs.push({t:s.slice(last,m.index),b:false,i:false});
+    var tok=m[0];
+    if(tok.charAt(0)==='*')runs.push({t:tok.slice(1,-1),b:true,i:false});
+    else runs.push({t:tok.slice(1,-1),b:false,i:true});
+    last=m.index+tok.length;
+  }
+  if(last<s.length)runs.push({t:s.slice(last),b:false,i:false});
+  if(!runs.length)runs.push({t:s,b:false,i:false});
+  return runs;
+}
+function _carFontRich(fs,b,i){return (i?'italic ':'')+(b?'700 ':'400 ')+fs+'px Poppins';}
+// quebra os runs (com estilo) em linhas de tokens-palavra que cabem em maxW
+function _carWrapRich(ctx,runs,maxW,fs){
+  var tokens=[];
+  runs.forEach(function(r){
+    r.t.split(/(\s+)/).forEach(function(p){ if(p==='')return; tokens.push({t:p,b:r.b,i:r.i,sp:/^\s+$/.test(p)}); });
+  });
+  var lines=[],cur=[],curW=0;
+  tokens.forEach(function(tk){
+    ctx.font=_carFontRich(fs,tk.b,tk.i);
+    if(tk.sp){ if(cur.length){var sw=ctx.measureText(' ').width;cur.push({t:' ',b:tk.b,i:tk.i,w:sw});curW+=sw;} return; }
+    var w=ctx.measureText(tk.t).width;
+    if(curW+w>maxW && cur.length){ while(cur.length&&cur[cur.length-1].t===' '){curW-=cur[cur.length-1].w;cur.pop();} lines.push(cur);cur=[];curW=0; }
+    cur.push({t:tk.t,b:tk.b,i:tk.i,w:w});curW+=w;
+  });
+  if(cur.length){ while(cur.length&&cur[cur.length-1].t===' '){cur.pop();} lines.push(cur); }
+  if(!lines.length)lines.push([]);
+  return lines;
+}
 function _carDrawBody(ctx,slide,isLast){
   // Estilo leobrf — fundo escuro, texto peso normal, pill + footer arredondados
   ctx.fillStyle='#0e0e10';ctx.fillRect(0,0,_carW,_carH);
@@ -32160,8 +32195,8 @@ function _carDrawBody(ctx,slide,isLast){
   var fs=_carState.bodySize+18, lh, paraGap;
   var wrapped;
   for(var att=0;att<8;att++){
-    ctx.font='400 '+fs+'px Poppins';lh=Math.round(fs*1.32);paraGap=Math.round(fs*0.7);
-    wrapped=[];paras.forEach(function(pt,pi){var wl=_carWL(ctx,pt,_carW-pad*2);wrapped.push({lines:wl});});
+    lh=Math.round(fs*1.32);paraGap=Math.round(fs*0.7);
+    wrapped=[];paras.forEach(function(pt,pi){var runs=_carParseRich(pt);wrapped.push({lines:_carWrapRich(ctx,runs,_carW-pad*2,fs)});});
     var totalH=0;wrapped.forEach(function(w,i){totalH+=w.lines.length*lh+(i<wrapped.length-1?paraGap:0);});
     if(totalH<=740||fs<=44)break;
     fs-=4;
@@ -32171,8 +32206,11 @@ function _carDrawBody(ctx,slide,isLast){
   ctx.textAlign='left';ctx.textBaseline='alphabetic';
   ctx.fillStyle='#fff';
   wrapped.forEach(function(w){
-    ctx.font='400 '+fs+'px Poppins';
-    w.lines.forEach(function(ln){ctx.fillText(ln,pad,cy+fs*0.82);cy+=lh;});
+    w.lines.forEach(function(line){
+      var x=pad;
+      line.forEach(function(tok){ ctx.font=_carFontRich(fs,tok.b,tok.i); ctx.fillText(tok.t,x,cy+fs*0.82); x+=tok.w; });
+      cy+=lh;
+    });
     cy+=paraGap;
   });
   _carDrawFooterPill(ctx,isLast);
@@ -32263,6 +32301,26 @@ function carRebuildGrid(){
   carDrawAll();
 }
 
+// Envolve o texto selecionado no editor com um marcador (* negrito, _ itálico)
+function carWrapSel(mark){
+  var ta=document.getElementById('car-batch');if(!ta)return;
+  var s=ta.selectionStart,e=ta.selectionEnd,v=ta.value;
+  if(s===e){ // nada selecionado: insere o par e posiciona o cursor no meio
+    ta.value=v.slice(0,s)+mark+mark+v.slice(e);
+    ta.focus();ta.selectionStart=ta.selectionEnd=s+mark.length;
+    return;
+  }
+  var sel=v.slice(s,e);
+  // se já está envolvido, remove (toggle)
+  if(sel.length>=2&&sel.charAt(0)===mark&&sel.charAt(sel.length-1)===mark){
+    var inner=sel.slice(1,-1);
+    ta.value=v.slice(0,s)+inner+v.slice(e);
+    ta.focus();ta.selectionStart=s;ta.selectionEnd=s+inner.length;
+  }else{
+    ta.value=v.slice(0,s)+mark+sel+mark+v.slice(e);
+    ta.focus();ta.selectionStart=s;ta.selectionEnd=e+mark.length*2;
+  }
+}
 function carApplyBatch(){
   var txt=document.getElementById('car-batch');if(!txt)return;
   var blocks=txt.value.split(/\n\s*\n/).map(function(b){return b.trim();}).filter(Boolean);
@@ -33106,7 +33164,12 @@ function renderCarrossel(){
           // ── Conteúdo ──
           '<div id="car-pane-conteudo">'+
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+'<span style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Banco de títulos</span>'+'<span id="car-banco-cont" style="font-size:10px;font-weight:700;color:#39d98a;">0/90 usados</span>'+'</div>'+'<input id="car-banco-busca" oninput="carRenderBanco()" placeholder="Buscar título..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12px;padding:9px 12px;outline:none;box-sizing:border-box;margin-bottom:6px;">'+'<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px;color:var(--muted);margin-bottom:8px;"><input type="checkbox" id="car-banco-filtro" onchange="carRenderBanco()" style="accent-color:var(--accent);width:14px;height:14px;"> Esconder os que já usei</label>'+'<div id="car-banco-list" style="max-height:280px;overflow-y:auto;padding-right:4px;margin-bottom:8px;"></div>'+'<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:18px;">Clique no título para virar capa (marca como usado). Clique no ✓ para marcar/desmarcar manualmente.</div>'+'<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Texto em lote</div>'+
-            '<textarea id="car-batch" style="width:100%;min-height:180px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:11px 12px;outline:none;resize:vertical;line-height:1.5;" placeholder="Título (Linha 1)&#10;Corpo (Linhas seguintes)&#10;&#10;Linha vazia separa slides. 1º bloco = capa."></textarea>'+
+            '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'+
+              '<button onclick="carWrapSel(\'*\')" title="Negrito (seleciona o texto e clica)" style="width:30px;height:28px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-weight:800;font-size:13px;cursor:pointer;">B</button>'+
+              '<button onclick="carWrapSel(\'_\')" title="Itálico (seleciona o texto e clica)" style="width:30px;height:28px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--white);font-style:italic;font-size:13px;cursor:pointer;">I</button>'+
+              '<span style="font-size:10.5px;color:var(--muted);">Selecione um trecho e clique — ou escreva <b>*negrito*</b> e <i>_itálico_</i> à mão.</span>'+
+            '</div>'+
+            '<textarea id="car-batch" style="width:100%;min-height:180px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:11px 12px;outline:none;resize:vertical;line-height:1.5;" placeholder="Título (Linha 1)&#10;Corpo (Linhas seguintes)&#10;&#10;Use *negrito* e _itálico_ no corpo.&#10;Linha vazia separa slides. 1º bloco = capa."></textarea>'+
             '<button onclick="carApplyBatch()" style="display:block;width:100%;margin-top:10px;padding:12px 0;background:linear-gradient(90deg,#ff1b5e,#c1275f);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;">Aplicar texto</button>'+
             '<button onclick="carParaReels()" title="Pega o texto deste carrossel e gera um roteiro de Reels 10S" style="display:block;width:100%;margin-top:8px;padding:11px 0;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.45);border-radius:10px;color:#a78bfa;font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;">🎬 Virar Reels 10S</button>'+
             '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;margin-bottom:18px;">1ª linha = título · restante = corpo · 1º bloco = capa</div>'+
