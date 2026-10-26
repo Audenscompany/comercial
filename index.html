@@ -31992,7 +31992,7 @@ function carRenderBanco(){
   if(!html)html='<div style="color:var(--muted);font-size:11px;padding:16px;text-align:center;">Nenhum título encontrado.</div>';
   box.innerHTML=html;
 }
-var _carState={slides:[],profile:{name:'',handle:'',verified:true,avatar:null},footerText:'Arrasta para o lado >',followBadge:true,coverSize:80,innerSize:86,bodySize:42,imgHeight:52};
+var _carState={slides:[],profile:{name:'',handle:'',verified:true,avatar:null,followers:''},footerText:'Arrasta para o lado >',followBadge:true,coverSize:80,innerSize:86,bodySize:42,imgHeight:52};
 var _carTargetSlide=-1,_carW=1080,_carH=1350;
 
 function _carLoadFont(id,href){if(!document.getElementById(id)){var l=document.createElement('link');l.id=id;l.rel='stylesheet';l.href=href;document.head.appendChild(l);}}
@@ -32207,7 +32207,58 @@ function _carDrawBody(ctx,slide,isLast){
   });
   _carDrawFooterPill(ctx,isLast);
 }
-function carDrawSlide(i){var s=_carState.slides[i];if(!s||!s._canvas)return;var ctx=s._canvas.getContext('2d');if(i===0)_carDrawCover(ctx,s);else _carDrawBody(ctx,s,i===_carState.slides.length-1);}
+// Palavra-chave do CTA = primeira palavra em CAIXA ALTA (ex.: ASSESSORIA, CARDÁPIO, PLANILHA)
+function _carExtractKeyword(txt){
+  var m=String(txt||'').match(/\b([A-ZÁÂÃÀÉÊÍÓÔÕÜÚÇ]{3,})\b/);
+  return m?m[1]:'ASSESSORIA';
+}
+// Slide de CTA (último slide): headline + card "Seguir" (seu perfil) + mock de comentário com a palavra-chave
+function _carDrawCTA(ctx,slide){
+  ctx.fillStyle='#0e0e10';ctx.fillRect(0,0,_carW,_carH);
+  var pad=44;
+  var pillBottom=(typeof _carDrawProfilePillBody==='function')?_carDrawProfilePillBody(ctx,pad,116):160;
+  // Headline (texto do CTA)
+  var tit=String(slide.title||'').replace(/\*\*?([^*\n]+)\*\*?/g,'$1').replace(/_([^_\n]+)_/g,'$1')||'Comenta e eu te respondo';
+  var fs=64,lines;
+  ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  while(true){ctx.font='700 '+fs+'px Poppins';lines=_carWL(ctx,tit,_carW-150);if(lines.length<=4||fs<=44)break;fs-=4;}
+  var lh=Math.round(fs*1.2),ty=pillBottom+110;
+  ctx.fillStyle='#fff';
+  lines.forEach(function(ln,i){ctx.fillText(ln,_carW/2,ty+lh*i+fs*0.8);});
+  var y=ty+lines.length*lh+70;
+  var kw=_carExtractKeyword(tit);
+  // ---- CARD SEGUIR (perfil) ----
+  var fcx=70,fcw=_carW-140,fch=160,fcy=y;
+  _carRR(ctx,fcx,fcy,fcw,fch,30);ctx.fillStyle='#fff';ctx.fill();
+  var avx=fcx+34+50,avcy=fcy+fch/2;
+  _carDrawAR(ctx,avx,avcy,50);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  var tx=avx+50+30;
+  var handle=(_carState.profile.handle||'@lucasramong_').replace(/^@/,'');
+  ctx.fillStyle='#111';ctx.font='700 36px Poppins';ctx.fillText(handle,tx,fcy+60);
+  if(_carState.profile.verified)_carDrawVerified(ctx,tx+ctx.measureText(handle).width+26,fcy+49,15);
+  ctx.fillStyle='#8e8e93';ctx.font='400 28px Poppins';ctx.fillText(_carState.profile.name||'Lucas Ramon',tx,fcy+100);
+  var fol=(_carState.profile.followers||'').trim();
+  if(fol){ctx.fillStyle='#111';ctx.font='700 28px Poppins';var fw=ctx.measureText(fol).width;ctx.fillText(fol,tx,fcy+138);ctx.fillStyle='#8e8e93';ctx.font='400 28px Poppins';ctx.fillText(' seguidores',tx+fw+8,fcy+138);}
+  var bw=210,bh=74,bx=fcx+fcw-bw-34,by=fcy+(fch-bh)/2;
+  _carRR(ctx,bx,by,bw,bh,16);ctx.fillStyle='#0095f6';ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='700 32px Poppins';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('Seguir',bx+bw/2,by+bh/2+2);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  // ---- CARD COMENTÁRIO (mock) ----
+  var ccx=70,ccw=_carW-140,cch=200,ccy=fcy+fch+56;
+  _carRR(ctx,ccx,ccy,ccw,cch,30);ctx.fillStyle='#fff';ctx.fill();
+  ctx.fillStyle='#111';ctx.font='700 32px Poppins';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  ctx.fillText('Comentários',ccx+ccw/2,ccy+52);
+  ctx.strokeStyle='#e8e8e8';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(ccx+26,ccy+76);ctx.lineTo(ccx+ccw-26,ccy+76);ctx.stroke();
+  var ix=ccx+28,ih=78,iy=ccy+cch-ih-28,iw=ccw-56;
+  _carRR(ctx,ix,iy,iw,ih,ih/2);ctx.fillStyle='#f1f1f3';ctx.fill();
+  var sa=ix+26;_carDrawAR(ctx,sa,iy+ih/2,24);
+  ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.fillStyle='#111';ctx.font='700 32px Poppins';ctx.fillText(kw,sa+24+22,iy+ih/2+2);
+  ctx.fillStyle='#0095f6';ctx.font='700 30px Poppins';ctx.textAlign='right';ctx.fillText('Publicar',ix+iw-26,iy+ih/2+2);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+}
+function carDrawSlide(i){var s=_carState.slides[i];if(!s||!s._canvas)return;var ctx=s._canvas.getContext('2d');var _last=_carState.slides.length-1;if(i===0)_carDrawCover(ctx,s);else if(i===_last&&_last>0&&_carState.followBadge)_carDrawCTA(ctx,s);else _carDrawBody(ctx,s,i===_last);}
 function carDrawAll(){_carState.slides.forEach(function(_,i){carDrawSlide(i);});}
 
 function carEnquadrarModal(idx){
@@ -32416,7 +32467,7 @@ function carSaveSession(){
     });
     var _legEl=document.getElementById('car-legenda');
     var _temaEl=document.getElementById('car-tema');
-    var sess={v:2,savedAt:Date.now(),slides:slides,profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified},footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,avatarData:avatarData,legenda:_legEl?_legEl.value:'',tema:_temaEl?_temaEl.value:''};
+    var sess={v:2,savedAt:Date.now(),slides:slides,profile:{name:_carState.profile.name,handle:_carState.profile.handle,verified:_carState.profile.verified,followers:_carState.profile.followers||''},footerText:_carState.footerText,followBadge:_carState.followBadge,coverSize:_carState.coverSize,innerSize:_carState.innerSize,bodySize:_carState.bodySize,imgHeight:_carState.imgHeight,avatarData:avatarData,legenda:_legEl?_legEl.value:'',tema:_temaEl?_temaEl.value:''};
     localStorage.setItem('audens_car_session',JSON.stringify(sess));
   }catch(e){console.warn('carSaveSession error:',e);}
 }
@@ -32424,7 +32475,7 @@ async function carRestoreSession(){
   try{
     var raw=localStorage.getItem('audens_car_session');if(!raw)return false;
     var sess=JSON.parse(raw);if(!sess||!sess.slides||!sess.slides.length||sess.v<2)return false;
-    if(sess.profile){_carState.profile.name=sess.profile.name||_carState.profile.name;_carState.profile.handle=sess.profile.handle||_carState.profile.handle;if(sess.profile.verified!==undefined)_carState.profile.verified=sess.profile.verified;}
+    if(sess.profile){_carState.profile.name=sess.profile.name||_carState.profile.name;_carState.profile.handle=sess.profile.handle||_carState.profile.handle;if(sess.profile.verified!==undefined)_carState.profile.verified=sess.profile.verified;if(sess.profile.followers!==undefined)_carState.profile.followers=sess.profile.followers;}
     if(sess.footerText!==undefined)_carState.footerText=sess.footerText;
     if(sess.followBadge!==undefined)_carState.followBadge=sess.followBadge;
     if(sess.coverSize)_carState.coverSize=sess.coverSize;
@@ -32461,6 +32512,7 @@ async function carInitPage(){
   if(typeof CU!=='undefined'&&CU&&!_carState.profile.name){_carState.profile.name=CU.name||'Lucas Siqueira';_carState.profile.handle='@'+(CU.name||'lucas').toLowerCase().replace(/\s+/g,'');}
   var pn=document.getElementById('car-pname');if(pn)pn.value=_carState.profile.name;
   var ph=document.getElementById('car-phandle');if(ph)ph.value=_carState.profile.handle;
+  var pf=document.getElementById('car-pfollowers');if(pf)pf.value=_carState.profile.followers||'';
   if(restored){
     var bt2=document.getElementById('car-batch');if(bt2)bt2.value=_carState.slides.map(function(s){return s.title+(s.body?'\n'+s.body:'');}).join('\n\n');
     carRebuildGrid();
@@ -33168,6 +33220,7 @@ function renderCarrossel(){
             '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Perfil</div>'+
             '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Nome</label><input type="text" id="car-pname" value="" oninput="_carState.profile.name=this.value;carDrawAll();carScheduleSave();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
             '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">@Arroba</label><input type="text" id="car-phandle" value="" oninput="_carState.profile.handle=this.value;carDrawAll();carScheduleSave();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
+            '<div style="margin-bottom:10px;"><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Seguidores (aparece no card "Seguir" do último slide)</label><input type="text" id="car-pfollowers" value="" placeholder="ex: 30,7 mil" oninput="_carState.profile.followers=this.value;carDrawAll();carScheduleSave();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
             '<div id="car-avatar-drop" onclick="document.getElementById(\'car-file-avatar\').click()" style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px dashed var(--border2,#333);border-radius:12px;padding:10px 12px;cursor:pointer;margin-bottom:8px;">'+
               '<div id="car-avatar-prev" style="width:46px;height:46px;border-radius:50%;background:#26262b center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>'+
               '<div style="font-size:12px;color:var(--muted);">Clique p/ foto de perfil<br><span style="font-size:10.5px;">aparece na capa com anel gradiente</span></div>'+
@@ -33216,7 +33269,7 @@ function renderCarrossel(){
             _carSliderRow('car-bs','Corpo','bodySize',28,60)+
             '<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;margin-top:16px;">Layout</div>'+
             _carSliderRow('car-ih','Altura da imagem %','imgHeight',30,80)+
-            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--white);margin-top:10px;margin-bottom:10px;"><input type="checkbox" id="car-follow" checked onchange="_carState.followBadge=this.checked;carDrawAll();" style="accent-color:var(--accent);width:15px;height:15px;"> Selo "Siga" no último slide</label>'+
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--white);margin-top:10px;margin-bottom:10px;"><input type="checkbox" id="car-follow" checked onchange="_carState.followBadge=this.checked;carDrawAll();" style="accent-color:var(--accent);width:15px;height:15px;"> Card "Seguir" + comentário no último slide (CTA)</label>'+
             '<div><label style="display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;">Texto do rodapé</label><input type="text" id="car-footer-txt" value="Arrasta para o lado >" oninput="_carState.footerText=this.value;carDrawAll();" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;"></div>'+
           '</div>'+
         '</div>'+
