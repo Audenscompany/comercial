@@ -10583,6 +10583,21 @@ async function generateContratoDocx(dados){
     // Só concatena no forma_pagamento se o modelo NÃO tiver a cláusula estruturada (evita duplicar)
     if(adicTxt && !_hasStructAdic) formaPagamento+=adicTxt;
 
+    // ── 2ª LOJA: cláusula no MESMO contrato (um documento abrange as duas unidades) ──
+    var _seg=dados.segundaLoja;
+    var _temSeg=!!(_seg&&(_seg.cnpj||_seg.empresa||_seg.contrato||_seg.mensalidade));
+    var _fp2='';
+    if(_temSeg){
+      var _segTV=_seg.tipoValor||dados.tipoValor;
+      if(_segTV==='mmr'){
+        _fp2='o valor mensal de R$ '+fmtMoeda(_seg.mensalidade||0)+', durante o prazo de '+(_seg.duracao||dados.duracaoMeses)+' meses';
+        if((_seg.contrato||0)>0) _fp2+=', totalizando R$ '+fmtMoeda(_seg.contrato);
+        _fp2+='.';
+      } else {
+        _fp2='o valor total de R$ '+fmtMoeda(_seg.contrato||0)+', com vigência de '+(_seg.duracao||dados.duracaoMeses)+' meses.';
+      }
+    }
+
     doc.render({
       nome_cliente:_nomeContratoLimpo(dados.nomeCliente)||'',
       cnpj_cliente:_cnpjLimpo(dados.cnpjCliente)||'_____________________',
@@ -10594,7 +10609,11 @@ async function generateContratoDocx(dados){
       temAdicionais:_temAdic,
       adicionaisSel:_adicSel,
       clausulaMidia:_temAdic?'1.3':'1.2',
-      mmr:dados.tipoValor==='mmr'
+      mmr:dados.tipoValor==='mmr',
+      temSegundaLoja:_temSeg,
+      nome_cliente_2:_temSeg?(_nomeContratoLimpo(_seg.nome)||''):'',
+      cnpj_cliente_2:_temSeg?(_cnpjLimpo(_seg.cnpj)||'_____________________'):'',
+      forma_pagamento_2:_fp2
     });
 
     var out=doc.getZip().generate({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
@@ -10825,6 +10844,21 @@ function saveFollowup(){
     var kk2=_fuMeeting.kanbanKey;
     var leadInfo=(kk2&&kanbanData[kk2])?kanbanData[kk2]:null;
     if(kk2) persistLeadCnpj(kk2, cnpj);
+    // ── 2ª LOJA: lê os campos UMA vez (vale pro contrato combinado e pro 2º registro) ──
+    var _seg2=null;
+    (function(){
+      var segFields=document.getElementById('fu-seg-loja-fields');
+      if(!segFields||segFields.style.display==='none')return;
+      var sC=((document.getElementById('fu-seg-cnpj')||{}).value||'').trim();
+      var sE=((document.getElementById('fu-seg-empresa')||{}).value||'').trim();
+      var sP=(document.getElementById('fu-seg-plano')||{}).value||plano;
+      var sD=parseInt((document.getElementById('fu-seg-duracao')||{}).value||duracao,10)||duracao;
+      var sCt=parseFloat((document.getElementById('fu-seg-contrato')||{}).value||0)||0;
+      var sM=parseFloat((document.getElementById('fu-seg-mensalidade')||{}).value||0)||0;
+      if(!sE&&!sC&&!sCt&&!sM)return; // nada preenchido — sem 2ª loja
+      _seg2={cnpj:sC,empresa:sE,plano:sP,duracao:sD,contrato:sCt,mensalidade:sM,tipoValor:tipoValor,
+        nome:sE||((leadInfo&&leadInfo.empresa)?leadInfo.empresa+' (2ª loja)':_fuMeeting.nome+' (2ª loja)')};
+    })();
     generateContratoDocx({
       plano:plano,
       nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
@@ -10841,7 +10875,8 @@ function saveFollowup(){
       vencimento:vencimento,
       closer:_fuMeeting.responsavel||'',
       sdrNome:_fuMeeting.sdrName||'',
-      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||'')
+      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+      segundaLoja:_seg2
     });
     // Cria cobrança no Asaas (se API key configurada)
     (function(kk2,leadInfo,vd){
@@ -10883,79 +10918,36 @@ function saveFollowup(){
         ativo:true
       }).catch(function(e){console.warn('Firebase contrato:',e);});
     })();
-    // ── 2ª LOJA: registra segunda venda se o toggle estiver ativo ──────────
-    (function(){
-      var segFields = document.getElementById('fu-seg-loja-fields');
-      if(!segFields || segFields.style.display==='none') return;
-      var segCnpj      = (document.getElementById('fu-seg-cnpj')?document.getElementById('fu-seg-cnpj').value.trim():'');
-      var segEmpresa   = (document.getElementById('fu-seg-empresa')?document.getElementById('fu-seg-empresa').value.trim():'');
-      var segPlano     = (document.getElementById('fu-seg-plano')?document.getElementById('fu-seg-plano').value:'') || plano;
-      var segDuracao   = parseInt(document.getElementById('fu-seg-duracao')?document.getElementById('fu-seg-duracao').value:duracao,10)||duracao;
-      var segContrato  = parseFloat(document.getElementById('fu-seg-contrato')?document.getElementById('fu-seg-contrato').value:0)||0;
-      var segMens      = parseFloat(document.getElementById('fu-seg-mensalidade')?document.getElementById('fu-seg-mensalidade').value:0)||0;
-      if(!segCnpj && !segContrato){ return; } // nada preenchido — ignora
-      var segNome = segEmpresa || (leadInfo&&leadInfo.empresa?leadInfo.empresa+' (2)':_fuMeeting.nome+' (2)');
-      // Gera contrato .docx para a 2ª loja (abre nova aba/download)
-      setTimeout(function(){
-        generateContratoDocx({
-          plano:segPlano,
-          nomeCliente:segNome,
-          cnpjCliente:segCnpj,
-          telefone:_fuMeeting.tel,
-          duracaoMeses:segDuracao,
-          dataInicio:dataInicio,
-          tipoValor:tipoValor,
-          valorTotal:segContrato,
-          valorParcela:segMens,
-          frequencia:frequencia,
-          vencimento:vencimento,
-          closer:_fuMeeting.responsavel||'',
-          sdrNome:_fuMeeting.sdrName||'',
-          origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||'')
-        });
-      }, 800); // pequeno delay para o primeiro docx terminar
-      // Registra na planilha de Clientes
+    // ── 2ª LOJA: registra a 2ª venda no CRM (o contrato .docx já saiu COMBINADO acima) ──
+    if(_seg2){
+      var segNome=_seg2.nome, segPlano=_seg2.plano, segDuracao=_seg2.duracao, segContrato=_seg2.contrato, segMens=_seg2.mensalidade, segCnpj=_seg2.cnpj;
+      // Registra na planilha de Clientes (computa a 2ª venda em todo o sistema)
       appendClienteRow({
-        nomeCliente:segNome,
-        plano:segPlano,
-        duracao:segDuracao,
-        dataInicio:dataInicio,
-        tipoValor:tipoValor,
-        contrato:segContrato,
-        mensalidade:segMens,
+        nomeCliente:segNome, plano:segPlano, duracao:segDuracao, dataInicio:dataInicio,
+        tipoValor:tipoValor, contrato:segContrato, mensalidade:segMens,
         origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
-        closer:_fuMeeting.responsavel||'',
-        sdr:_fuMeeting.sdr||''
+        closer:_fuMeeting.responsavel||'', sdr:_fuMeeting.sdr||''
       });
-      // Cria cobrança Asaas para a 2ª loja
+      // Cobrança Asaas da 2ª loja
       setTimeout(function(){
         criarCobrancaAsaas({nome:segNome,telefone:_fuMeeting.tel,cnpj:segCnpj},
           {plano:segPlano,duracao:segDuracao,dataInicio:dataInicio,tipoValor:tipoValor,
            contrato:segContrato,mensalidade:segMens,cnpj:segCnpj}, null);
-      }, 1200);
-      // Salva contrato no Firebase
+      }, 1000);
+      // Salva o 2º contrato no Firebase (pra comissão/MRR baterem com as 2 lojas)
       var _p2=segPlano==='starter'?'Plano Starter':segPlano==='premium'?'Plano Premium':segPlano==='elite'?'Plano Elite':'Plano 3';
       var _suf2=segDuracao>=6?' - Semestral':segDuracao>=3?' - Trimestral':' - Mensal';
       var _mrr2=tipoValor==='tcv'?Math.round(segContrato/segDuracao):(segMens||segContrato);
       var _tcv2=tipoValor==='tcv'?segContrato:(_mrr2*segDuracao);
       saveContrato(null,{
-        cliente:segNome,
-        dataInicio:dataInicio,
-        valorMes:_mrr2,
-        valorVendido:_tcv2,
-        planoDuracao:segDuracao,
-        plano:_p2+_suf2,
+        cliente:segNome, dataInicio:dataInicio, valorMes:_mrr2, valorVendido:_tcv2,
+        planoDuracao:segDuracao, plano:_p2+_suf2,
         gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',
         origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
-        closer:_fuMeeting.responsavel||'',
-        sdr:_fuMeeting.sdr||'',
-        kanbanKey:'',
-        ativo:true,
-        _segundaLoja:true,
-        _cnpj:segCnpj,
-        _meetingId:fid
+        closer:_fuMeeting.responsavel||'', sdr:_fuMeeting.sdr||'',
+        kanbanKey:'', ativo:true, _segundaLoja:true, _cnpj:segCnpj, _meetingId:fid
       }).catch(function(e){console.warn('Firebase contrato 2ª loja:',e);});
-    })();
+    }
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
 }
