@@ -32443,8 +32443,8 @@ async function carGerarLegenda(){
   var sysPt='Você é um especialista em copywriting para Instagram de hamburguerias e delivery no Brasil. Escreva legendas de alta conversão, com voz de autoridade e CTA estratégico. Regras: (1) Comece com um gancho forte de 1 linha. (2) Desenvolva em 2-4 parágrafos curtos. (3) Termine com CTA: "Comenta PALAVRA para receber [benefício]". (4) Adicione 8-12 hashtags no final. (5) Use emojis estrategicamente. (6) Tom: direto, confiante.';
   var userMsg='Conteúdo dos slides:\n\n'+conteudo+'\n\nGere a legenda completa para o Instagram.';
   try{
-    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1500,system:sysPt,messages:[{role:'user',content:userMsg}]})});
-    if(!resp.ok)throw new Error('Claude '+resp.status);
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':claudeKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,system:sysPt,messages:[{role:'user',content:userMsg}]})});
+    if(!resp.ok){var _et='';try{_et=(await resp.json()).error.message;}catch(e){}throw new Error('Claude '+resp.status+(_et?' — '+_et:''));}
     var data=await resp.json();
     var text=(data.content&&data.content[0]&&data.content[0].text)||'';
     var el=document.getElementById('car-legenda');if(el)el.value=text.trim();
@@ -32635,7 +32635,7 @@ async function _carBuildImgPrompt(slide,idx){
   try{
     var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'x-api-key':ck,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,system:sysPt,messages:[{role:'user',content:userMsg}]})});
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:600,system:sysPt,messages:[{role:'user',content:userMsg}]})});
     var d=await r.json();
     if(d.error||!d.content||!d.content[0])throw new Error('Claude fallback');
     var text=d.content[0].text.trim();
