@@ -33308,7 +33308,7 @@ var _MOT_BANCO = [{"tema": "Processo · consistência", "frase": "Não é sorte.
 
 // ==================== MOTIVACIONAL (cards de frase) ====================
 var _MOT_W=1080,_MOT_H=1350;
-var _motState={frase:'',profile:{name:'Lucas Ramon',handle:'@lucasramong_',verified:true,avatar:null},bg:null,fraseSize:66,overlay:0.5,theme:'escuro',font:'Poppins',textColor:'',_canvas:null};
+var _motState={frase:'',profile:{name:'Lucas Ramon',handle:'@lucasramong_',verified:true,avatar:null},bg:null,fraseSize:66,overlay:0.5,theme:'escuro',font:'Helvetica Neue',textColor:'',_canvas:null};
 // Envolve a seleção de um textarea com um marcador (reutilizado por atalhos Cmd+B / Cmd+I)
 function _taWrapSel(ta,mark){
   if(!ta)return;var s=ta.selectionStart,e=ta.selectionEnd,v=ta.value;
@@ -33320,7 +33320,13 @@ function _taWrapSel(ta,mark){
 function motToast(m){var t=document.getElementById('mot-toast');if(!t)return;t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2400);}
 function _motEnsureCanvas(){var c=_motState._canvas;if(!c){c=document.createElement('canvas');c.width=_MOT_W;c.height=_MOT_H;_motState._canvas=c;}return c;}
 function _motCheck(ctx,cx,cy,r){ctx.save();ctx.fillStyle='#1d9bf0';ctx.beginPath();var spikes=8,outer=r,inner=r*0.82;for(var i=0;i<spikes*2;i++){var ang=(Math.PI/spikes)*i-Math.PI/2;var rad=(i%2===0)?outer:inner;var x=cx+Math.cos(ang)*rad,y=cy+Math.sin(ang)*rad;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.closePath();ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=r*0.22;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(cx-r*0.42,cy);ctx.lineTo(cx-r*0.08,cy+r*0.36);ctx.lineTo(cx+r*0.46,cy-r*0.34);ctx.stroke();ctx.restore();}
-function _motAvatar(ctx,ax,ay,r){var p=_motState.profile;var gr=ctx.createLinearGradient(ax-r,ay-r,ax+r,ay+r);gr.addColorStop(0,'#ffa000');gr.addColorStop(.5,'#ff1b5e');gr.addColorStop(1,'#8a2be2');if(p.avatar){ctx.save();ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.closePath();ctx.clip();_carCF(ctx,p.avatar,ax-r,ay-r,r*2,r*2,0,0,1);ctx.restore();ctx.strokeStyle=gr;ctx.lineWidth=4;ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.stroke();}else{ctx.fillStyle='#26262b';ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=gr;ctx.lineWidth=4;ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#fff';ctx.font='700 '+Math.round(r*0.9)+'px Poppins';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((p.name||'L').trim().charAt(0).toUpperCase(),ax,ay+2);}}
+function _motAvatar(ctx,ax,ay,r){var p=_motState.profile;var isLight=_motState.theme==='claro';var fam=_motState.font||'Poppins';
+  ctx.save();ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.closePath();ctx.clip();
+  if(p.avatar){_carCF(ctx,p.avatar,ax-r,ay-r,r*2,r*2,0,0,1);}
+  else{ctx.fillStyle=isLight?'#d4d8dd':'#3a3a40';ctx.fillRect(ax-r,ay-r,r*2,r*2);ctx.fillStyle=isLight?'#8a8f98':'#c9c9cf';ctx.font='700 '+Math.round(r*0.95)+'px '+fam;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((p.name||'L').trim().charAt(0).toUpperCase(),ax,ay+2);ctx.textAlign='left';ctx.textBaseline='alphabetic';}
+  ctx.restore();
+  // borda fininha neutra (como foto de perfil real do X), SEM anel de story
+  ctx.strokeStyle=isLight?'rgba(0,0,0,0.08)':'rgba(255,255,255,0.12)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.stroke();}
 function motDraw(){
   var c=_motEnsureCanvas();var ctx=c.getContext('2d');
   var isLight=_motState.theme==='claro';
@@ -33439,7 +33445,7 @@ function renderMotivacional(){
             '</div></div>'+
           '<div style="margin-bottom:12px;"><label style="'+lbl+'">Fonte</label>'+
             '<select id="mot-font" onchange="motSetFont(this.value)" style="'+inp+'cursor:pointer;">'+
-              ['Poppins','Barlow Condensed','Georgia','Times New Roman','Courier New','Impact','Arial'].map(function(f){return '<option value="'+f+'">'+f+'</option>';}).join('')+
+              [['Helvetica Neue','Helvetica (tweet nativo)'],['Arial','Arial'],['Poppins','Poppins (arredondada)'],['Barlow Condensed','Barlow Condensed'],['Georgia','Georgia (serifada)'],['Times New Roman','Times'],['Courier New','Courier'],['Impact','Impact']].map(function(f){return '<option value="'+f[0]+'">'+f[1]+'</option>';}).join('')+
             '</select></div>'+
           '<div style="margin-bottom:12px;"><label style="'+lbl+'">Cor do texto</label>'+
             '<div style="display:flex;align-items:center;gap:8px;">'+
