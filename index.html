@@ -33347,8 +33347,14 @@ function motDraw(){
   ctx.font='400 33px '+fam;ctx.fillStyle=subColor;ctx.fillText(p.handle||'',tx,cy+44);
   var fs=_motState.fraseSize||66;ctx.textAlign='left';ctx.fillStyle=txt;
   var mX=150,maxW=_MOT_W-mX*2;var frase=(_motState.frase||'').replace(/^[\"“”]+|[\"“”]+$/g,'');
-  var runs=_carParseRich(frase);var wlines=_carWrapRich(ctx,runs,maxW,fs,fam);
-  var lineH=Math.round(fs*1.28);var startY=600;
+  // respeita as quebras de linha digitadas: cada linha do textarea é tratada separadamente
+  var wlines=[];
+  frase.split('\n').forEach(function(pt){
+    if(pt.trim()===''){wlines.push([]);return;}
+    _carWrapRich(ctx,_carParseRich(pt),maxW,fs,fam).forEach(function(l){wlines.push(l);});
+  });
+  var lineH=Math.round(fs*1.28);
+  var startY=Math.max(560,Math.round((_MOT_H-wlines.length*lineH)/2)); // centraliza verticalmente conforme a qtd de linhas
   if(!isLight){ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=20;}
   wlines.forEach(function(line,i){
     var x=mX,yy=startY+lineH*i+fs;
@@ -33396,7 +33402,7 @@ function motEnviarCalendario(){if(!_motState.frase){motToast('Escolha ou escreva
 async function _motConfirmarCalendario(){var dtEl=document.getElementById('_motCalDt');if(!dtEl||!dtEl.value){motToast('Escolha uma data.');return;}var dt=dtEl.value;var btn=document.getElementById('_motCalBtn');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Salvando...';}try{motDraw();var blob=await new Promise(function(res){_motEnsureCanvas().toBlob(function(b){res(b);},'image/png');});var legEl=document.getElementById('mot-legenda');var leg=legEl?legEl.value.trim():'';var ref=fbDb.ref('instagram/calendario').push();var eventId=ref.key;await ref.set({dataHora:dt,tipo:'imagem',status:'rascunho',legenda:leg,slidesCount:1,slideTitles:[(_motState.frase||'').slice(0,60)],origem:'motivacional',localKey:eventId,resultado:{},erro:''});if(typeof _carSaveIDB==='function')await _carSaveIDB(eventId,[blob],leg);var m=document.getElementById('_motCalModal');if(m)m.remove();var dtFmt=new Date(dt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});motToast('✅ Agendado para '+dtFmt+'! Abrindo calendário...');setTimeout(function(){showPage('cal-conteudo');},1200);}catch(e){motToast('Erro: '+e.message);if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Agendar';}}}
 function motInitPage(){var wrap=document.getElementById('mot-canvas-wrap');if(!wrap)return;var c=_motEnsureCanvas();c.style.width='100%';c.style.maxWidth='360px';c.style.borderRadius='14px';c.style.boxShadow='0 10px 40px rgba(0,0,0,0.5)';c.style.display='block';c.style.margin='0 auto';wrap.innerHTML='';wrap.appendChild(c);try{if(typeof _carState!=='undefined'&&_carState&&_carState.profile&&_carState.profile.avatar&&!_motState.profile.avatar)_motState.profile.avatar=_carState.profile.avatar;}catch(e){}
   if(!_motState.profile.avatar){try{var _sa=localStorage.getItem('mot_avatar');if(_sa)_motAplicaAvatarUrl(_sa);}catch(e){}
-    try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/motAvatar').once('value').then(function(s){var v=s.val();if(v&&!_motState.profile.avatar)_motAplicaAvatarUrl(v);});}catch(e){}}var g=function(id){return document.getElementById(id);};if(g('mot-name'))g('mot-name').value=_motState.profile.name;if(g('mot-handle'))g('mot-handle').value=_motState.profile.handle;if(g('mot-verified'))g('mot-verified').checked=_motState.profile.verified;if(g('mot-fs'))g('mot-fs').value=_motState.fraseSize;if(g('mot-ov'))g('mot-ov').value=Math.round((_motState.overlay||0.5)*100);if(g('mot-fs-val'))g('mot-fs-val').textContent=_motState.fraseSize;if(g('mot-ov-val'))g('mot-ov-val').textContent=Math.round((_motState.overlay||0.5)*100)+'%';if(g('mot-font'))g('mot-font').value=_motState.font||'Poppins';if(g('mot-color')&&_motState.textColor)g('mot-color').value=_motState.textColor;if(typeof motSetTheme==='function')motSetTheme(_motState.theme||'escuro');motRenderBanco();if(!_motState.frase)motLoadFrase(0);else{if(g('mot-frase'))g('mot-frase').value=_motState.frase;}if(typeof _motUpdateAvatarPrev==='function')_motUpdateAvatarPrev();if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){motDraw();});}motDraw();}
+    try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/motAvatar').once('value').then(function(s){var v=s.val();if(v&&!_motState.profile.avatar)_motAplicaAvatarUrl(v);});}catch(e){}}var g=function(id){return document.getElementById(id);};if(g('mot-name'))g('mot-name').value=_motState.profile.name;if(g('mot-handle'))g('mot-handle').value=_motState.profile.handle;if(g('mot-verified'))g('mot-verified').checked=_motState.profile.verified;if(g('mot-fs'))g('mot-fs').value=_motState.fraseSize;if(g('mot-ov'))g('mot-ov').value=Math.round((_motState.overlay||0.5)*100);if(g('mot-fs-val'))g('mot-fs-val').textContent=_motState.fraseSize;if(g('mot-ov-val'))g('mot-ov-val').textContent=Math.round((_motState.overlay||0.5)*100)+'%';if(g('mot-font'))g('mot-font').value=_motState.font||'Poppins';if(g('mot-color')&&_motState.textColor)g('mot-color').value=_motState.textColor;if(typeof motSetTheme==='function')motSetTheme(_motState.theme||'escuro');if(g('mot-frase'))g('mot-frase').value=_motState.frase||'';if(typeof _motUpdateAvatarPrev==='function')_motUpdateAvatarPrev();if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){motDraw();});}motDraw();}
 function renderMotivacional(){
   var inp='width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;';
   var lbl='display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;';
@@ -33406,9 +33412,7 @@ function renderMotivacional(){
     '<div style="display:flex;gap:20px;align-items:flex-start;">'+
       '<div style="width:360px;min-width:360px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;">'+
         '<div style="padding:18px 20px 24px;overflow-y:auto;max-height:calc(100vh - 200px);">'+
-          '<div style="'+sec+'margin-top:0;">Banco de frases · 30 dias</div>'+
-          '<div id="mot-banco-list"></div>'+
-          '<div style="'+sec+'">Frase do card</div>'+
+          '<div style="'+sec+'margin-top:0;">Frase do card</div>'+
           '<textarea id="mot-frase" oninput="motUpdate()" onkeydown="motFraseKey(event)" style="'+inp+'min-height:80px;resize:vertical;line-height:1.4;" placeholder="Escreva a frase... (⌘B negrito · ⌘I itálico · ou *negrito* _itálico_)"></textarea>'+
           '<div style="font-size:10px;color:var(--muted);margin:-4px 0 4px;">Selecione e use <b>⌘B</b> (negrito) ou <b>⌘I</b> (itálico).</div>'+
           '<div style="'+sec+'">Perfil</div>'+
