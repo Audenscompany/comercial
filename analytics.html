@@ -505,16 +505,17 @@ function renderRaioX(){
   function isRX(sid){ var sv=S[sid]||{}; if(String(sv.page||'').indexOf('raio-x')>=0||sv.variante==='raio-x') return true; var ev=E[sid]; if(ev){ for(var k in ev){ var e=ev[k]||{}; if(e.e==='lp_view'&&e.p&&e.p.variante==='raio-x') return true; } } return false; }
   function evOf(sid){ var o={n:{},etapa:0,rest:'',nota:'',faixa:'',oferta:'',notaRX:''}; var ev=E[sid]; if(ev){ for(var k in ev){ var e=ev[k]||{}, p=e.p||{}; if(!e.e) continue; o.n[e.e]=(o.n[e.e]||0)+1;
       if(e.e==='analysis_step'&&p.etapa) o.etapa=Math.max(o.etapa,+p.etapa||0);
-      if(e.e==='restaurant_selected'&&p.restaurante) o.rest=p.restaurante;
+      if((e.e==='restaurant_selected'||e.e==='capture_view')&&p.restaurante) o.rest=p.restaurante;
       if(e.e==='preview_view'){ if(p.restaurante) o.rest=p.restaurante; if(p.nota_google) o.nota=p.nota_google; }
       if(e.e==='lead_submit'){ if(p.faixa) o.faixa=p.faixa; if(p.nota!=null) o.notaRX=p.nota; }
       if(e.e==='club_click') o.oferta=o.oferta?o.oferta+' + Club':'Club';
       if(e.e==='analise_click') o.oferta=o.oferta?o.oferta+' + Análise':'Análise'; } } return o; }
   function aggWin(a,b){
-    var r={vis:0,busca:0,escolheu:0,completa:0,previa:0,form:0,leads:0,qualif:0,result:0,club:0,analise:0,oferta:0,etapas:[0,0,0,0,0,0,0],dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{},fx:{},rows:[]};
+    var r={vis:0,busca:0,escolheu:0,captura:0,completa:0,previa:0,form:0,perg:0,leads:0,qualif:0,result:0,club:0,analise:0,oferta:0,etapas:[0,0,0,0,0,0,0],dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{},fx:{},rows:[]};
     for(var sid in S){ var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<a||t>=b) continue; if(!isRX(sid)) continue;
       var x=evOf(sid); r.vis++;
-      if(x.n.search_start) r.busca++; if(x.n.restaurant_selected) r.escolheu++; if(x.n.analysis_complete) r.completa++;
+      if(x.n.search_start) r.busca++; if(x.n.restaurant_selected||x.n.capture_view) r.escolheu++; if(x.n.capture_view) r.captura++; if(x.n.analysis_complete) r.completa++;
+      if(x.n.questions_complete||x.n.result_view) r.perg++;
       if(x.n.preview_view) r.previa++; if(x.n.form_start) r.form++;
       var isLead=!!(x.n.lead_submit||sv.converted); if(isLead) r.leads++; if(x.n.qualified_lead) r.qualif++;
       if(x.n.result_view) r.result++; if(x.n.club_click) r.club++; if(x.n.analise_click) r.analise++; if(x.n.club_click||x.n.analise_click) r.oferta++;
@@ -523,7 +524,7 @@ function renderRaioX(){
       var src=(sv.utm_source||'').trim()||(sv.ref?dominio(sv.ref):'')||'direto';
       if(!r.srcMap[src]) r.srcMap[src]={sess:0,leads:0}; r.srcMap[src].sess++; if(isLead) r.srcMap[src].leads++;
       if(x.faixa){ if(!r.fx[x.faixa]) r.fx[x.faixa]={leads:0,club:0,analise:0}; r.fx[x.faixa].leads++; if(x.n.club_click) r.fx[x.faixa].club++; if(x.n.analise_click) r.fx[x.faixa].analise++; }
-      if(x.rest) r.rows.push({t:t,rest:x.rest,nota:x.nota,etapa:x.etapa,prev:!!x.n.preview_view,lead:isLead,notaRX:x.notaRX,oferta:x.oferta,src:src,dev:sv.device||''});
+      if(x.rest) r.rows.push({t:t,rest:x.rest,nota:x.nota,etapa:x.etapa,prev:!!x.n.preview_view,res:!!x.n.result_view,cap:!!x.n.capture_view,lead:isLead,notaRX:x.notaRX,oferta:x.oferta,src:src,dev:sv.device||''});
     }
     return r;
   }
@@ -533,7 +534,7 @@ function renderRaioX(){
   function DL(cur,prev){ if(prev==null) return ''; if(prev===0&&cur===0) return '<span class="dl flat">— <em>'+PREVLBL+'</em></span>'; if(prev===0) return '<span class="dl up">▲ novo</span>'; var d=Math.round((cur-prev)/prev*100),cls=d===0?'flat':(d>0?'up':'down'),ar=d>0?'▲':(d<0?'▼':'•'); return '<span class="dl '+cls+'">'+ar+' '+Math.abs(d)+'% <em>'+PREVLBL+'</em></span>'; }
   el('kpis').innerHTML =
     kpiD(KICO.users,'#7c3aed',DL(C.vis,P?P.vis:null),fmt(C.vis),'Visitantes') +
-    kpiD(KICO.quiz,'#4f46e5',DL(C.escolheu,P?P.escolheu:null),fmt(C.escolheu),'Analisaram uma loja') +
+    kpiD(KICO.quiz,'#4f46e5',DL(C.escolheu,P?P.escolheu:null),fmt(C.escolheu),'Escolheram uma loja') +
     kpiD(KICO.check,'#f59e0b',DL(C.previa,P?P.previa:null),fmt(C.previa),'Viram a prévia','p') +
     kpiD(KICO.id,'#14b8a6',DL(C.leads,P?P.leads:null),fmt(C.leads),'Leads') +
     kpiD(KICO.check,'#3AD07E',DL(C.qualif,P?P.qualif:null),fmt(C.qualif),'Leads R$40 mil+','g') +
@@ -542,10 +543,10 @@ function renderRaioX(){
   el('funnel').innerHTML = funnelHTML([
     {n:'Visitantes',sub:'Abriram o Raio-X',v:C.vis},
     {n:'Buscaram',sub:'Digitaram o nome da loja',v:C.busca},
-    {n:'Escolheram a loja',sub:'Começou a análise',v:C.escolheu},
+    {n:'Escolheram a loja',sub:'Viram a tela de contato',v:C.escolheu},
+    {n:'Viraram lead',sub:'Nome, WhatsApp, @ e faturamento',v:C.leads},
     {n:'Análise completa',sub:'Viram o mapa até o fim',v:C.completa},
-    {n:'Abriram as perguntas',sub:'Clicaram em Completar',v:C.form},
-    {n:'Viraram lead',sub:'Mandaram nome e WhatsApp',v:C.leads},
+    {n:'Responderam as 4 perguntas',sub:'Liberaram o relatório completo',v:C.perg},
     {n:'Clicaram numa oferta',sub:'Club ou Análise Estratégica',v:C.oferta}
   ], C.vis);
   el('sources').innerHTML = barsFrom(C.srcMap,'sess',C.vis) || '<div class="empty">Sem dados de origem ainda.</div>';
@@ -571,7 +572,7 @@ function renderRaioX(){
   (function(){ var rows=C.rows.sort(function(a,b){return b.t-a.t;}).slice(0,40);
     if(!rows.length){ el('adsDist').innerHTML='<div class="empty">Ninguém analisou uma loja neste período.</div>'; return; }
     el('adsDist').innerHTML='<table><thead><tr><th>Restaurante</th><th class="num">Nota Google</th><th>Até onde foi</th><th>Lead</th><th>Oferta</th><th>Origem</th><th class="num">Quando</th></tr></thead><tbody>'+
-      rows.map(function(r){ var ate=r.lead?'Relatório':(r.prev?'Prévia':(r.etapa?'Etapa '+r.etapa:'Escolheu a loja'));
+      rows.map(function(r){ var ate=r.res?'Relatório':(r.prev?'Prévia':(r.etapa?'Etapa '+r.etapa:(r.cap&&!r.lead?'Saiu no contato':'Escolheu a loja')));
         return '<tr><td>'+esc(r.rest)+'</td><td class="num">'+(r.nota?esc(String(r.nota).replace('.',',')):'—')+'</td><td>'+ate+'</td><td>'+(r.lead?'<span class="pill" style="background:rgba(37,211,102,.15);color:#25d366">Sim'+(r.notaRX!==''?' · '+r.notaRX+'/100':'')+'</span>':'<span style="color:var(--muted2)">não</span>')+'</td><td>'+(r.oferta?esc(r.oferta):'—')+'</td><td>'+esc(r.src)+'</td><td class="num">'+quando(r.t)+'</td></tr>'; }).join('')+'</tbody></table>';
   })();
   var ls=[]; for(var lk in L){ var lv=L[lk]||{}; var hay=[lv._source,lv.origem,lv.variante_lp].map(function(x){return String(x||'').toLowerCase();}).join(' '); if(hay.indexOf('raio-x')<0) continue; if((lv._createdAt||0)>=cut) ls.push(lv); }
