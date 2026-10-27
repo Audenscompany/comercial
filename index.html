@@ -32143,17 +32143,22 @@ function _carDrawFooterPill(ctx,isLast){
 // ===== Texto rico no canvas: *negrito*, _itálico_ e {#hex|cor por palavra} =====
 function _carParseRich(text){
   var s=String(text||'').replace(/\*\*(.+?)\*\*/g,'*$1*'); // **x** vira *x*
-  var runs=[],re=/(\{#[0-9a-fA-F]{3,8}\|[^}\n]+\}|\*[^*\n]+\*|_[^_\n]+_)/g,last=0,m;
+  return _parseRuns(s,{b:false,i:false,color:null});
+}
+// Parser RECURSIVO: um trecho pode ser negrito + itálico + cor ao mesmo tempo (aninhados)
+function _parseRuns(s,inh){
+  var runs=[],re=/(\{#[0-9a-fA-F]{3,8}\|[^}\n]*\}|\*[^*\n]+\*|_[^_\n]+_)/g,last=0,m;
   while((m=re.exec(s))){
-    if(m.index>last)runs.push({t:s.slice(last,m.index),b:false,i:false,color:null});
-    var tok=m[0];
-    if(tok.charAt(0)==='{'){var bar=tok.indexOf('|');runs.push({t:tok.slice(bar+1,-1),b:false,i:false,color:tok.slice(1,bar)});}
-    else if(tok.charAt(0)==='*')runs.push({t:tok.slice(1,-1),b:true,i:false,color:null});
-    else runs.push({t:tok.slice(1,-1),b:false,i:true,color:null});
+    if(m.index>last)runs.push({t:s.slice(last,m.index),b:inh.b,i:inh.i,color:inh.color});
+    var tok=m[0],inner,attr;
+    if(tok.charAt(0)==='{'){var bar=tok.indexOf('|');inner=tok.slice(bar+1,-1);attr={b:inh.b,i:inh.i,color:tok.slice(1,bar)};}
+    else if(tok.charAt(0)==='*'){inner=tok.slice(1,-1);attr={b:true,i:inh.i,color:inh.color};}
+    else {inner=tok.slice(1,-1);attr={b:inh.b,i:true,color:inh.color};}
+    _parseRuns(inner,attr).forEach(function(r){runs.push(r);});
     last=m.index+tok.length;
   }
-  if(last<s.length)runs.push({t:s.slice(last),b:false,i:false,color:null});
-  if(!runs.length)runs.push({t:s,b:false,i:false,color:null});
+  if(last<s.length)runs.push({t:s.slice(last),b:inh.b,i:inh.i,color:inh.color});
+  if(!runs.length)runs.push({t:s,b:inh.b,i:inh.i,color:inh.color});
   return runs;
 }
 function _carFontRich(fs,b,i,fam){return (i?'italic ':'')+(b?'700 ':'400 ')+fs+'px '+(fam||'Poppins');}
