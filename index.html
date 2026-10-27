@@ -33337,25 +33337,27 @@ function motDraw(){
     ctx.fillStyle='rgba('+ovC+','+(_motState.overlay||0.5)+')';ctx.fillRect(0,0,_MOT_W,_MOT_H);
     var tg=ctx.createLinearGradient(0,0,0,_MOT_H);tg.addColorStop(0,'rgba('+ovC+',0.85)');tg.addColorStop(0.5,'rgba('+ovC+',0.12)');tg.addColorStop(1,'rgba('+ovC+',0.75)');ctx.fillStyle=tg;ctx.fillRect(0,0,_MOT_W,_MOT_H);
   }
+  // ===== CABEÇALHO estilo print de tweet: topo, alinhado à ESQUERDA =====
   var p=_motState.profile;ctx.textBaseline='alphabetic';
-  ctx.font='700 42px '+fam;var nameW=ctx.measureText(p.name||'').width;
-  var r=48,gap=28,badge=p.verified?60:0;var blockW=r*2+gap+nameW+badge;var sx=(_MOT_W-blockW)/2;var cy=250;var ax=sx+r,ay=cy+4;
-  _motAvatar(ctx,ax,ay,r);
-  var tx=sx+r*2+gap;ctx.textAlign='left';
-  ctx.fillStyle=txt;ctx.font='700 42px '+fam;ctx.fillText(p.name||'',tx,cy);
-  if(p.verified)_motCheck(ctx,tx+nameW+30,cy-14,20);
-  ctx.font='400 33px '+fam;ctx.fillStyle=subColor;ctx.fillText(p.handle||'',tx,cy+44);
+  var mX=110,aR=72,hy=410,ax=mX+aR,ay=hy;
+  _motAvatar(ctx,ax,ay,aR);
+  var tx=ax+aR+34;ctx.textAlign='left';
+  ctx.fillStyle=txt;ctx.font='700 50px '+fam;var nameY=hy-4;ctx.fillText(p.name||'',tx,nameY);
+  var nameW=ctx.measureText(p.name||'').width;
+  if(p.verified)_motCheck(ctx,tx+nameW+36,nameY-16,23);
+  ctx.font='400 38px '+fam;ctx.fillStyle=subColor;ctx.fillText(p.handle||'',tx,hy+48);
+  // ===== FRASE: grande, alinhada à ESQUERDA, logo abaixo do cabeçalho =====
   var fs=_motState.fraseSize||66;ctx.textAlign='left';ctx.fillStyle=txt;
-  var mX=150,maxW=_MOT_W-mX*2;var frase=(_motState.frase||'').replace(/^[\"“”]+|[\"“”]+$/g,'');
+  var maxW=_MOT_W-mX*2;var frase=(_motState.frase||'').replace(/^[\"“”]+|[\"“”]+$/g,'');
   // respeita as quebras de linha digitadas: cada linha do textarea é tratada separadamente
   var wlines=[];
   frase.split('\n').forEach(function(pt){
     if(pt.trim()===''){wlines.push([]);return;}
     _carWrapRich(ctx,_carParseRich(pt),maxW,fs,fam).forEach(function(l){wlines.push(l);});
   });
-  var lineH=Math.round(fs*1.28);
-  var startY=Math.max(560,Math.round((_MOT_H-wlines.length*lineH)/2)); // centraliza verticalmente conforme a qtd de linhas
-  if(!isLight){ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=20;}
+  var lineH=Math.round(fs*1.32);
+  var startY=hy+aR+110; // começa abaixo da foto (estilo tweet)
+  if(_motState.bg){ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=20;} // sombra só sobre foto
   wlines.forEach(function(line,i){
     var x=mX,yy=startY+lineH*i+fs;
     line.forEach(function(tok){ctx.font=_carFontRich(fs,tok.b,tok.i,fam);ctx.fillStyle=tok.color||txt;ctx.fillText(tok.t,x,yy);x+=tok.w;});
