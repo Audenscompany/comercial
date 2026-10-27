@@ -32155,16 +32155,16 @@ function _carParseRich(text){
   if(!runs.length)runs.push({t:s,b:false,i:false});
   return runs;
 }
-function _carFontRich(fs,b,i){return (i?'italic ':'')+(b?'700 ':'400 ')+fs+'px Poppins';}
+function _carFontRich(fs,b,i,fam){return (i?'italic ':'')+(b?'700 ':'400 ')+fs+'px '+(fam||'Poppins');}
 // quebra os runs (com estilo) em linhas de tokens-palavra que cabem em maxW
-function _carWrapRich(ctx,runs,maxW,fs){
+function _carWrapRich(ctx,runs,maxW,fs,fam){
   var tokens=[];
   runs.forEach(function(r){
     r.t.split(/(\s+)/).forEach(function(p){ if(p==='')return; tokens.push({t:p,b:r.b,i:r.i,sp:/^\s+$/.test(p)}); });
   });
   var lines=[],cur=[],curW=0;
   tokens.forEach(function(tk){
-    ctx.font=_carFontRich(fs,tk.b,tk.i);
+    ctx.font=_carFontRich(fs,tk.b,tk.i,fam);
     if(tk.sp){ if(cur.length){var sw=ctx.measureText(' ').width;cur.push({t:' ',b:tk.b,i:tk.i,w:sw});curW+=sw;} return; }
     var w=ctx.measureText(tk.t).width;
     if(curW+w>maxW && cur.length){ while(cur.length&&cur[cur.length-1].t===' '){curW-=cur[cur.length-1].w;cur.pop();} lines.push(cur);cur=[];curW=0; }
@@ -33307,37 +33307,69 @@ var _MOT_BANCO = [{"tema": "Processo · consistência", "frase": "Não é sorte.
 
 // ==================== MOTIVACIONAL (cards de frase) ====================
 var _MOT_W=1080,_MOT_H=1350;
-var _motState={frase:'',profile:{name:'Lucas Ramon',handle:'@lucasramong_',verified:true,avatar:null},bg:null,fraseSize:66,overlay:0.5,_canvas:null};
+var _motState={frase:'',profile:{name:'Lucas Ramon',handle:'@lucasramong_',verified:true,avatar:null},bg:null,fraseSize:66,overlay:0.5,theme:'escuro',font:'Poppins',textColor:'',_canvas:null};
+// Envolve a seleção de um textarea com um marcador (reutilizado por atalhos Cmd+B / Cmd+I)
+function _taWrapSel(ta,mark){
+  if(!ta)return;var s=ta.selectionStart,e=ta.selectionEnd,v=ta.value;
+  if(s===e){ta.value=v.slice(0,s)+mark+mark+v.slice(e);ta.selectionStart=ta.selectionEnd=s+mark.length;}
+  else{var sel=v.slice(s,e);
+    if(sel.length>=2&&sel.charAt(0)===mark&&sel.charAt(sel.length-1)===mark){var inner=sel.slice(1,-1);ta.value=v.slice(0,s)+inner+v.slice(e);ta.selectionStart=s;ta.selectionEnd=s+inner.length;}
+    else{ta.value=v.slice(0,s)+mark+sel+mark+v.slice(e);ta.selectionStart=s;ta.selectionEnd=e+mark.length*2;}}
+}
 function motToast(m){var t=document.getElementById('mot-toast');if(!t)return;t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2400);}
 function _motEnsureCanvas(){var c=_motState._canvas;if(!c){c=document.createElement('canvas');c.width=_MOT_W;c.height=_MOT_H;_motState._canvas=c;}return c;}
 function _motCheck(ctx,cx,cy,r){ctx.save();ctx.fillStyle='#1d9bf0';ctx.beginPath();var spikes=8,outer=r,inner=r*0.82;for(var i=0;i<spikes*2;i++){var ang=(Math.PI/spikes)*i-Math.PI/2;var rad=(i%2===0)?outer:inner;var x=cx+Math.cos(ang)*rad,y=cy+Math.sin(ang)*rad;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.closePath();ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=r*0.22;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(cx-r*0.42,cy);ctx.lineTo(cx-r*0.08,cy+r*0.36);ctx.lineTo(cx+r*0.46,cy-r*0.34);ctx.stroke();ctx.restore();}
 function _motAvatar(ctx,ax,ay,r){var p=_motState.profile;var gr=ctx.createLinearGradient(ax-r,ay-r,ax+r,ay+r);gr.addColorStop(0,'#ffa000');gr.addColorStop(.5,'#ff1b5e');gr.addColorStop(1,'#8a2be2');if(p.avatar){ctx.save();ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.closePath();ctx.clip();_carCF(ctx,p.avatar,ax-r,ay-r,r*2,r*2,0,0,1);ctx.restore();ctx.strokeStyle=gr;ctx.lineWidth=4;ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.stroke();}else{ctx.fillStyle='#26262b';ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=gr;ctx.lineWidth=4;ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#fff';ctx.font='700 '+Math.round(r*0.9)+'px Poppins';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((p.name||'L').trim().charAt(0).toUpperCase(),ax,ay+2);}}
 function motDraw(){
   var c=_motEnsureCanvas();var ctx=c.getContext('2d');
+  var isLight=_motState.theme==='claro';
+  var fam=_motState.font||'Poppins';
+  var txt=_motState.textColor||(isLight?'#111111':'#ffffff');
+  var subColor=isLight?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.5)';
   ctx.clearRect(0,0,_MOT_W,_MOT_H);
-  ctx.fillStyle='#0a0a0c';ctx.fillRect(0,0,_MOT_W,_MOT_H);
+  ctx.fillStyle=isLight?'#ffffff':'#0a0a0c';ctx.fillRect(0,0,_MOT_W,_MOT_H);
   if(_motState.bg){_carCF(ctx,_motState.bg,0,_MOT_H*0.32,_MOT_W,_MOT_H*0.68,_motState.bgOffX||0,_motState.bgOffY||0,_motState.bgZoom||1);}
-  else{var g=ctx.createRadialGradient(_MOT_W/2,_MOT_H*0.74,60,_MOT_W/2,_MOT_H*0.74,760);g.addColorStop(0,'#241a3e');g.addColorStop(1,'#0a0a0c');ctx.fillStyle=g;ctx.fillRect(0,0,_MOT_W,_MOT_H);}
-  ctx.fillStyle='rgba(8,8,11,'+(_motState.overlay||0.5)+')';ctx.fillRect(0,0,_MOT_W,_MOT_H);
-  var tg=ctx.createLinearGradient(0,0,0,_MOT_H);tg.addColorStop(0,'rgba(6,6,10,0.85)');tg.addColorStop(0.5,'rgba(6,6,10,0.12)');tg.addColorStop(1,'rgba(6,6,10,0.75)');ctx.fillStyle=tg;ctx.fillRect(0,0,_MOT_W,_MOT_H);
+  else if(!isLight){var g=ctx.createRadialGradient(_MOT_W/2,_MOT_H*0.74,60,_MOT_W/2,_MOT_H*0.74,760);g.addColorStop(0,'#241a3e');g.addColorStop(1,'#0a0a0c');ctx.fillStyle=g;ctx.fillRect(0,0,_MOT_W,_MOT_H);}
+  // overlay/gradiente só quando tem imagem de fundo (pra dar legibilidade); cor acompanha o tema
+  if(_motState.bg){
+    var ovC=isLight?'255,255,255':'8,8,11';
+    ctx.fillStyle='rgba('+ovC+','+(_motState.overlay||0.5)+')';ctx.fillRect(0,0,_MOT_W,_MOT_H);
+    var tg=ctx.createLinearGradient(0,0,0,_MOT_H);tg.addColorStop(0,'rgba('+ovC+',0.85)');tg.addColorStop(0.5,'rgba('+ovC+',0.12)');tg.addColorStop(1,'rgba('+ovC+',0.75)');ctx.fillStyle=tg;ctx.fillRect(0,0,_MOT_W,_MOT_H);
+  }
   var p=_motState.profile;ctx.textBaseline='alphabetic';
-  ctx.font='700 42px Poppins';var nameW=ctx.measureText(p.name||'').width;
+  ctx.font='700 42px '+fam;var nameW=ctx.measureText(p.name||'').width;
   var r=48,gap=28,badge=p.verified?60:0;var blockW=r*2+gap+nameW+badge;var sx=(_MOT_W-blockW)/2;var cy=250;var ax=sx+r,ay=cy+4;
   _motAvatar(ctx,ax,ay,r);
   var tx=sx+r*2+gap;ctx.textAlign='left';
-  ctx.fillStyle='#fff';ctx.font='700 42px Poppins';ctx.fillText(p.name||'',tx,cy);
+  ctx.fillStyle=txt;ctx.font='700 42px '+fam;ctx.fillText(p.name||'',tx,cy);
   if(p.verified)_motCheck(ctx,tx+nameW+30,cy-14,20);
-  ctx.font='400 33px Poppins';ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillText(p.handle||'',tx,cy+44);
-  var fs=_motState.fraseSize||66;ctx.font='700 '+fs+'px Poppins';ctx.fillStyle='#fff';ctx.textAlign='left';
+  ctx.font='400 33px '+fam;ctx.fillStyle=subColor;ctx.fillText(p.handle||'',tx,cy+44);
+  var fs=_motState.fraseSize||66;ctx.textAlign='left';ctx.fillStyle=txt;
   var mX=150,maxW=_MOT_W-mX*2;var frase=(_motState.frase||'').replace(/^[\"“”]+|[\"“”]+$/g,'');
-  var lines=_carWL(ctx,frase,maxW);var lineH=Math.round(fs*1.28);var startY=600;
-  ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=20;
-  lines.forEach(function(ln,i){ctx.fillText(ln,mX,startY+lineH*i+fs);});
+  var runs=_carParseRich(frase);var wlines=_carWrapRich(ctx,runs,maxW,fs,fam);
+  var lineH=Math.round(fs*1.28);var startY=600;
+  if(!isLight){ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=20;}
+  wlines.forEach(function(line,i){
+    var x=mX,yy=startY+lineH*i+fs;
+    line.forEach(function(tok){ctx.font=_carFontRich(fs,tok.b,tok.i,fam);ctx.fillStyle=txt;ctx.fillText(tok.t,x,yy);x+=tok.w;});
+  });
   ctx.shadowBlur=0;ctx.textAlign='left';ctx.textBaseline='alphabetic';
 }
 function motRenderBanco(){var box=document.getElementById('mot-banco-list');if(!box)return;box.innerHTML=_MOT_BANCO.map(function(b,i){return '<div onclick="motLoadFrase('+i+')" style="cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--bg);" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'"><div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:3px;">'+esc(b.tema)+'</div><div style="font-size:12px;color:var(--white);line-height:1.35;">'+esc(b.frase)+'</div></div>';}).join('');}
 function motLoadFrase(i){var b=_MOT_BANCO[i];if(!b)return;_motState.frase=b.frase;var f=document.getElementById('mot-frase');if(f)f.value=b.frase;var l=document.getElementById('mot-legenda');if(l)l.value=b.legenda||'';motDraw();motToast('Frase carregada · edite à vontade');}
 function motUpdate(){var g=function(id){return document.getElementById(id);};if(g('mot-frase'))_motState.frase=g('mot-frase').value;if(g('mot-name'))_motState.profile.name=g('mot-name').value;if(g('mot-handle'))_motState.profile.handle=g('mot-handle').value;if(g('mot-verified'))_motState.profile.verified=g('mot-verified').checked;if(g('mot-fs')){_motState.fraseSize=parseInt(g('mot-fs').value)||66;var lv=g('mot-fs-val');if(lv)lv.textContent=_motState.fraseSize;}if(g('mot-ov')){var ov=parseInt(g('mot-ov').value);if(isNaN(ov))ov=50;_motState.overlay=ov/100;var lo=g('mot-ov-val');if(lo)lo.textContent=ov+'%';}motDraw();}
+function motSetTheme(t){_motState.theme=t;var e=document.getElementById('mot-th-escuro'),cl=document.getElementById('mot-th-claro');if(e)e.style.outline=(t==='escuro')?'2px solid var(--purple3)':'none';if(cl)cl.style.outline=(t==='claro')?'2px solid var(--purple3)':'none';motDraw();}
+function motSetFont(f){_motState.font=f||'Poppins';motDraw();}
+function motSetColor(c){_motState.textColor=c||'';var ci=document.getElementById('mot-color');if(ci&&c)ci.value=c;motDraw();}
+// Atalhos ⌘B / ⌘I (ou Ctrl) no textarea da frase → envolve a seleção com * ou _
+function motFraseKey(e){
+  var k=(e.key||'').toLowerCase();
+  if((e.metaKey||e.ctrlKey)&&(k==='b'||k==='i')){
+    e.preventDefault();
+    _taWrapSel(e.target, k==='b'?'*':'_');
+    _motState.frase=e.target.value; motDraw();
+  }
+}
 function motUploadAvatar(input){var fl=input.files&&input.files[0];if(!fl)return;var img=new Image();img.onload=function(){_motState.profile.avatar=img;_motUpdateAvatarPrev();motDraw();_motSaveAvatar();motToast('Foto de perfil aplicada!');};img.src=URL.createObjectURL(fl);input.value='';}
 function _motUpdateAvatarPrev(){var el=document.getElementById('mot-avatar-prev');if(!el)return;var a=_motState.profile.avatar;if(a&&a.src){el.style.backgroundImage='url('+a.src+')';el.textContent='';}else{el.style.backgroundImage='';el.textContent=(_motState.profile.name||'L').trim().charAt(0).toUpperCase();}}
 function _motSaveAvatar(){try{var im=_motState.profile.avatar;if(!im)return;var cnv=document.createElement('canvas');cnv.width=220;cnv.height=220;var cx=cnv.getContext('2d');var s=Math.max(220/im.width,220/im.height);cx.drawImage(im,(220-im.width*s)/2,(220-im.height*s)/2,im.width*s,im.height*s);var durl=cnv.toDataURL('image/jpeg',0.85);try{localStorage.setItem('mot_avatar',durl);}catch(e){}try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/motAvatar').set(durl);}catch(e){}}catch(e){}}
@@ -33350,7 +33382,7 @@ function motEnviarCalendario(){if(!_motState.frase){motToast('Escolha ou escreva
 async function _motConfirmarCalendario(){var dtEl=document.getElementById('_motCalDt');if(!dtEl||!dtEl.value){motToast('Escolha uma data.');return;}var dt=dtEl.value;var btn=document.getElementById('_motCalBtn');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Salvando...';}try{motDraw();var blob=await new Promise(function(res){_motEnsureCanvas().toBlob(function(b){res(b);},'image/png');});var legEl=document.getElementById('mot-legenda');var leg=legEl?legEl.value.trim():'';var ref=fbDb.ref('instagram/calendario').push();var eventId=ref.key;await ref.set({dataHora:dt,tipo:'imagem',status:'rascunho',legenda:leg,slidesCount:1,slideTitles:[(_motState.frase||'').slice(0,60)],origem:'motivacional',localKey:eventId,resultado:{},erro:''});if(typeof _carSaveIDB==='function')await _carSaveIDB(eventId,[blob],leg);var m=document.getElementById('_motCalModal');if(m)m.remove();var dtFmt=new Date(dt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});motToast('✅ Agendado para '+dtFmt+'! Abrindo calendário...');setTimeout(function(){showPage('cal-conteudo');},1200);}catch(e){motToast('Erro: '+e.message);if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Agendar';}}}
 function motInitPage(){var wrap=document.getElementById('mot-canvas-wrap');if(!wrap)return;var c=_motEnsureCanvas();c.style.width='100%';c.style.maxWidth='360px';c.style.borderRadius='14px';c.style.boxShadow='0 10px 40px rgba(0,0,0,0.5)';c.style.display='block';c.style.margin='0 auto';wrap.innerHTML='';wrap.appendChild(c);try{if(typeof _carState!=='undefined'&&_carState&&_carState.profile&&_carState.profile.avatar&&!_motState.profile.avatar)_motState.profile.avatar=_carState.profile.avatar;}catch(e){}
   if(!_motState.profile.avatar){try{var _sa=localStorage.getItem('mot_avatar');if(_sa)_motAplicaAvatarUrl(_sa);}catch(e){}
-    try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/motAvatar').once('value').then(function(s){var v=s.val();if(v&&!_motState.profile.avatar)_motAplicaAvatarUrl(v);});}catch(e){}}var g=function(id){return document.getElementById(id);};if(g('mot-name'))g('mot-name').value=_motState.profile.name;if(g('mot-handle'))g('mot-handle').value=_motState.profile.handle;if(g('mot-verified'))g('mot-verified').checked=_motState.profile.verified;if(g('mot-fs'))g('mot-fs').value=_motState.fraseSize;if(g('mot-ov'))g('mot-ov').value=Math.round((_motState.overlay||0.5)*100);if(g('mot-fs-val'))g('mot-fs-val').textContent=_motState.fraseSize;if(g('mot-ov-val'))g('mot-ov-val').textContent=Math.round((_motState.overlay||0.5)*100)+'%';motRenderBanco();if(!_motState.frase)motLoadFrase(0);else{if(g('mot-frase'))g('mot-frase').value=_motState.frase;}if(typeof _motUpdateAvatarPrev==='function')_motUpdateAvatarPrev();if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){motDraw();});}motDraw();}
+    try{if(typeof fbDb!=='undefined'&&fbDb)fbDb.ref('instagram/motAvatar').once('value').then(function(s){var v=s.val();if(v&&!_motState.profile.avatar)_motAplicaAvatarUrl(v);});}catch(e){}}var g=function(id){return document.getElementById(id);};if(g('mot-name'))g('mot-name').value=_motState.profile.name;if(g('mot-handle'))g('mot-handle').value=_motState.profile.handle;if(g('mot-verified'))g('mot-verified').checked=_motState.profile.verified;if(g('mot-fs'))g('mot-fs').value=_motState.fraseSize;if(g('mot-ov'))g('mot-ov').value=Math.round((_motState.overlay||0.5)*100);if(g('mot-fs-val'))g('mot-fs-val').textContent=_motState.fraseSize;if(g('mot-ov-val'))g('mot-ov-val').textContent=Math.round((_motState.overlay||0.5)*100)+'%';if(g('mot-font'))g('mot-font').value=_motState.font||'Poppins';if(g('mot-color')&&_motState.textColor)g('mot-color').value=_motState.textColor;if(typeof motSetTheme==='function')motSetTheme(_motState.theme||'escuro');motRenderBanco();if(!_motState.frase)motLoadFrase(0);else{if(g('mot-frase'))g('mot-frase').value=_motState.frase;}if(typeof _motUpdateAvatarPrev==='function')_motUpdateAvatarPrev();if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){motDraw();});}motDraw();}
 function renderMotivacional(){
   var inp='width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:Inter,sans-serif;font-size:12.5px;padding:10px 12px;outline:none;box-sizing:border-box;';
   var lbl='display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px;';
@@ -33363,7 +33395,8 @@ function renderMotivacional(){
           '<div style="'+sec+'margin-top:0;">Banco de frases · 30 dias</div>'+
           '<div id="mot-banco-list"></div>'+
           '<div style="'+sec+'">Frase do card</div>'+
-          '<textarea id="mot-frase" oninput="motUpdate()" style="'+inp+'min-height:80px;resize:vertical;line-height:1.4;" placeholder="Escreva a frase que vai no card..."></textarea>'+
+          '<textarea id="mot-frase" oninput="motUpdate()" onkeydown="motFraseKey(event)" style="'+inp+'min-height:80px;resize:vertical;line-height:1.4;" placeholder="Escreva a frase... (⌘B negrito · ⌘I itálico · ou *negrito* _itálico_)"></textarea>'+
+          '<div style="font-size:10px;color:var(--muted);margin:-4px 0 4px;">Selecione e use <b>⌘B</b> (negrito) ou <b>⌘I</b> (itálico).</div>'+
           '<div style="'+sec+'">Perfil</div>'+
           '<div style="margin-bottom:10px;"><label style="'+lbl+'">Nome</label><input type="text" id="mot-name" oninput="motUpdate()" style="'+inp+'"></div>'+
           '<div style="margin-bottom:10px;"><label style="'+lbl+'">@Arroba</label><input type="text" id="mot-handle" oninput="motUpdate()" style="'+inp+'"></div>'+
@@ -33379,6 +33412,23 @@ function renderMotivacional(){
           '<button onclick="motRemoverBg()" style="display:block;width:100%;margin-top:6px;padding:8px 0;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:var(--red);font-size:11px;cursor:pointer;">Remover fundo</button>'+
           '<div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:6px;">Sem imagem, o card usa um fundo escuro com brilho roxo (estilo do print).</div>'+
           '<div style="'+sec+'">Design</div>'+
+          '<div style="margin-bottom:12px;"><label style="'+lbl+'">Fundo</label>'+
+            '<div style="display:flex;gap:6px;">'+
+              '<button id="mot-th-escuro" onclick="motSetTheme(\'escuro\')" style="flex:1;padding:9px 0;border-radius:9px;border:1px solid var(--border);background:#0a0a0c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">● Preto</button>'+
+              '<button id="mot-th-claro" onclick="motSetTheme(\'claro\')" style="flex:1;padding:9px 0;border-radius:9px;border:1px solid var(--border);background:#fff;color:#111;font-size:12px;font-weight:700;cursor:pointer;">○ Branco</button>'+
+            '</div></div>'+
+          '<div style="margin-bottom:12px;"><label style="'+lbl+'">Fonte</label>'+
+            '<select id="mot-font" onchange="motSetFont(this.value)" style="'+inp+'cursor:pointer;">'+
+              ['Poppins','Barlow Condensed','Georgia','Times New Roman','Courier New','Impact','Arial'].map(function(f){return '<option value="'+f+'">'+f+'</option>';}).join('')+
+            '</select></div>'+
+          '<div style="margin-bottom:12px;"><label style="'+lbl+'">Cor do texto</label>'+
+            '<div style="display:flex;align-items:center;gap:8px;">'+
+              '<input type="color" id="mot-color" value="#ffffff" oninput="motSetColor(this.value)" style="width:46px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;padding:2px;">'+
+              '<button onclick="motSetColor(\'\')" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--muted);font-size:11px;cursor:pointer;">Automática (p/ fundo)</button>'+
+            '</div>'+
+            '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
+              ['#ffffff','#111111','#ffd400','#ff1b5e','#22c55e','#60a5fa','#f59e0b'].map(function(cor){return '<button onclick="motSetColor(\''+cor+'\')" title="'+cor+'" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:'+cor+';cursor:pointer;padding:0;"></button>';}).join('')+
+            '</div></div>'+
           '<div style="margin-bottom:12px;"><label style="'+lbl+'">Tamanho da frase · <span id="mot-fs-val">66</span></label><input type="range" id="mot-fs" min="44" max="92" value="66" oninput="motUpdate()" style="width:100%;accent-color:var(--accent);"></div>'+
           '<div style="margin-bottom:4px;"><label style="'+lbl+'">Escurecer fundo · <span id="mot-ov-val">50%</span></label><input type="range" id="mot-ov" min="0" max="90" value="50" oninput="motUpdate()" style="width:100%;accent-color:var(--accent);"></div>'+
         '</div>'+
