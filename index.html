@@ -10427,6 +10427,40 @@ function mostrarModalLinkAssinatura(link, waEnviado){
   '</div>';
   document.body.insertAdjacentHTML('beforeend', html);
 }
+// Tela de REVISÃO: contrato gerado + baixado. Envio pro cliente é manual (botão).
+function mostrarModalRevisarContrato(link, tel, nome, nomeArquivo){
+  window._assinRevisar={link:link, tel:tel, nome:nome};
+  var old=document.getElementById('modal-revisar-contrato'); if(old)old.remove();
+  var html='<div class="modal-ov active" id="modal-revisar-contrato" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:480px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-file-check" style="color:var(--purple3);"></i> Revise o contrato antes de enviar</div>'+
+        '<button class="modal-close" onclick="this.closest(\'.modal-ov\').remove()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.25);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--white);line-height:1.5;">'+
+          'O contrato <b>'+esc(nomeArquivo||'')+'</b> foi gerado e <b>baixado</b> no seu computador.<br>'+
+          'Abra, confira se está tudo certo (valores, 2ª loja, CNPJ) e só então envie o link de assinatura pro cliente.'+
+        '</div>'+
+        '<div id="revisar-status" style="font-size:12px;margin-bottom:10px;min-height:16px;color:var(--muted);">Link de assinatura (ainda <b>não</b> enviado ao cliente):</div>'+
+        '<input class="f-input" id="link-assinatura-input" readonly value="'+esc(link)+'" onclick="this.select()" style="margin-bottom:14px;">'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+          '<button class="btn btn-primary" id="btn-enviar-assin" style="flex:2;justify-content:center;" onclick="_enviarAssinaturaAoCliente(this)"><i class="ti ti-brand-whatsapp"></i> Enviar pro cliente</button>'+
+          '<button class="btn btn-outline" style="flex:1;justify-content:center;" onclick="copiarLinkModalAssinatura(this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:10px;">Se fechar sem enviar, o contrato fica em <b>Assinaturas</b> (pendente) e você envia quando quiser.</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function _enviarAssinaturaAoCliente(btn){
+  var p=window._assinRevisar; if(!p){alert('Nenhum contrato em espera.');return;}
+  var st=document.getElementById('revisar-status');
+  if(!p.tel){ if(st){st.style.color='var(--amber)';st.textContent='Cliente sem telefone — copie o link e envie manualmente.';} return; }
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Enviando...';}
+  var ok=await enviarLinkAssinaturaWA(p.tel, p.nome, p.link);
+  if(st){ st.style.color=ok?'var(--green)':'var(--red)'; st.innerHTML=ok?'<i class="ti ti-circle-check"></i> Enviado pro cliente no WhatsApp!':'Não consegui enviar — copie o link e mande manualmente.'; }
+  if(btn){ btn.disabled=false; btn.innerHTML=ok?'<i class="ti ti-check"></i> Enviado':'<i class="ti ti-brand-whatsapp"></i> Tentar de novo'; }
+}
 function mostrarModalErroAssinatura(motivo){
   var html='<div class="modal-ov active" id="modal-assin-erro" onclick="if(event.target===this)this.remove()">'+
     '<div class="modal-box" style="max-width:460px;">'+
@@ -10665,8 +10699,8 @@ async function generateContratoDocx(dados){
         var signId=ref&&ref.key;
         if(signId){
           var signLink=signLinkFor(signId);
-          var waOk=await enviarLinkAssinaturaWA(dados.telefone, dados.nomeCliente, signLink);
-          mostrarModalLinkAssinatura(signLink, waOk);
+          // NÃO envia automático — mostra tela de REVISÃO; o envio pro cliente é manual (botão)
+          mostrarModalRevisarContrato(signLink, dados.telefone||'', dados.nomeCliente||'', nomeArquivo);
         }
       }catch(e2){
         console.error('Erro ao criar link de assinatura:',e2);
