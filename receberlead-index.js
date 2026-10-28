@@ -3396,6 +3396,7 @@ async function handleCadenciaDrain(req, res) {
   try { out.nurturing = await nurtTickCore(); } catch (e) { console.error("nurtTickCore:", e); } // independe da cadencia principal
   try { out.fria = await friaDrainCore(); } catch (e) { console.error("friaDrainCore:", e); } // prospecção fria: independe da cadencia principal
   try { out.grupo = await grupoDrainCore(); } catch (e) { console.error("grupoDrainCore:", e); } // prospecção grupo: ambiente separado, mesma régua do número
+  try { out.reat = await reatBlastDrain(); } catch (e) { console.error("reatBlastDrain:", e); } // disparo reta final (reativação): mesma régua do número
   if (!cfg.enabled) { out.note = "cadencia DESLIGADA"; return res.status(200).json(out); }
   var sender = (await db.ref("whatsapp_senders/" + CAD_SENDER_ID).once("value")).val() || {};
   if (sender.pausedUntil && sender.pausedUntil > Date.now()) { out.note = "sender pausado"; return res.status(200).json(out); }
@@ -4743,6 +4744,68 @@ async function handleGrupoConfig(req, res) {
   if (Object.keys(upd).length) await db.ref("config/grupo").update(upd);
   return res.status(200).json({ ok: true, saved: Object.keys(upd) });
 }
+// ===== DISPARO RETA FINAL (reativação) — 1 mensagem p/ leads em Recuperação, pausado =====
+// Compartilha a régua anti-ban do número (fria_lastSentAt + janela) pra não dobrar o risco.
+async function reatBlastCfg() {
+  try {
+    var v = (await db.ref("config/reat_blast").once("value")).val() || {};
+    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 60, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, msg: String(v.msg || "") };
+  } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 60, intervalSeconds: 300, startHour: 9, endHour: 20, msg: "" }; }
+}
+async function reatBlastDrain() {
+  var cfg = await reatBlastCfg();
+  var out = { enabled: cfg.enabled, enviados: 0 };
+  if (!cfg.enabled || !cfg.msg) return out;
+  var hoje = cadBRT(Date.now()).date;
+  var sentRef = db.ref("reat_blast_sent/" + hoje);
+  var sentToday = (await sentRef.once("value")).val() || 0;
+  if (sentToday >= cfg.maxPerDay) { out.note = "limite diario"; return out; }
+  var last = (await db.ref("fria_lastSentAt").once("value")).val() || 0;
+  if (Date.now() - last < ((cfg.intervalSeconds || 300) - 10) * 1000) return out;
+  var bnow = cadBRT(Date.now());
+  if (bnow.hour < (cfg.startHour || 9) || bnow.hour >= (cfg.endHour || 20)) { out.note = "fora da janela"; return out; }
+  var fila = (await db.ref("reat_blast_fila").once("value")).val() || {};
+  var ids = Object.keys(fila).filter(function (k) { return fila[k] && fila[k].status === "novo"; }).sort(function (a, b) { return (fila[a].enqAt || 0) - (fila[b].enqAt || 0); });
+  if (!ids.length) { out.note = "fila vazia"; return out; }
+  var id = ids[0], it = fila[id], ref = db.ref("reat_blast_fila/" + id), locked = false;
+  await ref.transaction(function (c) { if (!c || c.status !== "novo") return c; c.status = "processing"; locked = true; return c; });
+  if (!locked) return out;
+  var alvo = cfg.testPhone || it.tel;
+  try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE reta] " : "") + friaRender(cfg.msg, it.nome)); } catch (e) {}
+  await ref.update({ status: "enviado", sentAt: Date.now() });
+  await sentRef.set(sentToday + 1);
+  await db.ref("fria_lastSentAt").set(Date.now());
+  out.enviados = 1; out.para = it.nome; return out;
+}
+async function handleReatBlast(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  var upd = {};
+  if (b.msg != null) upd.msg = String(b.msg);
+  if (b.maxPerDay != null) upd.maxPerDay = parseInt(b.maxPerDay, 10) || 60;
+  if (b.testPhone != null) upd.testPhone = String(b.testPhone).replace(/\D/g, "");
+  if (b.enabled != null) upd.enabled = (b.enabled === true || b.enabled === "true");
+  if (Object.keys(upd).length) await db.ref("config/reat_blast").update(upd);
+  var lista = Array.isArray(b.lista) ? b.lista : [];
+  var imp = 0, dup = 0;
+  for (var i = 0; i < lista.length; i++) {
+    var tel = String((lista[i] && lista[i].tel) || "").replace(/\D/g, ""); if (tel.length < 10) continue;
+    var key = tel.replace(/[.#$\[\]]/g, "_");
+    var ex = (await db.ref("reat_blast_fila/" + key).once("value")).val();
+    if (ex) { dup++; continue; }
+    await db.ref("reat_blast_fila/" + key).set({ tel: tel, nome: (lista[i].nome || ""), status: "novo", enqAt: Date.now() });
+    imp++;
+  }
+  return res.status(200).json({ ok: true, importados: imp, duplicados: dup });
+}
+async function handleReatBlastStats(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var f = (await db.ref("reat_blast_fila").once("value")).val() || {}; var cfg = await reatBlastCfg();
+  var s = { total: 0, novo: 0, enviado: 0 };
+  Object.keys(f).forEach(function (k) { var x = f[k] || {}; s.total++; if (x.status === "enviado") s.enviado++; else s.novo++; });
+  var hoje = cadBRT(Date.now()).date; var sentToday = (await db.ref("reat_blast_sent/" + hoje).once("value")).val() || 0;
+  return res.status(200).json({ ok: true, stats: s, enviadosHoje: sentToday, config: cfg });
+}
 // ===== CONTEÚDO DIÁRIO (Instagram) — grava SÓ em /audens/daily/{YYYY-MM-DD} =====
 // Rota protegida por secret. A rotina diária (Claude na nuvem) manda o conteúdo aqui e o
 // servidor grava via admin SDK. NÃO precisa de login anônimo e NÃO toca em nenhum outro nó.
@@ -5351,6 +5414,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/daily-content") {
       return await handleDailyContent(req, res);
+    }
+    if (path === "/reat-blast") {
+      return await handleReatBlast(req, res);
+    }
+    if (path === "/reat-blast-stats") {
+      return await handleReatBlastStats(req, res);
     }
     if (path === "/fria-config") {
       return await handleFriaConfig(req, res);

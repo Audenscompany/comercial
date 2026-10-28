@@ -4833,6 +4833,7 @@ function buildNav(){
       {id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
       {id:'fria',icon:'ti-snowflake',label:'Prospecção Fria'},
       {id:'prosp-grupo',icon:'ti-users-group',label:'Prospecção Grupo'},
+      {id:'reat-blast',icon:'ti-speakerphone',label:'Disparo Reta Final'},
       {id:'parceiros',icon:'ti-heart-handshake',label:'Parceiros'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
     ]},
@@ -5078,7 +5079,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'reat-blast':renderReatBlast,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -5104,6 +5105,7 @@ function showPage(id){
     if(id==='audens-day') setTimeout(adDayInit,50);
     if(id==='fria') setTimeout(friaLoadStats,50);
     if(id==='prosp-grupo') setTimeout(grupoLoadStats,50);
+    if(id==='reat-blast') setTimeout(reatLoadStats,50);
     if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
@@ -34727,6 +34729,91 @@ async function grupoAgendar(gKey){
     if(typeof abrirAgendarReuniao==='function') abrirAgendarReuniao(kkey);
     else alert('Lead jogado no funil (Qualificado). Abra o Funil pra agendar.');
   }catch(e){ alert('Erro ao agendar: '+e.message); }
+}
+/* ===== DISPARO RETA FINAL — WhatsApp pros leads em Recuperação (condição especial do mês) ===== */
+var _reatStats=null;
+function _reatDefaultMsg(){return "Opa {{primeiroNome}}! Aqui é o João, da Audens 👊\n\nA gente conversou sobre destravar o seu delivery e tô te chamando porque montei uma condição especial *só até o fim do mês* pra quem decidir começar agora:\n\n✅ 15 dias pra começar a pagar — você só paga depois de ver a máquina rodando\n✅ Consultoria de precificação gratuita (a gente arruma a conta do seu cardápio)\n✅ Nosso sistema financeiro liberado de graça\n✅ 30 dias de cardápio digital por nossa conta\n\nÉ pra você virar o mês com a operação organizada e vendendo mais, sem risco pra começar. Quer que eu te explique como aplicar no seu negócio? Me responde aqui 📈";}
+function _reatRecupLeads(){
+  var out=[],seen={};
+  Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(!e||e.status!=='recuperacao')return;var tel=String(e.telefone||'').replace(/\D/g,'');if(tel.length<10)return;var kk=tel.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:tel,nome:e.nome||''});});
+  return out;
+}
+function renderReatBlast(){
+  var c=_reatStats||{stats:{total:0,novo:0,enviado:0},enviadosHoje:0,config:{enabled:false,maxPerDay:60,msg:''}};
+  var cfg=c.config||{},s=c.stats||{};var ligado=cfg.enabled===true;
+  var recup=_reatRecupLeads();
+  var msg=(cfg.msg&&cfg.msg.trim())?cfg.msg:_reatDefaultMsg();
+  function card(lbl,val,cor){return '<div style="flex:1;min-width:120px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div></div>';}
+  var H='<div class="page active"><div style="max-width:1000px;margin:0 auto;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:#f59e0b;font-weight:700;">CAMPANHA</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">📣 Disparo Reta Final</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Chama todo mundo que está em <b>Recuperação</b> com a condição especial do fim do mês. Pausado (mesma régua do número da Fria/Grupo) e quem responde vira tarefa.</div></div>'+
+     '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO'+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div></div>';
+  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ São clientes mornos</b> (já tiveram reunião). Mesmo assim, disparo em volume cansa o número — mantenha pausado e acompanhe a entrega.</div>';
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
+     card('Em Recuperação (no funil)',recup.length,'#f59e0b')+
+     card('Na fila do disparo',(s.total||0),'#c084fc')+
+     card('Ainda não enviados',(s.novo||0),'var(--silver)')+
+     card('Já enviados',(s.enviado||0),'#22c55e')+
+     card('Enviados hoje',(c.enviadosHoje||0)+' / '+(cfg.maxPerDay||60),((c.enviadosHoje||0)>=(cfg.maxPerDay||60)?'#22c55e':'var(--white)'))+
+     '</div>';
+  // 1 · Mensagem
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · Mensagem da campanha</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Use <code>{{primeiroNome}}</code>. Revise a oferta antes de ligar.</div>'+
+     '<textarea id="reat-msg" style="width:100%;min-height:200px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msg.replace(/</g,'&lt;')+'</textarea>'+
+     '<button onclick="reatSaveMsg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;margin-top:8px;">Salvar mensagem</button> <span id="reat-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  // 2 · Fila
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:6px;">2 · Montar a fila</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Pega os <b>'+recup.length+'</b> leads que estão em Recuperação agora e joga na fila do disparo (não duplica quem já está).</div>'+
+     '<button onclick="reatImportar()" class="btn" style="background:var(--purple);color:#fff;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">Carregar '+recup.length+' leads de Recuperação</button>'+
+     ' <span id="reat-imp-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  // 3 · Controle
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:12px;">3 · Controle</div>'+
+     '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Envios por dia</label><input id="reat-max" type="number" value="'+(cfg.maxPerDay||60)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Telefone de teste (opcional)</label><input id="reat-test" type="text" value="'+(cfg.testPhone||'')+'" placeholder="55... (manda tudo p/ você)" style="width:170px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<button onclick="reatSaveCfg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar ajustes</button>'+
+     '</div>'+
+     '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+     '<button onclick="reatToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar disparo</button>'+
+     '<button onclick="reatToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
+     '<button onclick="reatLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
+     '</div><div id="reat-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
+  H+='</div></div>';
+  return H;
+}
+async function reatLoadStats(){
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast-stats?secret='+WEBHOOK_SECRET,{method:'POST'});var j=await r.json();if(j&&j.ok)_reatStats=j;}catch(e){}
+  var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='reat-blast')a.innerHTML=renderReatBlast();
+}
+async function reatSaveMsg(){
+  var m=(document.getElementById('reat-msg')||{}).value||'';var st=document.getElementById('reat-msg-st');
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msg:m})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Mensagem salva!':'Erro ao salvar.';}}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function reatImportar(){
+  var st=document.getElementById('reat-imp-st');var leads=_reatRecupLeads();
+  if(!leads.length){if(st){st.style.color='var(--amber)';st.textContent='Nenhum lead em Recuperação no funil.';}return;}
+  var m=(document.getElementById('reat-msg')||{}).value||'';
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Carregando '+leads.length+'…';}
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lista:leads,msg:m})});var j=await r.json();
+    if(j&&j.ok){if(st){st.style.color='#22c55e';st.textContent='✓ '+j.importados+' na fila · '+j.duplicados+' já estavam. Agora ligue o disparo.';}reatLoadStats();}
+    else if(st){st.style.color='var(--red)';st.textContent='Erro ao carregar.';}
+  }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function reatSaveCfg(){
+  var max=parseInt((document.getElementById('reat-max')||{}).value||'60',10)||60;var test=(document.getElementById('reat-test')||{}).value||'';
+  var st=document.getElementById('reat-ctrl-st');
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,testPhone:test})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Ajustes salvos.':'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function reatToggle(on){
+  var st=document.getElementById('reat-ctrl-st');
+  if(on&&!confirm('Ligar o disparo da Reta Final?\n\nVai mandar a mensagem (pausado, respeitando a régua do número) pros leads que estão na fila. Use o telefone de teste primeiro se quiser conferir.'))return;
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> '+(on?'Ligando…':'Desligando…');}
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?(on?'Disparo LIGADO.':'Disparo desligado.'):'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",
