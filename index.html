@@ -11491,8 +11491,12 @@ function renderReunioes(){
   var realizadas=dedupedRows.filter(isReal).length;
   var noshows=dedupedRows.filter(isNs).length;
   var propostas=dedupedRows.filter(isProp).length;
-  var vendas=dedupedRows.filter(isVenda).length;
-  var receita=dedupedRows.reduce(function(s,m){return s+getReceita(m);},0);
+  // Vendas e receita: MESMA fonte da aba Vendas (_todasVendasCache) — inclui 2ª loja, dedup e exclusões
+  function _mrrAna(fu){if(!fu)return 0;function f(v){if(!v)return 0;if(typeof v==='number')return v;return (typeof parseFaturamento==='function'?parseFaturamento(String(v)):parseFloat(String(v).replace(/[^\d]/g,'')))||0;}return fu.tipoValor==='tcv'?f(fu.contrato):(f(fu.mensalidade)||f(fu.contrato));}
+  var _vcAll=(typeof ensureVendasCache==='function'?ensureVendasCache():window._todasVendasCache)||[];
+  var _vcAna=_vcAll.filter(function(v){var d=_vendaDate(v.fu,v.m);return d&&inPer(d)&&_escMatch(v.m);});
+  var vendas=_vcAna.length;
+  var receita=_vcAna.reduce(function(s,v){return s+_mrrAna(v.fu);},0);
   var taxaComp=pct(realizadas,agendadas);
   var txProp=pct(propostas,realizadas);
   var txVenda=pct(vendas,propostas);
@@ -11547,7 +11551,8 @@ function renderReunioes(){
   function normCanal(o){var r=(o||'').trim();if(!r)return'Não informado';var l=r.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('ads')||l.includes('meta')||l.includes('anun')||l.includes('pago'))return'Tráfego Pago';if(l.includes('cold')||l.includes('coldcall'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('recupera'))return'Recuperação';return r;}
   var canalMap={};
   dedupedRows.forEach(function(m){var o=normCanal(m.origem||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].ag++;if(isReal(m))canalMap[o].real++;});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt)||!_escMatch(m))return;var o=normCanal(m?m.origem||'':'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  // Vendas por canal: fonte = aba Vendas (_vcAna) — inclui 2ª loja e usa a origem corrigida (origemRaw)
+  _vcAna.forEach(function(v){var o=normCanal((v.origemRaw)||(v.m&&v.m.origem)||'');if(!canalMap[o])canalMap[o]={ag:0,real:0,vend:0,rec:0};canalMap[o].vend++;canalMap[o].rec+=_mrrAna(v.fu);});
 
   // ===== Performance por LANDING PAGE (agendada / realizada / venda) =====
   function normLP(raw){var s=String(raw||'').toLowerCase().trim();if(!s||s==='import'||s==='manual')return s==='manual'||s==='import'?'Manual / Import':'Não informado';
@@ -11564,7 +11569,7 @@ function renderReunioes(){
   function _lpOf(m){var raw=(m&&m.variante_lp)||'';if(!raw&&m&&m.kanbanKey&&typeof kanbanData!=='undefined'&&kanbanData[m.kanbanKey]){var kb=kanbanData[m.kanbanKey];raw=kb.variante_lp||kb._source||'';}return normLP(raw);}
   var lpMap={};
   dedupedRows.forEach(function(m){var o=_lpOf(m);if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].ag++;if(isReal(m))lpMap[o].real++;});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt)||!_escMatch(m))return;var o=m?_lpOf(m):'Não informado';if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].vend++;lpMap[o].rec+=parseFloat(fu.mensalidade||fu.contrato||0)||0;});
+  _vcAna.forEach(function(v){var o=v.m?_lpOf(v.m):'Não informado';if(!lpMap[o])lpMap[o]={ag:0,real:0,vend:0,rec:0};lpMap[o].vend++;lpMap[o].rec+=_mrrAna(v.fu);});
   function canalColor(c){var l=(c||'').toLowerCase();if(l.includes('traf')||l.includes('pago'))return'#9333ea';if(l.includes('cold'))return'#3b82f6';if(l.includes('indica'))return'#22c55e';if(l.includes('organ'))return'#f59e0b';if(l.includes('social'))return'#06b6d4';if(l.includes('recupera'))return'#f97316';return'#6b7280';}
 
   // Faixas
@@ -11572,7 +11577,7 @@ function renderReunioes(){
   var fatNI={label:'Não informado',ag:0,real:0,vend:0};
   fatFaixas.forEach(function(f){f.ag=0;f.real=0;f.vend=0;});
   dedupedRows.forEach(function(m){var fat=getFat(m);if(fat<=0){fatNI.ag++;if(isReal(m))fatNI.real++;return;}var found=false;fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.ag++;if(isReal(m))f.real++;found=true;}});if(!found){fatNI.ag++;if(isReal(m))fatNI.real++;}});
-  Object.keys(followups||{}).forEach(function(fid){var fu=followups[fid];if(!fu||fu.resultado!=='venda')return;var m=meetings[fu.meetingId]||meetings[fid];var _dt=_vendaDate(fu,m);if(!_dt||!inPer(_dt)||!_escMatch(m))return;var fat=m?getFat(m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
+  _vcAna.forEach(function(v){var fat=v.m?getFat(v.m):-1;var found=false;if(fat>0)fatFaixas.forEach(function(f){if(!found&&fat>=f.min&&fat<f.max){f.vend++;found=true;}});if(!found)fatNI.vend++;});
 
   // Closer ranking
   var closerMap={};
@@ -11955,7 +11960,7 @@ function renderReunioes(){
     H+=kpiCard('Realizadas','<span>'+realizadas+'</span>',taxaComp+'% de comparecimento',dStr(realizadas,pR,false),'#22c55e','ti-check',histReal);
     H+=kpiCard('No-shows','<span>'+noshows+'</span>',pct(noshows,realizadas+noshows)+'% das elegíveis',dStr(noshows,pNs,true),'#ef4444','ti-user-off',histAg.map(function(){return noshows;}));
     H+=kpiCard('Propostas','<span>'+propostas+'</span>',txProp+'% das realizadas','','#3b82f6','ti-file-description',histReal.map(function(){return propostas;}));
-    H+=kpiCard('Vendas','<span>'+vendas+'</span>',txVenda+'% das propostas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend);
+    H+=kpiCard('Vendas','<span>'+vendas+'</span>',pct(vendas,realizadas)+'% das realizadas',dStr(vendas,pV,false),'#22c55e','ti-cash-register',histVend);
     H+=kpiCard('Receita','<span>'+fmtR(receita)+'</span>','Ticket: '+fmtR(ticket),dStr(receita,pRec,false),'#f59e0b','ti-currency-dollar',histReal);
     H+='</div>';
 
