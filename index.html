@@ -11031,6 +11031,21 @@ function saveFollowupEdit(){
     var kk2=_fuMeeting.kanbanKey;
     var leadInfo=(kk2&&kanbanData[kk2])?kanbanData[kk2]:null;
     if(kk2) persistLeadCnpj(kk2, cnpj);
+    // ── 2ª LOJA: lê os campos UMA vez (igual ao saveFollowup) ──
+    var _seg2=null;
+    (function(){
+      var segFields=document.getElementById('fu-seg-loja-fields');
+      if(!segFields||segFields.style.display==='none')return;
+      var sC=((document.getElementById('fu-seg-cnpj')||{}).value||'').trim();
+      var sE=((document.getElementById('fu-seg-empresa')||{}).value||'').trim();
+      var sP=(document.getElementById('fu-seg-plano')||{}).value||plano;
+      var sD=parseInt((document.getElementById('fu-seg-duracao')||{}).value||duracao,10)||duracao;
+      var sCt=parseFloat((document.getElementById('fu-seg-contrato')||{}).value||0)||0;
+      var sM=parseFloat((document.getElementById('fu-seg-mensalidade')||{}).value||0)||0;
+      if(!sE&&!sC&&!sCt&&!sM)return;
+      _seg2={cnpj:sC,empresa:sE,plano:sP,duracao:sD,contrato:sCt,mensalidade:sM,tipoValor:tipoValor,
+        nome:sE||((leadInfo&&leadInfo.empresa)?leadInfo.empresa+' (2ª loja)':_fuMeeting.nome+' (2ª loja)')};
+    })();
     generateContratoDocx({
       plano:plano,
       nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
@@ -11047,7 +11062,8 @@ function saveFollowupEdit(){
       vencimento:vencimento,
       closer:_fuMeeting.responsavel||'',
       sdrNome:_fuMeeting.sdrName||'',
-      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||'')
+      origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
+      segundaLoja:_seg2
     });
     // Registra na planilha:
     // - primeira vez (old.venda!=='sim'), OU
@@ -11089,6 +11105,17 @@ function saveFollowupEdit(){
           ativo:true
         }).catch(function(e){console.warn('Firebase contrato:',e);});
       })();
+      // ── 2ª LOJA: registra a 2ª venda no CRM (doc já saiu combinado acima) ──
+      if(_seg2){
+        var _sn=_seg2.nome,_sp=_seg2.plano,_sd=_seg2.duracao,_sct=_seg2.contrato,_sm=_seg2.mensalidade,_scnpj=_seg2.cnpj;
+        appendClienteRow({nomeCliente:_sn,plano:_sp,duracao:_sd,dataInicio:dataInicio,tipoValor:tipoValor,contrato:_sct,mensalidade:_sm,origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),closer:_fuMeeting.responsavel||'',sdr:_fuMeeting.sdr||''});
+        setTimeout(function(){criarCobrancaAsaas({nome:_sn,telefone:_fuMeeting.tel,cnpj:_scnpj},{plano:_sp,duracao:_sd,dataInicio:dataInicio,tipoValor:tipoValor,contrato:_sct,mensalidade:_sm,cnpj:_scnpj},null);},1000);
+        var _p2=_sp==='starter'?'Plano Starter':_sp==='premium'?'Plano Premium':_sp==='elite'?'Plano Elite':'Plano 3';
+        var _suf2=_sd>=6?' - Semestral':_sd>=3?' - Trimestral':' - Mensal';
+        var _mrr2=tipoValor==='tcv'?Math.round(_sct/_sd):(_sm||_sct);
+        var _tcv2=tipoValor==='tcv'?_sct:(_mrr2*_sd);
+        saveContrato(null,{cliente:_sn,dataInicio:dataInicio,valorMes:_mrr2,valorVendido:_tcv2,planoDuracao:_sd,plano:_p2+_suf2,gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),closer:_fuMeeting.responsavel||'',sdr:_fuMeeting.sdr||'',kanbanKey:'',ativo:true,_segundaLoja:true,_cnpj:_scnpj,_meetingId:fid}).catch(function(e){console.warn('Firebase contrato 2ª loja (edit):',e);});
+      }
       // Remove _fromContrato para que re-edições futuras não dupliquem a linha
       followups[fid]._fromContrato=null;
       saveFollowupFB(fid, followups[fid]);
