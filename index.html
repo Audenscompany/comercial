@@ -34732,57 +34732,81 @@ async function grupoAgendar(gKey){
 }
 /* ===== DISPARO RETA FINAL — WhatsApp pros leads em Recuperação (condição especial do mês) ===== */
 var _reatStats=null;
-function _reatDefaultMsg(){return "Opa {{primeiroNome}}! Aqui é o João, da Audens 👊\n\nA gente conversou sobre destravar o seu delivery e tô te chamando porque montei uma condição especial *só até o fim do mês* pra quem decidir começar agora:\n\n✅ 15 dias pra começar a pagar — você só paga depois de ver a máquina rodando\n✅ Consultoria de precificação gratuita (a gente arruma a conta do seu cardápio)\n✅ Nosso sistema financeiro liberado de graça\n✅ 30 dias de cardápio digital por nossa conta\n\nÉ pra você virar o mês com a operação organizada e vendendo mais, sem risco pra começar. Quer que eu te explique como aplicar no seu negócio? Me responde aqui 📈";}
+var _REAT_TOQUES=[
+  {t:'Toque 1 · Abertura (hoje)',m:"Opa {{primeiroNome}}, aqui é o João da Audens 👊\n\nA gente chegou a conversar sobre destravar o seu delivery e eu lembrei de você agora porque montamos uma condição especial *só até o fim do mês* pra quem decidir começar:\n\n✅ 15 dias pra começar a pagar (você só paga depois de ver a máquina rodando)\n✅ Consultoria de precificação gratuita\n✅ Nosso sistema financeiro liberado de graça\n✅ 30 dias de cardápio digital por nossa conta\n\nFaz sentido eu te mostrar como isso ficaria no seu negócio? Me responde aqui 📈"},
+  {t:'Toque 2 · Valor / a conta (quinta)',m:"{{primeiroNome}}, deixa eu te fazer uma pergunta rápida: você sabe exatamente quanto sobra de lucro em cada pedido seu hoje?\n\nA maioria dos donos que atende a gente descobre que tá vendendo no vermelho em alguns itens sem perceber. Por isso a condição desse mês já vem com a *consultoria de precificação gratuita* — a gente arruma a conta do seu cardápio junto com você.\n\nIsso + os 15 dias pra começar a pagar tornam o risco de começar praticamente zero. Bora marcar 15 min pra eu te mostrar?"},
+  {t:'Toque 3 · Urgência (sexta)',m:"{{primeiroNome}}, passando rapidinho porque o mês tá acabando e essa condição fecha junto com ele ⏳\n\nComeçar agora significa virar o mês com: operação organizada, precificação ajustada e o cardápio já rodando por nossa conta por 30 dias — sem pagar nada nos primeiros 15 dias.\n\nSe você quer entrar no próximo mês com o delivery vendendo mais, esse é o momento certo. Posso te garantir uma dessas vagas da virada?"},
+  {t:'Toque 4 · Última chamada (segunda)',m:"{{primeiroNome}}, última chamada: hoje é o último dia da condição especial da virada (15 dias pra pagar + consultoria de precificação + sistema financeiro + 30 dias de cardápio, tudo por nossa conta).\n\nSe for o momento, me responde *QUERO* que eu já te passo os próximos passos ainda hoje.\n\nSe não for agora, sem problema nenhum 🙏 — me avisa e eu paro de te chamar sobre isso. Fico à disposição pra quando fizer sentido!"}
+];
+function _reatMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<4;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_REAT_TOQUES[i].m);return out;}
 function _reatRecupLeads(){
   var out=[],seen={};
   Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(!e||e.status!=='recuperacao')return;var tel=String(e.telefone||'').replace(/\D/g,'');if(tel.length<10)return;var kk=tel.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:tel,nome:e.nome||''});});
   return out;
 }
 function renderReatBlast(){
-  var c=_reatStats||{stats:{total:0,novo:0,enviado:0},enviadosHoje:0,config:{enabled:false,maxPerDay:60,msg:''}};
-  var cfg=c.config||{},s=c.stats||{};var ligado=cfg.enabled===true;
+  var c=_reatStats||{stats:{total:0,r1:0,r2:0,r3:0,r4:0,pendentes:0},enviadosHoje:0,config:{enabled:false,maxPerDay:60,round:1,msgs:[]}};
+  var cfg=c.config||{},s=c.stats||{};var ligado=cfg.enabled===true;var round=Math.min(4,Math.max(1,cfg.round||1));
   var recup=_reatRecupLeads();
-  var msg=(cfg.msg&&cfg.msg.trim())?cfg.msg:_reatDefaultMsg();
+  var msgs=_reatMsgs(cfg);
+  var rRecv=[s.r1||0,s.r2||0,s.r3||0,s.r4||0];
   function card(lbl,val,cor){return '<div style="flex:1;min-width:120px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div></div>';}
   var H='<div class="page active"><div style="max-width:1000px;margin:0 auto;">';
   H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
-     '<div><div style="font-size:11px;letter-spacing:2px;color:#f59e0b;font-weight:700;">CAMPANHA</div>'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:#f59e0b;font-weight:700;">CAMPANHA · RÉGUA DE 4 TOQUES</div>'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">📣 Disparo Reta Final</div>'+
-     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Chama todo mundo que está em <b>Recuperação</b> com a condição especial do fim do mês. Pausado (mesma régua do número da Fria/Grupo) e quem responde vira tarefa.</div></div>'+
-     '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO'+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div></div>';
-  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ São clientes mornos</b> (já tiveram reunião). Mesmo assim, disparo em volume cansa o número — mantenha pausado e acompanhe a entrega.</div>';
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Chama quem está em <b>Recuperação</b> com a condição do fim do mês em 4 toques (abertura → valor → urgência → última chamada). Pausado (mesma régua do número) e quem responde vira tarefa.</div></div>'+
+     '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO · toque '+round+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div></div>';
+  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ São clientes mornos</b> (já tiveram reunião). 4 mensagens em poucos dias pesa no número — mantenha o limite/dia moderado, teste no seu WhatsApp e desligue entre os toques.</div>';
   H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
      card('Em Recuperação (no funil)',recup.length,'#f59e0b')+
-     card('Na fila do disparo',(s.total||0),'#c084fc')+
-     card('Ainda não enviados',(s.novo||0),'var(--silver)')+
-     card('Já enviados',(s.enviado||0),'#22c55e')+
+     card('Na fila',(s.total||0),'#c084fc')+
+     card('Pendentes no toque '+round,(s.pendentes||0),(s.pendentes?'var(--silver)':'#22c55e'))+
      card('Enviados hoje',(c.enviadosHoje||0)+' / '+(cfg.maxPerDay||60),((c.enviadosHoje||0)>=(cfg.maxPerDay||60)?'#22c55e':'var(--white)'))+
      '</div>';
-  // 1 · Mensagem
+  // Progresso dos toques
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:16px;">'+
+     '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Progresso da régua (quantos já receberam cada toque)</div>'+
+     '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+  for(var ri=0;ri<4;ri++){var n=ri+1;var ativo=n===round;H+='<div style="flex:1;min-width:140px;background:'+(ativo?'rgba(192,132,252,.12)':'var(--card)')+';border:1px solid '+(ativo?'var(--purple)':'var(--border)')+';border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:'+(ativo?'#c084fc':'var(--muted)')+';font-weight:700;">Toque '+n+(ativo?' · ATIVO':'')+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:22px;color:var(--white);">'+rRecv[ri]+'</div><div style="font-size:10px;color:var(--muted);">receberam</div></div>';}
+  H+='</div></div>';
+  // 1 · As 4 mensagens
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
-     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · Mensagem da campanha</div>'+
-     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Use <code>{{primeiroNome}}</code>. Revise a oferta antes de ligar.</div>'+
-     '<textarea id="reat-msg" style="width:100%;min-height:200px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msg.replace(/</g,'&lt;')+'</textarea>'+
-     '<button onclick="reatSaveMsg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;margin-top:8px;">Salvar mensagem</button> <span id="reat-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · As 4 mensagens da régua</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. <code>*texto*</code> fica em negrito no WhatsApp. Revise e salve antes de disparar.</div>';
+  for(var mi=0;mi<4;mi++){H+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#c084fc;font-weight:700;margin-bottom:5px;">'+esc(_REAT_TOQUES[mi].t)+'</div>'+
+     '<textarea id="reat-msg'+mi+'" style="width:100%;min-height:150px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msgs[mi].replace(/</g,'&lt;')+'</textarea></div>';}
+  H+='<button onclick="reatSaveMsgs()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar as 4 mensagens</button> <span id="reat-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
   // 2 · Fila
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:6px;">2 · Montar a fila</div>'+
-     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Pega os <b>'+recup.length+'</b> leads que estão em Recuperação agora e joga na fila do disparo (não duplica quem já está).</div>'+
-     '<button onclick="reatImportar()" class="btn" style="background:var(--purple);color:#fff;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">Carregar '+recup.length+' leads de Recuperação</button>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Pega os <b>'+recup.length+'</b> leads em Recuperação agora e monta a fila. A mesma fila recebe os 4 toques — você só avança o toque a cada dia.</div>'+
+     '<button onclick="reatImportar()" class="btn" style="background:var(--purple);color:#fff;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">Carregar '+recup.length+' leads de Recuperação</button> '+
+     '<button onclick="reatImportar(true)" class="btn btn-outline" style="font-size:12px;padding:9px 14px;" title="Esvazia a fila e recomeça a régua do zero">↺ Recomeçar fila do zero</button>'+
      ' <span id="reat-imp-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
-  // 3 · Controle
+  // 3 · Toque ativo + controle
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
-     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:12px;">3 · Controle</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:10px;">3 · Qual toque disparar</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Escolha o toque do dia e ligue. Ao mudar de toque, a régua re-mira todo mundo com a mensagem nova (quem já recebeu aquele toque não recebe de novo).</div>'+
+     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">';
+  for(var tb=1;tb<=4;tb++){var at=tb===round;H+='<button onclick="reatSetRound('+tb+')" class="btn" style="padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;'+(at?'background:var(--purple);color:#fff;border:none;':'background:var(--card);color:var(--silver);border:1px solid var(--border);')+'">Toque '+tb+(at?' ●':'')+'</button>';}
+  H+='</div>'+
      '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
      '<div><label style="font-size:11px;color:var(--muted);display:block;">Envios por dia</label><input id="reat-max" type="number" value="'+(cfg.maxPerDay||60)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
      '<div><label style="font-size:11px;color:var(--muted);display:block;">Telefone de teste (opcional)</label><input id="reat-test" type="text" value="'+(cfg.testPhone||'')+'" placeholder="55... (manda tudo p/ você)" style="width:170px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
      '<button onclick="reatSaveCfg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar ajustes</button>'+
      '</div>'+
      '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
-     '<button onclick="reatToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar disparo</button>'+
+     '<button onclick="reatToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar disparo (toque '+round+')</button>'+
      '<button onclick="reatToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
      '<button onclick="reatLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
      '</div><div id="reat-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
+  // 4 · Encerrar — arquivar quem recebeu
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:6px;">4 · Encerrar a campanha</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Depois do 4º toque (segunda), arquiva todos os leads que receberam pelo menos uma mensagem. <b>'+(s.r1||0)+'</b> receberam até agora.</div>'+
+     '<button onclick="reatArquivar()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--amber);border-color:rgba(245,158,11,.4);">🗄️ Arquivar os '+(s.r1||0)+' que receberam</button>'+
+     ' <span id="reat-arq-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
   H+='</div></div>';
   return H;
 }
@@ -34790,17 +34814,24 @@ async function reatLoadStats(){
   try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast-stats?secret='+WEBHOOK_SECRET,{method:'POST'});var j=await r.json();if(j&&j.ok)_reatStats=j;}catch(e){}
   var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='reat-blast')a.innerHTML=renderReatBlast();
 }
-async function reatSaveMsg(){
-  var m=(document.getElementById('reat-msg')||{}).value||'';var st=document.getElementById('reat-msg-st');
-  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msg:m})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Mensagem salva!':'Erro ao salvar.';}}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+function _reatColetaMsgs(){var out=[];for(var i=0;i<4;i++){var el=document.getElementById('reat-msg'+i);out.push(el?el.value:'');}return out;}
+async function reatSaveMsgs(){
+  var msgs=_reatColetaMsgs();var st=document.getElementById('reat-msg-st');
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgs:msgs})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'4 mensagens salvas!':'Erro ao salvar.';}if(j&&j.ok)reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
-async function reatImportar(){
+async function reatSetRound(n){
+  var st=document.getElementById('reat-ctrl-st');var msgs=_reatColetaMsgs();
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Selecionando toque '+n+'…';}
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({round:n,msgs:msgs})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?('Toque '+n+' selecionado. Ligue o disparo quando quiser.'):'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function reatImportar(limpar){
   var st=document.getElementById('reat-imp-st');var leads=_reatRecupLeads();
   if(!leads.length){if(st){st.style.color='var(--amber)';st.textContent='Nenhum lead em Recuperação no funil.';}return;}
-  var m=(document.getElementById('reat-msg')||{}).value||'';
+  if(limpar&&!confirm('Esvaziar a fila e recomeçar a régua do zero?\n\nTodo mundo volta a receber do toque 1. Use isso só se quiser reiniciar a campanha.'))return;
+  var msgs=_reatColetaMsgs();
   if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Carregando '+leads.length+'…';}
-  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lista:leads,msg:m})});var j=await r.json();
-    if(j&&j.ok){if(st){st.style.color='#22c55e';st.textContent='✓ '+j.importados+' na fila · '+j.duplicados+' já estavam. Agora ligue o disparo.';}reatLoadStats();}
+  try{var body={lista:leads,msgs:msgs};if(limpar)body.limparFila=true;var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});var j=await r.json();
+    if(j&&j.ok){if(st){st.style.color='#22c55e';st.textContent='✓ '+j.importados+' na fila · '+j.duplicados+' já estavam.'+(limpar?' Régua reiniciada.':'')+' Agora escolha o toque e ligue.';}reatLoadStats();}
     else if(st){st.style.color='var(--red)';st.textContent='Erro ao carregar.';}
   }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
@@ -34810,10 +34841,27 @@ async function reatSaveCfg(){
   try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,testPhone:test})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Ajustes salvos.':'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
 async function reatToggle(on){
-  var st=document.getElementById('reat-ctrl-st');
-  if(on&&!confirm('Ligar o disparo da Reta Final?\n\nVai mandar a mensagem (pausado, respeitando a régua do número) pros leads que estão na fila. Use o telefone de teste primeiro se quiser conferir.'))return;
+  var st=document.getElementById('reat-ctrl-st');var round=((_reatStats||{}).config||{}).round||1;
+  if(on&&!confirm('Ligar o disparo do TOQUE '+round+'?\n\nVai mandar a mensagem desse toque (pausado, respeitando a régua do número) pros leads da fila que ainda não receberam esse toque. Use o telefone de teste primeiro se quiser conferir.'))return;
   if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> '+(on?'Ligando…':'Desligando…');}
-  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?(on?'Disparo LIGADO.':'Disparo desligado.'):'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?(on?'Disparo LIGADO (toque '+round+').':'Disparo desligado.'):'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+async function reatArquivar(){
+  var st=document.getElementById('reat-arq-st');var recv=((_reatStats||{}).recebidos)||[];
+  if(!recv.length){if(st){st.style.color='var(--amber)';st.textContent='Ninguém recebeu mensagem ainda.';}return;}
+  if(!confirm('Arquivar os '+recv.length+' leads que receberam pelo menos uma mensagem da campanha?\n\nEles saem da Recuperação e vão pra Arquivado.'))return;
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Arquivando…';}
+  try{
+    var db=(window.fbDb||(typeof initFirebase==='function'&&initFirebase()));if(!db)throw new Error('sem Firebase');
+    var set={};recv.forEach(function(t){set[String(t).replace(/\D/g,'').slice(-11)]=1;});
+    var n=0;var keys=Object.keys(kanbanData||{});
+    for(var i=0;i<keys.length;i++){var k=keys[i],e=kanbanData[k];if(!e||e.status!=='recuperacao')continue;var tel=String(e.telefone||'').replace(/\D/g,'').slice(-11);if(!set[tel])continue;
+      var up={status:'arquivado',statusAt:Date.now()};kanbanData[k]=Object.assign({},e,up);
+      try{await db.ref('kanban/'+k).update(up);}catch(x){}n++;}
+    if(st){st.style.color='#22c55e';st.textContent='✓ '+n+' leads arquivados.';}
+    if(typeof renderKanban==='function')try{renderKanban();}catch(x){}
+    reatLoadStats();
+  }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",
