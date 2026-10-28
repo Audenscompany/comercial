@@ -10934,22 +10934,29 @@ function saveFollowup(){
           {plano:segPlano,duracao:segDuracao,dataInicio:dataInicio,tipoValor:tipoValor,
            contrato:segContrato,mensalidade:segMens,cnpj:segCnpj}, null);
       }, 1000);
-      // Salva o 2º contrato no Firebase (pra comissão/MRR baterem com as 2 lojas)
-      var _p2=segPlano==='starter'?'Plano Starter':segPlano==='premium'?'Plano Premium':segPlano==='elite'?'Plano Elite':'Plano 3';
-      var _suf2=segDuracao>=6?' - Semestral':segDuracao>=3?' - Trimestral':' - Mensal';
-      var _mrr2=tipoValor==='tcv'?Math.round(segContrato/segDuracao):(segMens||segContrato);
-      var _tcv2=tipoValor==='tcv'?segContrato:(_mrr2*segDuracao);
-      saveContrato(null,{
-        cliente:segNome, dataInicio:dataInicio, valorMes:_mrr2, valorVendido:_tcv2,
-        planoDuracao:segDuracao, plano:_p2+_suf2,
-        gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',
-        origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),
-        closer:_fuMeeting.responsavel||'', sdr:_fuMeeting.sdr||'',
-        kanbanKey:'', ativo:true, _segundaLoja:true, _cnpj:segCnpj, _meetingId:fid
-      }).catch(function(e){console.warn('Firebase contrato 2ª loja:',e);});
     }
+    // 2º contrato no Firebase — id fixo por reunião (idempotente, não duplica em re-edições)
+    _saveSegundaLojaContrato(_seg2, fid, dataInicio, tipoValor, leadInfo, _fuMeeting);
   }
   if(CU.role==='atendente')showPage('ligar');else showPage('dashboard');
+}
+// Grava o contrato da 2ª loja com id FIXO por reunião (segloja_<id>) → update, nunca duplica.
+// Chamado tanto no saveFollowup (venda nova) quanto no saveFollowupEdit (editar resultado).
+function _saveSegundaLojaContrato(seg, fid, dataInicio, tipoValor, leadInfo, mtg){
+  if(!seg) return;
+  var _p2=seg.plano==='starter'?'Plano Starter':seg.plano==='premium'?'Plano Premium':seg.plano==='elite'?'Plano Elite':'Plano 3';
+  var _suf2=seg.duracao>=6?' - Semestral':seg.duracao>=3?' - Trimestral':' - Mensal';
+  var _dur=seg.duracao||1;
+  var _mrr2=tipoValor==='tcv'?Math.round((seg.contrato||0)/_dur):(seg.mensalidade||seg.contrato||0);
+  var _tcv2=tipoValor==='tcv'?(seg.contrato||0):(_mrr2*_dur);
+  saveContrato('segloja_'+fid,{
+    cliente:seg.nome, dataInicio:dataInicio, valorMes:_mrr2, valorVendido:_tcv2,
+    planoDuracao:seg.duracao, plano:_p2+_suf2,
+    gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',
+    origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:((mtg&&mtg.origem)||''),
+    closer:(mtg&&mtg.responsavel)||'', sdr:(mtg&&mtg.sdr)||'',
+    kanbanKey:'', ativo:true, _segundaLoja:true, _cnpj:seg.cnpj, _meetingId:fid
+  }).catch(function(e){console.warn('Firebase contrato 2ª loja:',e);});
 }
 // Salva/atualiza o CNPJ do lead no Kanban (preenchido na hora de gerar o contrato)
 function persistLeadCnpj(kk, cnpj){
@@ -11105,21 +11112,18 @@ function saveFollowupEdit(){
           ativo:true
         }).catch(function(e){console.warn('Firebase contrato:',e);});
       })();
-      // ── 2ª LOJA: registra a 2ª venda no CRM (doc já saiu combinado acima) ──
+      // ── 2ª LOJA (primeira vez): planilha de Clientes + cobrança Asaas ──
       if(_seg2){
         var _sn=_seg2.nome,_sp=_seg2.plano,_sd=_seg2.duracao,_sct=_seg2.contrato,_sm=_seg2.mensalidade,_scnpj=_seg2.cnpj;
         appendClienteRow({nomeCliente:_sn,plano:_sp,duracao:_sd,dataInicio:dataInicio,tipoValor:tipoValor,contrato:_sct,mensalidade:_sm,origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),closer:_fuMeeting.responsavel||'',sdr:_fuMeeting.sdr||''});
         setTimeout(function(){criarCobrancaAsaas({nome:_sn,telefone:_fuMeeting.tel,cnpj:_scnpj},{plano:_sp,duracao:_sd,dataInicio:dataInicio,tipoValor:tipoValor,contrato:_sct,mensalidade:_sm,cnpj:_scnpj},null);},1000);
-        var _p2=_sp==='starter'?'Plano Starter':_sp==='premium'?'Plano Premium':_sp==='elite'?'Plano Elite':'Plano 3';
-        var _suf2=_sd>=6?' - Semestral':_sd>=3?' - Trimestral':' - Mensal';
-        var _mrr2=tipoValor==='tcv'?Math.round(_sct/_sd):(_sm||_sct);
-        var _tcv2=tipoValor==='tcv'?_sct:(_mrr2*_sd);
-        saveContrato(null,{cliente:_sn,dataInicio:dataInicio,valorMes:_mrr2,valorVendido:_tcv2,planoDuracao:_sd,plano:_p2+_suf2,gestor:(leadInfo&&leadInfo.gestor)?leadInfo.gestor:'',origem:(leadInfo&&leadInfo.origem)?leadInfo.origem:(_fuMeeting.origem||''),closer:_fuMeeting.responsavel||'',sdr:_fuMeeting.sdr||'',kanbanKey:'',ativo:true,_segundaLoja:true,_cnpj:_scnpj,_meetingId:fid}).catch(function(e){console.warn('Firebase contrato 2ª loja (edit):',e);});
       }
       // Remove _fromContrato para que re-edições futuras não dupliquem a linha
       followups[fid]._fromContrato=null;
       saveFollowupFB(fid, followups[fid]);
     }
+    // ── 2ª LOJA (sempre, idempotente): grava o 2º contrato com id fixo por reunião ──
+    _saveSegundaLojaContrato(_seg2, fid, dataInicio, tipoValor, leadInfo, _fuMeeting);
     // Cria no Asaas se ainda não foi criado (verifica pelo asaasChargeId no kanban)
     var jaTemAsaas=kk2&&kanbanData[kk2]&&kanbanData[kk2].asaasChargeId;
     if(!jaTemAsaas){
