@@ -10520,7 +10520,7 @@ async function generateContratoDocx(dados){
   try{
     var url=CONTRATO_TEMPLATES[dados.plano];
     if(!url){alert('Modelo de contrato nao encontrado para o plano: '+dados.plano);return;}
-    var resp=await fetch(url);
+    var resp=await fetch(url+'?v='+Date.now(),{cache:'no-store'}); // evita .docx em cache (clausula 2ª loja)
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     var arrayBuffer=await resp.arrayBuffer();
     var zip=new PizZip(arrayBuffer);
