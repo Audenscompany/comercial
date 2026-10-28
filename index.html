@@ -10547,8 +10547,13 @@ async function generateContratoDocx(dados){
     var FREQ_LABEL={mensal:'mensal',quinzenal:'quinzenal',semanal:'semanal'};
     if(dados.frequencia){
       formaPagamento+=' O pagamento será realizado de forma '+(FREQ_LABEL[dados.frequencia]||dados.frequencia)+', por meio de PIX, cartão de crédito ou outro meio previamente acordado entre as partes';
-      if(dados.vencimento){
-        formaPagamento+=', com vencimento '+dados.vencimento+'.';
+      var _venc=String(dados.vencimento||'').trim().replace(/[.\s]+$/,'');
+      if(_venc){
+        // vencimento curto ("toda segunda", "dia 10") → "com vencimento X."
+        // texto longo/descrição (frase com ponto ou >40 chars) → vira frase própria, sem quebrar a gramática
+        var _longVenc=_venc.length>40||/[.;]/.test(_venc);
+        if(_longVenc) formaPagamento+='. '+_venc+'.';
+        else formaPagamento+=', com vencimento '+_venc+'.';
       }else{
         formaPagamento+='.';
       }
