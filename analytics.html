@@ -121,6 +121,7 @@
         <button data-m="v3">LP V3</button>
         <button data-m="quiz">Quiz FV1</button>
         <button data-m="quizfv2">Quiz FV2</button>
+        <button data-m="raiox">Raio-X</button>
         <button data-m="antiga">LP antiga</button>
       </div>
       <div class="seg" id="range">
@@ -369,8 +370,13 @@ function isAntiga(src){ return src!=='lp-audens' && src!=='lp-v3' && !MANUAL[src
 function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.card'); if(card){ var h=card.querySelector('h2'); if(h) h.textContent=text; } } }
 
 function render(){
+  setH2('sources','Origem do tráfego');
+  setH2('pedidosDist','Pedidos por faixa — quem qualifica × quem vai pro Vivendo');
+  setH2('adsDist','Anúncios que trazem leads — Qualificados × Vivendo');
+  setH2('leads','Leads recentes (com atribuição)');
   if(MODE==='quiz'){ return renderQuiz('fv1'); }
   if(MODE==='quizfv2'){ return renderQuiz('fv2'); }
+  if(MODE==='raiox'){ return renderRaioX(); }
   setH2('funnel','Funil da LP');
   setH2('abandono','Abandono por seção (onde pararam)');
   var antiga = (MODE==='antiga');
@@ -495,6 +501,99 @@ function render(){
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
     ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
     : 'Atualizado agora · '+lpLabel+' · período: '+per);
+}
+
+/* ===== Funil do RAIO-X DO DELIVERY (assessoriaaudens.com.br/raio-x/, lê analytics/sessions + events) ===== */
+function renderRaioX(){
+  setH2('funnel','Funil do Raio-X');
+  setH2('sources','Origem do tráfego');
+  setH2('abandono','Onde pararam (etapa)');
+  setH2('pedidosDist','Faturamento dos leads × oferta clicada');
+  setH2('adsDist','Restaurantes analisados (todas as visitas)');
+  setH2('leads','Leads do Raio-X (com atribuição)');
+  var now=Date.now();
+  var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
+  function isRX(sid){ var sv=S[sid]||{}; if(String(sv.page||'').indexOf('raio-x')>=0||sv.variante==='raio-x') return true; var ev=E[sid]; if(ev){ for(var k in ev){ var e=ev[k]||{}; if(e.e==='lp_view'&&e.p&&e.p.variante==='raio-x') return true; } } return false; }
+  function evOf(sid){ var o={n:{},etapa:0,rest:'',nota:'',faixa:'',oferta:'',notaRX:''}; var ev=E[sid]; if(ev){ for(var k in ev){ var e=ev[k]||{}, p=e.p||{}; if(!e.e) continue; o.n[e.e]=(o.n[e.e]||0)+1;
+      if(e.e==='analysis_step'&&p.etapa) o.etapa=Math.max(o.etapa,+p.etapa||0);
+      if((e.e==='restaurant_selected'||e.e==='capture_view')&&p.restaurante) o.rest=p.restaurante;
+      if(e.e==='preview_view'){ if(p.restaurante) o.rest=p.restaurante; if(p.nota_google) o.nota=p.nota_google; }
+      if(e.e==='lead_submit'){ if(p.faixa) o.faixa=p.faixa; if(p.nota!=null) o.notaRX=p.nota; }
+      if(e.e==='club_click') o.oferta=o.oferta?o.oferta+' + Club':'Club';
+      if(e.e==='analise_click') o.oferta=o.oferta?o.oferta+' + Análise':'Análise'; } } return o; }
+  function aggWin(a,b){
+    var r={vis:0,busca:0,escolheu:0,captura:0,completa:0,previa:0,form:0,perg:0,leads:0,qualif:0,result:0,club:0,analise:0,oferta:0,etapas:[0,0,0,0,0,0,0],dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{},fx:{},rows:[]};
+    for(var sid in S){ var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<a||t>=b) continue; if(!isRX(sid)) continue;
+      var x=evOf(sid); r.vis++;
+      if(x.n.search_start) r.busca++; if(x.n.restaurant_selected||x.n.capture_view) r.escolheu++; if(x.n.capture_view) r.captura++; if(x.n.analysis_complete) r.completa++;
+      if(x.n.questions_complete||x.n.result_view) r.perg++;
+      if(x.n.preview_view) r.previa++; if(x.n.form_start) r.form++;
+      var isLead=!!(x.n.lead_submit||sv.converted); if(isLead) r.leads++; if(x.n.qualified_lead) r.qualif++;
+      if(x.n.result_view) r.result++; if(x.n.club_click) r.club++; if(x.n.analise_click) r.analise++; if(x.n.club_click||x.n.analise_click) r.oferta++;
+      for(var i=1;i<=6;i++) if(x.etapa>=i) r.etapas[i]++;
+      var d=sv.device==='mobile'?'mobile':(sv.device==='desktop'?'desktop':null); if(d){ r.dev[d].t++; if(isLead) r.dev[d].c++; }
+      var src=(sv.utm_source||'').trim()||(sv.ref?dominio(sv.ref):'')||'direto';
+      if(!r.srcMap[src]) r.srcMap[src]={sess:0,leads:0}; r.srcMap[src].sess++; if(isLead) r.srcMap[src].leads++;
+      if(x.faixa){ if(!r.fx[x.faixa]) r.fx[x.faixa]={leads:0,club:0,analise:0}; r.fx[x.faixa].leads++; if(x.n.club_click) r.fx[x.faixa].club++; if(x.n.analise_click) r.fx[x.faixa].analise++; }
+      if(x.rest) r.rows.push({t:t,rest:x.rest,nota:x.nota,etapa:x.etapa,prev:!!x.n.preview_view,res:!!x.n.result_view,cap:!!x.n.capture_view,lead:isLead,notaRX:x.notaRX,oferta:x.oferta,src:src,dev:sv.device||''});
+    }
+    return r;
+  }
+  var C=aggWin(cut,Infinity), P=null, PREVLBL='';
+  if(RANGE>0&&RANGE<99999){ var sp=RANGE*86400000; P=aggWin(cut-sp,cut); PREVLBL='vs '+RANGE+'d ant.'; }
+  else if(RANGE===0){ var y=new Date(); y.setHours(0,0,0,0); P=aggWin(y.getTime()-86400000,y.getTime()); PREVLBL='vs ontem'; }
+  function DL(cur,prev){ if(prev==null) return ''; if(prev===0&&cur===0) return '<span class="dl flat">— <em>'+PREVLBL+'</em></span>'; if(prev===0) return '<span class="dl up">▲ novo</span>'; var d=Math.round((cur-prev)/prev*100),cls=d===0?'flat':(d>0?'up':'down'),ar=d>0?'▲':(d<0?'▼':'•'); return '<span class="dl '+cls+'">'+ar+' '+Math.abs(d)+'% <em>'+PREVLBL+'</em></span>'; }
+  el('kpis').innerHTML =
+    kpiD(KICO.users,'#7c3aed',DL(C.vis,P?P.vis:null),fmt(C.vis),'Visitantes') +
+    kpiD(KICO.quiz,'#4f46e5',DL(C.escolheu,P?P.escolheu:null),fmt(C.escolheu),'Escolheram uma loja') +
+    kpiD(KICO.check,'#f59e0b',DL(C.previa,P?P.previa:null),fmt(C.previa),'Viram a prévia','p') +
+    kpiD(KICO.id,'#14b8a6',DL(C.leads,P?P.leads:null),fmt(C.leads),'Leads') +
+    kpiD(KICO.check,'#3AD07E',DL(C.qualif,P?P.qualif:null),fmt(C.qualif),'Leads R$40 mil+','g') +
+    kpiD(KICO.cal,'#F5B851',DL(C.oferta,P?P.oferta:null),fmt(C.club)+' / '+fmt(C.analise),'Cliques Club / Análise','a') +
+    kpiD(KICO.pct,'#A66BFF',DL(Math.round(C.leads/(C.vis||1)*1000),P?Math.round(P.leads/(P.vis||1)*1000):null),pct(C.leads,C.vis),'Conversão (visita → lead)','p');
+  el('funnel').innerHTML = funnelHTML([
+    {n:'Visitantes',sub:'Abriram o Raio-X',v:C.vis},
+    {n:'Buscaram',sub:'Digitaram o nome da loja',v:C.busca},
+    {n:'Escolheram a loja',sub:'Viram a tela de contato',v:C.escolheu},
+    {n:'Viraram lead',sub:'Nome, WhatsApp, @ e faturamento',v:C.leads},
+    {n:'Análise completa',sub:'Viram o mapa até o fim',v:C.completa},
+    {n:'Responderam as 4 perguntas',sub:'Liberaram o relatório completo',v:C.perg},
+    {n:'Clicaram numa oferta',sub:'Club ou Análise Estratégica',v:C.oferta}
+  ], C.vis);
+  el('sources').innerHTML = barsFrom(C.srcMap,'sess',C.vis) || '<div class="empty">Sem dados de origem ainda.</div>';
+  setH2('devices','Dispositivos');
+  (function(){ var dt=C.dev.desktop.t, mt=C.dev.mobile.t, tot=dt+mt;
+    if(!tot){ el('devices').innerHTML='<div class="empty">Sem dado de dispositivo ainda.</div>'; return; }
+    var ang=Math.round(dt/tot*360), cvD=dt?(C.dev.desktop.c/dt*100):0, cvM=mt?(C.dev.mobile.c/mt*100):0;
+    function dleg(c,nm,v,cv){ return '<div class="dleg"><span class="dot" style="background:'+c+'"></span><span class="nm">'+nm+'</span><div class="vv"><b>'+pct(v,tot)+'</b><span>'+fmt(v)+' sess · '+cv.toFixed(1)+'% conv</span></div></div>'; }
+    el('devices').innerHTML='<div class="donut-wrap"><div class="donut" style="background:conic-gradient(#7C34F0 0 '+ang+'deg,#14b8a6 '+ang+'deg 360deg)"><div class="donut-hole"><b>'+fmt(tot)+'</b><span>sessões</span></div></div><div class="donut-leg">'+dleg('#7C34F0','Desktop',dt,cvD)+dleg('#14b8a6','Mobile',mt,cvM)+'</div></div>';
+  })();
+  var ET=['','1 · Localizando','2 · Concorrentes 1 km','3 · Raio 3 km','4 · Moradores','5 · Fotos','6 · Avaliações'];
+  var emax=Math.max(C.escolheu,1), ebars='';
+  for(var i=1;i<=6;i++){ ebars+='<div class="row"><div class="name">'+ET[i]+'</div><div class="bar"><span class="b" style="width:'+(C.etapas[i]/emax*100)+'%"></span></div><div class="val">'+fmt(C.etapas[i])+'</div></div>'; }
+  ebars+='<div class="row"><div class="name">Prévia da nota</div><div class="bar"><span class="b" style="width:'+(C.previa/emax*100)+'%"></span></div><div class="val">'+fmt(C.previa)+'</div></div>';
+  ebars+='<div class="row"><div class="name">Relatório completo</div><div class="bar"><span class="b" style="width:'+(C.result/emax*100)+'%"></span></div><div class="val">'+fmt(C.result)+'</div></div>';
+  el('abandono').innerHTML = ebars+'<div class="empty" style="margin-top:8px">Quantos chegaram em cada etapa da análise (base: quem escolheu a loja). A queda mostra onde a animação perde gente.</div>';
+  (function(){ var ORD=['0-40','40-60','60-100','100+'], LB={'0-40':'Até R$40 mil','40-60':'R$40–60 mil','60-100':'R$60–100 mil','100+':'Acima de R$100 mil'};
+    var ks=ORD.filter(function(k){return C.fx[k];}); if(!ks.length){ el('pedidosDist').innerHTML='<div class="empty">Sem leads do Raio-X neste período.</div>'; return; }
+    el('pedidosDist').innerHTML='<table><thead><tr><th>Faturamento</th><th class="num">Leads</th><th class="num">Clicou no Club</th><th class="num">Clicou na Análise</th></tr></thead><tbody>'+
+      ks.map(function(k){ var f=C.fx[k]; return '<tr><td>'+LB[k]+'</td><td class="num">'+f.leads+'</td><td class="num">'+f.club+' <span style="color:var(--muted2)">('+pct(f.club,f.leads)+')</span></td><td class="num">'+f.analise+' <span style="color:var(--muted2)">('+pct(f.analise,f.leads)+')</span></td></tr>'; }).join('')+'</tbody></table>'+
+      '<div class="empty" style="margin-top:8px">Até R$40 mil só vê o Club. Acima disso, a Análise é a oferta principal e o Club aparece embaixo. Vendas do Club: confira na Hotmart pelo código <code>sck=raiox_…</code>.</div>';
+  })();
+  (function(){ var rows=C.rows.sort(function(a,b){return b.t-a.t;}).slice(0,40);
+    if(!rows.length){ el('adsDist').innerHTML='<div class="empty">Ninguém analisou uma loja neste período.</div>'; return; }
+    el('adsDist').innerHTML='<table><thead><tr><th>Restaurante</th><th class="num">Nota Google</th><th>Até onde foi</th><th>Lead</th><th>Oferta</th><th>Origem</th><th class="num">Quando</th></tr></thead><tbody>'+
+      rows.map(function(r){ var ate=r.res?'Relatório':(r.prev?'Prévia':(r.etapa?'Etapa '+r.etapa:(r.cap&&!r.lead?'Saiu no contato':'Escolheu a loja')));
+        return '<tr><td>'+esc(r.rest)+'</td><td class="num">'+(r.nota?esc(String(r.nota).replace('.',',')):'—')+'</td><td>'+ate+'</td><td>'+(r.lead?'<span class="pill" style="background:rgba(37,211,102,.15);color:#25d366">Sim'+(r.notaRX!==''?' · '+r.notaRX+'/100':'')+'</span>':'<span style="color:var(--muted2)">não</span>')+'</td><td>'+(r.oferta?esc(r.oferta):'—')+'</td><td>'+esc(r.src)+'</td><td class="num">'+quando(r.t)+'</td></tr>'; }).join('')+'</tbody></table>';
+  })();
+  var ls=[]; for(var lk in L){ var lv=L[lk]||{}; var hay=[lv._source,lv.origem,lv.variante_lp].map(function(x){return String(x||'').toLowerCase();}).join(' '); if(hay.indexOf('raio-x')<0) continue; if((lv._createdAt||0)>=cut) ls.push(lv); }
+  ls.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  el('leads').innerHTML = ls.length ? '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Restaurante</th><th>Nota Raio-X</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
+    ls.slice(0,40).map(function(l){ return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td>'+esc(l.empresa||l.restaurante||'—')+'</td><td>'+(function(){ var m=String(l.desafio||'').match(/Raio-X (\d+)\/100/); return m?m[1]+'/100':(l.raiox_nota!=null?esc(l.raiox_nota)+'/100':'—'); })()+'</td>'+origemCell(l)+adCell(l)+campCell(l)+'<td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>'
+    : '<div class="empty">Nenhum lead do Raio-X no período. </div>';
+  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  el('status').textContent = C.vis===0 ? 'Ainda não há visitas no Raio-X neste período.' : ('Atualizado agora · Raio-X do Delivery (/raio-x/) · período: '+per);
 }
 
 /* ===== Funil do QUIZ FV1 (lê analytics/events) ===== */
