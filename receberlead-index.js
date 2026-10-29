@@ -86,6 +86,58 @@ function mensagemMentoria(nomeCompleto, link) {
     "É o passo a passo pra você crescer com o que já tem hoje. Dá uma olhada aqui 👉 " + url;
 }
 
+// ===== RAIO-X DO DELIVERY (assessoriaaudens.com.br/raio-x/) =====
+// Lead que fez o Raio-X recebe mensagem PRÓPRIA, citando o diagnóstico (restaurante + nota).
+// Até R$40k -> convite pro Audens Club. R$40k+ -> perfil ideal pra assessoria.
+const RAIOX_HUB_NOME = process.env.RAIOX_HUB_NOME || "Audens Club";
+const RAIOX_HUB_LINK = process.env.RAIOX_HUB_LINK || "https://www.audensclub.com.br/";
+function _raioxResumo(body) {
+  var rest = String((body && (body.restaurante || body.empresa)) || "").trim();
+  var nota = Number(body && body.raiox_nota);
+  var fraco = String((body && body.raiox_pilar_fraco) || "").trim();
+  if (fraco) fraco = fraco.charAt(0).toLowerCase() + fraco.slice(1); // "Perfil no Google" -> "perfil no Google"
+  return { rest: rest, nota: isFinite(nota) && nota > 0 ? Math.round(nota) : null, fraco: fraco };
+}
+function mensagemRaioxHub(nomeCompleto, body) {
+  var primeiroNome = primeiroNomeDe(nomeCompleto);
+  var r = _raioxResumo(body);
+  return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
+    "Vi que você fez o Raio-X do Delivery" + (r.rest ? " do *" + r.rest + "*" : "") + (r.nota ? " e tirou *" + r.nota + "/100*" : "") + ".\n\n" +
+    "Pelo momento do seu delivery, investir em assessoria e tráfego pago ainda não é o próximo passo. Mas você está apto pra entrar no *" + RAIOX_HUB_NOME + "* 🚀\n\n" +
+    "É a comunidade dos donos de restaurante da Audens, feita pra essa fase:\n" +
+    "• 3 cursos com 44 aulas: Tráfego Pago, iFood de Alta Performance e Feed Que Dá Fome\n" +
+    "• Live toda semana, ao vivo com a equipe da Audens\n" +
+    "• Comunidade com outros donos de delivery\n" +
+    "• Todo curso novo entra na assinatura\n" +
+    "• Desconto nas ferramentas da Audens (financeiro e cardápio digital)\n\n" +
+    "Lá você aprende a executar as ações que apareceram no seu Raio-X" + (r.fraco ? ", começando por *" + r.fraco + "*" : "") + ".\n" +
+    "Dá uma olhada aqui 👉 " + RAIOX_HUB_LINK;
+}
+// Lead ≤ R$40k vindo da LPV3: convite pro Audens Club (no lugar da mentoria).
+const CLUB_ORIGENS = /^lp-v3$/i;   // origens que recebem a msg do Club em vez da mentoria
+function mensagemAudensClub(nomeCompleto) {
+  var primeiroNome = primeiroNomeDe(nomeCompleto);
+  return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
+    "Vi que você se cadastrou com a gente pra conhecer a assessoria de marketing.\n\n" +
+    "Pelo momento do seu delivery, investir em assessoria e tráfego pago ainda não é o próximo passo — e a gente fala isso de dono pra dono. Mas tem um lugar feito pra essa fase: o *" + RAIOX_HUB_NOME + "* 🚀\n\n" +
+    "É a comunidade dos donos de restaurante da Audens:\n" +
+    "• 3 cursos com 44 aulas: Tráfego Pago, iFood de Alta Performance e Feed Que Dá Fome\n" +
+    "• Live toda semana, ao vivo com a equipe da Audens\n" +
+    "• Comunidade com outros donos de delivery\n" +
+    "• Todo curso novo entra na assinatura\n" +
+    "• Desconto nas ferramentas da Audens (financeiro e cardápio digital)\n\n" +
+    "Dá uma olhada aqui 👉 " + RAIOX_HUB_LINK;
+}
+function mensagemRaioxAssessoria(nomeCompleto, body) {
+  var primeiroNome = primeiroNomeDe(nomeCompleto);
+  var r = _raioxResumo(body);
+  return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
+    "Vi que você fez o Raio-X do Delivery" + (r.rest ? " do *" + r.rest + "*" : "") + (r.nota ? " e tirou *" + r.nota + "/100*" : "") + ".\n\n" +
+    "Pelo que você respondeu, seu delivery tem o *perfil ideal pra nossa assessoria*: já fatura o suficiente pra crescer com tráfego pago e canal próprio, com um time cuidando do seu marketing.\n\n" +
+    "Quero te mostrar, numa Análise Estratégica sem custo, o plano pra subir essa nota" + (r.fraco ? ", começando por *" + r.fraco + "*" : "") + ". É a mesma forma que a gente faz no Burguer FC e na Pizza FC.\n\n" +
+    "Qual o melhor horário pra gente conversar?";
+}
+
 // Momento 0 — abertura de curiosidade (método Gregori): só o nome + "?" pra provocar
 // resposta. Usada SÓ no ramo não-quiz (LP Nova / lead frio). Leads de quiz (FV1/FV2)
 // seguem recebendo a mensagemQuizQualificado — a experiência da LP V2 não muda.
@@ -871,7 +923,20 @@ async function handleReceberLead(req, res) {
   if (_mentoriaLead) {
     try { var _mlv = (await db.ref("config/mentoria/link").once("value")).val(); if (_mlv) { _mentoriaBase = String(_mlv); var _sep = (_mentoriaBase.indexOf("?") >= 0 ? "&" : "?"); _mentoriaWhats = _mentoriaBase + _sep + "utm_source=whatsapp&utm_medium=sdr-joao&utm_campaign=mentoria-lead-abaixo40k"; _mentoriaRedir = _mentoriaBase + _sep + "utm_source=lp-assessoria&utm_medium=redirect&utm_campaign=mentoria-lead-abaixo40k"; } } catch (e) {}
   }
-  if (_mentoriaLead) {
+  const isRaioX = /raio-?x/i.test(String(origem));
+  if (isRaioX) {
+    // Raio-X do Delivery: mensagem própria citando o diagnóstico.
+    if (_mentoriaLead) {
+      try { await enviarMensagemWhatsapp(tel, mensagemRaioxHub(nome, body)); } catch (e) { console.error("raiox hub msg:", e); }
+    } else {
+      try { await enviarMensagemWhatsapp(tel, mensagemRaioxAssessoria(nome, body)); } catch (e) { console.error("raiox assessoria msg:", e); }
+      // Régua de nurturing continua valendo pros qualificados (se estiver ligada).
+      try { var _nurtOnRx = ((await db.ref("config/nurturing/enabled").once("value")).val() === true); if (_nurtOnRx) await nurtStart(key, leadData); } catch (e) { console.error("raiox nurtStart:", e); }
+    }
+  } else if (_mentoriaLead && CLUB_ORIGENS.test(String(origem))) {
+    // LPV3, abaixo de 40k: convite pro Audens Club (não mais a mentoria).
+    try { await enviarMensagemWhatsapp(tel, mensagemAudensClub(nome)); } catch (e) { console.error("club msg:", e); }
+  } else if (_mentoriaLead) {
     // Abaixo de 40k / sem faturamento: direciona pra mentoria (WhatsApp). Sem assessoria, sem nurturing.
     try { await enviarMensagemWhatsapp(tel, mensagemMentoria(nome, _mentoriaWhats)); } catch (e) { console.error("mentoria msg:", e); }
   } else if (!faixaBaixa) {
