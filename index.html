@@ -675,6 +675,15 @@ function startRealtimeSync(){
     }
   });
 
+  // Sync Social Selling (carteira de leads por vendedor) em tempo real
+  fbDb.ref('social_selling/leads').on('value', function(snap){
+    ssLeads = snap.val() || {};
+    try{ localStorage.setItem('audens_ss_leads', JSON.stringify(ssLeads)); }catch(e){}
+    var area = document.getElementById('content');
+    var pg = area ? area.getAttribute('data-page') : null;
+    if(pg==='social-selling' && typeof renderSocialSelling==='function'){ area.innerHTML=renderSocialSelling(); }
+  });
+
   // Sync do conjunto ATIVO da cadência — filtra tarefas do João e gera ligações p/ quem entrou
   fbDb.ref('cadencia_ativos').on('value', function(snap){
     cadenciaAtivos = snap.val() || {};
@@ -2516,6 +2525,13 @@ function renderDesempenhoSDR(){
 
 var allLeads=[],calls={},meetings={},followups={},goals={metaDiaria:50,metaMensal:1000},_dailyMap={};
 var kanbanData={};
+// ===== SOCIAL SELLING — carteira de leads (donos) por vendedor =====
+var ssLeads={}; try{ var _ssl=localStorage.getItem('audens_ss_leads'); if(_ssl)ssLeads=JSON.parse(_ssl); }catch(e){}
+var SS_META_POR_VENDEDOR=50; // meta de leads ativos por vendedor
+var SS_SEGMENTOS=['Hamburgueria','Pizzaria','Restaurante','Açaí','Sushi','Marmita/Comida caseira','Doceria/Confeitaria','Lanchonete','Outro'];
+var SS_POTENCIAIS=['Alto','Médio','Baixo'];
+var SS_VENDEDORES=['Lucas','João'];
+var SS_STATUS_LABELS={novo:'Não iniciado',cadencia:'Em cadência',conversa:'Em conversa',reuniao:'Reunião agendada',cliente:'Cliente',descartado:'Descartado'};
 var KANBAN_COLS=[
   {id:'novo',label:'Novo Lead',color:'purple'},
   {id:'qualificado',label:'Lead Qualificado',color:'cyan'},
@@ -4846,6 +4862,7 @@ function buildNav(){
       {id:'fria',icon:'ti-snowflake',label:'Prospecção Fria'},
       {id:'prosp-grupo',icon:'ti-users-group',label:'Prospecção Grupo'},
       {id:'reat-blast',icon:'ti-speakerphone',label:'Disparo Reta Final'},
+      {id:'social-selling',icon:'ti-brand-instagram',label:'Social Selling'},
       {id:'parceiros',icon:'ti-heart-handshake',label:'Parceiros'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
     ]},
@@ -5091,7 +5108,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'reat-blast':renderReatBlast,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'reat-blast':renderReatBlast,'social-selling':renderSocialSelling,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -34881,6 +34898,195 @@ async function reatArquivar(){
     if(typeof renderKanban==='function')try{renderKanban();}catch(x){}
     reatLoadStats();
   }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+/* ===================== SOCIAL SELLING (Fase 1 — carteira + cadastro de donos) ===================== */
+function _ssDb(){ return (window.fbDb||(typeof initFirebase==='function'&&initFirebase())); }
+function _ssNormIg(v){ var s=String(v||'').trim().toLowerCase(); s=s.replace(/^https?:\/\/(www\.)?instagram\.com\//,'').replace(/[\/?#].*$/,''); s=s.replace(/^@+/,''); s=s.replace(/[^a-z0-9._]/g,''); return s; }
+function _ssIgUrl(h){ h=_ssNormIg(h); return h?('https://instagram.com/'+h):''; }
+function _ssKey(s){ return String(s||'').replace(/[.#$\[\]\/]/g,'_').slice(0,120); }
+function _ssIsGestor(){ return (typeof CU!=='undefined'&&CU&&(CU.funcao==='gestor'||CU.role==='gestor')); }
+function _ssMeuNome(){ return (typeof CU!=='undefined'&&CU)?(CU.closer||CU.name||''):''; }
+function _ssList(){ var out=[]; Object.keys(ssLeads||{}).forEach(function(k){ var e=ssLeads[k]; if(!e)return; out.push(Object.assign({_id:k},e)); }); return out; }
+function _ssDup(igDono,igLoja,exceptId){
+  var a=_ssNormIg(igDono), b=_ssNormIg(igLoja);
+  var hit=null;
+  Object.keys(ssLeads||{}).forEach(function(k){ if(k===exceptId)return; var e=ssLeads[k]||{}; var ed=_ssNormIg(e.igDono), el=_ssNormIg(e.igLoja);
+    if((a&&(a===ed||a===el))||(b&&(b===ed||b===el))) hit=Object.assign({_id:k},e); });
+  return hit;
+}
+var _ssFiltroResp='meus', _ssFiltroSeg='all', _ssFiltroPot='all', _ssFiltroStatus='all', _ssBusca='';
+function renderSocialSelling(){
+  var gestor=_ssIsGestor(); var eu=_ssMeuNome();
+  if(!gestor) _ssFiltroResp=eu; // vendedor vê só a própria carteira
+  var todos=_ssList();
+  var daView=todos.filter(function(l){
+    if(_ssFiltroResp==='meus'){ if((l.responsavel||'')!==eu) return false; }
+    else if(_ssFiltroResp!=='all'){ if((l.responsavel||'')!==_ssFiltroResp) return false; }
+    if(_ssFiltroSeg!=='all' && (l.segmento||'')!==_ssFiltroSeg) return false;
+    if(_ssFiltroPot!=='all' && (l.potencial||'')!==_ssFiltroPot) return false;
+    if(_ssFiltroStatus!=='all' && (l.status||'novo')!==_ssFiltroStatus) return false;
+    if(_ssBusca){ var b=_ssBusca.toLowerCase(); if(!((l.dono||'').toLowerCase().includes(b)||(l.loja||'').toLowerCase().includes(b)||(l.igDono||'').toLowerCase().includes(b)||(l.igLoja||'').toLowerCase().includes(b))) return false; }
+    return true;
+  });
+  function cnt(nome){ return todos.filter(function(l){return (l.responsavel||'')===nome;}).length; }
+  function card(lbl,val,cor,sub){return '<div style="flex:1;min-width:130px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>':'')+'</div>';}
+  var meuN=cnt(eu), joaoN=cnt('João'), lucasN=cnt('Lucas');
+  var H='<div class="page active"><div style="max-width:1150px;margin:0 auto;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:#c084fc;font-weight:700;">PROSPECÇÃO ATIVA NO INSTAGRAM</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">📲 Social Selling</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Carteira de donos pra abordar no Instagram. Meta: '+SS_META_POR_VENDEDOR+' leads ativos por vendedor.</div></div>'+
+     '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+     '<button onclick="abrirNovoSS()" class="btn" style="background:var(--purple);color:#fff;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-plus"></i> Novo lead</button>'+
+     '<button onclick="abrirImportarSS()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;"><i class="ti ti-upload"></i> Importar lista</button>'+
+     '</div></div>';
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">'+
+     (gestor
+       ? card('Lucas',lucasN+' / '+SS_META_POR_VENDEDOR,(lucasN>=SS_META_POR_VENDEDOR?'#22c55e':'#c084fc'))+card('João',joaoN+' / '+SS_META_POR_VENDEDOR,(joaoN>=SS_META_POR_VENDEDOR?'#22c55e':'#c084fc'))+card('Total cadastrados',todos.length,'var(--white)')
+       : card('Minha carteira',meuN+' / '+SS_META_POR_VENDEDOR,(meuN>=SS_META_POR_VENDEDOR?'#22c55e':'#c084fc')))+
+     card('Em conversa',todos.filter(function(l){return (l.status||'')==='conversa';}).length,'#f59e0b')+
+     card('Reuniões',todos.filter(function(l){return (l.status||'')==='reuniao';}).length,'#22c55e')+
+     '</div>';
+  // filtros
+  function opt(v,lbl,cur){return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+lbl+'</option>';}
+  H+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">';
+  if(gestor){ H+='<select onchange="_ssFiltroResp=this.value;_ssRerender();" class="f-select" style="width:auto;margin:0;padding:7px 10px;">'+opt('all','Todos os vendedores',_ssFiltroResp)+opt('meus','Meus',_ssFiltroResp)+SS_VENDEDORES.map(function(v){return opt(v,v,_ssFiltroResp);}).join('')+'</select>'; }
+  H+='<select onchange="_ssFiltroSeg=this.value;_ssRerender();" class="f-select" style="width:auto;margin:0;padding:7px 10px;">'+opt('all','Todo segmento',_ssFiltroSeg)+SS_SEGMENTOS.map(function(s){return opt(s,s,_ssFiltroSeg);}).join('')+'</select>'+
+     '<select onchange="_ssFiltroPot=this.value;_ssRerender();" class="f-select" style="width:auto;margin:0;padding:7px 10px;">'+opt('all','Todo potencial',_ssFiltroPot)+SS_POTENCIAIS.map(function(s){return opt(s,s,_ssFiltroPot);}).join('')+'</select>'+
+     '<select onchange="_ssFiltroStatus=this.value;_ssRerender();" class="f-select" style="width:auto;margin:0;padding:7px 10px;">'+opt('all','Todo status',_ssFiltroStatus)+Object.keys(SS_STATUS_LABELS).map(function(s){return opt(s,SS_STATUS_LABELS[s],_ssFiltroStatus);}).join('')+'</select>'+
+     '<input type="text" value="'+esc(_ssBusca)+'" oninput="_ssBusca=this.value;clearTimeout(window._ssBT);window._ssBT=setTimeout(_ssRerender,250);" placeholder="Buscar dono / loja / @..." class="f-input" style="width:220px;margin:0;padding:7px 10px;">'+
+     '</div>';
+  // tabela
+  var potCor={'Alto':'#22c55e','Médio':'#f59e0b','Baixo':'var(--muted)'};
+  H+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+daView.length+' lead(s)</div>';
+  H+='<div style="overflow:auto;border:1px solid var(--border);border-radius:12px;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--card);">'+
+     '<th style="text-align:left;padding:10px 12px;color:var(--muted);">Dono</th><th style="text-align:left;padding:10px 12px;color:var(--muted);">Loja</th><th style="text-align:left;padding:10px 12px;color:var(--muted);">Segmento</th><th style="text-align:center;padding:10px 12px;color:var(--muted);">Potencial</th><th style="text-align:center;padding:10px 12px;color:var(--muted);">Status</th>'+(gestor?'<th style="text-align:left;padding:10px 12px;color:var(--muted);">Responsável</th>':'')+'<th style="padding:10px 12px;"></th></tr></thead><tbody>';
+  if(!daView.length) H+='<tr><td colspan="'+(gestor?7:6)+'" style="padding:22px;text-align:center;color:var(--muted);">Nenhum lead ainda. Clique em <b>Novo lead</b> ou <b>Importar lista</b> pra começar.</td></tr>';
+  daView.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);}).forEach(function(l){
+    var igD=_ssNormIg(l.igDono), igL=_ssNormIg(l.igLoja);
+    H+='<tr style="border-top:1px solid rgba(255,255,255,0.05);">'+
+       '<td style="padding:10px 12px;color:var(--white);">'+esc(l.dono||'—')+(igD?'<div><a href="'+_ssIgUrl(igD)+'" target="_blank" style="font-size:11px;color:#c084fc;text-decoration:none;">@'+esc(igD)+'</a></div>':'')+'</td>'+
+       '<td style="padding:10px 12px;color:var(--silver);">'+esc(l.loja||'—')+(igL?'<div><a href="'+_ssIgUrl(igL)+'" target="_blank" style="font-size:11px;color:#c084fc;text-decoration:none;">@'+esc(igL)+'</a></div>':'')+'</td>'+
+       '<td style="padding:10px 12px;color:var(--silver);">'+esc(l.segmento||'—')+'</td>'+
+       '<td style="padding:10px 12px;text-align:center;"><span style="color:'+(potCor[l.potencial]||'var(--muted)')+';font-weight:700;">'+esc(l.potencial||'—')+'</span></td>'+
+       '<td style="padding:10px 12px;text-align:center;"><span style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--silver);">'+esc(SS_STATUS_LABELS[l.status||'novo']||l.status)+'</span></td>'+
+       (gestor?'<td style="padding:10px 12px;color:var(--silver);">'+esc(l.responsavel||'—')+'</td>':'')+
+       '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">'+
+         (igD||igL?'<a href="'+_ssIgUrl(igD||igL)+'" target="_blank" title="Abrir Instagram" style="color:#c084fc;text-decoration:none;margin-right:8px;"><i class="ti ti-brand-instagram"></i></a>':'')+
+         '<button onclick="abrirNovoSS(\''+l._id+'\')" title="Editar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--silver);padding:3px 7px;font-size:11px;cursor:pointer;"><i class="ti ti-pencil"></i></button> '+
+         '<button onclick="excluirSS(\''+l._id+'\')" title="Excluir" style="background:none;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:var(--red);padding:3px 7px;font-size:11px;cursor:pointer;"><i class="ti ti-trash"></i></button>'+
+       '</td></tr>';
+  });
+  H+='</tbody></table></div>';
+  H+='</div></div>';
+  return H;
+}
+function _ssRerender(){ var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='social-selling') a.innerHTML=renderSocialSelling(); }
+function abrirNovoSS(id){
+  var e=(id&&ssLeads[id])?ssLeads[id]:{}; var editing=!!(id&&ssLeads[id]);
+  var eu=_ssMeuNome(); var gestor=_ssIsGestor();
+  function sel(id2,arr,cur,ph){ return '<select class="f-select" id="'+id2+'" style="margin-bottom:0;">'+(ph?'<option value="">'+ph+'</option>':'')+arr.map(function(o){return '<option value="'+o+'"'+(cur===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select>'; }
+  var html='<div class="modal-ov active" id="modal-ss" onclick="if(event.target===this)_ssCloseModal()">'+
+    '<div class="modal-box" style="max-width:480px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-brand-instagram"></i> '+(editing?'Editar lead':'Novo lead')+'</div><button class="modal-close" onclick="_ssCloseModal()">×</button></div>'+
+      '<div style="padding:20px;max-height:70vh;overflow:auto;">'+
+        '<label class="f-label">Nome do dono *</label><input class="f-input" id="ss-dono" value="'+esc(e.dono||'')+'" placeholder="Ex: Rafael">'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">@ do dono</label><input class="f-input" id="ss-igdono" value="'+esc(e.igDono||'')+'" placeholder="@fulano" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">@ da loja</label><input class="f-input" id="ss-igloja" value="'+esc(e.igLoja||'')+'" placeholder="@loja" style="margin-bottom:0;"></div>'+
+        '</div>'+
+        '<label class="f-label" style="margin-top:12px;">Nome da loja</label><input class="f-input" id="ss-loja" value="'+esc(e.loja||'')+'" placeholder="Ex: Rubin Burger">'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Segmento</label>'+sel('ss-seg',SS_SEGMENTOS,e.segmento||'','Selecione')+'</div>'+
+          '<div><label class="f-label">Potencial</label>'+sel('ss-pot',SS_POTENCIAIS,e.potencial||'','Selecione')+'</div>'+
+        '</div>'+
+        '<div class="modal-grid2" style="margin-top:12px;">'+
+          '<div><label class="f-label">Responsável</label>'+(gestor?sel('ss-resp',SS_VENDEDORES,e.responsavel||eu||''):'<input class="f-input" id="ss-resp" value="'+esc(e.responsavel||eu||'')+'" readonly style="margin-bottom:0;opacity:.7;">')+'</div>'+
+          '<div><label class="f-label">Status</label>'+sel('ss-status',Object.keys(SS_STATUS_LABELS).map(function(k){return k;}),e.status||'novo','')+'</div>'+
+        '</div>'+
+        '<label class="f-label" style="margin-top:12px;">Observações (anotações sobre o dono/loja)</label><textarea class="f-input" id="ss-obs" rows="3" placeholder="Ex: fatura ~40k, quer crescer no delivery">'+esc(e.obs||'')+'</textarea>'+
+        '<div id="ss-modal-st" style="font-size:12px;color:var(--red);margin-top:6px;"></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="salvarSS('+(editing?('\''+id+'\''):'null')+')"><i class="ti ti-check"></i> '+(editing?'Salvar':'Cadastrar')+'</button>'+
+        '<button class="btn btn-outline" onclick="_ssCloseModal()">Cancelar</button>'+
+      '</div>'+
+    '</div></div>';
+  var w=document.createElement('div'); w.id='ss-modal-wrap'; w.innerHTML=html; document.body.appendChild(w);
+}
+function _ssCloseModal(){ var w=document.getElementById('ss-modal-wrap'); if(w)w.remove(); var w2=document.getElementById('ss-import-wrap'); if(w2)w2.remove(); }
+function salvarSS(id){
+  var v=function(x){var el=document.getElementById(x);return el?el.value.trim():'';};
+  var dono=v('ss-dono'), igDono=_ssNormIg(v('ss-igdono')), igLoja=_ssNormIg(v('ss-igloja'));
+  var st=document.getElementById('ss-modal-st');
+  if(!dono){ if(st)st.textContent='Informe o nome do dono.'; return; }
+  if(!igDono&&!igLoja){ if(st)st.textContent='Informe pelo menos um @ (dono ou loja).'; return; }
+  var dup=_ssDup(igDono,igLoja,id);
+  if(dup){ if(st)st.textContent='Esse @ já está cadastrado ('+(dup.dono||dup.loja||'lead existente')+' — '+(dup.responsavel||'?')+').'; return; }
+  var db=_ssDb(); if(!db){ if(st)st.textContent='Sem conexão com o Firebase.'; return; }
+  var key=id||_ssKey('ss_'+(igDono||igLoja||Date.now()));
+  var prev=(id&&ssLeads[id])?ssLeads[id]:{};
+  var rec=Object.assign({},prev,{
+    dono:dono, igDono:igDono, igLoja:igLoja, loja:v('ss-loja'),
+    segmento:v('ss-seg'), potencial:v('ss-pot'),
+    responsavel:(v('ss-resp')|| _ssMeuNome()), status:v('ss-status')||'novo', obs:v('ss-obs')
+  });
+  if(!prev.createdAt){ rec.createdAt=Date.now(); rec.createdBy=_ssMeuNome(); }
+  rec.updatedAt=Date.now();
+  ssLeads[key]=rec;
+  try{ db.ref('social_selling/leads/'+key).set(rec); }catch(e){ if(st){st.textContent='Erro ao salvar: '+e.message;} return; }
+  _ssCloseModal(); _ssRerender();
+}
+function excluirSS(id){
+  var e=ssLeads[id]||{}; if(!confirm('Excluir o lead '+(e.dono||e.loja||'')+'? Isso remove da carteira de Social Selling.'))return;
+  var db=_ssDb(); if(db){ try{ db.ref('social_selling/leads/'+id).remove(); }catch(x){} }
+  delete ssLeads[id]; _ssRerender();
+}
+function abrirImportarSS(){
+  var eu=_ssMeuNome(); var gestor=_ssIsGestor();
+  var respSel=gestor?('<select class="f-select" id="ss-imp-resp" style="margin-bottom:0;">'+SS_VENDEDORES.map(function(v){return '<option value="'+v+'"'+(v===eu?' selected':'')+'>'+v+'</option>';}).join('')+'</select>'):('<input class="f-input" id="ss-imp-resp" value="'+esc(eu)+'" readonly style="margin-bottom:0;opacity:.7;">');
+  var html='<div class="modal-ov active" id="modal-ss-imp" onclick="if(event.target===this)_ssCloseModal()">'+
+    '<div class="modal-box" style="max-width:560px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-upload"></i> Importar lista de leads</div><button class="modal-close" onclick="_ssCloseModal()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Cole uma linha por lead. Separe os campos por <b>ponto e vírgula (;)</b> ou <b>TAB</b>, nesta ordem:<br><code>Dono ; @dono ; Loja ; @loja ; Segmento ; Potencial</code><br>Só <b>Dono</b> e um <b>@</b> são obrigatórios; o resto pode ficar em branco. Ex:<br><code>Rafael ; @rafa ; Rubin Burger ; @rubinburger ; Hamburgueria ; Alto</code></div>'+
+        '<div style="margin-bottom:10px;"><label class="f-label">Responsável por esses leads</label>'+respSel+'</div>'+
+        '<textarea class="f-input" id="ss-imp-txt" rows="10" placeholder="Rafael ; @rafa ; Rubin Burger ; @rubinburger ; Hamburgueria ; Alto\nJoão ; @joaodelivery ; ; ; Pizzaria ; Médio" style="font-family:monospace;font-size:12px;"></textarea>'+
+        '<div id="ss-imp-st" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="importarSS()"><i class="ti ti-upload"></i> Importar</button>'+
+        '<button class="btn btn-outline" onclick="_ssCloseModal()">Cancelar</button>'+
+      '</div>'+
+    '</div></div>';
+  var w=document.createElement('div'); w.id='ss-import-wrap'; w.innerHTML=html; document.body.appendChild(w);
+}
+function importarSS(){
+  var txt=(document.getElementById('ss-imp-txt')||{}).value||'';
+  var resp=(document.getElementById('ss-imp-resp')||{}).value||_ssMeuNome();
+  var st=document.getElementById('ss-imp-st');
+  var linhas=txt.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  if(!linhas.length){ if(st){st.style.color='var(--amber)';st.textContent='Cole pelo menos uma linha.'; } return; }
+  var db=_ssDb(); if(!db){ if(st){st.style.color='var(--red)';st.textContent='Sem conexão com o Firebase.';} return; }
+  var upd={}, n=0, dup=0, inval=0, segOk={}, potOk={};
+  SS_SEGMENTOS.forEach(function(s){segOk[s.toLowerCase()]=s;}); SS_POTENCIAIS.forEach(function(s){potOk[s.toLowerCase()]=s;});
+  var vistos={};
+  linhas.forEach(function(ln){
+    var parts=ln.split(/\t|;/).map(function(p){return p.trim();});
+    var dono=parts[0]||'', igDono=_ssNormIg(parts[1]||''), loja=parts[2]||'', igLoja=_ssNormIg(parts[3]||'');
+    var seg=segOk[(parts[4]||'').toLowerCase()]||''; var pot=potOk[(parts[5]||'').toLowerCase()]||'';
+    if(!dono||(!igDono&&!igLoja)){ inval++; return; }
+    var dedupKey=igDono||igLoja;
+    if(vistos[dedupKey]||_ssDup(igDono,igLoja,null)){ dup++; return; }
+    vistos[dedupKey]=1;
+    var key=_ssKey('ss_'+(igDono||igLoja));
+    upd['social_selling/leads/'+key]={ dono:dono, igDono:igDono, igLoja:igLoja, loja:loja, segmento:seg, potencial:pot, responsavel:resp, status:'novo', obs:'', createdAt:Date.now(), createdBy:_ssMeuNome(), updatedAt:Date.now() };
+    n++;
+  });
+  if(st){ st.style.color='var(--muted)'; st.innerHTML='<i class="ti ti-loader"></i> Importando '+n+'…'; }
+  if(!n){ if(st){st.style.color='var(--amber)';st.textContent='Nada importado · '+dup+' duplicados · '+inval+' linhas inválidas.';} return; }
+  try{ db.ref().update(upd).then(function(){ if(st){st.style.color='#22c55e';st.textContent='✓ '+n+' importados · '+dup+' duplicados · '+inval+' inválidos.';} setTimeout(function(){_ssCloseModal();_ssRerender();},900); }).catch(function(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }); }
+  catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 function _friaDefaultMsg(id){
   return ({f1:"{{primeiroNome}}?",
