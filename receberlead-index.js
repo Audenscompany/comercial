@@ -4855,6 +4855,7 @@ async function handleReatBlast(req, res) {
   if (Array.isArray(b.msgs)) upd.msgs = b.msgs.slice(0, 5).map(function (m) { return String(m || ""); });
   if (b.msg != null) upd.msg = String(b.msg);
   if (b.round != null) upd.round = Math.min(5, Math.max(1, parseInt(b.round, 10) || 1));
+  if (b.intervalSeconds != null) upd.intervalSeconds = Math.max(60, parseInt(b.intervalSeconds, 10) || 300);
   if (b.maxPerDay != null) upd.maxPerDay = parseInt(b.maxPerDay, 10) || 60;
   if (b.testPhone != null) upd.testPhone = String(b.testPhone).replace(/\D/g, "");
   if (b.enabled != null) upd.enabled = (b.enabled === true || b.enabled === "true");

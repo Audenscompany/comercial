@@ -34797,6 +34797,7 @@ function renderReatBlast(){
   for(var tb=1;tb<=5;tb++){var at=tb===round;H+='<button onclick="reatSetRound('+tb+')" class="btn" style="padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;'+(at?'background:var(--purple);color:#fff;border:none;':'background:var(--card);color:var(--silver);border:1px solid var(--border);')+'">Toque '+tb+(at?' ●':'')+'</button>';}
   H+='</div>'+
      '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Intervalo (min)</label><input id="reat-interval" type="number" min="1" value="'+(Math.round((cfg.intervalSeconds||300)/60))+'" title="Minutos entre cada mensagem (anti-ban). Mínimo 1." style="width:80px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
      '<div><label style="font-size:11px;color:var(--muted);display:block;">Envios por dia</label><input id="reat-max" type="number" value="'+(cfg.maxPerDay||60)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
      '<div><label style="font-size:11px;color:var(--muted);display:block;">Telefone de teste (opcional)</label><input id="reat-test" type="text" value="'+(cfg.testPhone||'')+'" placeholder="55... (manda tudo p/ você)" style="width:170px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
      '<button onclick="reatSaveCfg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar ajustes</button>'+
@@ -34842,8 +34843,9 @@ async function reatImportar(limpar){
 }
 async function reatSaveCfg(){
   var max=parseInt((document.getElementById('reat-max')||{}).value||'60',10)||60;var test=(document.getElementById('reat-test')||{}).value||'';
+  var intMin=parseInt((document.getElementById('reat-interval')||{}).value||'5',10)||5;if(intMin<1)intMin=1;var intervalSeconds=intMin*60;
   var st=document.getElementById('reat-ctrl-st');
-  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,testPhone:test})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'Ajustes salvos.':'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+  try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,testPhone:test,intervalSeconds:intervalSeconds})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?('Ajustes salvos (intervalo '+intMin+' min).'):'Erro.';}reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
 }
 async function reatToggle(on){
   var st=document.getElementById('reat-ctrl-st');var round=((_reatStats||{}).config||{}).round||1;
