@@ -34947,6 +34947,20 @@ function renderSocialSelling(){
      card('Em conversa',todos.filter(function(l){return (l.status||'')==='conversa';}).length,'#f59e0b')+
      card('Reuniões',todos.filter(function(l){return (l.status||'')==='reuniao';}).length,'#22c55e')+
      '</div>';
+  // Tarefa do Dia 1 — cadastrar os 50 leads (mostra enquanto não bateu a meta)
+  function _ssKick(nome,qtd){
+    var pct=Math.min(100,Math.round(qtd/SS_META_POR_VENDEDOR*100));
+    var done=qtd>=SS_META_POR_VENDEDOR;
+    return '<div style="flex:1;min-width:260px;background:'+(done?'rgba(34,197,94,.08)':'rgba(192,132,252,.08)')+';border:1px solid '+(done?'rgba(34,197,94,.3)':'rgba(192,132,252,.3)')+';border-radius:12px;padding:14px 16px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div style="font-size:13px;font-weight:700;color:'+(done?'#22c55e':'#c084fc')+';">'+(done?'✅ ':'📋 ')+'Dia 1 · Cadastrar 50 leads'+(nome?(' — '+nome):'')+'</div><div style="font-size:12px;color:var(--muted);">'+qtd+' / '+SS_META_POR_VENDEDOR+'</div></div>'+
+      '<div style="height:8px;background:var(--card);border-radius:999px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(done?'#22c55e':'var(--purple)')+';"></div></div>'+
+      (done?'':'<div style="margin-top:8px;"><button onclick="abrirImportarSS()" class="btn btn-outline" style="font-size:12px;padding:6px 12px;">Importar minha lista</button></div>')+
+      '</div>';
+  }
+  var _kick='';
+  if(gestor){ if(lucasN<SS_META_POR_VENDEDOR||joaoN<SS_META_POR_VENDEDOR) _kick=_ssKick('Lucas',lucasN)+_ssKick('João',joaoN); }
+  else if(meuN<SS_META_POR_VENDEDOR){ _kick=_ssKick('',meuN); }
+  if(_kick) H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">'+_kick+'</div>';
   // filtros
   function opt(v,lbl,cur){return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+lbl+'</option>';}
   H+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">';
