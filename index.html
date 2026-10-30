@@ -5105,7 +5105,7 @@ function showPage(id){
     if(id==='audens-day') setTimeout(adDayInit,50);
     if(id==='fria') setTimeout(friaLoadStats,50);
     if(id==='prosp-grupo') setTimeout(grupoLoadStats,50);
-    if(id==='reat-blast') setTimeout(reatLoadStats,50);
+    if(id==='reat-blast'){ setTimeout(reatLoadStats,50); _pgLoadMotivos(function(){ if(window._currentPage==='reat-blast')reatLoadStats(); }); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='reat-blast')reatLoadStats(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
@@ -34742,7 +34742,11 @@ var _REAT_TOQUES=[
 function _reatMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<5;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_REAT_TOQUES[i].m);return out;}
 function _reatRecupLeads(){
   var out=[],seen={};
-  Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(!e||e.status!=='recuperacao')return;var tel=String(e.telefone||'').replace(/\D/g,'');if(tel.length<10)return;var kk=tel.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:tel,nome:e.nome||''});});
+  function add(tel,nome){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:t,nome:nome||''});}
+  // Fonte principal: a MESMA lista da aba Pregão/Recuperação (reuniões que não fecharam + perdidas)
+  try{ if(typeof _pregaoLista==='function'){ _pregaoLista().forEach(function(r){ add(r.tel, r.nome); }); } }catch(e){ console.error('reat _pregaoLista',e); }
+  // Complemento: leads explicitamente na coluna Recuperação do funil
+  try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.status==='recuperacao')add(e.telefone,e.nome);}); }catch(e){}
   return out;
 }
 function renderReatBlast(){
