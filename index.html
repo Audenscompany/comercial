@@ -681,7 +681,7 @@ function startRealtimeSync(){
     try{ localStorage.setItem('audens_ss_leads', JSON.stringify(ssLeads)); }catch(e){}
     var area = document.getElementById('content');
     var pg = area ? area.getAttribute('data-page') : null;
-    if(pg==='social-selling' && typeof renderSocialSelling==='function'){ area.innerHTML=renderSocialSelling(); }
+    if(pg==='social-selling' && typeof renderSocialSelling==='function'){ area.innerHTML=renderSocialSelling(); setTimeout(_ssAfterRender,30); }
   });
 
   // Sync do conjunto ATIVO da cadência — filtra tarefas do João e gera ligações p/ quem entrou
@@ -5163,6 +5163,7 @@ function showPage(id){
     if(id==='audens-day') setTimeout(adDayInit,50);
     if(id==='fria') setTimeout(friaLoadStats,50);
     if(id==='prosp-grupo') setTimeout(grupoLoadStats,50);
+    if(id==='social-selling') setTimeout(_ssAfterRender,80);
     if(id==='reat-blast'){ setTimeout(reatLoadStats,50); _pgLoadMotivos(function(){ if(window._currentPage==='reat-blast')reatLoadStats(); }); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='reat-blast')reatLoadStats(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
@@ -35031,7 +35032,7 @@ function renderSocialSelling(){
   H+='</div></div>';
   return H;
 }
-function _ssRerender(){ var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='social-selling') a.innerHTML=renderSocialSelling(); }
+function _ssRerender(){ var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='social-selling'){ a.innerHTML=renderSocialSelling(); setTimeout(_ssAfterRender,30); } }
 // ===== TAREFAS DO DIA =====
 function _ssTarefasHTML(daView,gestor,eu){
   // só leads em cadência com passo pendente devido até hoje
@@ -35087,61 +35088,95 @@ function iniciarCadenciaSS(id){ var l=ssLeads[id]; if(!l)return; l.cadencia={sta
 function ssConcluirPasso(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadencia=l.cadencia||{start:_ssToday(),done:{},doneAt:{}}; l.cadencia.done=l.cadencia.done||{}; l.cadencia.doneAt=l.cadencia.doneAt||{}; l.cadencia.done[dia]=true; l.cadencia.doneAt[dia]=new Date().toISOString(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadencia:l.cadencia,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssRespondeuSS(id){ var l=ssLeads[id]; if(!l)return; l.status='conversa'; l.respondeuAt=Date.now(); if(l.cadencia){var ns=_ssNextStep(l); l.respondeuNoDia=ns?ns.dia:(l.cadencia.lastDia||0);} l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'conversa',respondeuAt:l.respondeuAt,respondeuNoDia:l.respondeuNoDia||null,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssMarcarReuniaoSS(id){ var l=ssLeads[id]; if(!l)return; l.status='reuniao'; l.reuniaoAt=Date.now(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'reuniao',reuniaoAt:l.reuniaoAt,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
-// ===== MÉTRICAS / KPIs =====
+// ===== MÉTRICAS / KPIs (dashboard visual) =====
+function _ssStats(arr){
+  var s={total:arr.length,emCad:0,abordados:0,passosFeitos:0,respostas:0,conversas:0,reunioes:0,clientes:0};
+  arr.forEach(function(l){
+    if(l.cadencia&&l.cadencia.start) s.emCad++;
+    var done=(l.cadencia&&l.cadencia.done)||{};
+    s.passosFeitos+=Object.keys(done).filter(function(d){return done[d];}).length;
+    if(done[1]) s.abordados++;
+    var st=l.status||'novo';
+    if(st==='conversa'||st==='reuniao'||st==='cliente') s.respostas++;
+    if(st==='conversa') s.conversas++;
+    if(st==='reuniao') s.reunioes++;
+    if(st==='cliente') s.clientes++;
+  });
+  s.txResp=s.abordados>0?Math.round(s.respostas/s.abordados*100):0;
+  s.txReuniao=s.abordados>0?Math.round(s.reunioes/s.abordados*100):0;
+  var devidas=0,feitas=0;
+  arr.forEach(function(l){ if(!l.cadencia||!l.cadencia.start)return; var done=(l.cadencia.done)||{};
+    for(var i=0;i<SS_CADENCIA.length;i++){ var dia=SS_CADENCIA[i].dia; var sched=_ssAddDays(l.cadencia.start,dia-1); if(sched<=_ssToday()){ devidas++; if(done[dia])feitas++; } }
+  });
+  s.tarefasDevidas=devidas; s.tarefasFeitas=feitas; s.txTarefas=devidas>0?Math.round(feitas/devidas*100):0;
+  return s;
+}
+function _ssScopeArr(){ var g=_ssIsGestor(), eu=_ssMeuNome(); return _ssList().filter(function(l){ return g?true:((l.responsavel||'')===eu); }); }
 function _ssMetricasHTML(todos,gestor,eu){
-  function stats(arr){
-    var s={total:arr.length,emCad:0,abordados:0,passosFeitos:0,respostas:0,conversas:0,reunioes:0,clientes:0};
-    arr.forEach(function(l){
-      if(l.cadencia&&l.cadencia.start) s.emCad++;
-      var done=(l.cadencia&&l.cadencia.done)||{};
-      var fez=Object.keys(done).filter(function(d){return done[d];});
-      s.passosFeitos+=fez.length;
-      if(done[1]) s.abordados++; // recebeu a 1ª mensagem
-      var st=l.status||'novo';
-      if(st==='conversa'||st==='reuniao'||st==='cliente') s.respostas++; // respondeu em algum momento
-      if(st==='conversa') s.conversas++;
-      if(st==='reuniao') s.reunioes++;
-      if(st==='cliente') s.clientes++;
-    });
-    s.txResp=s.abordados>0?Math.round(s.respostas/s.abordados*100):0;
-    s.txReuniao=s.abordados>0?Math.round(s.reunioes/s.abordados*100):0;
-    // tarefas: devidas até hoje vs feitas
-    var devidas=0,feitas=0;
-    arr.forEach(function(l){ if(!l.cadencia||!l.cadencia.start)return; var done=(l.cadencia.done)||{};
-      for(var i=0;i<SS_CADENCIA.length;i++){ var dia=SS_CADENCIA[i].dia; var sched=_ssAddDays(l.cadencia.start,dia-1); if(sched<=_ssToday()){ devidas++; if(done[dia])feitas++; } }
-    });
-    s.tarefasDevidas=devidas; s.tarefasFeitas=feitas; s.txTarefas=devidas>0?Math.round(feitas/devidas*100):0;
-    return s;
-  }
-  function bloco(titulo,s){
-    function k(lbl,val,cor,sub){return '<div style="flex:1;min-width:150px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>':'')+'</div>';}
-    var h='';
-    if(titulo) h+='<div style="font-size:13px;font-weight:700;color:#c084fc;margin:6px 0 10px;">'+titulo+'</div>';
-    h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'+
-      k('Leads na carteira',s.total,'var(--white)')+
-      k('Em cadência',s.emCad,'#c084fc')+
-      k('Pessoas chamadas',s.abordados,'#c084fc','receberam a 1ª msg')+
-      k('% tarefas concluídas',s.txTarefas+'%','#22c55e',s.tarefasFeitas+' / '+s.tarefasDevidas+' devidas')+
-      '</div>';
-    h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
-      k('Respostas',s.respostas,'#f59e0b')+
-      k('% de resposta',s.txResp+'%','#f59e0b','respostas / chamadas')+
-      k('Em conversa',s.conversas,'#f59e0b')+
-      k('Reuniões',s.reunioes,'#22c55e',s.txReuniao+'% das chamadas')+
-      k('Clientes',s.clientes,'#22c55e')+
-      '</div>';
-    return h;
-  }
+  var arr=gestor?todos:todos.filter(function(l){return (l.responsavel||'')===eu;});
+  var s=_ssStats(arr);
+  function hero(lbl,val,cor,sub){return '<div style="flex:1;min-width:160px;background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:34px;color:'+(cor||'var(--white)')+';margin-top:6px;line-height:1;">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+sub+'</div>':'')+'</div>';}
   var H='';
-  if(gestor){
-    H+=bloco('Geral (Lucas + João)',stats(todos));
-    H+=bloco('Lucas',stats(todos.filter(function(l){return (l.responsavel||'')==='Lucas';})));
-    H+=bloco('João',stats(todos.filter(function(l){return (l.responsavel||'')==='João';})));
-  } else {
-    H+=bloco('',stats(todos.filter(function(l){return (l.responsavel||'')===eu;})));
-  }
-  H+='<div style="font-size:11px;color:var(--muted);margin-top:4px;">“Pessoas chamadas” = quem recebeu a 1ª mensagem. “% tarefas concluídas” = passos feitos sobre os que já venceram a data.</div>';
+  // hero
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
+    hero('Leads na carteira',s.total,'var(--white)',s.emCad+' em cadência')+
+    hero('Pessoas chamadas',s.abordados,'#c084fc',(s.total?Math.round(s.abordados/s.total*100):0)+'% da carteira')+
+    hero('Respostas',s.respostas,'#f59e0b',s.txResp+'% de quem foi chamado')+
+    hero('Reuniões',s.reunioes,'#22c55e',s.txReuniao+'% de quem foi chamado')+
+    hero('Clientes',s.clientes,'#22c55e')+
+    '</div>';
+  // funil + anéis
+  var etapas=[{n:'Carteira',v:s.total,c:'#64748b'},{n:'Chamados',v:s.abordados,c:'#7c3aed'},{n:'Respostas',v:s.respostas,c:'#a855f7'},{n:'Em conversa',v:s.conversas,c:'#f59e0b'},{n:'Reunião',v:s.reunioes,c:'#22c55e'},{n:'Cliente',v:s.clientes,c:'#16a34a'}];
+  var maxV=Math.max(1,s.total);
+  var funil='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;flex:2;min-width:320px;">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:14px;">Funil do Social Selling</div>';
+  etapas.forEach(function(e){ var w=Math.round(e.v/maxV*100); var pct=s.total?Math.round(e.v/s.total*100):0;
+    funil+='<div style="margin-bottom:11px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span style="color:var(--silver);">'+e.n+'</span><span style="color:var(--muted);">'+e.v+' · '+pct+'%</span></div>'+
+      '<div style="height:14px;background:var(--card);border-radius:8px;overflow:hidden;"><div style="height:100%;width:'+Math.max(w,2)+'%;background:'+e.c+';border-radius:8px;"></div></div></div>';
+  });
+  funil+='</div>';
+  function ring(lbl,pct,cor,sub){ return '<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;flex:1;min-width:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;">'+
+    '<div style="width:110px;height:110px;border-radius:50%;background:conic-gradient('+cor+' '+(pct*3.6)+'deg,var(--card) 0deg);display:flex;align-items:center;justify-content:center;">'+
+    '<div style="width:80px;height:80px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-family:var(--font-bn),sans-serif;font-size:24px;color:var(--white);">'+pct+'%</div></div>'+
+    '<div style="font-size:12px;color:var(--silver);margin-top:10px;font-weight:600;">'+lbl+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:2px;text-align:center;">'+sub+'</div>':'')+'</div>'; }
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;align-items:stretch;">'+funil+
+    ring('Taxa de resposta',s.txResp,'#f59e0b',s.respostas+' de '+s.abordados+' chamados')+
+    ring('Tarefas concluídas',s.txTarefas,'#22c55e',s.tarefasFeitas+' de '+s.tarefasDevidas+' devidas')+
+    '</div>';
+  // gráficos
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+  if(gestor){ H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;flex:1;min-width:320px;"><div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:12px;">Lucas × João</div><div style="height:220px;position:relative;"><canvas id="ss-chart-vend"></canvas></div></div>'; }
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:18px 20px;flex:1;min-width:320px;"><div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:12px;">Atividade dos últimos 7 dias</div><div style="height:220px;position:relative;"><canvas id="ss-chart-7d"></canvas></div></div>';
+  H+='</div>';
+  H+='<div style="font-size:11px;color:var(--muted);margin-top:12px;">“Chamados” = receberam a 1ª mensagem. “Tarefas concluídas” = passos feitos sobre os que já venceram a data.</div>';
   return H;
+}
+var _ssCharts={};
+function _ssAfterRender(){ if(_ssView!=='metricas')return; if(typeof _finLoadChartJs==='function'){ _finLoadChartJs(ssDrawCharts); } else if(window.Chart){ ssDrawCharts(); } }
+function ssDrawCharts(){
+  if(!window.Chart)return;
+  Object.values(_ssCharts||{}).forEach(function(c){try{c.destroy();}catch(e){}}); _ssCharts={};
+  var gestor=_ssIsGestor(), eu=_ssMeuNome(); var all=_ssList();
+  var tickCol='rgba(255,255,255,.55)', gridCol='rgba(255,255,255,.07)';
+  // Lucas x João
+  var cv=document.getElementById('ss-chart-vend');
+  if(cv&&gestor){
+    var sl=_ssStats(all.filter(function(l){return (l.responsavel||'')==='Lucas';}));
+    var sj=_ssStats(all.filter(function(l){return (l.responsavel||'')==='João';}));
+    _ssCharts.vend=new Chart(cv,{type:'bar',data:{labels:['Chamados','Respostas','Reuniões','Clientes'],datasets:[
+      {label:'Lucas',data:[sl.abordados,sl.respostas,sl.reunioes,sl.clientes],backgroundColor:'#7c3aed',borderRadius:6},
+      {label:'João',data:[sj.abordados,sj.respostas,sj.reunioes,sj.clientes],backgroundColor:'#f59e0b',borderRadius:6}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:tickCol}}},scales:{x:{ticks:{color:tickCol},grid:{display:false}},y:{beginAtZero:true,ticks:{color:tickCol,precision:0},grid:{color:gridCol}}}}});
+  }
+  // atividade 7 dias
+  var c7=document.getElementById('ss-chart-7d');
+  if(c7){
+    var scope=all.filter(function(l){return gestor?true:((l.responsavel||'')===eu);});
+    var dias=[],labels=[]; for(var i=6;i>=0;i--){ var d=_ssAddDays(_ssToday(),-i); dias.push(d); labels.push(d.slice(8,10)+'/'+d.slice(5,7)); }
+    var cont={}; dias.forEach(function(d){cont[d]=0;});
+    scope.forEach(function(l){ var da=(l.cadencia&&l.cadencia.doneAt)||{}; Object.keys(da).forEach(function(k){ var dd=String(da[k]).slice(0,10); if(cont[dd]!=null)cont[dd]++; }); });
+    _ssCharts.d7=new Chart(c7,{type:'line',data:{labels:labels,datasets:[{label:'Passos feitos',data:dias.map(function(d){return cont[d];}),borderColor:'#c084fc',backgroundColor:'rgba(192,132,252,.15)',fill:true,tension:.35,pointRadius:3,pointBackgroundColor:'#c084fc'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:tickCol},grid:{display:false}},y:{beginAtZero:true,ticks:{color:tickCol,precision:0},grid:{color:gridCol}}}}});
+  }
 }
 function abrirNovoSS(id){
   var e=(id&&ssLeads[id])?ssLeads[id]:{}; var editing=!!(id&&ssLeads[id]);
