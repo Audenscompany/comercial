@@ -4818,7 +4818,7 @@ async function reatBlastCfg() {
     var v = (await db.ref("config/reat_blast").once("value")).val() || {};
     var msgs = Array.isArray(v.msgs) ? v.msgs.map(function (m) { return String(m || ""); }) : [];
     if (!msgs.length && v.msg) msgs = [String(v.msg)];
-    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 60, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, round: Math.min(4, Math.max(1, parseInt(v.round, 10) || 1)), msgs: msgs, msg: msgs[0] || "" };
+    return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), maxPerDay: parseInt(v.maxPerDay, 10) || 60, intervalSeconds: parseInt(v.intervalSeconds, 10) || 300, startHour: parseInt(v.startHour, 10) || 9, endHour: parseInt(v.endHour, 10) || 20, round: Math.min(5, Math.max(1, parseInt(v.round, 10) || 1)), msgs: msgs, msg: msgs[0] || "" };
   } catch (e) { return { enabled: false, testPhone: "", maxPerDay: 60, intervalSeconds: 300, startHour: 9, endHour: 20, round: 1, msgs: [], msg: "" }; }
 }
 async function reatBlastDrain() {
@@ -4852,9 +4852,9 @@ async function handleReatBlast(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
   var upd = {};
-  if (Array.isArray(b.msgs)) upd.msgs = b.msgs.slice(0, 4).map(function (m) { return String(m || ""); });
+  if (Array.isArray(b.msgs)) upd.msgs = b.msgs.slice(0, 5).map(function (m) { return String(m || ""); });
   if (b.msg != null) upd.msg = String(b.msg);
-  if (b.round != null) upd.round = Math.min(4, Math.max(1, parseInt(b.round, 10) || 1));
+  if (b.round != null) upd.round = Math.min(5, Math.max(1, parseInt(b.round, 10) || 1));
   if (b.maxPerDay != null) upd.maxPerDay = parseInt(b.maxPerDay, 10) || 60;
   if (b.testPhone != null) upd.testPhone = String(b.testPhone).replace(/\D/g, "");
   if (b.enabled != null) upd.enabled = (b.enabled === true || b.enabled === "true");
@@ -4876,10 +4876,10 @@ async function handleReatBlast(req, res) {
 async function handleReatBlastStats(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var f = (await db.ref("reat_blast_fila").once("value")).val() || {}; var cfg = await reatBlastCfg();
-  var s = { total: 0, r1: 0, r2: 0, r3: 0, r4: 0, pendentes: 0 }; var recebidos = [];
+  var s = { total: 0, r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, pendentes: 0 }; var recebidos = [];
   Object.keys(f).forEach(function (k) {
     var x = f[k] || {}; var lr = x.lastRound || 0; s.total++;
-    if (lr >= 1) { s.r1++; recebidos.push(String(x.tel || "")); } if (lr >= 2) s.r2++; if (lr >= 3) s.r3++; if (lr >= 4) s.r4++;
+    if (lr >= 1) { s.r1++; recebidos.push(String(x.tel || "")); } if (lr >= 2) s.r2++; if (lr >= 3) s.r3++; if (lr >= 4) s.r4++; if (lr >= 5) s.r5++;
     if (lr < cfg.round) s.pendentes++;
   });
   var hoje = cadBRT(Date.now()).date; var sentToday = (await db.ref("reat_blast_sent/" + hoje).once("value")).val() || 0;

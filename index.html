@@ -34733,12 +34733,13 @@ async function grupoAgendar(gKey){
 /* ===== DISPARO RETA FINAL — WhatsApp pros leads em Recuperação (condição especial do mês) ===== */
 var _reatStats=null;
 var _REAT_TOQUES=[
-  {t:'Toque 1 · Abertura (hoje)',m:"Opa {{primeiroNome}}, aqui é o João da Audens 👊\n\nA gente chegou a conversar sobre destravar o seu delivery e eu lembrei de você agora porque montamos uma condição especial *só até o fim do mês* pra quem decidir começar:\n\n✅ 15 dias pra começar a pagar (você só paga depois de ver a máquina rodando)\n✅ Consultoria de precificação gratuita\n✅ Nosso sistema financeiro liberado de graça\n✅ 30 dias de cardápio digital por nossa conta\n\nFaz sentido eu te mostrar como isso ficaria no seu negócio? Me responde aqui 📈"},
-  {t:'Toque 2 · Valor / a conta (quinta)',m:"{{primeiroNome}}, deixa eu te fazer uma pergunta rápida: você sabe exatamente quanto sobra de lucro em cada pedido seu hoje?\n\nA maioria dos donos que atende a gente descobre que tá vendendo no vermelho em alguns itens sem perceber. Por isso a condição desse mês já vem com a *consultoria de precificação gratuita* — a gente arruma a conta do seu cardápio junto com você.\n\nIsso + os 15 dias pra começar a pagar tornam o risco de começar praticamente zero. Bora marcar 15 min pra eu te mostrar?"},
-  {t:'Toque 3 · Urgência (sexta)',m:"{{primeiroNome}}, passando rapidinho porque o mês tá acabando e essa condição fecha junto com ele ⏳\n\nComeçar agora significa virar o mês com: operação organizada, precificação ajustada e o cardápio já rodando por nossa conta por 30 dias — sem pagar nada nos primeiros 15 dias.\n\nSe você quer entrar no próximo mês com o delivery vendendo mais, esse é o momento certo. Posso te garantir uma dessas vagas da virada?"},
-  {t:'Toque 4 · Última chamada (segunda)',m:"{{primeiroNome}}, última chamada: hoje é o último dia da condição especial da virada (15 dias pra pagar + consultoria de precificação + sistema financeiro + 30 dias de cardápio, tudo por nossa conta).\n\nSe for o momento, me responde *QUERO* que eu já te passo os próximos passos ainda hoje.\n\nSe não for agora, sem problema nenhum 🙏 — me avisa e eu paro de te chamar sobre isso. Fico à disposição pra quando fizer sentido!"}
+  {t:'Toque 1 · Abertura (sexta)',m:"Opa {{primeiroNome}}, aqui é o João da Audens 👊\n\nA gente chegou a conversar sobre destravar o seu delivery e eu lembrei de você agora porque montamos uma condição especial *só até o fim do mês* pra quem decidir começar:\n\n✅ 15 dias pra começar a pagar (você só paga depois de ver a máquina rodando)\n✅ Consultoria de precificação gratuita\n✅ Nosso sistema financeiro liberado de graça\n✅ 30 dias de cardápio digital por nossa conta\n\nFaz sentido eu te mostrar como isso ficaria no seu negócio? Me responde aqui 📈"},
+  {t:'Toque 2 · Valor / a conta (sexta)',m:"{{primeiroNome}}, deixa eu te fazer uma pergunta rápida: você sabe exatamente quanto sobra de lucro em cada pedido seu hoje?\n\nA maioria dos donos que atende a gente descobre que tá vendendo no vermelho em alguns itens sem perceber. Por isso a condição desse mês já vem com a *consultoria de precificação gratuita* — a gente arruma a conta do seu cardápio junto com você.\n\nIsso + os 15 dias pra começar a pagar tornam o risco de começar praticamente zero. Bora marcar 15 min pra eu te mostrar?"},
+  {t:'Toque 3 · Urgência — fecha amanhã (sábado manhã)',m:"{{primeiroNome}}, passando rapidinho porque a condição especial fecha *amanhã* com a virada do mês ⏳\n\nComeçar agora significa virar o mês com: operação organizada, precificação ajustada e o cardápio já rodando por nossa conta por 30 dias — sem pagar nada nos primeiros 15 dias.\n\nSe você quer entrar no próximo mês com o delivery vendendo mais, é agora. Posso te garantir uma dessas vagas da virada?"},
+  {t:'Toque 4 · Última chamada — fecha hoje (sábado tarde)',m:"{{primeiroNome}}, última chamada de verdade: a condição especial da virada encerra *hoje* (15 dias pra pagar + consultoria de precificação + sistema financeiro + 30 dias de cardápio, tudo por nossa conta).\n\nSe for o momento, me responde *QUERO* que eu já te passo os próximos passos ainda hoje.\n\nDepois de hoje essa condição sai do ar. 👊"},
+  {t:'Toque 5 · Reativação (terça)',m:"{{primeiroNome}}, o mês virou mas consegui segurar a condição especial só mais hoje pra quem não deu conta de responder a tempo 🙏\n\nÉ a última janela: 15 dias pra começar a pagar + consultoria de precificação + sistema financeiro + 30 dias de cardápio, tudo por nossa conta.\n\nSe ainda faz sentido destravar seu delivery, me responde *QUERO* que eu te encaixo ainda hoje. Se não for o momento, sem problema — me avisa que eu paro de te chamar sobre isso 👊"}
 ];
-function _reatMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<4;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_REAT_TOQUES[i].m);return out;}
+function _reatMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<5;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_REAT_TOQUES[i].m);return out;}
 function _reatRecupLeads(){
   var out=[],seen={};
   Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(!e||e.status!=='recuperacao')return;var tel=String(e.telefone||'').replace(/\D/g,'');if(tel.length<10)return;var kk=tel.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:tel,nome:e.nome||''});});
@@ -34749,15 +34750,15 @@ function renderReatBlast(){
   var cfg=c.config||{},s=c.stats||{};var ligado=cfg.enabled===true;var round=Math.min(4,Math.max(1,cfg.round||1));
   var recup=_reatRecupLeads();
   var msgs=_reatMsgs(cfg);
-  var rRecv=[s.r1||0,s.r2||0,s.r3||0,s.r4||0];
+  var rRecv=[s.r1||0,s.r2||0,s.r3||0,s.r4||0,s.r5||0];
   function card(lbl,val,cor){return '<div style="flex:1;min-width:120px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+lbl+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+val+'</div></div>';}
   var H='<div class="page active"><div style="max-width:1000px;margin:0 auto;">';
   H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
      '<div><div style="font-size:11px;letter-spacing:2px;color:#f59e0b;font-weight:700;">CAMPANHA · RÉGUA DE 4 TOQUES</div>'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">📣 Disparo Reta Final</div>'+
-     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Chama quem está em <b>Recuperação</b> com a condição do fim do mês em 4 toques (abertura → valor → urgência → última chamada). Pausado (mesma régua do número) e quem responde vira tarefa.</div></div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Chama quem está em <b>Recuperação</b> com a condição do fim do mês em 5 toques (abertura → valor → urgência → última chamada → reativação). Pausado (mesma régua do número) e quem responde vira tarefa.</div></div>'+
      '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO · toque '+round+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div></div>';
-  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ São clientes mornos</b> (já tiveram reunião). 4 mensagens em poucos dias pesa no número — mantenha o limite/dia moderado, teste no seu WhatsApp e desligue entre os toques.</div>';
+  H+='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--amber);"><b>⚠️ São clientes mornos</b> (já tiveram reunião). Vários toques em poucos dias pesam no número — mantenha o limite/dia moderado, teste no seu WhatsApp e desligue entre os toques.</div>';
   H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
      card('Em Recuperação (no funil)',recup.length,'#f59e0b')+
      card('Na fila',(s.total||0),'#c084fc')+
@@ -34768,15 +34769,15 @@ function renderReatBlast(){
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:16px;">'+
      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Progresso da régua (quantos já receberam cada toque)</div>'+
      '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
-  for(var ri=0;ri<4;ri++){var n=ri+1;var ativo=n===round;H+='<div style="flex:1;min-width:140px;background:'+(ativo?'rgba(192,132,252,.12)':'var(--card)')+';border:1px solid '+(ativo?'var(--purple)':'var(--border)')+';border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:'+(ativo?'#c084fc':'var(--muted)')+';font-weight:700;">Toque '+n+(ativo?' · ATIVO':'')+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:22px;color:var(--white);">'+rRecv[ri]+'</div><div style="font-size:10px;color:var(--muted);">receberam</div></div>';}
+  for(var ri=0;ri<5;ri++){var n=ri+1;var ativo=n===round;H+='<div style="flex:1;min-width:140px;background:'+(ativo?'rgba(192,132,252,.12)':'var(--card)')+';border:1px solid '+(ativo?'var(--purple)':'var(--border)')+';border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:'+(ativo?'#c084fc':'var(--muted)')+';font-weight:700;">Toque '+n+(ativo?' · ATIVO':'')+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:22px;color:var(--white);">'+rRecv[ri]+'</div><div style="font-size:10px;color:var(--muted);">receberam</div></div>';}
   H+='</div></div>';
   // 1 · As 4 mensagens
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
-     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · As 4 mensagens da régua</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · As 5 mensagens da régua</div>'+
      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. <code>*texto*</code> fica em negrito no WhatsApp. Revise e salve antes de disparar.</div>';
-  for(var mi=0;mi<4;mi++){H+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#c084fc;font-weight:700;margin-bottom:5px;">'+esc(_REAT_TOQUES[mi].t)+'</div>'+
+  for(var mi=0;mi<5;mi++){H+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#c084fc;font-weight:700;margin-bottom:5px;">'+esc(_REAT_TOQUES[mi].t)+'</div>'+
      '<textarea id="reat-msg'+mi+'" style="width:100%;min-height:150px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msgs[mi].replace(/</g,'&lt;')+'</textarea></div>';}
-  H+='<button onclick="reatSaveMsgs()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar as 4 mensagens</button> <span id="reat-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  H+='<button onclick="reatSaveMsgs()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar as 5 mensagens</button> <span id="reat-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
   // 2 · Fila
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
      '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:6px;">2 · Montar a fila</div>'+
@@ -34789,7 +34790,7 @@ function renderReatBlast(){
      '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:10px;">3 · Qual toque disparar</div>'+
      '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Escolha o toque do dia e ligue. Ao mudar de toque, a régua re-mira todo mundo com a mensagem nova (quem já recebeu aquele toque não recebe de novo).</div>'+
      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">';
-  for(var tb=1;tb<=4;tb++){var at=tb===round;H+='<button onclick="reatSetRound('+tb+')" class="btn" style="padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;'+(at?'background:var(--purple);color:#fff;border:none;':'background:var(--card);color:var(--silver);border:1px solid var(--border);')+'">Toque '+tb+(at?' ●':'')+'</button>';}
+  for(var tb=1;tb<=5;tb++){var at=tb===round;H+='<button onclick="reatSetRound('+tb+')" class="btn" style="padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;'+(at?'background:var(--purple);color:#fff;border:none;':'background:var(--card);color:var(--silver);border:1px solid var(--border);')+'">Toque '+tb+(at?' ●':'')+'</button>';}
   H+='</div>'+
      '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
      '<div><label style="font-size:11px;color:var(--muted);display:block;">Envios por dia</label><input id="reat-max" type="number" value="'+(cfg.maxPerDay||60)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
@@ -34814,7 +34815,7 @@ async function reatLoadStats(){
   try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast-stats?secret='+WEBHOOK_SECRET,{method:'POST'});var j=await r.json();if(j&&j.ok)_reatStats=j;}catch(e){}
   var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='reat-blast')a.innerHTML=renderReatBlast();
 }
-function _reatColetaMsgs(){var out=[];for(var i=0;i<4;i++){var el=document.getElementById('reat-msg'+i);out.push(el?el.value:'');}return out;}
+function _reatColetaMsgs(){var out=[];for(var i=0;i<5;i++){var el=document.getElementById('reat-msg'+i);out.push(el?el.value:'');}return out;}
 async function reatSaveMsgs(){
   var msgs=_reatColetaMsgs();var st=document.getElementById('reat-msg-st');
   try{var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgs:msgs})});var j=await r.json();if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'4 mensagens salvas!':'Erro ao salvar.';}if(j&&j.ok)reatLoadStats();}catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
