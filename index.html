@@ -2647,7 +2647,9 @@ function autoArquivarLeadsAntigos(){
     if(e.naoArquivar===true)return; // recuperado manualmente — não re-arquivar
     var st=e.status||'novo';
     if(st!=='novo'&&st!=='qualificado')return;
-    var ca=e._createdAt||e.statusAt||0; if(!ca)return;
+    // usa a mexida mais recente (criação OU última mudança de status): se foi movido
+    // há pouco (ex.: acabou de ser desarquivado), reseta o relógio e não re-arquiva.
+    var ca=Math.max(e._createdAt||0, e.statusAt||0); if(!ca)return;
     if(now-ca<=cutoff)return;
     e.status='arquivado'; e.statusAt=now;
     var _sh=e.statusHistory||{}; _sh['arquivado']=now; e.statusHistory=_sh;
