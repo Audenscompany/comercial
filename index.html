@@ -1368,15 +1368,22 @@ function moveKanbanCard(key,newStatus){
     abrirAgendarReuniao(key);
     return;
   }
+  // Se o usuário está tirando o lead de "arquivado" manualmente, marca pra NÃO ser
+  // re-arquivado pelas rotinas automáticas (por +5 dias ou faturamento <40k).
+  var _estavaArquivado=(kanbanData[key].status==='arquivado');
+  var _desarquivando=(_estavaArquivado && newStatus!=='arquivado');
   kanbanData[key].status=newStatus;
   kanbanData[key].statusAt=Date.now();
+  if(_desarquivando) kanbanData[key].naoArquivar=true;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   if(fbDb || initFirebase()){
     var _sh=kanbanData[key].statusHistory||{};
     if(!_sh[kanbanData[key].status||'novo'])_sh[kanbanData[key].status||'novo']=kanbanData[key].statusAt||kanbanData[key]._createdAt||Date.now();
     _sh[newStatus]=Date.now();
     kanbanData[key].statusHistory=_sh;
-    fbDb.ref('kanban/'+key).update({status:newStatus,statusAt:Date.now(),statusHistory:_sh});
+    var _upd={status:newStatus,statusAt:Date.now(),statusHistory:_sh};
+    if(_desarquivando) _upd.naoArquivar=true;
+    fbDb.ref('kanban/'+key).update(_upd);
   }
   if(newStatus==='arquivado'){ try{_arquivarLeadCadencia(key);}catch(e){} }
   var area=document.getElementById('content');
@@ -2573,6 +2580,7 @@ function autoArquivarLeadsBaixoFat(){
   var now=Date.now(), updates={}, arq=[];
   Object.keys(kanbanData).forEach(function(k){
     var e=kanbanData[k]; if(!e)return;
+    if(e.naoArquivar===true)return; // recuperado manualmente — não re-arquivar
     var st=e.status||'novo'; if(st!=='novo'&&st!=='qualificado')return;
     var _rec=(typeof _leadRec==='function')?_leadRec(e):null;
     var faix=e.faixa||(_rec&&_rec.faixa)||''; var fat=e.faturamento||(_rec&&_rec.faturamento)||'';
@@ -2636,6 +2644,7 @@ function autoArquivarLeadsAntigos(){
   var cutoff=5*86400000, now=Date.now(), updates={}, arq=[];
   Object.keys(kanbanData).forEach(function(k){
     var e=kanbanData[k]; if(!e)return;
+    if(e.naoArquivar===true)return; // recuperado manualmente — não re-arquivar
     var st=e.status||'novo';
     if(st!=='novo'&&st!=='qualificado')return;
     var ca=e._createdAt||e.statusAt||0; if(!ca)return;
