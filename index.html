@@ -34799,9 +34799,17 @@ var _REAT_TOQUES=[
   {t:'Toque 5 · Reativação (terça)',m:"{{primeiroNome}}, o mês virou mas consegui segurar a condição especial só mais hoje pra quem não deu conta de responder a tempo 🙏\n\nÉ a última janela: 15 dias pra começar a pagar + consultoria de precificação + sistema financeiro + 30 dias de cardápio, tudo por nossa conta.\n\nSe ainda faz sentido destravar seu delivery, me responde *QUERO* que eu te encaixo ainda hoje. Se não for o momento, sem problema — me avisa que eu paro de te chamar sobre isso 👊"}
 ];
 function _reatMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<5;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_REAT_TOQUES[i].m);return out;}
+// Telefones (últimos 9 díg.) de quem JÁ É CLIENTE — nunca pode entrar no disparo de reativação.
+function _reatClientesTels(){
+  var cli={}; function mark(t){t=String(t||'').replace(/\D/g,'');if(t.length>=9)cli[t.slice(-9)]=1;}
+  try{ var F=(typeof followups==='object'&&followups)||{}; Object.keys(F).forEach(function(k){var f=F[k];if(f&&f.resultado==='venda')mark(f.tel);}); }catch(e){}
+  try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&(e.status==='fechado'||e.status==='cliente'))mark(e.telefone);}); }catch(e){}
+  try{ if(typeof contratosData==='object'&&contratosData){ Object.keys(contratosData).forEach(function(k){var c=contratosData[k];if(c&&!(c.ativo===false||c.dataCancelamento))mark(c.telefone||c.tel||c.kanbanKey);}); } }catch(e){}
+  return cli;
+}
 function _reatRecupLeads(){
-  var out=[],seen={};
-  function add(tel,nome){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:t,nome:nome||''});}
+  var out=[],seen={}; var cli=_reatClientesTels();
+  function add(tel,nome){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;var k9=t.slice(-9);if(cli[k9])return;/* já é cliente: pula */ var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:t,nome:nome||''});}
   // Fonte principal: a MESMA lista da aba Pregão/Recuperação (reuniões que não fecharam + perdidas)
   try{ if(typeof _pregaoLista==='function'){ _pregaoLista().forEach(function(r){ add(r.tel, r.nome); }); } }catch(e){ console.error('reat _pregaoLista',e); }
   // Complemento: leads explicitamente na coluna Recuperação do funil
