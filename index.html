@@ -34848,9 +34848,7 @@ function _reatCarregarContratos(){
 function _reatRecupLeads(){
   var out=[],seen={}; var cli=_reatClientesTels();
   function add(tel,nome){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;var k9=t.slice(-9);if(cli[k9])return;/* já é cliente: pula */ var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:t,nome:nome||''});}
-  // Fonte principal: a MESMA lista da aba Pregão/Recuperação (reuniões que não fecharam + perdidas)
-  try{ if(typeof _pregaoLista==='function'){ _pregaoLista().forEach(function(r){ add(r.tel, r.nome); }); } }catch(e){ console.error('reat _pregaoLista',e); }
-  // Complemento: leads explicitamente na coluna Recuperação do funil
+  // SOMENTE os leads que estão na coluna RECUPERAÇÃO do funil (não a lista do Pregão).
   try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.status==='recuperacao')add(e.telefone,e.nome);}); }catch(e){}
   return out;
 }
