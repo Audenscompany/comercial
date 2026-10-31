@@ -10111,7 +10111,7 @@ function renderFollowupBody(){
         '<button class="btn" id="fu-perdida" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'perdida\')">Venda Perdida</button>'+
       '</div></div>'+
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
-        '<div style="margin-bottom:12px;"><label class="f-label">Nome da Contratante (vai no contrato)</label><input class="f-input" type="text" id="fu-contratante" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+'<div style="margin-bottom:12px;"><label class="f-label">CNPJ do cliente</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+_cnpjLimpo((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div>'+
+        '<div style="margin-bottom:12px;"><label class="f-label">Nome da Contratante (vai no contrato)</label><input class="f-input" type="text" id="fu-contratante" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+'<div class="modal-grid2" style="margin-bottom:12px;"><div><label class="f-label">Documento do cliente</label><select class="f-input" id="fu-doctipo" style="margin-bottom:0;" onchange="var i=document.getElementById(\'fu-cnpj\');if(i)i.placeholder=(this.value===\'cpf\'?\'000.000.000-00\':\'00.000.000/0000-00\');"><option value="cnpj">CNPJ</option><option value="cpf">CPF</option></select></div><div><label class="f-label">Número do documento</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+_cnpjLimpo((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div></div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;" onchange="fuOnPlanoChange()">'+
             '<option value="starter">Starter</option>'+
@@ -10153,7 +10153,7 @@ function renderFollowupBody(){
             '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--purple3);margin-bottom:12px;font-family:\'Barlow Condensed\',sans-serif;">2ª LOJA</div>'+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
               '<div><label class="f-label">Nome / Empresa da 2ª loja</label><input class="f-input" type="text" id="fu-seg-empresa" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+
-              '<div><label class="f-label">CNPJ da 2ª loja</label><input class="f-input" type="text" id="fu-seg-cnpj" placeholder="00.000.000/0001-00" style="margin-bottom:0;"></div>'+
+              '<div><label class="f-label">Documento da 2ª loja</label><div style="display:flex;gap:6px;"><select class="f-input" id="fu-seg-doctipo" style="margin-bottom:0;width:90px;" onchange="var i=document.getElementById(\'fu-seg-cnpj\');if(i)i.placeholder=(this.value===\'cpf\'?\'000.000.000-00\':\'00.000.000/0001-00\');"><option value="cnpj">CNPJ</option><option value="cpf">CPF</option></select><input class="f-input" type="text" id="fu-seg-cnpj" placeholder="00.000.000/0001-00" style="margin-bottom:0;flex:1;"></div></div>'+
             '</div>'+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
               '<div><label class="f-label">Plano</label><select class="f-input" id="fu-seg-plano" style="margin-bottom:0;"><option value="starter">Starter</option><option value="marketplaces">Marketplaces</option><option value="premium">Premium</option><option value="elite">Elite</option></select></div>'+
@@ -10605,6 +10605,21 @@ function _cnpjLimpo(v){
   if(d.length===14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3.$4-$5');
   return '';
 }
+// Sanitiza CPF (11 dígitos) -> 000.000.000-00.
+function _cpfLimpo(v){
+  v=String(v||''); var m=v.match(/\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2}/);
+  if(m){var d0=m[0].replace(/\D/g,'');if(d0.length===11)return d0.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');}
+  var d=v.replace(/\D/g,''); if(d.length===11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');
+  return '';
+}
+// Formata documento conforme o tipo escolhido (cpf|cnpj). Se tipo cpf não validar, tenta cnpj e vice-versa.
+function _docLimpo(v,tipo){
+  tipo=(tipo==='cpf')?'cpf':'cnpj';
+  if(tipo==='cpf'){ return _cpfLimpo(v)||_cnpjLimpo(v); }
+  return _cnpjLimpo(v)||_cpfLimpo(v);
+}
+function _docTipoLabel(tipo){ return (tipo==='cpf')?'CPF':'CNPJ'; }
+function _docQualif(tipo){ return (tipo==='cpf')?'pessoa física':'pessoa jurídica de direito privado'; }
 // Limpa o nome do cliente de lixo de agenda/meet (corta a partir de marcadores conhecidos).
 function _nomeContratoLimpo(v){
   v=String(v||'').trim();
@@ -10698,9 +10713,13 @@ async function generateContratoDocx(dados){
       }
     }
 
+    var _dt=(dados.docTipo==='cpf')?'cpf':'cnpj';
+    var _dt2=(_seg&&_seg.docTipo==='cpf')?'cpf':(_seg&&_seg.docTipo==='cnpj'?'cnpj':_dt);
     doc.render({
       nome_cliente:_nomeContratoLimpo(dados.nomeCliente)||'',
-      cnpj_cliente:_cnpjLimpo(dados.cnpjCliente)||'_____________________',
+      cnpj_cliente:_docLimpo(dados.cnpjCliente,_dt)||'_____________________',
+      doc_tipo:_docTipoLabel(_dt),
+      qualif_cliente:_docQualif(_dt),
       duracao_meses:_isStarter?'45 dias':String(dados.duracaoMeses||''),
       data_inicio:fmtDataBR(dataInicio),
       data_fim:fmtDataBR(dataFim),
@@ -10712,7 +10731,9 @@ async function generateContratoDocx(dados){
       mmr:dados.tipoValor==='mmr',
       temSegundaLoja:_temSeg,
       nome_cliente_2:_temSeg?(_nomeContratoLimpo(_seg.nome)||''):'',
-      cnpj_cliente_2:_temSeg?(_cnpjLimpo(_seg.cnpj)||'_____________________'):'',
+      cnpj_cliente_2:_temSeg?(_docLimpo(_seg.cnpj,_dt2)||'_____________________'):'',
+      doc_tipo_2:_docTipoLabel(_dt2),
+      qualif_cliente_2:_docQualif(_dt2),
       forma_pagamento_2:_fp2
     });
 
@@ -10847,6 +10868,7 @@ function saveFollowup(){
   var frequencia=(venda&&tipoValor!=='tcv')?document.getElementById('fu-frequencia').value:'';
   var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
+  var docTipo=venda?(((document.getElementById('fu-doctipo')||{}).value)||'cnpj'):'cnpj';
   var mensBase=venda?calcMensalidadeBase():0;
   // Serviços adicionais — exclusivos de Starter e Premium; somam no valor da venda
   var _adicPermitido=(plano==='starter'||plano==='premium');
@@ -10950,19 +10972,21 @@ function saveFollowup(){
       var segFields=document.getElementById('fu-seg-loja-fields');
       if(!segFields||segFields.style.display==='none')return;
       var sC=((document.getElementById('fu-seg-cnpj')||{}).value||'').trim();
+      var sDocTipo=((document.getElementById('fu-seg-doctipo')||{}).value)||'cnpj';
       var sE=((document.getElementById('fu-seg-empresa')||{}).value||'').trim();
       var sP=(document.getElementById('fu-seg-plano')||{}).value||plano;
       var sD=parseInt((document.getElementById('fu-seg-duracao')||{}).value||duracao,10)||duracao;
       var sCt=parseFloat((document.getElementById('fu-seg-contrato')||{}).value||0)||0;
       var sM=parseFloat((document.getElementById('fu-seg-mensalidade')||{}).value||0)||0;
       if(!sE&&!sC&&!sCt&&!sM)return; // nada preenchido — sem 2ª loja
-      _seg2={cnpj:sC,empresa:sE,plano:sP,duracao:sD,contrato:sCt,mensalidade:sM,tipoValor:tipoValor,
+      _seg2={cnpj:sC,docTipo:sDocTipo,empresa:sE,plano:sP,duracao:sD,contrato:sCt,mensalidade:sM,tipoValor:tipoValor,
         nome:sE||((leadInfo&&leadInfo.empresa)?leadInfo.empresa+' (2ª loja)':_fuMeeting.nome+' (2ª loja)')};
     })();
     generateContratoDocx({
       plano:plano,
       nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
       cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
+      docTipo:docTipo,
       telefone:_fuMeeting.tel,
       duracaoMeses:duracao,
       dataInicio:dataInicio,
@@ -11101,6 +11125,7 @@ function saveFollowupEdit(){
   var frequencia=(venda&&tipoValor!=='tcv')?document.getElementById('fu-frequencia').value:'';
   var vencimento=venda?(document.getElementById('fu-vencimento')||{value:''}).value.trim():'';
   var cnpj=venda?document.getElementById('fu-cnpj').value.trim():'';
+  var docTipo=venda?(((document.getElementById('fu-doctipo')||{}).value)||'cnpj'):'cnpj';
   var mensBase=venda?calcMensalidadeBase():0;
   // Serviços adicionais (Starter e Premium) — MESMA captura do saveFollowup; antes o modo edição ignorava.
   var _adicPermitido=(plano==='starter'||plano==='premium');
@@ -11144,19 +11169,21 @@ function saveFollowupEdit(){
       var segFields=document.getElementById('fu-seg-loja-fields');
       if(!segFields||segFields.style.display==='none')return;
       var sC=((document.getElementById('fu-seg-cnpj')||{}).value||'').trim();
+      var sDocTipo=((document.getElementById('fu-seg-doctipo')||{}).value)||'cnpj';
       var sE=((document.getElementById('fu-seg-empresa')||{}).value||'').trim();
       var sP=(document.getElementById('fu-seg-plano')||{}).value||plano;
       var sD=parseInt((document.getElementById('fu-seg-duracao')||{}).value||duracao,10)||duracao;
       var sCt=parseFloat((document.getElementById('fu-seg-contrato')||{}).value||0)||0;
       var sM=parseFloat((document.getElementById('fu-seg-mensalidade')||{}).value||0)||0;
       if(!sE&&!sC&&!sCt&&!sM)return;
-      _seg2={cnpj:sC,empresa:sE,plano:sP,duracao:sD,contrato:sCt,mensalidade:sM,tipoValor:tipoValor,
+      _seg2={cnpj:sC,docTipo:sDocTipo,empresa:sE,plano:sP,duracao:sD,contrato:sCt,mensalidade:sM,tipoValor:tipoValor,
         nome:sE||((leadInfo&&leadInfo.empresa)?leadInfo.empresa+' (2ª loja)':_fuMeeting.nome+' (2ª loja)')};
     })();
     generateContratoDocx({
       plano:plano,
       nomeCliente:(_fuContratanteVal.trim()||((leadInfo&&leadInfo.empresa)?leadInfo.empresa:_fuMeeting.nome)),
       cnpjCliente:cnpj||(leadInfo?(leadInfo.cnpj||''):''),
+      docTipo:docTipo,
       telefone:_fuMeeting.tel,
       duracaoMeses:duracao,
       dataInicio:dataInicio,
