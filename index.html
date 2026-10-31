@@ -5164,7 +5164,7 @@ function showPage(id){
     if(id==='fria') setTimeout(friaLoadStats,50);
     if(id==='prosp-grupo') setTimeout(grupoLoadStats,50);
     if(id==='social-selling') setTimeout(_ssAfterRender,80);
-    if(id==='reat-blast'){ setTimeout(reatLoadStats,50); _pgLoadMotivos(function(){ if(window._currentPage==='reat-blast')reatLoadStats(); }); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='reat-blast')reatLoadStats(); }).catch(function(){_fuSheetLoading=false;}); } }
+    if(id==='reat-blast'){ setTimeout(reatLoadStats,50); setTimeout(_reatCarregarContratos,60); _pgLoadMotivos(function(){ if(window._currentPage==='reat-blast')reatLoadStats(); }); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='reat-blast')reatLoadStats(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
     if(id==='avaliacoes') setTimeout(loadAvaliacoes,50);
@@ -34800,12 +34800,23 @@ var _REAT_TOQUES=[
 ];
 function _reatMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<5;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_REAT_TOQUES[i].m);return out;}
 // Telefones (últimos 9 díg.) de quem JÁ É CLIENTE — nunca pode entrar no disparo de reativação.
+var _reatCliContratos={}; // preenchido por _reatCarregarContratos() ao abrir a tela
 function _reatClientesTels(){
   var cli={}; function mark(t){t=String(t||'').replace(/\D/g,'');if(t.length>=9)cli[t.slice(-9)]=1;}
   try{ var F=(typeof followups==='object'&&followups)||{}; Object.keys(F).forEach(function(k){var f=F[k];if(f&&f.resultado==='venda')mark(f.tel);}); }catch(e){}
   try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&(e.status==='fechado'||e.status==='cliente'))mark(e.telefone);}); }catch(e){}
-  try{ if(typeof contratosData==='object'&&contratosData){ Object.keys(contratosData).forEach(function(k){var c=contratosData[k];if(c&&!(c.ativo===false||c.dataCancelamento))mark(c.telefone||c.tel||c.kanbanKey);}); } }catch(e){}
+  // contratos ATIVOS (cliente que só tem contrato, sem followup de venda) — carregados em _reatCliContratos
+  try{ Object.keys(_reatCliContratos||{}).forEach(function(k9){cli[k9]=1;}); }catch(e){}
   return cli;
+}
+// Carrega os contratos ativos e guarda os telefones (last-9) pra excluir clientes do disparo. Re-renderiza ao terminar.
+function _reatCarregarContratos(){
+  if(typeof loadContratos!=='function')return;
+  try{ loadContratos().then(function(list){
+    var m={}; (list||[]).forEach(function(c){ if(!c)return; if(c.ativo===false||c.dataCancelamento)return; var t=String(c.telefone||c.tel||c.kanbanKey||'').replace(/\D/g,''); if(t.length>=9)m[t.slice(-9)]=1; });
+    _reatCliContratos=m;
+    var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='reat-blast')a.innerHTML=renderReatBlast();
+  }).catch(function(){}); }catch(e){}
 }
 function _reatRecupLeads(){
   var out=[],seen={}; var cli=_reatClientesTels();
