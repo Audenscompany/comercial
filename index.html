@@ -4094,7 +4094,7 @@ function fbLeadsRaw(){
 }
 function fbReunioesRaw(){
   var H=['DATA DE AGENDAMENTO','CLIENTE','TELEFONE','DATA REAL','STATUS REUNIÃO','SDR','CLOSER','ORIGEM','EMPRESA'];
-  var rows=Object.values(meetings||{}).filter(function(m){return m&&!m._hidden&&!m._retorno;}).map(function(m){
+  var rows=Object.values(meetings||{}).filter(function(m){return m&&!m._hidden&&!m._retorno&&!m._renovacao;}).map(function(m){
     var ds=m.dtISO?_dmyFromMs(new Date(m.dtISO).getTime()):'';
     var fu=followups[m.id]; var st;
     if(fu){ if(fu.resultado==='noshow'||fu.comparecimento==='nao')st='NO-SHOW'; else if(fu.resultado==='venda')st='VENDA'; else st='REALIZADA'; }
@@ -5297,7 +5297,7 @@ function loadMetasRealizado(){
   try{
     var ms=(typeof meetings==='object'&&meetings)?Object.keys(meetings):[];
     var mDate=function(m){var t=m&&(m.dtISO||m.data||m.dt);if(!t)return null;var d=new Date(t);return isNaN(d.getTime())?null:d;};
-    ms.forEach(function(k){try{var m=meetings[k];var d=mDate(m);if(!(d&&d.getMonth()===mo&&d.getFullYear()===yr))return;agend++;var fu=(typeof followups==='object'&&followups)?(followups[m.id]||followups[m.meetingId]):null;var isReal=(typeof isRealizada==='function'&&isRealizada(m.status))||!!(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda'));var isNo=(m.status==='noshow')||!!(fu&&fu.comparecimento==='nao');if(isReal)realiz++;else if(isNo)noshow++;}catch(_){}});
+    ms.forEach(function(k){try{var m=meetings[k];if(m&&(m._retorno||m._renovacao))return;var d=mDate(m);if(!(d&&d.getMonth()===mo&&d.getFullYear()===yr))return;agend++;var fu=(typeof followups==='object'&&followups)?(followups[m.id]||followups[m.meetingId]):null;var isReal=(typeof isRealizada==='function'&&isRealizada(m.status))||!!(fu&&(fu.comparecimento==='sim'||fu.resultado==='venda'));var isNo=(m.status==='noshow')||!!(fu&&fu.comparecimento==='nao');if(isReal)realiz++;else if(isNo)noshow++;}catch(_){}});
     setCard('agend',agend+' · '+pctOf(agend,85)+'%',pctOf(agend,85));
     setCard('realiz',realiz+' · '+pctOf(realiz,59)+'%',pctOf(realiz,59));
     setTbl('agend',String(agend));setTbl('realiz',String(realiz));
@@ -10109,7 +10109,7 @@ function renderFollowupBody(){
         '</div>'+
         '<div style="margin-top:12px;">'+
           '<label class="f-label">Vencimento / Condição de Pagamento</label>'+
-          '<input class="f-input" type="text" id="fu-vencimento" placeholder="Ex: todo dia 10 / 50% entrada + 50% em 30d / dias 15 e 30" style="margin-bottom:0;">'+
+          '<textarea class="f-input" id="fu-vencimento" rows="2" placeholder="Ex: todo dia 10 / 50% entrada + 50% em 30d — OU cole a cláusula completa de pagamento (parágrafos preservados)" style="margin-bottom:0;resize:vertical;"></textarea>'+
         '</div>'+
         '<div id="fu-bonus-preview" style="padding:10px 12px;background:rgba(253,224,71,0.08);border:1px solid rgba(253,224,71,0.2);border-radius:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;color:#fde047;margin-top:10px;"></div>'+'<div style="margin-top:14px;padding:12px;background:rgba(123,47,255,0.06);border:1px solid rgba(123,47,255,0.2);border-radius:10px;">'+'<label class="f-label" style="margin-bottom:6px;">Sua assinatura (CONTRATADA) — vai no contrato enviado ao cliente</label>'+'<div style="position:relative;background:#0f1420;border:1px dashed var(--border2);border-radius:8px;">'+'<canvas id="fu-sig-canvas" style="width:100%;height:120px;display:block;touch-action:none;"></canvas>'+'<div id="fu-sig-hint" style="position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;color:var(--muted);font-size:12px;pointer-events:none;">assine aqui com o dedo ou mouse</div>'+'</div>'+'<button type="button" onclick="limparFuSig()" class="btn btn-outline" style="margin-top:8px;padding:5px 12px;font-size:12px;"><i class="ti ti-eraser"></i> Limpar assinatura</button>'+'</div>'+
         fuAdicionaisHTML('fu')+
@@ -10622,18 +10622,26 @@ async function generateContratoDocx(dados){
       formaPagamento='o valor total de R$ '+fmtMoeda(dados.valorTotal)+', correspondente ao plano contratado, com vigência de '+dados.duracaoMeses+' meses.';
     }
 
-    var FREQ_LABEL={mensal:'mensal',quinzenal:'quinzenal',semanal:'semanal'};
-    if(dados.frequencia){
-      formaPagamento+=' O pagamento será realizado de forma '+(FREQ_LABEL[dados.frequencia]||dados.frequencia)+', por meio de PIX, cartão de crédito ou outro meio previamente acordado entre as partes';
-      var _venc=String(dados.vencimento||'').trim().replace(/[.\s]+$/,'');
-      if(_venc){
-        // vencimento curto ("toda segunda", "dia 10") → "com vencimento X."
-        // texto longo/descrição (frase com ponto ou >40 chars) → vira frase própria, sem quebrar a gramática
-        var _longVenc=_venc.length>40||/[.;]/.test(_venc);
-        if(_longVenc) formaPagamento+='. '+_venc+'.';
-        else formaPagamento+=', com vencimento '+_venc+'.';
-      }else{
-        formaPagamento+='.';
+    // Condição de pagamento: se o usuário colou uma CLÁUSULA completa (com parágrafos),
+    // usa o texto dele na íntegra (quebras de linha preservadas), substituindo o padrão.
+    var _vencRaw=String(dados.vencimento||'').replace(/\*\*/g,'').replace(/\r\n/g,'\n').replace(/[ \t]+\n/g,'\n').trim();
+    var _ehClausulaPag=!!(_vencRaw&&(/\n/.test(_vencRaw)||/^\s*cl[aá]usula/i.test(_vencRaw)||/par[aá]grafo/i.test(_vencRaw)));
+    if(_ehClausulaPag){
+      formaPagamento='conforme a cláusula a seguir:\n\n'+_vencRaw;
+    } else {
+      var FREQ_LABEL={mensal:'mensal',quinzenal:'quinzenal',semanal:'semanal'};
+      if(dados.frequencia){
+        formaPagamento+=' O pagamento será realizado de forma '+(FREQ_LABEL[dados.frequencia]||dados.frequencia)+', por meio de PIX, cartão de crédito ou outro meio previamente acordado entre as partes';
+        var _venc=_vencRaw.replace(/[.\s]+$/,'');
+        if(_venc){
+          // vencimento curto ("toda segunda", "dia 10") → "com vencimento X."
+          // texto médio (frase com ponto ou >40 chars) → vira frase própria
+          var _longVenc=_venc.length>40||/[.;]/.test(_venc);
+          if(_longVenc) formaPagamento+='. '+_venc+'.';
+          else formaPagamento+=', com vencimento '+_venc+'.';
+        }else{
+          formaPagamento+='.';
+        }
       }
     }
     // Detecta se o modelo usa placeholders ESTRUTURADOS de adicionais (ex.: Premium)
@@ -11473,7 +11481,7 @@ function renderReunioes(){
   var tab=window._reunOvTab||'hoje';
 
   _afPhonesBuild();
-  var allM=Object.values(meetings).filter(function(m){return !m._retorno && _escMatch(m);});
+  var allM=Object.values(meetings).filter(function(m){return !m._retorno && !m._renovacao && _escMatch(m);});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
   function inPer(d){return !!d&&(periodoAtivo?(d>=_perFrom&&d<=_perTo):inMes(d,filtM,filtY));}
   var rows=allM.filter(function(m){if(!m.dtISO)return false;var _d=new Date(m.dtISO);return periodoAtivo?(_d>=_perFrom&&_d<=_perTo):inMes(_d,filtM,filtY);});
@@ -12363,7 +12371,7 @@ function buildDashComHTML(data){
       var addRows=[];
       Object.keys(meetings||{}).forEach(function(mid){
         var m=meetings[mid]; if(!m)return;
-        if(m._retorno||m._hidden||m.followupRemovido)return;
+        if(m._retorno||m._renovacao||m._hidden||m.followupRemovido)return;
         if(typeof _dispensadosLS!=='undefined'&&_dispensadosLS&&_dispensadosLS[mid])return; // dispensada via X (igual aba Reuniões)
         var dt=m.dtISO?new Date(m.dtISO):(m.scheduledAt?new Date(m.scheduledAt):null);
         if(!dt||isNaN(dt.getTime())||dt<curMonthStart)return;
@@ -15668,7 +15676,7 @@ function buildAnaliseAdsHTML(data){
     return false;
   }
   var _mTraf=Object.values(meetings||{}).filter(function(m){
-    if(!m||m._retorno||m._hidden)return false;
+    if(!m||m._retorno||m._renovacao||m._hidden)return false;
     if(m.status==='reagendado'&&m.reagendamentos>0)return false;
     if(!m.dtISO)return false; var _d=new Date(m.dtISO); if(isNaN(_d.getTime()))return false;
     if(!inAdsRange(_d))return false; return _aacTrafMeet(m);
@@ -19576,7 +19584,7 @@ function renderReunioesNoshow(){
   var _mnsL=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   var mesLabel=_mnsL[filtM]+' '+filtY;
 
-  var allM=Object.values(meetings).filter(function(m){return !m._retorno;});
+  var allM=Object.values(meetings).filter(function(m){return !m._retorno && !m._renovacao;});
   function inMes(d,m,y){return d&&d.getMonth()===m&&d.getFullYear()===y;}
   var rows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),filtM,filtY);});
   var prevRows=allM.filter(function(m){if(!m.dtISO)return false;return inMes(new Date(m.dtISO),prevM,prevY);});
