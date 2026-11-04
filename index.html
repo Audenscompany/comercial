@@ -3514,51 +3514,20 @@ async function criarCobrancaAsaas(leadInfo,vendaData,kanbanKey,assinaturaId){
     if(newCust&&newCust.id) customerId=newCust.id;
     else{console.error('Asaas: falha ao criar cliente',newCust);showSheetToast('Asaas: erro ao criar cliente');return;}
   }
-  // 2. Criar assinatura recorrente (ou cobrança avulsa se TCV)
-  var nextDueDate=vendaData.dataInicio||new Date().toISOString().split('T')[0];
-  var desc='Contrato '+(vendaData.plano||'')+(vendaData.duracao?' ('+vendaData.duracao+'m)':'')+' — '+(leadInfo.empresa||leadInfo.nome||'');
-  var result=null;
-  if(vendaData.tipoValor==='tcv'){
-    // Valor total: cobrança única
-    result=await asaasPost('/payments',{
-      customer:customerId,
-      billingType:asaasBillingType,
-      value:parseFloat(vendaData.contrato)||0,
-      dueDate:nextDueDate,
-      description:desc
-    });
-  } else {
-    // Mensalidade: assinatura recorrente mensal
-    var freqMap={'semanal':'WEEKLY','mensal':'MONTHLY','bimestral':'BIMONTHLY','trimestral':'QUARTERLY','semestral':'SEMIANNUALLY','anual':'YEARLY'};
-    var cycle=freqMap[(vendaData.frequencia||'mensal').toLowerCase()]||'MONTHLY';
-    result=await asaasPost('/subscriptions',{
-      customer:customerId,
-      billingType:asaasBillingType,
-      value:parseFloat(vendaData.mensalidade)||0,
-      nextDueDate:nextDueDate,
-      cycle:cycle,
-      description:desc
-    });
+  // 2. SÓ cria/acha o cliente no Asaas. A COBRANÇA é criada manualmente pelo Lucas no painel do Asaas.
+  if(!customerId){ showSheetToast('⚠️ Asaas: não foi possível criar o cliente'); return; }
+  if(kanbanKey&&(fbDb||initFirebase())){
+    fbDb.ref('kanban/'+kanbanKey).update({asaasCustomerId:customerId,asaasStatus:'CLIENTE_CRIADO'});
   }
-  if(result&&result.id){
-    var isSub=!!result.cycle; // subscriptions têm cycle, payments não
-    if(kanbanKey&&(fbDb||initFirebase())){
-      fbDb.ref('kanban/'+kanbanKey).update({asaasCustomerId:customerId,asaasChargeId:result.id,asaasStatus:'ACTIVE'});
-    }
-    if(kanbanKey&&kanbanData[kanbanKey]){
-      kanbanData[kanbanKey].asaasCustomerId=customerId;
-      kanbanData[kanbanKey].asaasChargeId=result.id;
-      kanbanData[kanbanKey].asaasStatus='ACTIVE';
-      localStorage.setItem('audens_kanban',JSON.stringify(kanbanData));
-    }
-    if(assinaturaId&&(fbDb||initFirebase())){
-      fbDb.ref('assinaturas/'+assinaturaId).update({asaasCustomerId:customerId,asaasChargeId:result.id,asaasStatus:'ACTIVE'});
-    }
-    showSheetToast(isSub?'✅ Assinatura criada no Asaas':'✅ Cobrança criada no Asaas');
-  }else{
-    console.error('Asaas: falha ao criar',result);
-    showSheetToast('⚠️ Asaas: erro ao criar cobrança — verifique o console');
+  if(kanbanKey&&kanbanData[kanbanKey]){
+    kanbanData[kanbanKey].asaasCustomerId=customerId;
+    kanbanData[kanbanKey].asaasStatus='CLIENTE_CRIADO';
+    localStorage.setItem('audens_kanban',JSON.stringify(kanbanData));
   }
+  if(assinaturaId&&(fbDb||initFirebase())){
+    fbDb.ref('assinaturas/'+assinaturaId).update({asaasCustomerId:customerId,asaasStatus:'CLIENTE_CRIADO'});
+  }
+  showSheetToast('✅ Cliente criado no Asaas — agora é só criar a cobrança por lá');
 }
 function saveAsaasConfig(){
   var keyEl=document.getElementById('asaas-api-key');
