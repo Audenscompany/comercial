@@ -30075,6 +30075,7 @@ function renderVendas(){
       '<select onchange="setVendasFiltro(\'origem\',this.value);document.getElementById(\'vf-origem\')&&(document.getElementById(\'vf-origem\').value=this.value)" style="'+sel+'"><option value="">Todas origens</option>'+origOpts+'</select>'+
       '<button onclick="abrirVendasExcluidas()" title="Ver e restaurar vendas que foram excluídas" style="background:rgba(255,255,255,0.07);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-trash-off"></i> Excluídas</button>'+
       '<button onclick="exportarVendas()" style="background:rgba(255,255,255,0.07);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--white);font-size:12px;cursor:pointer;"><i class="ti ti-download"></i> Exportar</button>'+
+      '<button onclick="abrirRegistrarRenovacao()" style="background:rgba(96,165,250,0.15);border:1px solid rgba(96,165,250,0.4);border-radius:8px;padding:8px 16px;color:#60a5fa;font-size:13px;font-weight:700;cursor:pointer;"><i class="ti ti-refresh-dot"></i> Registrar renovação</button>'+
       '<button onclick="abrirRegistrarVenda()" style="background:var(--purple3);border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 0 20px rgba(123,47,255,0.4);"><i class="ti ti-plus"></i> Registrar venda</button>'+
     '</div></div>'+
     // KPIs
@@ -30389,6 +30390,60 @@ function alterarStatusVenda(fid){
 }
 
 function abrirRegistrarVenda(){showSheetToast('Para registrar uma venda, abra uma reunião realizada e clique em "Resultado".',false);}
+// ===== REGISTRAR RENOVAÇÃO (venda de renovação, sem reunião) =====
+function abrirRegistrarRenovacao(){
+  // datalist com clientes já existentes (nome) pra facilitar
+  var nomes={}; try{ (window._vendasDataCache||[]).forEach(function(v){var n=(v.fu&&v.fu.nome)||(v.m&&v.m.nome)||'';if(n)nomes[n]=1;}); }catch(e){}
+  try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.nome&&(e.status==='fechado'||e.status==='cliente'))nomes[e.nome]=1;}); }catch(e){}
+  var dl=Object.keys(nomes).slice(0,400).map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+  var respOpts=CLOSERS.map(function(c){return '<option value="'+c+'"'+((CU&&CU.closer===c)?' selected':'')+'>'+c+'</option>';}).join('');
+  var html='<div class="modal-ov active" id="modal-renov" onclick="if(event.target===this)_renovClose()">'+
+    '<div class="modal-box" style="max-width:440px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-refresh-dot" style="color:#60a5fa;"></i> Registrar renovação</div><button class="modal-close" onclick="_renovClose()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Renovação de cliente atual. Vai abrir o fechamento já marcado como <b>Renovação</b> — você preenche plano, valor e gera o contrato normalmente.</div>'+
+        '<label class="f-label">Cliente / Empresa</label><input class="f-input" id="renov-nome" list="renov-dl" placeholder="Nome do cliente" style="margin-bottom:12px;"><datalist id="renov-dl">'+dl+'</datalist>'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Telefone (opcional)</label><input class="f-input" id="renov-tel" placeholder="DDD + número" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">Responsável</label><select class="f-select" id="renov-resp" style="margin-bottom:0;">'+respOpts+'</select></div>'+
+        '</div>'+
+        '<div id="renov-err" style="color:var(--red);font-size:12px;margin-top:8px;"></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="_confirmarRenovacao()"><i class="ti ti-arrow-right"></i> Abrir fechamento</button>'+
+        '<button class="btn btn-outline" onclick="_renovClose()">Cancelar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(function(){var el=document.getElementById('renov-nome');if(el)el.focus();},60);
+}
+function _renovClose(){var el=document.getElementById('modal-renov');if(el)el.remove();}
+function _confirmarRenovacao(){
+  var nome=(document.getElementById('renov-nome')||{}).value||''; nome=nome.trim();
+  var telRaw=((document.getElementById('renov-tel')||{}).value||'').replace(/\D/g,'');
+  var resp=(document.getElementById('renov-resp')||{}).value||((CU&&CU.closer)||'');
+  var err=document.getElementById('renov-err');
+  if(!nome){ if(err)err.textContent='Informe o nome do cliente.'; return; }
+  // tenta achar o lead/cliente existente por telefone (pra herdar kanbanKey, doc, etc.)
+  var kkey='';
+  try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(!e)return;var t=(e.telefone||'').replace(/\D/g,'');if((telRaw&&t&&(t===telRaw||t.endsWith(telRaw)||telRaw.endsWith(t)))||(!telRaw&&e.nome===nome))kkey=kkey||k;}); }catch(e){}
+  var kb=kkey?kanbanData[kkey]:{};
+  var now=new Date();
+  var synId='renov_'+(telRaw||('x'+Date.now()))+'_'+Date.now();
+  var synMeeting={id:synId,tel:telRaw||((kb&&kb.telefone)||''),nome:nome,responsavel:resp,sdrName:(kb&&kb.sdr)||'',sdr:(kb&&kb.sdr)||'',origem:'Renovação',dtISO:now.toISOString(),dtDisplay:now.toLocaleDateString('pt-BR')+' '+now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),status:'done',kanbanKey:kkey||'',faturamentoLead:(kb&&kb.faturamento)||'',_sintetico:true,_vendaDireta:true,_renovacao:true};
+  meetings[synId]=synMeeting; try{saveMeetingFB(synId,synMeeting);}catch(_){}
+  _renovClose();
+  openFollowup(synMeeting,false);
+  setTimeout(function(){
+    try{ selectComp('sim'); }catch(_){}
+    try{ selectFU('sim'); }catch(_){}
+    setTimeout(function(){
+      var tv=document.getElementById('fu-tipovenda'); if(tv)tv.value='renovacao';
+      var ct=document.getElementById('fu-contratante'); if(ct&&!ct.value)ct.value=nome;
+      var dc=document.getElementById('fu-cnpj'); if(dc&&!dc.value&&kb&&kb.cnpj)dc.value=_cnpjLimpo(kb.cnpj)||'';
+    },120);
+  },120);
+}
 
 function exportarVendas(){
   var data=window._vendasPageData;if(!data){alert('Carregue a aba de Vendas primeiro.');return;}
