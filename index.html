@@ -10031,6 +10031,7 @@ function prefillFollowupEdit(fu){
   var setVal=function(id,val){var el=document.getElementById(id);if(el && val!==undefined && val!==null) el.value=val;};
   setVal('fu-plano', fu.plano||'marketplaces');
   var _fuLeadE=(_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?kanbanData[_fuMeeting.kanbanKey]:null;
+  setVal('fu-tipovenda', fu.tipoVenda||'novo');
   setVal('fu-contratante', fu.contratante || ((_fuLeadE&&_fuLeadE.empresa)?_fuLeadE.empresa:(_fuMeeting?_fuMeeting.nome:'')));
   setVal('fu-duracao', fu.duracao||6);
   setVal('fu-data-inicio', fu.dataInicio||'');
@@ -10077,6 +10078,7 @@ function renderFollowupBody(){
         '<button class="btn" id="fu-perdida" style="flex:1;padding:12px;font-size:13px;border:2px solid var(--border);" onclick="selectFU(\'perdida\')">Venda Perdida</button>'+
       '</div></div>'+
       '<div id="fu-venda-fields" style="display:none;margin-bottom:16px;">'+
+        '<div style="margin-bottom:12px;"><label class="f-label">Tipo de venda</label><select class="f-input" id="fu-tipovenda" style="margin-bottom:0;"><option value="novo">Novo cliente</option><option value="renovacao">Renovação (cliente atual)</option></select></div>'+
         '<div style="margin-bottom:12px;"><label class="f-label">Nome da Contratante (vai no contrato)</label><input class="f-input" type="text" id="fu-contratante" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+'<div class="modal-grid2" style="margin-bottom:12px;"><div><label class="f-label">Documento do cliente</label><select class="f-input" id="fu-doctipo" style="margin-bottom:0;" onchange="var i=document.getElementById(\'fu-cnpj\');if(i)i.placeholder=(this.value===\'cpf\'?\'000.000.000-00\':\'00.000.000/0000-00\');"><option value="cnpj">CNPJ</option><option value="cpf">CPF</option></select></div><div><label class="f-label">Número do documento</label><input class="f-input" type="text" id="fu-cnpj" placeholder="00.000.000/0000-00" style="margin-bottom:0;" value="'+_cnpjLimpo((_fuMeeting&&_fuMeeting.kanbanKey&&kanbanData[_fuMeeting.kanbanKey])?(kanbanData[_fuMeeting.kanbanKey].cnpj||''):'')+'"></div></div>'+
         '<div class="modal-grid2">'+
           '<div><label class="f-label">Plano</label><select class="f-input" id="fu-plano" style="margin-bottom:12px;" onchange="fuOnPlanoChange()">'+
@@ -10822,6 +10824,7 @@ function saveFollowup(){
   }
   var choice=window._fuChoice; // 'sim' (venda) | 'retorno' | 'perdida'
   var venda=choice==='sim';
+  var tipoVenda=venda?(((document.getElementById('fu-tipovenda')||{}).value)||'novo'):'';
   var plano=venda?document.getElementById('fu-plano').value:'';
   var _fuContratanteVal=(document.getElementById('fu-contratante')||{}).value||'';
   var _fuAssinaturaEmpresa=(window._fuSigHas&&document.getElementById('fu-sig-canvas'))?document.getElementById('fu-sig-canvas').toDataURL('image/png'):'';
@@ -10860,7 +10863,7 @@ function saveFollowup(){
   }
   followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
     contratante:(_fuContratanteVal||'').trim(),comparecimento:'sim',venda:venda?'sim':'nao',
-    resultado:venda?'venda':choice,
+    resultado:venda?'venda':choice,tipoVenda:tipoVenda,
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
     adicionais:adicionais,adicionaisValor:adicValor,
@@ -11079,6 +11082,7 @@ function saveFollowupEdit(){
   }
   var choice=window._fuChoice; // 'sim' (venda) | 'retorno' | 'perdida'
   var venda=choice==='sim';
+  var tipoVenda=venda?(((document.getElementById('fu-tipovenda')||{}).value)||'novo'):'';
   var plano=venda?document.getElementById('fu-plano').value:'';
   var _fuContratanteVal=(document.getElementById('fu-contratante')||{}).value||'';
   var _fuAssinaturaEmpresa=(window._fuSigHas&&document.getElementById('fu-sig-canvas'))?document.getElementById('fu-sig-canvas').toDataURL('image/png'):'';
@@ -11113,7 +11117,7 @@ function saveFollowupEdit(){
   if(choice==='retorno'&&!retornoData){alert('Informe a data do retorno.');return;}
   followups[fid]={meetingId:fid,tel:_fuMeeting.tel,nome:_fuMeeting.nome,
     contratante:(_fuContratanteVal||'').trim(),comparecimento:'sim',venda:venda?'sim':'nao',
-    resultado:venda?'venda':choice,
+    resultado:venda?'venda':choice,tipoVenda:tipoVenda,
     plano:plano,duracao:duracao,dataInicio:dataInicio,tipoValor:tipoValor,
     contrato:contrato,mensalidade:mensalidade,frequencia:frequencia,vencimento:vencimento,
     adicionais:adicionais,adicionaisValor:adicValor,
@@ -29793,6 +29797,11 @@ function renderVendas(){
   // CAC — contagem de vendas de tráfego (síncrona) + período pra buscar o investimento na Meta
   var _cacTrafCount=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).length;
   var _cacTotalCount=vendas.length;
+  // Novos clientes x Renovações (renovação = fu.tipoVenda==='renovacao'; o resto é novo)
+  var _renovCount=vendas.filter(function(v){return v.fu&&v.fu.tipoVenda==='renovacao';}).length;
+  var _novoCount=vendas.length-_renovCount;
+  var _renovPrev=vendasPrev.filter(function(v){return v.fu&&v.fu.tipoVenda==='renovacao';}).length;
+  var _novoPrev=vendasPrev.length-_renovPrev;
   var _cacPer=vPeriodoAtivo?null:((filtM+1)+'/'+filtY);
   var _cacSince=vPeriodoAtivo?_vendasPeriodo.from:null;
   var _cacUntil=vPeriodoAtivo?_vendasPeriodo.to:null;
@@ -29908,6 +29917,8 @@ function renderVendas(){
 
   var kpiGrid=
     kpiCard('shopping-cart','Vendas fechadas','<span id="v-total-vendas">'+vendas.length+'</span>',dlt(vendas.length,vendasPrev.length),'#4ade80','#4ade80')+
+    kpiCard('user-plus','Novos clientes','<span style="color:#4ade80;">'+_novoCount+'</span>',dlt(_novoCount,_novoPrev),'#4ade80','#4ade80')+
+    kpiCard('refresh-dot','Renovações','<span style="color:#60a5fa;">'+_renovCount+'</span>',dlt(_renovCount,_renovPrev),'#60a5fa','#60a5fa')+
     kpiCard('coin','Receita nova',fmtV(totalReceita),dlt(totalReceita,totalReceitaPrev),'#a78bfa','#a78bfa')+
     kpiCard('refresh','MRR adicionado',fmtV(totalReceita),dlt(totalReceita,totalReceitaPrev),'#60a5fa','#60a5fa')+
     kpiCard('chart-bar','Ticket médio',fmtV(ticket),dlt(ticket,ticketPrev),'#fbbf24','#fbbf24')+
