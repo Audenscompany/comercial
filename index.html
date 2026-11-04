@@ -29526,6 +29526,13 @@ function _vendasAplicarPeriodo(){
   _vendasPeriodo={from:fv,to:tv}; _vendasPagina=1; showPage('vendas');
 }
 function _vendasLimparPeriodo(){_vendasPeriodo=null;_vendasPagina=1;showPage('vendas');}
+// Atalhos de período maior (3/6/12 meses ou tudo desde 2024) — evita o date picker mês a mês
+function _vendasPreset(m){
+  var hoje=new Date(); var to=hoje.toISOString().slice(0,10); var from;
+  if(m==='tudo'){ from='2024-01-01'; }
+  else { var d=new Date(hoje.getFullYear(),hoje.getMonth()-(parseInt(m,10)-1),1); from=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01'; }
+  _vendasPeriodo={from:from,to:to}; _vendasMesFiltro=null; _vendasPagina=1; showPage('vendas');
+}
 function setVendasFiltro(campo,val){
   _vendasFiltros[campo]=val;
   _vendasPagina=1;
@@ -29887,7 +29894,8 @@ function renderVendas(){
     sortedKeys.map(function(k){var p=k.split('-');return'<option value="'+k+'"'+(k===selectedKey?' selected':'')+'>'+_mns[parseInt(p[1])-1]+' '+p[0]+'</option>';}).join('')+
   '</select>';
   var _pvf=(_vendasPeriodo&&_vendasPeriodo.from)||'',_pvt=(_vendasPeriodo&&_vendasPeriodo.to)||'';
-  var periodoBox='<div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid '+(vPeriodoAtivo?'var(--purple3)':'var(--border)')+';border-radius:8px;padding:4px 8px;" title="Filtrar vendas por um intervalo de datas">'+'<i class="ti ti-calendar-stats" style="font-size:13px;color:'+(vPeriodoAtivo?'var(--purple3)':'var(--muted)')+';"></i>'+'<input type="date" id="_vPerFrom" value="'+_pvf+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<span style="color:var(--muted);font-size:10px;">até</span>'+'<input type="date" id="_vPerTo" value="'+_pvt+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<button onclick="_vendasAplicarPeriodo()" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;">OK</button>'+(vPeriodoAtivo?'<button onclick="_vendasLimparPeriodo()" style="background:none;border:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;" title="Limpar período">×</button>':'')+'</div>';
+  var periodoBox='<div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid '+(vPeriodoAtivo?'var(--purple3)':'var(--border)')+';border-radius:8px;padding:4px 8px;" title="Filtrar vendas por um intervalo de datas">'+'<i class="ti ti-calendar-stats" style="font-size:13px;color:'+(vPeriodoAtivo?'var(--purple3)':'var(--muted)')+';"></i>'+'<input type="date" id="_vPerFrom" value="'+_pvf+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<span style="color:var(--muted);font-size:10px;">até</span>'+'<input type="date" id="_vPerTo" value="'+_pvt+'" style="background:transparent;border:none;color:var(--white);font-size:11px;outline:none;color-scheme:dark;width:112px;">'+'<button onclick="_vendasAplicarPeriodo()" style="background:var(--purple3);border:none;border-radius:6px;color:#fff;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;">OK</button>'+(vPeriodoAtivo?'<button onclick="_vendasLimparPeriodo()" style="background:none;border:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;" title="Limpar período">×</button>':'')+'</div>'+
+    '<div style="display:flex;align-items:center;gap:4px;">'+['3','6','12'].map(function(mm){return '<button onclick="_vendasPreset(\''+mm+'\')" style="background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:6px;color:var(--silver);padding:5px 9px;font-size:11px;cursor:pointer;" title="Últimos '+mm+' meses">'+mm+'m</button>';}).join('')+'<button onclick="_vendasPreset(\'tudo\')" style="background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:6px;color:var(--silver);padding:5px 9px;font-size:11px;cursor:pointer;" title="Todas as vendas">Tudo</button></div>';
 
   // Status config
   var statusConfig={
