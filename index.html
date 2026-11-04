@@ -35305,7 +35305,7 @@ function importarSS(){
   var linhas=txt.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
   if(!linhas.length){ if(st){st.style.color='var(--amber)';st.textContent='Cole pelo menos uma linha.'; } return; }
   var db=_ssDb(); if(!db){ if(st){st.style.color='var(--red)';st.textContent='Sem conexão com o Firebase.';} return; }
-  var upd={}, n=0, dup=0, inval=0, segOk={}, potOk={};
+  var upd={}, n=0, dup=0, inval=0, segOk={}, potOk={}, dupList=[];
   SS_SEGMENTOS.forEach(function(s){segOk[s.toLowerCase()]=s;}); SS_POTENCIAIS.forEach(function(s){potOk[s.toLowerCase()]=s;});
   var vistos={};
   linhas.forEach(function(ln){
@@ -35314,15 +35314,18 @@ function importarSS(){
     var seg=segOk[(parts[4]||'').toLowerCase()]||''; var pot=potOk[(parts[5]||'').toLowerCase()]||'';
     if(!dono||(!igDono&&!igLoja)){ inval++; return; }
     var dedupKey=igDono||igLoja;
-    if(vistos[dedupKey]||_ssDup(igDono,igLoja,null)){ dup++; return; }
+    var ex=_ssDup(igDono,igLoja,null);
+    if(vistos[dedupKey]||ex){ dup++; dupList.push({dono:dono,ig:'@'+(igDono||igLoja),por:(ex?(ex.responsavel||'?'):'esta lista')}); return; }
     vistos[dedupKey]=1;
     var key=_ssKey('ss_'+(igDono||igLoja));
     upd['social_selling/leads/'+key]={ dono:dono, igDono:igDono, igLoja:igLoja, loja:loja, segmento:seg, potencial:pot, responsavel:resp, status:'novo', obs:'', createdAt:Date.now(), createdBy:_ssMeuNome(), updatedAt:Date.now() };
     n++;
   });
+  window._ssDupList=dupList;
+  function _ssDupHtml(){ if(!dupList.length)return''; var li=dupList.slice(0,30).map(function(d){return '• '+esc(d.dono)+' ('+esc(d.ig)+') — já é de <b>'+esc(d.por)+'</b>';}).join('<br>'); return '<div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;font-size:11px;color:var(--amber);max-height:160px;overflow:auto;"><b>Já cadastrados (pulados):</b><br>'+li+(dupList.length>30?('<br>… e mais '+(dupList.length-30)):'')+'</div>'; }
   if(st){ st.style.color='var(--muted)'; st.innerHTML='<i class="ti ti-loader"></i> Importando '+n+'…'; }
-  if(!n){ if(st){st.style.color='var(--amber)';st.textContent='Nada importado · '+dup+' duplicados · '+inval+' linhas inválidas.';} return; }
-  try{ db.ref().update(upd).then(function(){ if(st){st.style.color='#22c55e';st.textContent='✓ '+n+' importados · '+dup+' duplicados · '+inval+' inválidos.';} setTimeout(function(){_ssCloseModal();_ssRerender();},900); }).catch(function(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }); }
+  if(!n){ if(st){st.style.color='var(--amber)';st.innerHTML='Nada importado · '+dup+' já cadastrados · '+inval+' linhas inválidas.'+_ssDupHtml();} return; }
+  try{ db.ref().update(upd).then(function(){ if(st){st.style.color='#22c55e';st.innerHTML='✓ '+n+' importados · <span style="color:var(--amber);">'+dup+' já cadastrados (pulados)</span> · '+inval+' inválidos.'+_ssDupHtml();} setTimeout(function(){_ssRerender();},600); }).catch(function(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }); }
   catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 function _friaDefaultMsg(id){
