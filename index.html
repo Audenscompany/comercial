@@ -2561,6 +2561,22 @@ function _ssNextStep(l){
   for(var i=0;i<SS_CADENCIA.length;i++){ var s=SS_CADENCIA[i]; if(!done[s.dia]){ var sched=_ssAddDays(l.cadencia.start,s.dia-1); return {dia:s.dia,tipo:s.tipo,texto:s.texto,sched:sched,atrasado:(sched<_ssToday())}; } }
   return null; // concluiu os 14
 }
+// Cadência de CONVERSA: pra quem já respondeu (status 'conversa'). Toques mais espaçados (a cada ~2 dias),
+// focados em marcar a call — mantém o lead aquecido se a conversa esfriar, sem travar a negociação.
+var SS_CADENCIA_CONVERSA=[
+  {dia:2,texto:"{nome}, pensei aqui em 2 ideias rápidas pro seu delivery depois do nosso papo 💡 Topa 15 min essa semana pra eu te mostrar? Pode ser por chamada mesmo."},
+  {dia:4,texto:"{nome}, tem um horário amanhã de manhã ou à tarde que fica melhor pra gente conversar? Eu me encaixo no seu."},
+  {dia:7,texto:"{nome}, não quero te perder no corre do dia a dia 🙏 Me fala só um dia/horário que 15 min a gente resolve e eu já te mostro o caminho."},
+  {dia:10,texto:"{nome}, se preferir eu já te mando por aqui um resumo do que vi no seu perfil que dá pra melhorar — quer que eu mande?"},
+  {dia:14,texto:"{nome}, vou deixar o convite de pé 👊 Quando quiser destravar mais venda no delivery é só me chamar. Sigo acompanhando seu trabalho de perto!"}
+];
+// Próximo passo da cadência de CONVERSA (status 'conversa'). Null se fora dela/encerrada.
+function _ssNextStepConv(l){
+  if(!l||l.status!=='conversa'||!l.cadenciaConv||!l.cadenciaConv.start) return null;
+  var done=l.cadenciaConv.done||{};
+  for(var i=0;i<SS_CADENCIA_CONVERSA.length;i++){ var s=SS_CADENCIA_CONVERSA[i]; if(!done[s.dia]){ var sched=_ssAddDays(l.cadenciaConv.start,s.dia-1); return {dia:s.dia,texto:s.texto,sched:sched,atrasado:(sched<_ssToday())}; } }
+  return null;
+}
 var KANBAN_COLS=[
   {id:'novo',label:'Novo Lead',color:'purple'},
   {id:'qualificado',label:'Lead Qualificado',color:'cyan'},
@@ -35127,28 +35143,44 @@ function renderSocialSelling(){
 function _ssRerender(){ var a=document.getElementById('content'); if(a&&a.getAttribute('data-page')==='social-selling'){ a.innerHTML=renderSocialSelling(); setTimeout(_ssAfterRender,30); } }
 // ===== TAREFAS DO DIA =====
 function _ssTarefasHTML(daView,gestor,eu){
+  // busca por nome/@ dentro das tarefas
+  var bq=String(window._ssTarefaBusca||'').toLowerCase().trim();
+  if(bq){ daView=daView.filter(function(l){ return ((l.dono||'').toLowerCase().indexOf(bq)>=0||(l.loja||'').toLowerCase().indexOf(bq)>=0||(l.igDono||'').toLowerCase().indexOf(bq)>=0||(l.igLoja||'').toLowerCase().indexOf(bq)>=0); }); }
   // só leads em cadência com passo pendente devido até hoje
   var pend=[];
   daView.forEach(function(l){ var ns=_ssNextStep(l); if(ns && ns.sched<=_ssToday()) pend.push({l:l,ns:ns}); });
-  // responderam (em conversa) — precisam de retorno
+  // responderam (em conversa) — entram na CADÊNCIA DE CONVERSA
   var resp=daView.filter(function(l){return (l.status||'')==='conversa';});
   // ordem: atrasadas primeiro, depois mensagens antes de interações
   pend.sort(function(a,b){ if(a.ns.atrasado!==b.ns.atrasado) return a.ns.atrasado?-1:1; if(a.ns.tipo!==b.ns.tipo) return a.ns.tipo==='msg'?-1:1; return (a.ns.sched<b.ns.sched?-1:1); });
-  var totalHoje=pend.length, feitasHoje=0; // feitas hoje = passos concluídos hoje nesta carteira
-  daView.forEach(function(l){ var dn=(l.cadencia&&l.cadencia.doneAt)||{}; Object.keys(dn).forEach(function(d){ if(String(dn[d]).slice(0,10)===_ssToday()) feitasHoje++; }); });
+  var _convDue=resp.filter(function(l){var cs=_ssNextStepConv(l);return cs&&cs.sched<=_ssToday();}).length;
+  var totalHoje=pend.length+_convDue, feitasHoje=0; // feitas hoje = passos concluídos hoje (cadência normal + conversa)
+  daView.forEach(function(l){ var dn=(l.cadencia&&l.cadencia.doneAt)||{}; Object.keys(dn).forEach(function(d){ if(String(dn[d]).slice(0,10)===_ssToday()) feitasHoje++; }); var dc=(l.cadenciaConv&&l.cadenciaConv.doneAt)||{}; Object.keys(dc).forEach(function(d){ if(String(dc[d]).slice(0,10)===_ssToday()) feitasHoje++; }); });
   var totalDia=totalHoje+feitasHoje; var pctDia=totalDia>0?Math.round(feitasHoje/totalDia*100):0;
   var H='';
+  // busca por nome
+  H+='<div style="margin-bottom:14px;"><input type="text" value="'+esc(window._ssTarefaBusca||'')+'" oninput="window._ssTarefaBusca=this.value;clearTimeout(window._ssTBt);window._ssTBt=setTimeout(_ssRerender,250);" placeholder="🔎 Buscar por nome / loja / @ nas tarefas" class="f-input" style="width:100%;margin:0;padding:9px 12px;"></div>';
   // barra de progresso do dia
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:16px;">'+
      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div style="font-size:13px;font-weight:700;color:var(--white);">Progresso de hoje</div><div style="font-size:12px;color:var(--muted);">'+feitasHoje+' de '+totalDia+' concluídas · '+pctDia+'%</div></div>'+
      '<div style="height:10px;background:var(--card);border-radius:999px;overflow:hidden;"><div style="height:100%;width:'+pctDia+'%;background:'+(pctDia>=100?'#22c55e':'var(--purple)')+';"></div></div></div>';
-  // responderam
+  // EM CONVERSA — cadência de conversa (passo do dia, se devido)
   if(resp.length){
-    H+='<div style="font-size:12px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">💬 Responderam — retornar ('+resp.length+')</div>';
-    resp.forEach(function(l){ var ig=_ssNormIg(l.igDono||l.igLoja);
-      H+='<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'+
-        '<div><b style="color:var(--white);">'+esc(l.dono||l.loja||'')+'</b>'+(l.loja?'<span style="color:var(--muted);font-size:12px;"> · '+esc(l.loja)+'</span>':'')+(l.obs?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+esc(l.obs.slice(0,80))+'</div>':'')+'</div>'+
-        '<div style="white-space:nowrap;">'+(ig?'<a href="'+_ssIgUrl(ig)+'" target="_blank" class="btn btn-outline" style="font-size:12px;padding:5px 10px;text-decoration:none;">Abrir IG</a> ':'')+'<button onclick="ssMarcarReuniaoSS(\''+l._id+'\')" class="btn" style="background:#22c55e;color:#061;border:none;font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;">✓ Foi pra reunião</button></div>'+
+    H+='<div style="font-size:12px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">💬 Em conversa — cadência de conversa ('+resp.length+')</div>';
+    resp.forEach(function(l){ var ig=_ssNormIg(l.igDono||l.igLoja); var cs=_ssNextStepConv(l); var due=cs&&cs.sched<=_ssToday();
+      H+='<div style="background:rgba(245,158,11,.06);border:1px solid '+(due&&cs.atrasado?'rgba(239,68,68,.35)':'rgba(245,158,11,.25)')+';border-radius:10px;padding:12px 14px;margin-bottom:10px;">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:'+(due?'8px':'0')+';">'+
+          '<div><b style="color:var(--white);">'+esc(l.dono||l.loja||'')+'</b>'+(l.loja?'<span style="color:var(--muted);font-size:12px;"> · '+esc(l.loja)+'</span>':'')+(due?' <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,.15);color:#f59e0b;">Follow-up '+cs.dia+'º dia</span>'+(cs.atrasado?' <span style="font-size:11px;color:var(--red);font-weight:700;">⚠️ atrasado</span>':''):'<span style="font-size:11px;color:var(--muted);margin-left:6px;">'+(cs?'próximo follow-up em '+cs.sched.slice(8,10)+'/'+cs.sched.slice(5,7):'cadência de conversa concluída')+'</span>')+'</div>'+
+          (gestor?'<span style="font-size:11px;color:var(--muted);">'+esc(l.responsavel||'')+'</span>':'')+
+        '</div>'+
+        (due?'<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--silver);white-space:pre-wrap;line-height:1.5;" id="ss-cmsg-'+l._id+'">'+esc(_ssRenderTexto(cs.texto,l))+'</div>':'')+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:'+(due?'10px':'8px')+';">'+
+          (due?'<button onclick="ssCopiarConvMsg(\''+l._id+'\',this)" class="btn btn-outline" style="font-size:12px;padding:6px 12px;">📋 Copiar</button>':'')+
+          (ig?'<a href="'+_ssIgUrl(ig)+'" target="_blank" class="btn" style="background:#c084fc;color:#fff;border:none;font-size:12px;padding:6px 12px;border-radius:7px;text-decoration:none;">📲 Abrir IG</a>':'')+
+          (due?'<button onclick="ssConcluirPassoConv(\''+l._id+'\','+cs.dia+')" class="btn" style="background:#22c55e;color:#061;border:none;font-size:12px;padding:6px 12px;border-radius:7px;cursor:pointer;">✓ Feito</button>':'')+
+          '<button onclick="ssMarcarReuniaoSS(\''+l._id+'\')" class="btn" style="background:#22c55e;color:#061;border:none;font-size:12px;padding:6px 12px;border-radius:7px;cursor:pointer;">✓ Foi pra reunião</button>'+
+          '<button onclick="ssEncerrarSS(\''+l._id+'\')" class="btn btn-outline" style="font-size:12px;padding:6px 12px;color:var(--muted);">Encerrar</button>'+
+        '</div>'+
       '</div>';
     });
     H+='<div style="height:10px;"></div>';
@@ -35176,9 +35208,12 @@ function _ssTarefasHTML(daView,gestor,eu){
   return H;
 }
 function ssCopiarMsg(id,btn){ var el=document.getElementById('ss-msg-'+id); if(!el)return; var t=el.textContent||''; try{navigator.clipboard.writeText(t);}catch(e){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_){}document.body.removeChild(ta);} if(btn){var o=btn.textContent;btn.textContent='✓ Copiado';setTimeout(function(){btn.textContent=o;},1400);} }
+function ssCopiarConvMsg(id,btn){ var el=document.getElementById('ss-cmsg-'+id); if(!el)return; var t=el.textContent||''; try{navigator.clipboard.writeText(t);}catch(e){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_){}document.body.removeChild(ta);} if(btn){var o=btn.textContent;btn.textContent='✓ Copiado';setTimeout(function(){btn.textContent=o;},1400);} }
 function iniciarCadenciaSS(id){ var l=ssLeads[id]; if(!l)return; l.cadencia={start:_ssToday(),done:{},doneAt:{}}; l.status='cadencia'; l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadencia:l.cadencia,status:'cadencia',updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssConcluirPasso(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadencia=l.cadencia||{start:_ssToday(),done:{},doneAt:{}}; l.cadencia.done=l.cadencia.done||{}; l.cadencia.doneAt=l.cadencia.doneAt||{}; l.cadencia.done[dia]=true; l.cadencia.doneAt[dia]=new Date().toISOString(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadencia:l.cadencia,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
-function ssRespondeuSS(id){ var l=ssLeads[id]; if(!l)return; l.status='conversa'; l.respondeuAt=Date.now(); if(l.cadencia){var ns=_ssNextStep(l); l.respondeuNoDia=ns?ns.dia:(l.cadencia.lastDia||0);} l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'conversa',respondeuAt:l.respondeuAt,respondeuNoDia:l.respondeuNoDia||null,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
+function ssRespondeuSS(id){ var l=ssLeads[id]; if(!l)return; l.status='conversa'; l.respondeuAt=Date.now(); if(l.cadencia){var ns=_ssNextStep(l); l.respondeuNoDia=ns?ns.dia:(l.cadencia.lastDia||0);} l.cadenciaConv={start:_ssToday(),done:{},doneAt:{}}; /* inicia a cadência de conversa */ l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'conversa',respondeuAt:l.respondeuAt,respondeuNoDia:l.respondeuNoDia||null,cadenciaConv:l.cadenciaConv,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
+function ssConcluirPassoConv(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadenciaConv=l.cadenciaConv||{start:_ssToday(),done:{},doneAt:{}}; l.cadenciaConv.done=l.cadenciaConv.done||{}; l.cadenciaConv.doneAt=l.cadenciaConv.doneAt||{}; l.cadenciaConv.done[dia]=true; l.cadenciaConv.doneAt[dia]=new Date().toISOString(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadenciaConv:l.cadenciaConv,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
+function ssEncerrarSS(id){ var l=ssLeads[id]; if(!l)return; if(!confirm('Encerrar o acompanhamento de '+(l.dono||l.loja||'')+'? (vai pra Descartado)'))return; l.status='descartado'; l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'descartado',updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssMarcarReuniaoSS(id){ var l=ssLeads[id]; if(!l)return; l.status='reuniao'; l.reuniaoAt=Date.now(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'reuniao',reuniaoAt:l.reuniaoAt,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 // ===== MÉTRICAS / KPIs (dashboard visual) =====
 function _ssStats(arr){
