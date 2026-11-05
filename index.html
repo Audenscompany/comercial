@@ -35214,7 +35214,68 @@ function ssConcluirPasso(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadencia=l.
 function ssRespondeuSS(id){ var l=ssLeads[id]; if(!l)return; l.status='conversa'; l.respondeuAt=Date.now(); if(l.cadencia){var ns=_ssNextStep(l); l.respondeuNoDia=ns?ns.dia:(l.cadencia.lastDia||0);} l.cadenciaConv={start:_ssToday(),done:{},doneAt:{}}; /* inicia a cadência de conversa */ l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'conversa',respondeuAt:l.respondeuAt,respondeuNoDia:l.respondeuNoDia||null,cadenciaConv:l.cadenciaConv,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssConcluirPassoConv(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadenciaConv=l.cadenciaConv||{start:_ssToday(),done:{},doneAt:{}}; l.cadenciaConv.done=l.cadenciaConv.done||{}; l.cadenciaConv.doneAt=l.cadenciaConv.doneAt||{}; l.cadenciaConv.done[dia]=true; l.cadenciaConv.doneAt[dia]=new Date().toISOString(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadenciaConv:l.cadenciaConv,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssEncerrarSS(id){ var l=ssLeads[id]; if(!l)return; if(!confirm('Encerrar o acompanhamento de '+(l.dono||l.loja||'')+'? (vai pra Descartado)'))return; l.status='descartado'; l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'descartado',updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
-function ssMarcarReuniaoSS(id){ var l=ssLeads[id]; if(!l)return; l.status='reuniao'; l.reuniaoAt=Date.now(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'reuniao',reuniaoAt:l.reuniaoAt,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
+// "Foi pra reunião" → completa telefone/faturamento, joga no Kanban e abre o agendamento (mesmo fluxo do funil)
+function ssMarcarReuniaoSS(id){
+  var l=ssLeads[id]; if(!l)return;
+  var eu=l.responsavel||_ssMeuNome();
+  var respOpts=(typeof CLOSERS!=='undefined'?CLOSERS:['Lucas','João']).map(function(c){return '<option value="'+c+'"'+((eu===c||((CU&&CU.closer===c)&&!eu))?' selected':'')+'>'+c+'</option>';}).join('');
+  var ig=_ssNormIg(l.igDono||l.igLoja);
+  var html='<div class="modal-ov active" id="modal-ss-reuniao" onclick="if(event.target===this)_ssReunClose()">'+
+    '<div class="modal-box" style="max-width:440px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-calendar-plus" style="color:#22c55e;"></i> Agendar reunião · '+esc(l.dono||l.loja||'')+'</div><button class="modal-close" onclick="_ssReunClose()">×</button></div>'+
+      '<div style="padding:20px;">'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Complete os dados pra jogar o lead no Funil e agendar a reunião. '+(ig?'IG: <a href="'+_ssIgUrl(ig)+'" target="_blank" style="color:#c084fc;">@'+esc(ig)+'</a>':'')+'</div>'+
+        '<label class="f-label">Nome</label><input class="f-input" id="ssr-nome" value="'+esc(l.dono||'')+'" style="margin-bottom:12px;">'+
+        '<div class="modal-grid2">'+
+          '<div><label class="f-label">Telefone (WhatsApp)</label><input class="f-input" id="ssr-tel" placeholder="DDD + número" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">Faturamento</label><input class="f-input" id="ssr-fat" placeholder="Ex: 40 mil / 50-100" style="margin-bottom:0;"></div>'+
+        '</div>'+
+        '<div class="modal-grid2" style="margin-top:12px;">'+
+          '<div><label class="f-label">Loja / Empresa</label><input class="f-input" id="ssr-empresa" value="'+esc(l.loja||'')+'" style="margin-bottom:0;"></div>'+
+          '<div><label class="f-label">Responsável</label><select class="f-select" id="ssr-resp" style="margin-bottom:0;">'+respOpts+'</select></div>'+
+        '</div>'+
+        '<label class="f-label" style="margin-top:12px;">E-mail (opcional)</label><input class="f-input" id="ssr-email" placeholder="email@exemplo.com" style="margin-bottom:0;">'+
+        '<div id="ssr-err" style="color:var(--red);font-size:12px;margin-top:8px;"></div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
+        '<button class="btn btn-primary" onclick="_ssConfirmarReuniao(\''+id+'\')"><i class="ti ti-calendar-plus"></i> Jogar no Funil e agendar</button>'+
+        '<button class="btn btn-outline" onclick="_ssReunClose()">Cancelar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(function(){var el=document.getElementById('ssr-tel');if(el)el.focus();},60);
+}
+function _ssReunClose(){var el=document.getElementById('modal-ss-reuniao');if(el)el.remove();}
+function _ssConfirmarReuniao(id){
+  var l=ssLeads[id]; if(!l)return;
+  var nome=((document.getElementById('ssr-nome')||{}).value||'').trim();
+  var telRaw=((document.getElementById('ssr-tel')||{}).value||'').replace(/\D/g,'');
+  var fat=((document.getElementById('ssr-fat')||{}).value||'').trim();
+  var empresa=((document.getElementById('ssr-empresa')||{}).value||'').trim();
+  var resp=((document.getElementById('ssr-resp')||{}).value||l.responsavel||'');
+  var email=((document.getElementById('ssr-email')||{}).value||'').trim();
+  var err=document.getElementById('ssr-err');
+  if(!nome){ if(err)err.textContent='Informe o nome.'; return; }
+  if(telRaw.length<10){ if(err)err.textContent='Informe um telefone válido (com DDD) — é usado pra confirmar e lembrar a reunião.'; return; }
+  var db=_ssDb(); if(!db){ if(err)err.textContent='Sem conexão com o Firebase.'; return; }
+  var ig=_ssNormIg(l.igDono||l.igLoja);
+  var kkey=telRaw.replace(/[.#$\[\]]/g,'_');
+  var now=Date.now();
+  var novo=Object.assign({},(kanbanData&&kanbanData[kkey])||{},{
+    nome:nome, telefone:telRaw, empresa:empresa, faturamento:fat, email:email,
+    instagram:ig?('@'+ig):'', origem:'Social Selling', responsavel:resp,
+    _source:'social-selling', _ssLeadId:id, _createdAt:((kanbanData&&kanbanData[kkey]&&kanbanData[kkey]._createdAt)||now),
+    status:'qualificado', statusAt:now, statusHistory:Object.assign({},((kanbanData&&kanbanData[kkey]&&kanbanData[kkey].statusHistory)||{}),{qualificado:now}), naoArquivar:true
+  });
+  if(typeof kanbanData!=='undefined') kanbanData[kkey]=novo;
+  try{ db.ref('kanban/'+kkey).update(novo); }catch(e){}
+  // vincula e marca o lead de Social Selling como "em reunião"
+  l.status='reuniao'; l.reuniaoAt=now; l.kanbanKey=kkey; l.telefone=telRaw; if(fat)l.obs=((l.obs?l.obs+' · ':'')+'Fat: '+fat); l.updatedAt=now;
+  try{ db.ref('social_selling/leads/'+id).update({status:'reuniao',reuniaoAt:now,kanbanKey:kkey,telefone:telRaw,obs:l.obs||'',updatedAt:now}); }catch(e){}
+  _ssReunClose();
+  if(typeof abrirAgendarReuniao==='function') abrirAgendarReuniao(kkey);
+  else { _ssRerender(); showToast&&showToast('Lead no Funil (Qualificado). Abra o Funil pra agendar.'); }
+}
 // ===== MÉTRICAS / KPIs (dashboard visual) =====
 function _ssStats(arr){
   var s={total:arr.length,emCad:0,abordados:0,passosFeitos:0,respostas:0,conversas:0,reunioes:0,clientes:0};
