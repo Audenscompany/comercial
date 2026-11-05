@@ -11642,7 +11642,6 @@ function renderReunioes(){
   function normLP(raw){var s=String(raw||'').toLowerCase().trim();if(!s||s==='import'||s==='manual')return s==='manual'||s==='import'?'Manual / Import':'Não informado';
     if(/quiz-?fv2|fv2|lp-audens-quiz/.test(s))return 'Quiz FV2';
     if(/fv1/.test(s))return 'Quiz FV1';
-    if(/lp-?black/.test(s))return 'LP Black';
     if(/lp-?v3|lpv3/.test(s))return 'LP V3';
     if(/elementor/.test(s))return 'LP Elementor';
     if(/50-?comandos/.test(s))return 'LP 50 Comandos';
@@ -35126,8 +35125,10 @@ function renderBfBlast(){
        '<button onclick="bfAddPaste()" class="btn btn-outline" style="font-size:12px;padding:6px 12px;">+ Adicionar lista colada</button> <span id="bf-imp-st" style="font-size:12px;color:var(--muted);margin-left:6px;"></span>'+
        (_bfListaExtra.length?' <button onclick="_bfListaExtra=[];_bfRerender();" class="btn btn-outline" style="font-size:12px;padding:6px 10px;color:var(--red);">limpar listas</button>':'')+
      '</div>'+
+     '<button onclick="_bfPreviewPublico()" class="btn btn-outline" style="font-size:13px;padding:10px 18px;border-radius:9px;font-weight:700;">👁 Ver tamanho do público</button> '+
      '<button onclick="_bfMontarFila()" class="btn" style="background:#eab308;color:#111;border:none;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">↻ Montar fila (recomeça do zero)</button>'+
-     ' <span id="bf-fila-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+     ' <span id="bf-fila-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>'+
+     '<div id="bf-prev-box" style="display:none;margin-top:12px;padding:12px 14px;background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.3);border-radius:10px;font-size:13px;color:var(--silver);"></div></div>';
   // controle
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:10px;">3 · Qual toque disparar</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">';
   for(var tb=1;tb<=5;tb++){var a2=tb===round;H+='<button onclick="bfSetRound('+tb+')" class="btn" style="padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;'+(a2?'background:#eab308;color:#111;border:none;':'background:var(--card);color:var(--silver);border:1px solid var(--border);')+'">Toque '+tb+(a2?' ●':'')+'</button>';}
@@ -35180,6 +35181,22 @@ function _bfBuildAudience(){
   if((document.getElementById('bf-src-crm')||{}).checked){ try{ (allLeads||[]).forEach(function(l){ if(l&&l.telefone)add(l.telefone,l.nome); }); }catch(e){} try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.telefone)add(e.telefone,e.nome);}); }catch(e){} }
   if((document.getElementById('bf-src-extra')||{}).checked){ _bfListaExtra.forEach(function(x){add(x.tel,x.nome);}); }
   return out; // sheets é async; tratado em _bfMontarFila
+}
+async function _bfPreviewPublico(){
+  var box=document.getElementById('bf-prev-box'); var st=document.getElementById('bf-fila-st');
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Calculando público…';}
+  try{
+    try{ if(typeof _reatCarregarContratos==='function'){ _reatCarregarContratos(); } }catch(e){}
+    var cli=(typeof _reatClientesTels==='function')?_reatClientesTels():{};
+    var seen={},nCrm=0,nSheets=0,nExtra=0,nCli=0,total=0;
+    function add(tel,src){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;if(t.length===10||t.length===11)t='55'+t;var k9=t.slice(-9);if(cli[k9]){nCli++;return;}var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;total++;if(src==='crm')nCrm++;else if(src==='sheets')nSheets++;else nExtra++;}
+    var useCrm=(document.getElementById('bf-src-crm')||{}).checked,useSheets=(document.getElementById('bf-src-sheets')||{}).checked,useExtra=(document.getElementById('bf-src-extra')||{}).checked;
+    if(useCrm){ try{(allLeads||[]).forEach(function(l){if(l&&l.telefone)add(l.telefone,'crm');});}catch(e){} try{Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.telefone)add(e.telefone,'crm');});}catch(e){} }
+    if(useExtra){ _bfListaExtra.forEach(function(x){add(x.tel,'extra');}); }
+    if(useSheets){ try{ var rows=await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads); (rows||[]).slice(1).forEach(function(r){ add(r[3],'sheets'); }); }catch(e){} }
+    if(box){ box.style.display='block'; box.innerHTML='<b style="color:#38bdf8;font-size:16px;">'+total.toLocaleString('pt-BR')+' leads únicos</b> prontos pra disparar<br><span style="color:var(--muted);">CRM/Funil: <b>'+nCrm+'</b> · Planilha Sheets: <b>'+nSheets+'</b> · Listas importadas: <b>'+nExtra+'</b> · <span style="color:var(--amber);">'+nCli+' clientes de assessoria excluídos</span></span><br><span style="color:var(--muted);font-size:11px;">É esse total que entra ao clicar em “Montar fila”. A fila atual mostra outro número porque foi montada antes.</span>'; }
+    if(st)st.textContent='';
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 async function _bfMontarFila(){
   var st=document.getElementById('bf-fila-st');
