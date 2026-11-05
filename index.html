@@ -35134,7 +35134,7 @@ function bfImportFile(input){var f=input&&input.files&&input.files[0];if(!f)retu
 function _bfBuildAudience(){
   var out=[],seen={}; var cli=(typeof _reatClientesTels==='function')?_reatClientesTels():{};
   function add(tel,nome){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;if(t.length===10||t.length===11)t='55'+t;var k9=t.slice(-9);if(cli[k9])return;var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:t,nome:nome||''});}
-  if((document.getElementById('bf-src-crm')||{}).checked){ try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.telefone)add(e.telefone,e.nome);}); }catch(e){} }
+  if((document.getElementById('bf-src-crm')||{}).checked){ try{ (allLeads||[]).forEach(function(l){ if(l&&l.telefone)add(l.telefone,l.nome); }); }catch(e){} try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.telefone)add(e.telefone,e.nome);}); }catch(e){} }
   if((document.getElementById('bf-src-extra')||{}).checked){ _bfListaExtra.forEach(function(x){add(x.tel,x.nome);}); }
   return out; // sheets é async; tratado em _bfMontarFila
 }
