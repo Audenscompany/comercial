@@ -119,6 +119,7 @@
       <div class="seg" id="lpmode">
         <button data-m="nova" class="on">LP nova</button>
         <button data-m="v3">LP V3</button>
+        <button data-m="black">LP Black</button>
         <button data-m="quiz">Quiz FV1</button>
         <button data-m="quizfv2">Quiz FV2</button>
         <button data-m="raiox">Raio-X</button>
@@ -365,7 +366,9 @@ Array.prototype.forEach.call(el('lpmode').querySelectorAll('button'), function(b
 var MANUAL = {'whatsapp':1,'extrato_pdf':1,'extrato_manual':1,'manual':1,'':1};
 function isNova(src){ return src==='lp-audens'; }
 function isV3(src){ return src==='lp-v3'; }
-function isAntiga(src){ return src!=='lp-audens' && src!=='lp-v3' && !MANUAL[src]; }
+function isBlack(src){ return src==='lp-black'; }
+function isAntiga(src){ return src!=='lp-audens' && src!=='lp-v3' && src!=='lp-black' && !MANUAL[src]; }
+function sessIsBlack(v){ return String(v.variante||'')==='lp-black' || /\/black\//i.test(String(v.page||'')); }
 
 function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.card'); if(card){ var h=card.querySelector('h2'); if(h) h.textContent=text; } } }
 
@@ -381,6 +384,7 @@ function render(){
   setH2('abandono','Abandono por seção (onde pararam)');
   var antiga = (MODE==='antiga');
   var v3 = (MODE==='v3');
+  var black = (MODE==='black');
   var now = Date.now();
   var cut = RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000);
 
@@ -388,7 +392,7 @@ function render(){
   var sess = [];
   if(!antiga){
     var S = cache.sessions||{};
-    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(v3){ var _vv=String(v.variante||''); var _pg=String(v.page||'').toLowerCase(); if(_vv!=='lp-v3' && _pg.indexOf('lpv3')<0) continue; } sess.push(v); }
+    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(black){ if(!sessIsBlack(v)) continue; } else if(v3){ var _vv=String(v.variante||''); var _pg=String(v.page||'').toLowerCase(); if(_vv!=='lp-v3' && _pg.indexOf('lpv3')<0) continue; } else if(sessIsBlack(v)) continue; sess.push(v); }
   }
   var total = sess.length;
   var reachedForm = sess.filter(function(s){return s.reachedForm;}).length;
@@ -399,7 +403,7 @@ function render(){
   /* leads no período — filtrados pela LP escolhida */
   var leads = [];
   var L = cache.leads||{};
-  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||''; var ok = antiga?isAntiga(src):(v3?isV3(src):isNova(src)); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||''; var ok = antiga?isAntiga(src):(black?isBlack(src):(v3?isV3(src):isNova(src))); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
   var nLeads = leads.length;
 
   /* KPIs */
@@ -496,7 +500,7 @@ function render(){
   }
 
   renderAdsDist(cut);
-  var lpLabel = antiga ? 'LP antiga (Elementor)' : (v3 ? 'LP V3 (lp-v3)' : 'LP nova (audens-lp)');
+  var lpLabel = antiga ? 'LP antiga (Elementor)' : (black ? 'LP Black (lp-black · /black/)' : (v3 ? 'LP V3 (lp-v3)' : 'LP nova (audens-lp)'));
   var per = (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
     ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
