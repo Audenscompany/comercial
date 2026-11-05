@@ -35065,8 +35065,11 @@ function renderBfBlast(){
      '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Público quente (CRM + planilha + listas de alunos/compradores), sem clientes de assessoria, régua de 5 toques até 30/11. Pausado (mesma régua anti-ban do número).</div></div>'+
      '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO · toque '+round+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div></div>';
   H+='<div style="background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#eab308;"><b>⚠️ 1 número</b> aguenta ~180 envios/dia. A base inteira ×5 não cabe até 30/11 — os mais recentes saem primeiro e vai até onde o número aguentar. Teste no seu WhatsApp antes.</div>';
+  var _resp=(c.responderam||[]); var _nResp=(s.responderam!=null?s.responderam:_resp.length);
   H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
-     card('Na fila',(s.total||0),'#eab308')+
+     card('Total na fila',(s.total||0),'#eab308','leads do disparo')+
+     card('Impactados',(s.impactados||s.r1||0),'#38bdf8','já receberam ao menos 1 msg')+
+     card('Responderam',_nResp,(_nResp?'#22c55e':'var(--muted)'),'pela IA no WhatsApp')+
      card('Pendentes no toque '+round,(s.pendentes||0),(s.pendentes?'var(--silver)':'#22c55e'))+
      card('Enviados hoje',(c.enviadosHoje||0)+' / '+(cfg.maxPerDay||60),((c.enviadosHoje||0)>=(cfg.maxPerDay||60)?'#22c55e':'var(--white)'))+
      '</div>';
@@ -35074,6 +35077,24 @@ function renderBfBlast(){
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:16px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Progresso (quantos já receberam cada toque)</div><div style="display:flex;gap:10px;flex-wrap:wrap;">';
   for(var ri=0;ri<5;ri++){var n=ri+1;var at=n===round;H+='<div style="flex:1;min-width:120px;background:'+(at?'rgba(234,179,8,.12)':'var(--card)')+';border:1px solid '+(at?'#eab308':'var(--border)')+';border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:'+(at?'#eab308':'var(--muted)')+';font-weight:700;">Toque '+n+(at?' · ATIVO':'')+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:22px;color:var(--white);">'+rRecv[ri]+'</div><div style="font-size:10px;color:var(--muted);">receberam</div></div>';}
   H+='</div></div>';
+  // responderam (marcar reunião direto)
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:16px;">'+
+     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);">💬 Responderam o disparo <span style="color:#22c55e;">('+_nResp+')</span></div><button onclick="bfLoadStats()" class="btn btn-outline" style="font-size:11px;padding:5px 10px;">↻ Atualizar</button></div>';
+  if(!_resp.length){ H+='<div style="font-size:12px;color:var(--muted);">Ninguém respondeu ainda. Quando um lead responder a mensagem pela IA, aparece aqui pra você marcar a reunião.</div>'; }
+  else { H+='<div style="display:flex;flex-direction:column;gap:8px;">';
+    _resp.forEach(function(p){ var tel=String(p.tel||'').replace(/\D/g,''); var wa='https://wa.me/'+tel; var quando=p.at?new Date(p.at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+      H+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">'+
+         '<div style="min-width:180px;flex:1;"><div style="font-size:13px;color:var(--white);font-weight:700;">'+esc(p.nome||'(sem nome)')+' <span style="color:var(--muted);font-weight:400;font-size:11px;">'+esc(tel)+'</span></div>'+
+         (p.texto?'<div style="font-size:12px;color:var(--silver);margin-top:2px;">"'+esc(p.texto)+'"</div>':'')+
+         '<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+(quando?('respondeu '+quando+' · '):'')+'toque '+(p.lastRound||1)+'</div></div>'+
+         '<div style="display:flex;gap:6px;align-items:center;">'+
+         '<a href="'+wa+'" target="_blank" class="btn btn-outline" style="font-size:12px;padding:6px 10px;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i></a>'+
+         (p.agendado?'<span style="font-size:11px;color:#22c55e;font-weight:700;padding:6px 10px;">✓ Agendado</span>':'<button onclick="bfMarcarReuniao(\''+tel+'\',\''+esc(p.nome||'').replace(/\x27/g,"\\\x27")+'\')" class="btn" style="background:#22c55e;color:#061;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">📅 Marcar reunião</button>')+
+         '</div></div>';
+    });
+    H+='</div>';
+  }
+  H+='</div>';
   // mensagens
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · As 5 mensagens</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. <code>*texto*</code> fica negrito no WhatsApp.</div>';
   for(var mi=0;mi<5;mi++){H+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#eab308;font-weight:700;margin-bottom:5px;">'+esc(_BF_TOQUES[mi].t)+'</div><textarea id="bf-msg'+mi+'" style="width:100%;min-height:120px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msgs[mi].replace(/</g,'&lt;')+'</textarea></div>';}
@@ -35113,6 +35134,17 @@ function renderBfBlast(){
 }
 function _bfRerender(){var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='bf-blast')a.innerHTML=renderBfBlast();}
 function _bfColeta(){var o=[];for(var i=0;i<5;i++){var e=document.getElementById('bf-msg'+i);o.push(e?e.value:'');}return o;}
+function bfMarcarReuniao(tel,nome){
+  tel=String(tel||'').replace(/\D/g,''); if(tel.length<10){alert('Telefone inválido.');return;}
+  var kkey=tel.replace(/[.#$\[\]]/g,'_'); var now=Date.now();
+  var cur=(typeof kanbanData!=='undefined'&&kanbanData&&kanbanData[kkey])||{};
+  var novo=Object.assign({},cur,{nome:(nome||cur.nome||''),telefone:tel,origem:(cur.origem||'Disparo Black Friday'),_source:(cur._source||'disparo-black'),_createdAt:(cur._createdAt||now),status:'qualificado',statusAt:now,statusHistory:Object.assign({},(cur.statusHistory||{}),{qualificado:now}),naoArquivar:true});
+  if(typeof kanbanData!=='undefined') kanbanData[kkey]=novo;
+  try{ if(window.fbDb) fbDb.ref('kanban/'+kkey).update(novo); }catch(e){}
+  try{ if(window.fbDb) fbDb.ref('reat_blast_fila/'+kkey+'/agendado').set(true); }catch(e){}
+  if(typeof abrirAgendarReuniao==='function'){ abrirAgendarReuniao(kkey); }
+  else { showToast&&showToast('Lead no Funil (Qualificado). Abra o Funil pra agendar.'); }
+}
 function bfSaveMsgs(){var st=document.getElementById('bf-msg-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgs:_bfColeta()})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'5 mensagens salvas!':'Erro.';}}).catch(function(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}});}
 function bfSetRound(n){var st=document.getElementById('bf-ctrl-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({round:n,msgs:_bfColeta()})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color='#22c55e';st.textContent='Toque '+n+' selecionado.';}bfLoadStats();}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});}
 function bfSaveCfg(){var max=parseInt((document.getElementById('bf-max')||{}).value||'60',10)||60;var test=(document.getElementById('bf-test')||{}).value||'';var intMin=parseInt((document.getElementById('bf-interval')||{}).value||'5',10)||5;if(intMin<1)intMin=1;var st=document.getElementById('bf-ctrl-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,testPhone:test,intervalSeconds:intMin*60})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?('Ajustes salvos (intervalo '+intMin+' min).'):'Erro.';}bfLoadStats();}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});}
