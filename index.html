@@ -35123,7 +35123,7 @@ function renderSocialSelling(){
   daView.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);}).forEach(function(l){
     var igD=_ssNormIg(l.igDono), igL=_ssNormIg(l.igLoja);
     H+='<tr style="border-top:1px solid rgba(255,255,255,0.05);">'+
-       '<td style="padding:10px 12px;color:var(--white);">'+esc(l.dono||'—')+(igD?'<div><a href="'+_ssIgUrl(igD)+'" target="_blank" style="font-size:11px;color:#c084fc;text-decoration:none;">@'+esc(igD)+'</a></div>':'')+'</td>'+
+       '<td style="padding:10px 12px;color:var(--white);"><span onclick="abrirSSDetalhe(\''+l._id+'\')" style="cursor:pointer;" title="Ver detalhes do lead">'+esc(l.dono||'—')+'</span>'+(igD?'<div><a href="'+_ssIgUrl(igD)+'" target="_blank" style="font-size:11px;color:#c084fc;text-decoration:none;">@'+esc(igD)+'</a></div>':'')+'</td>'+
        '<td style="padding:10px 12px;color:var(--silver);">'+esc(l.loja||'—')+(igL?'<div><a href="'+_ssIgUrl(igL)+'" target="_blank" style="font-size:11px;color:#c084fc;text-decoration:none;">@'+esc(igL)+'</a></div>':'')+'</td>'+
        '<td style="padding:10px 12px;color:var(--silver);">'+esc(l.segmento||'—')+'</td>'+
        '<td style="padding:10px 12px;text-align:center;"><span style="color:'+(potCor[l.potencial]||'var(--muted)')+';font-weight:700;">'+esc(l.potencial||'—')+'</span></td>'+
@@ -35131,6 +35131,7 @@ function renderSocialSelling(){
        (gestor?'<td style="padding:10px 12px;color:var(--silver);">'+esc(l.responsavel||'—')+'</td>':'')+
        '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">'+
          ((l.status||'novo')==='novo'&&!(l.cadencia&&l.cadencia.start)?'<button onclick="iniciarCadenciaSS(\''+l._id+'\')" title="Iniciar cadência de 14 dias" style="background:none;border:1px solid var(--purple);border-radius:6px;color:var(--purple3);padding:3px 8px;font-size:11px;cursor:pointer;margin-right:6px;">▶ Iniciar</button>':'')+
+         '<button onclick="abrirSSDetalhe(\''+l._id+'\')" title="Ver detalhes" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--silver);padding:3px 7px;font-size:11px;cursor:pointer;margin-right:6px;"><i class="ti ti-eye"></i></button>'+
          (igD||igL?'<a href="'+_ssIgUrl(igD||igL)+'" target="_blank" title="Abrir Instagram" style="color:#c084fc;text-decoration:none;margin-right:8px;"><i class="ti ti-brand-instagram"></i></a>':'')+
          '<button onclick="abrirNovoSS(\''+l._id+'\')" title="Editar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--silver);padding:3px 7px;font-size:11px;cursor:pointer;"><i class="ti ti-pencil"></i></button> '+
          '<button onclick="excluirSS(\''+l._id+'\')" title="Excluir" style="background:none;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:var(--red);padding:3px 7px;font-size:11px;cursor:pointer;"><i class="ti ti-trash"></i></button>'+
@@ -35213,7 +35214,54 @@ function iniciarCadenciaSS(id){ var l=ssLeads[id]; if(!l)return; l.cadencia={sta
 function ssConcluirPasso(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadencia=l.cadencia||{start:_ssToday(),done:{},doneAt:{}}; l.cadencia.done=l.cadencia.done||{}; l.cadencia.doneAt=l.cadencia.doneAt||{}; l.cadencia.done[dia]=true; l.cadencia.doneAt[dia]=new Date().toISOString(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadencia:l.cadencia,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssRespondeuSS(id){ var l=ssLeads[id]; if(!l)return; l.status='conversa'; l.respondeuAt=Date.now(); if(l.cadencia){var ns=_ssNextStep(l); l.respondeuNoDia=ns?ns.dia:(l.cadencia.lastDia||0);} l.cadenciaConv={start:_ssToday(),done:{},doneAt:{}}; /* inicia a cadência de conversa */ l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'conversa',respondeuAt:l.respondeuAt,respondeuNoDia:l.respondeuNoDia||null,cadenciaConv:l.cadenciaConv,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
 function ssConcluirPassoConv(id,dia){ var l=ssLeads[id]; if(!l)return; l.cadenciaConv=l.cadenciaConv||{start:_ssToday(),done:{},doneAt:{}}; l.cadenciaConv.done=l.cadenciaConv.done||{}; l.cadenciaConv.doneAt=l.cadenciaConv.doneAt||{}; l.cadenciaConv.done[dia]=true; l.cadenciaConv.doneAt[dia]=new Date().toISOString(); l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({cadenciaConv:l.cadenciaConv,updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
-function ssEncerrarSS(id){ var l=ssLeads[id]; if(!l)return; if(!confirm('Encerrar o acompanhamento de '+(l.dono||l.loja||'')+'? (vai pra Descartado)'))return; l.status='descartado'; l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'descartado',updatedAt:l.updatedAt});}catch(e){} _ssRerender(); }
+function ssEncerrarSS(id){ var l=ssLeads[id]; if(!l)return; if(!confirm('Encerrar o acompanhamento de '+(l.dono||l.loja||'')+'? (vai pra Descartado)'))return; l.status='descartado'; l.updatedAt=Date.now(); var db=_ssDb(); if(db)try{db.ref('social_selling/leads/'+id).update({status:'descartado',updatedAt:l.updatedAt});}catch(e){} _ssReunClose&&_ssReunClose(); _ssDetClose(); _ssRerender(); }
+function _ssDetClose(){var el=document.getElementById('modal-ss-det');if(el)el.remove();}
+// Painel de detalhes do lead: status, cadência, se respondeu — e ações (iniciar, respondeu, agendar, editar, encerrar)
+function abrirSSDetalhe(id){
+  var l=ssLeads[id]; if(!l)return;
+  var igD=_ssNormIg(l.igDono), igL=_ssNormIg(l.igLoja);
+  var st=l.status||'novo'; var stLbl=SS_STATUS_LABELS[st]||st;
+  var stCor={novo:'var(--muted)',cadencia:'#c084fc',conversa:'#f59e0b',reuniao:'#22c55e',cliente:'#22c55e',descartado:'var(--muted)'}[st]||'var(--silver)';
+  // bloco de cadência
+  var cadHtml='';
+  if(l.cadencia&&l.cadencia.start){
+    var feitos=Object.keys(l.cadencia.done||{}).filter(function(d){return l.cadencia.done[d];}).length;
+    var ns=_ssNextStep(l);
+    cadHtml+='<div style="margin-top:4px;"><b style="color:var(--silver);">Cadência principal (14 dias):</b> '+feitos+'/14 passos · início '+l.cadencia.start.split('-').reverse().join('/')+'</div>';
+    if(ns) cadHtml+='<div style="color:'+(ns.atrasado?'var(--red)':'var(--muted)')+';font-size:12px;">Próximo: Dia '+ns.dia+' ('+(ns.tipo==='msg'?'Mensagem':'Interação')+') — '+(ns.atrasado?'ATRASADO desde ':'em ')+ns.sched.split('-').reverse().join('/')+'</div>';
+    else if(st==='cadencia'||st==='novo') cadHtml+='<div style="color:#22c55e;font-size:12px;">Cadência principal concluída (14 dias).</div>';
+  } else {
+    cadHtml+='<div style="margin-top:4px;color:var(--muted);">Cadência não iniciada.</div>';
+  }
+  if(st==='conversa'){
+    var cs=_ssNextStepConv(l); var feitosC=l.cadenciaConv?Object.keys(l.cadenciaConv.done||{}).filter(function(d){return l.cadenciaConv.done[d];}).length:0;
+    cadHtml+='<div style="margin-top:8px;"><b style="color:#f59e0b;">💬 Respondeu</b>'+(l.respondeuAt?' em '+new Date(l.respondeuAt).toLocaleDateString('pt-BR'):'')+' · cadência de conversa: '+feitosC+'/5 follow-ups'+'</div>';
+    if(cs) cadHtml+='<div style="color:'+(cs.atrasado?'var(--red)':'var(--muted)')+';font-size:12px;">Próximo follow-up: '+(cs.atrasado?'ATRASADO desde ':'em ')+cs.sched.split('-').reverse().join('/')+'</div>';
+  }
+  if(st==='reuniao') cadHtml+='<div style="margin-top:8px;color:#22c55e;">📅 Foi pra reunião'+(l.reuniaoAt?' em '+new Date(l.reuniaoAt).toLocaleDateString('pt-BR'):'')+(l.kanbanKey?' · no Funil':'')+'</div>';
+  function row(lbl,val){ return val?('<div style="display:flex;gap:8px;margin-bottom:4px;"><span style="color:var(--muted);min-width:90px;font-size:12px;">'+lbl+'</span><span style="color:var(--white);font-size:13px;">'+val+'</span></div>'):''; }
+  var html='<div class="modal-ov active" id="modal-ss-det" onclick="if(event.target===this)_ssDetClose()">'+
+    '<div class="modal-box" style="max-width:460px;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-user-circle"></i> '+esc(l.dono||l.loja||'Lead')+'</div><button class="modal-close" onclick="_ssDetClose()">×</button></div>'+
+      '<div style="padding:20px;max-height:70vh;overflow:auto;">'+
+        '<div style="margin-bottom:12px;"><span style="font-size:12px;padding:4px 12px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:'+stCor+';font-weight:700;">'+esc(stLbl)+'</span></div>'+
+        row('Dono',esc(l.dono||'—')+(igD?' · <a href="'+_ssIgUrl(igD)+'" target="_blank" style="color:#c084fc;text-decoration:none;">@'+esc(igD)+'</a>':''))+
+        row('Loja',esc(l.loja||'—')+(igL?' · <a href="'+_ssIgUrl(igL)+'" target="_blank" style="color:#c084fc;text-decoration:none;">@'+esc(igL)+'</a>':''))+
+        row('Segmento',esc(l.segmento||'—'))+row('Potencial',esc(l.potencial||'—'))+row('Responsável',esc(l.responsavel||'—'))+row('Telefone',esc(l.telefone||'—'))+
+        (l.obs?row('Obs',esc(l.obs)):'')+
+        '<div style="margin-top:12px;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--silver);">'+cadHtml+'</div>'+
+      '</div>'+
+      '<div style="padding:0 20px 20px;display:flex;gap:8px;flex-wrap:wrap;">'+
+        (igD||igL?'<a href="'+_ssIgUrl(igD||igL)+'" target="_blank" class="btn btn-outline" style="font-size:12px;padding:7px 12px;text-decoration:none;"><i class="ti ti-brand-instagram"></i> Abrir IG</a>':'')+
+        ((st==='novo'&&!(l.cadencia&&l.cadencia.start))?'<button onclick="iniciarCadenciaSS(\''+id+'\');_ssDetClose();" class="btn btn-outline" style="font-size:12px;padding:7px 12px;color:var(--purple3);border-color:var(--purple);">▶ Iniciar cadência</button>':'')+
+        ((st==='novo'||st==='cadencia')?'<button onclick="ssRespondeuSS(\''+id+'\');_ssDetClose();" class="btn btn-outline" style="font-size:12px;padding:7px 12px;color:#f59e0b;border-color:rgba(245,158,11,.4);">💬 Respondeu</button>':'')+
+        ((st!=='reuniao'&&st!=='cliente')?'<button onclick="_ssDetClose();ssMarcarReuniaoSS(\''+id+'\');" class="btn" style="background:#22c55e;color:#061;border:none;font-size:12px;padding:7px 12px;border-radius:7px;cursor:pointer;">📅 Agendar reunião</button>':'<button onclick="_ssDetClose();ssMarcarReuniaoSS(\''+id+'\');" class="btn btn-outline" style="font-size:12px;padding:7px 12px;">📅 Reagendar / completar dados</button>')+
+        '<button onclick="_ssDetClose();abrirNovoSS(\''+id+'\');" class="btn btn-outline" style="font-size:12px;padding:7px 12px;"><i class="ti ti-pencil"></i> Editar</button>'+
+        ((st!=='descartado')?'<button onclick="ssEncerrarSS(\''+id+'\')" class="btn btn-outline" style="font-size:12px;padding:7px 12px;color:var(--muted);">Encerrar</button>':'')+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
 // "Foi pra reunião" → completa telefone/faturamento, joga no Kanban e abre o agendamento (mesmo fluxo do funil)
 function ssMarcarReuniaoSS(id){
   var l=ssLeads[id]; if(!l)return;
