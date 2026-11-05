@@ -4876,6 +4876,7 @@ function buildNav(){
       {id:'fria',icon:'ti-snowflake',label:'Prospecção Fria'},
       {id:'prosp-grupo',icon:'ti-users-group',label:'Prospecção Grupo'},
       {id:'reat-blast',icon:'ti-speakerphone',label:'Disparo Reta Final'},
+      {id:'bf-blast',icon:'ti-shopping-bag',label:'Disparo Black Friday'},
       {id:'social-selling',icon:'ti-brand-instagram',label:'Social Selling'},
       {id:'parceiros',icon:'ti-heart-handshake',label:'Parceiros'},
       {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
@@ -5122,7 +5123,7 @@ function showPage(id){
     'contratos':renderContratos,'audens-day':renderAudensDay,
     'reunioes-noshow':renderReunioesNoshow,'audens-command':renderAudensCommand,'intel':renderIntelComercial,'bdr':renderBDR,'busca-ia':renderBuscaIA,
     'avaliacoes':renderAvaliacoes,'vendas':renderVendas,'metas':renderMetas,
-    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'reat-blast':renderReatBlast,'social-selling':renderSocialSelling,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
+    'followup':renderFollowup,'pregao':renderPregao,'fria':renderFria,'prosp-grupo':renderProspGrupo,'reat-blast':renderReatBlast,'bf-blast':renderBfBlast,'social-selling':renderSocialSelling,'parceiros':renderParceiros,'projeto-bh90':renderProjetoBH90,'export-dados':renderExportDados
   };
   var area=document.getElementById('content');
   if(CU&&CU.email==='joao@audens.com'&&['financeiro','fin-dashboard','fin-receitas','fin-despesas','fin-lancamentos','fin-contas'].indexOf(id)>=0){ if(area){area.innerHTML='<div class="page active"><div style="padding:48px 24px;text-align:center;color:var(--muted);"><i class="ti ti-lock" style="font-size:32px;display:block;margin-bottom:10px;"></i>Acesso ao Financeiro restrito.</div></div>';area.setAttribute('data-page',id);} return; }
@@ -5146,6 +5147,7 @@ function showPage(id){
     if(id==='fria') setTimeout(friaLoadStats,50);
     if(id==='prosp-grupo') setTimeout(grupoLoadStats,50);
     if(id==='social-selling') setTimeout(_ssAfterRender,80);
+    if(id==='bf-blast'){ setTimeout(bfLoadStats,50); setTimeout(_reatCarregarContratos,60); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){_fuSheetLoading=false;}).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='reat-blast'){ setTimeout(reatLoadStats,50); setTimeout(_reatCarregarContratos,60); _pgLoadMotivos(function(){ if(window._currentPage==='reat-blast')reatLoadStats(); }); if(typeof _fuSheetCache!=='undefined'&&_fuSheetCache===null&&!_fuSheetLoading){ _fuSheetLoading=true; _fuLoadSheetLeads().then(function(){ _fuSheetLoading=false; if(window._currentPage==='reat-blast')reatLoadStats(); }).catch(function(){_fuSheetLoading=false;}); } }
     if(id==='projeto-bh90') setTimeout(projBhLoad,50);
     if(id==='audens-command') setTimeout(loadAudensCommand,50);
@@ -35036,6 +35038,128 @@ async function reatArquivar(){
     if(typeof renderKanban==='function')try{renderKanban();}catch(x){}
     reatLoadStats();
   }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}}
+}
+/* ===================== DISPARO BLACK FRIDAY (usa o motor de 5 toques do /reat-blast) ===================== */
+var _BF_TOQUES=[
+  {t:'Toque 1 · Abertura',m:"Opa {{primeiroNome}}! Aqui é o João, da Audens 👊\n\nVocê já é da casa, então quis te avisar em primeira mão: abrimos a *Black Friday da assessoria* — Premium com *50% OFF nas 6 mensalidades*.\n\nÉ a assessoria de quem fatura +R$500 mil/mês no próprio delivery (Burguer FC / Pizza FC), agora pela metade do preço. Dá uma olhada 👉 assessoriaaudens.com.br/black"},
+  {t:'Toque 2 · O que entra',m:"{{primeiroNome}}, no Premium da Black entra tudo junto: tráfego no Meta Ads, criativos, cardápio, precificação e *2 mentorias direto com o Lucas (CEO)* — o mesmo método do Burguer FC e Pizza FC. E ainda leva o Audens Finance anual.\n\nTudo com 50% OFF por 6 meses. Quer que eu te mostre como aplicaria no seu delivery?"},
+  {t:'Toque 3 · Prova',m:"{{primeiroNome}}, só nos últimos 30 dias os clientes tiveram *10x* de retorno (cada R$1 em anúncio virou R$10 em venda) — teve gente saindo de R$2 mil investidos pra +R$80 mil em vendas.\n\nÉ esse tipo de virada que a Black destrava, agora pela metade do preço. Bora 15 min pra eu te mostrar?"},
+  {t:'Toque 4 · Urgência',m:"{{primeiroNome}}, a condição da Black (50% OFF nos 6 meses do Premium) encerra *30/11* e não volta.\n\nSe você quer fechar o ano vendendo mais, é agora 👉 assessoriaaudens.com.br/black — ou me responde aqui que eu já te encaixo numa reunião."},
+  {t:'Toque 5 · Última chamada',m:"{{primeiroNome}}, última chamada da Black 🖤\n\nTrava o Premium com 50% OFF por 6 meses + Audens Finance + mentorias com o CEO. Me responde *QUERO* que eu reservo a sua condição.\n\nDepois de 30/11 volta ao preço cheio."}
+];
+function _bfMsgs(cfg){var a=(cfg&&Array.isArray(cfg.msgs)&&cfg.msgs.length)?cfg.msgs.slice():[];var out=[];for(var i=0;i<5;i++)out.push((a[i]&&String(a[i]).trim())?a[i]:_BF_TOQUES[i].m);return out;}
+var _bfListaExtra=[]; // listas coladas/xlsx (alunos/compradores) em staging
+var _bfPublico=null;   // último público montado (pra referência)
+function bfLoadStats(){
+  fetch(RECEBERLEAD_URL+'/reat-blast-stats?secret='+WEBHOOK_SECRET,{method:'POST'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok)_reatStats=j;var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='bf-blast')a.innerHTML=renderBfBlast();}).catch(function(){});
+}
+function renderBfBlast(){
+  var c=_reatStats||{stats:{total:0,r1:0,r2:0,r3:0,r4:0,r5:0,pendentes:0},enviadosHoje:0,config:{enabled:false,maxPerDay:60,round:1,msgs:[]}};
+  var cfg=c.config||{},s=c.stats||{};var ligado=cfg.enabled===true;var round=Math.min(5,Math.max(1,cfg.round||1));
+  var msgs=_bfMsgs(cfg); var rRecv=[s.r1||0,s.r2||0,s.r3||0,s.r4||0,s.r5||0];
+  function card(l,v,cor,sub){return '<div style="flex:1;min-width:130px;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+l+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:28px;color:'+(cor||'var(--white)')+';margin-top:4px;">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>':'')+'</div>';}
+  var H='<div class="page active"><div style="max-width:1050px;margin:0 auto;">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;">'+
+     '<div><div style="font-size:11px;letter-spacing:2px;color:#eab308;font-weight:700;">CAMPANHA · RÉGUA DE 5 TOQUES</div>'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);">🖤 Disparo Black Friday</div>'+
+     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Público quente (CRM + planilha + listas de alunos/compradores), sem clientes de assessoria, régua de 5 toques até 30/11. Pausado (mesma régua anti-ban do número).</div></div>'+
+     '<div style="text-align:right;"><span style="display:inline-block;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:800;background:'+(ligado?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)')+';color:'+(ligado?'#22c55e':'var(--red)')+';">'+(ligado?'● LIGADO · toque '+round+(cfg.testPhone?(' · teste '+cfg.testPhone):''):'○ DESLIGADO')+'</span></div></div>';
+  H+='<div style="background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.3);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#eab308;"><b>⚠️ 1 número</b> aguenta ~180 envios/dia. A base inteira ×5 não cabe até 30/11 — os mais recentes saem primeiro e vai até onde o número aguentar. Teste no seu WhatsApp antes.</div>';
+  H+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'+
+     card('Na fila',(s.total||0),'#eab308')+
+     card('Pendentes no toque '+round,(s.pendentes||0),(s.pendentes?'var(--silver)':'#22c55e'))+
+     card('Enviados hoje',(c.enviadosHoje||0)+' / '+(cfg.maxPerDay||60),((c.enviadosHoje||0)>=(cfg.maxPerDay||60)?'#22c55e':'var(--white)'))+
+     '</div>';
+  // progresso
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:16px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Progresso (quantos já receberam cada toque)</div><div style="display:flex;gap:10px;flex-wrap:wrap;">';
+  for(var ri=0;ri<5;ri++){var n=ri+1;var at=n===round;H+='<div style="flex:1;min-width:120px;background:'+(at?'rgba(234,179,8,.12)':'var(--card)')+';border:1px solid '+(at?'#eab308':'var(--border)')+';border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:'+(at?'#eab308':'var(--muted)')+';font-weight:700;">Toque '+n+(at?' · ATIVO':'')+'</div><div style="font-family:var(--font-bn),sans-serif;font-size:22px;color:var(--white);">'+rRecv[ri]+'</div><div style="font-size:10px;color:var(--muted);">receberam</div></div>';}
+  H+='</div></div>';
+  // mensagens
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · As 5 mensagens</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. <code>*texto*</code> fica negrito no WhatsApp.</div>';
+  for(var mi=0;mi<5;mi++){H+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#eab308;font-weight:700;margin-bottom:5px;">'+esc(_BF_TOQUES[mi].t)+'</div><textarea id="bf-msg'+mi+'" style="width:100%;min-height:120px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msgs[mi].replace(/</g,'&lt;')+'</textarea></div>';}
+  H+='<button onclick="bfSaveMsgs()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar as 5 mensagens</button> <span id="bf-msg-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  // montar público
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:6px;">2 · Montar o público</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Escolha as fontes. O CRM dedup por telefone e tira quem já é cliente de assessoria.</div>'+
+     '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">'+
+       '<label style="font-size:13px;color:var(--silver);"><input type="checkbox" id="bf-src-crm" checked> Leads do CRM (Funil/Firebase)</label>'+
+       '<label style="font-size:13px;color:var(--silver);"><input type="checkbox" id="bf-src-sheets" checked> Leads da planilha (Google Sheets)</label>'+
+       '<label style="font-size:13px;color:var(--silver);"><input type="checkbox" id="bf-src-extra" checked> Listas importadas abaixo <span id="bf-extra-count" style="color:var(--muted);">('+_bfListaExtra.length+' contatos)</span></label>'+
+     '</div>'+
+     '<div style="padding:12px;background:rgba(234,179,8,.05);border:1px dashed rgba(234,179,8,.3);border-radius:10px;margin-bottom:12px;">'+
+       '<div style="font-size:12px;color:var(--silver);margin-bottom:8px;"><b>Importar lista de alunos/compradores</b> — .xlsx/.csv (acha telefone e nome sozinho) ou cole abaixo (<code>telefone, nome</code> por linha).</div>'+
+       '<input type="file" id="bf-file" accept=".xlsx,.xls,.csv" onchange="bfImportFile(this)" style="font-size:12px;color:var(--silver);margin-bottom:8px;"><br>'+
+       '<textarea id="bf-paste" rows="3" placeholder="5511999999999, Fulano\n5521988887777, Ciclano" class="f-input" style="width:100%;font-family:monospace;font-size:12px;margin-bottom:6px;"></textarea>'+
+       '<button onclick="bfAddPaste()" class="btn btn-outline" style="font-size:12px;padding:6px 12px;">+ Adicionar lista colada</button> <span id="bf-imp-st" style="font-size:12px;color:var(--muted);margin-left:6px;"></span>'+
+       (_bfListaExtra.length?' <button onclick="_bfListaExtra=[];_bfRerender();" class="btn btn-outline" style="font-size:12px;padding:6px 10px;color:var(--red);">limpar listas</button>':'')+
+     '</div>'+
+     '<button onclick="_bfMontarFila()" class="btn" style="background:#eab308;color:#111;border:none;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">↻ Montar fila (recomeça do zero)</button>'+
+     ' <span id="bf-fila-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>';
+  // controle
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:10px;">3 · Qual toque disparar</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">';
+  for(var tb=1;tb<=5;tb++){var a2=tb===round;H+='<button onclick="bfSetRound('+tb+')" class="btn" style="padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;'+(a2?'background:#eab308;color:#111;border:none;':'background:var(--card);color:var(--silver);border:1px solid var(--border);')+'">Toque '+tb+(a2?' ●':'')+'</button>';}
+  H+='</div><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Intervalo (min)</label><input id="bf-interval" type="number" min="1" value="'+(Math.round((cfg.intervalSeconds||300)/60))+'" style="width:80px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Envios por dia</label><input id="bf-max" type="number" value="'+(cfg.maxPerDay||60)+'" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<div><label style="font-size:11px;color:var(--muted);display:block;">Telefone de teste</label><input id="bf-test" type="text" value="'+(cfg.testPhone||'')+'" placeholder="55... (manda tudo p/ você)" style="width:170px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--white);padding:7px;"></div>'+
+     '<button onclick="bfSaveCfg()" class="btn btn-outline" style="font-size:12px;padding:8px 14px;">Salvar ajustes</button></div>'+
+     '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+     '<button onclick="bfToggle(true)" class="btn" style="background:#22c55e;color:#061;border:none;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">▶ Ligar (toque '+round+')</button>'+
+     '<button onclick="bfToggle(false)" class="btn btn-outline" style="font-size:13px;padding:9px 16px;color:var(--red);border-color:rgba(239,68,68,.4);">⏸ Desligar</button>'+
+     '<button onclick="bfLoadStats()" class="btn btn-outline" style="font-size:13px;padding:9px 16px;">↻ Atualizar</button>'+
+     '</div><div id="bf-ctrl-st" style="font-size:12px;color:var(--muted);margin-top:10px;"></div></div>';
+  H+='</div></div>';return H;
+}
+function _bfRerender(){var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='bf-blast')a.innerHTML=renderBfBlast();}
+function _bfColeta(){var o=[];for(var i=0;i<5;i++){var e=document.getElementById('bf-msg'+i);o.push(e?e.value:'');}return o;}
+function bfSaveMsgs(){var st=document.getElementById('bf-msg-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgs:_bfColeta()})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'5 mensagens salvas!':'Erro.';}}).catch(function(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}});}
+function bfSetRound(n){var st=document.getElementById('bf-ctrl-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({round:n,msgs:_bfColeta()})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color='#22c55e';st.textContent='Toque '+n+' selecionado.';}bfLoadStats();}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});}
+function bfSaveCfg(){var max=parseInt((document.getElementById('bf-max')||{}).value||'60',10)||60;var test=(document.getElementById('bf-test')||{}).value||'';var intMin=parseInt((document.getElementById('bf-interval')||{}).value||'5',10)||5;if(intMin<1)intMin=1;var st=document.getElementById('bf-ctrl-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerDay:max,testPhone:test,intervalSeconds:intMin*60})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?('Ajustes salvos (intervalo '+intMin+' min).'):'Erro.';}bfLoadStats();}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});}
+function bfToggle(on){var st=document.getElementById('bf-ctrl-st');var round=((_reatStats||{}).config||{}).round||1;if(on&&!confirm('Ligar o Disparo Black Friday no TOQUE '+round+'?\n\nTesta no seu WhatsApp primeiro se quiser conferir.'))return;fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?(on?'LIGADO (toque '+round+').':'Desligado.'):'Erro.';}bfLoadStats();}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});}
+function bfAddPaste(){var txt=(document.getElementById('bf-paste')||{}).value||'';var st=document.getElementById('bf-imp-st');var n=0;txt.split(/\r?\n/).forEach(function(ln){ln=ln.trim();if(!ln)return;var p=ln.split(/[,;\t]/).map(function(x){return x.trim();});var tel=(p[0]||'').replace(/\D/g,'');var nome=p[1]||'';if(tel.length<10)return;_bfListaExtra.push({tel:tel,nome:nome});n++;});if(st){st.style.color='#22c55e';st.textContent='+ '+n+' adicionados ('+_bfListaExtra.length+' no total).';}var _c=document.getElementById('bf-extra-count');if(_c)_c.textContent='('+_bfListaExtra.length+' contatos)';var _pb=document.getElementById('bf-paste');if(_pb)_pb.value='';}
+function bfImportFile(input){var f=input&&input.files&&input.files[0];if(!f)return;var st=document.getElementById('bf-imp-st');if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Lendo '+esc(f.name)+'…';}
+  function _norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();}
+  function _colIdx(H,alts){for(var i=0;i<H.length;i++){var h=_norm(H[i]);for(var j=0;j<alts.length;j++)if(h.indexOf(alts[j])>=0)return i;}return -1;}
+  _expLoadXLSX().then(function(){var r=new FileReader();r.onload=function(ev){try{
+    var wb=XLSX.read(ev.target.result,{type:'array'});var n=0;
+    wb.SheetNames.forEach(function(sn){var rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,blankrows:false});if(!rows.length)return;var H=rows[0].map(function(c){return String(c==null?'':c);});
+      var ciTel=_colIdx(H,['telefone','celular','whatsapp','phone','fone']);var ciDDD=_colIdx(H,['ddd']);var ciNome=_colIdx(H,['nome','cliente','name']);
+      if(ciTel<0&&ciDDD<0)return;
+      for(var i=1;i<rows.length;i++){var row=rows[i];if(!row)continue;var tel=((ciDDD>=0&&row[ciDDD]!=null?String(row[ciDDD]):'')+(ciTel>=0&&row[ciTel]!=null?String(row[ciTel]):'')).replace(/\D/g,'');if(tel.length<10)continue;var nome=(ciNome>=0&&row[ciNome]!=null)?String(row[ciNome]).trim():'';_bfListaExtra.push({tel:tel,nome:nome});n++;}
+    });
+    if(st){st.style.color='#22c55e';st.textContent='✓ '+n+' importados do arquivo ('+_bfListaExtra.length+' no total).';}var _c=document.getElementById('bf-extra-count');if(_c)_c.textContent='('+_bfListaExtra.length+' contatos)';
+  }catch(e){if(st){st.style.color='var(--red)';st.textContent='Erro ao ler: '+e.message;}}};r.readAsArrayBuffer(f);}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});
+}
+function _bfBuildAudience(){
+  var out=[],seen={}; var cli=(typeof _reatClientesTels==='function')?_reatClientesTels():{};
+  function add(tel,nome){var t=String(tel||'').replace(/\D/g,'');if(t.length<10)return;if(t.length===10||t.length===11)t='55'+t;var k9=t.slice(-9);if(cli[k9])return;var kk=t.slice(-11);if(seen[kk])return;seen[kk]=1;out.push({tel:t,nome:nome||''});}
+  if((document.getElementById('bf-src-crm')||{}).checked){ try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(e&&e.telefone)add(e.telefone,e.nome);}); }catch(e){} }
+  if((document.getElementById('bf-src-extra')||{}).checked){ _bfListaExtra.forEach(function(x){add(x.tel,x.nome);}); }
+  return out; // sheets é async; tratado em _bfMontarFila
+}
+async function _bfMontarFila(){
+  var st=document.getElementById('bf-fila-st');
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Montando público…';}
+  try{
+    try{ if(typeof _reatCarregarContratos==='function'){ _reatCarregarContratos(); } }catch(e){}
+    var leads=_bfBuildAudience();
+    // Sheets (async)
+    if((document.getElementById('bf-src-sheets')||{}).checked){
+      try{ var rows=await fetchSheetVals(SHEETS_IDS.leads,SHEETS_GIDS.leads); var cli=(typeof _reatClientesTels==='function')?_reatClientesTels():{}; var seen={}; leads.forEach(function(l){seen[l.tel.slice(-11)]=1;});
+        (rows||[]).slice(1).forEach(function(r){ var tel=String(r[3]||'').replace(/\D/g,''); if(tel.length<10)return; if(tel.length===10||tel.length===11)tel='55'+tel; if(cli[tel.slice(-9)])return; var kk=tel.slice(-11); if(seen[kk])return; seen[kk]=1; leads.push({tel:tel,nome:r[1]||''}); });
+      }catch(e){ console.error('bf sheets',e); }
+    }
+    if(!leads.length){ if(st){st.style.color='var(--amber)';st.textContent='Nenhum contato montado (confira as fontes).';} return; }
+    if(!confirm('Montar a fila com '+leads.length+' contatos (sem clientes de assessoria)?\n\nIsso recomeça a campanha do zero (esvazia a fila atual).')){ if(st)st.textContent=''; return; }
+    if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Enviando '+leads.length+' pro servidor…';}
+    // chunk de 500; 1º chunk limpa a fila + salva msgs + round 1
+    var CH=500, total=0;
+    for(var i=0;i<leads.length;i+=CH){ var chunk=leads.slice(i,i+CH); var body={lista:chunk}; if(i===0){body.limparFila=true;body.msgs=_bfColeta();body.round=1;} var r=await fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); var j=await r.json(); if(j&&j.ok)total+=(j.importados||0); if(st)st.innerHTML='<i class="ti ti-loader"></i> '+Math.min(i+CH,leads.length)+'/'+leads.length+'…'; }
+    _bfPublico=leads;
+    if(st){st.style.color='#22c55e';st.textContent='✓ Fila montada com '+total+' contatos. Agora escolha o Toque 1 e ligue.';}
+    bfLoadStats();
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 /* ===================== SOCIAL SELLING (Fase 1 — carteira + cadastro de donos) ===================== */
 function _ssDb(){ return (window.fbDb||(typeof initFirebase==='function'&&initFirebase())); }
