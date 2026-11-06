@@ -31392,6 +31392,8 @@ function igModalPost(id){
   var ev=id?(_igCalendario[id]||{}):{};
   var tm=new Date(Date.now()+86400000).toISOString().slice(0,16);
   var prevSlides=(ev.slides||[]);
+  var _rot=ev.roteiro||'';
+  if(!_rot&&ev.slideTitles&&ev.slideTitles.length){ _rot=ev.slideTitles.map(function(t,i){return (i+1)+'. '+t;}).join('\n'); }
   var html='<div id="ig-modal-post" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;">'+
   '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;">'+
   '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">'+
@@ -31403,6 +31405,12 @@ function igModalPost(id){
     '<label class="f-label">Tipo</label><select class="f-input" id="igm-tipo" style="margin-bottom:14px;"><option value="carrossel"'+(ev.tipo==='carrossel'?' selected':'')+'>Carrossel</option><option value="imagem"'+(ev.tipo==='imagem'?' selected':'')+'>Imagem única</option></select>'+
     '<label class="f-label">Status</label><select class="f-input" id="igm-status" style="margin-bottom:14px;">'+['rascunho','pronto'].map(function(s){return '<option value="'+s+'"'+(ev.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select>'+
     '<label class="f-label">Legenda (com CTA)</label><textarea class="f-input" id="igm-leg" rows="4" style="margin-bottom:14px;resize:vertical;">'+(ev.legenda||'')+'</textarea>'+
+    (ev.tipo!=='imagem'?('<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><label class="f-label" style="margin:0;">Roteiro do carrossel</label><div style="display:flex;gap:6px;">'+
+      '<button type="button" onclick="igCopiarRoteiro()" style="font-size:11px;padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--silver);cursor:pointer;"><i class="ti ti-copy"></i> Copiar</button>'+
+      (id?'<button type="button" onclick="igCarregarNoGerador(\''+id+'\')" style="font-size:11px;padding:4px 10px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;font-weight:700;cursor:pointer;"><i class="ti ti-edit"></i> Editar no Gerador</button>':'')+
+      '</div></div>'+
+      '<textarea class="f-input" id="igm-roteiro" rows="8" style="margin-bottom:6px;resize:vertical;font-family:Inter,monospace;font-size:12px;line-height:1.5;" placeholder="Título (linha 1) · corpo (linhas seguintes) · linha vazia separa slides">'+esc(_rot)+'</textarea>'+
+      (ev.roteiro?'':(ev.slideTitles&&ev.slideTitles.length?'<div style="font-size:10.5px;color:var(--amber);margin-bottom:14px;">⚠️ Esse carrossel foi salvo antes — só os títulos ficaram guardados. O roteiro completo passa a ser salvo nos próximos.</div>':'<div style="font-size:10.5px;color:var(--muted);margin-bottom:14px;">Sem roteiro salvo.</div>'))+(ev.roteiro?'<div style="margin-bottom:14px;"></div>':'')):'')+
     (prevSlides.length?'<div style="margin-bottom:14px;"><div class="f-label">Slides ('+prevSlides.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap;">'+prevSlides.map(function(u,i){return '<div style="width:50px;height:50px;border-radius:6px;background:var(--bg);border:1px solid var(--border);overflow:hidden;"><img src="'+u+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'"></div>';}).join('')+'</div></div>':'')+
     (id&&ev.origem==='gerador'?'<div style="margin-bottom:16px;padding:12px;background:rgba(123,47,255,0.08);border:1px solid rgba(123,47,255,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;">'+
       '<span style="font-size:11px;color:var(--purple3);font-weight:600;"><i class=\'ti ti-photo\' style=\"margin-right:5px;\"></i>'+ev.slidesCount+' slides salvos</span>'+
@@ -31423,7 +31431,10 @@ function igModalDay(y,m,day){
 async function igSalvarPost(id){
   var dh=document.getElementById('igm-dh'),tp=document.getElementById('igm-tipo'),st=document.getElementById('igm-status'),lg=document.getElementById('igm-leg');
   if(!dh||!dh.value){showSheetToast('Preencha a data',true);return;}
+  var _rotEl=document.getElementById('igm-roteiro');
   var ev={dataHora:dh.value,tipo:tp.value,status:st.value,legenda:lg.value,slides:id&&_igCalendario[id]?(_igCalendario[id].slides||[]):[],origem:id?(_igCalendario[id].origem||'manual'):'manual',resultado:id&&_igCalendario[id]?(_igCalendario[id].resultado||{}):{},'erro':''};
+  if(_rotEl) ev.roteiro=_rotEl.value;
+  if(id&&_igCalendario[id]){ if(_igCalendario[id].slideTitles)ev.slideTitles=_igCalendario[id].slideTitles; if(_igCalendario[id].slidesCount!=null)ev.slidesCount=_igCalendario[id].slidesCount; if(_igCalendario[id].localKey)ev.localKey=_igCalendario[id].localKey; }
   try{
     if(id)await fbDb.ref('instagram/calendario/'+id).update(ev);
     else await fbDb.ref('instagram/calendario').push(ev);
@@ -31435,6 +31446,38 @@ async function igDelPost(id){
   if(!confirm('Excluir este post do calendário?'))return;
   try{await fbDb.ref('instagram/calendario/'+id).remove();var m=document.getElementById('ig-modal-post');if(m)m.remove();showSheetToast('Post excluído',false);}
   catch(e){showSheetToast('Erro: '+e.message,true);}
+}
+function igCopiarRoteiro(){
+  var el=document.getElementById('igm-roteiro'); if(!el||!el.value.trim()){showSheetToast('Sem roteiro pra copiar',true);return;}
+  try{ el.select(); document.execCommand('copy'); if(window.getSelection)window.getSelection().removeAllRanges(); }catch(e){}
+  if(navigator.clipboard){ navigator.clipboard.writeText(el.value).catch(function(){}); }
+  showSheetToast('Roteiro copiado!',false);
+}
+// Carrega o roteiro salvo de volta no Gerador de Carrossel (p/ editar/regerar) + a legenda.
+function igCarregarNoGerador(id){
+  var ev=_igCalendario[id]||{};
+  var rotEl=document.getElementById('igm-roteiro');
+  var roteiro=(rotEl?rotEl.value:'')||ev.roteiro||'';
+  if(!roteiro && ev.slideTitles && ev.slideTitles.length) roteiro=ev.slideTitles.join('\n\n');
+  if(!roteiro){ showSheetToast('Esse carrossel não tem roteiro salvo pra editar.',true); return; }
+  window._igRoteiroPendente={batch:roteiro,legenda:ev.legenda||''};
+  var m=document.getElementById('ig-modal-post'); if(m)m.remove();
+  showPage('carrossel');
+  // espera a tela do gerador montar e aplica o roteiro
+  var tries=0;
+  (function poll(){
+    var b=document.getElementById('car-batch');
+    if(b && window._igRoteiroPendente){
+      b.value=window._igRoteiroPendente.batch;
+      var lg=document.getElementById('car-legenda'); if(lg)lg.value=window._igRoteiroPendente.legenda;
+      window._igRoteiroPendente=null;
+      try{ carApplyBatch(); }catch(e){}
+      try{ carSwitchTab&&carSwitchTab('conteudo'); }catch(e){}
+      showSheetToast('Roteiro carregado no Gerador — edite e salve de novo.',false);
+      return;
+    }
+    if(tries++<30) setTimeout(poll,120);
+  })();
 }
 
 function igRenderPublicar(){
@@ -31600,7 +31643,9 @@ async function _carConfirmarCalendario(){
     var leg=legEl?legEl.value.trim():'';
     var ref=fbDb.ref('instagram/calendario').push();
     var eventId=ref.key;
-    await ref.set({dataHora:dt,tipo:'carrossel',status:'rascunho',legenda:leg,slidesCount:blobs.filter(Boolean).length,slideTitles:_carState.slides.map(function(s){return s.title||'';}),origem:'gerador',localKey:eventId,resultado:{},erro:''});
+    var _batchEl=document.getElementById('car-batch'); var _roteiro=_batchEl?_batchEl.value:'';
+    if(!_roteiro){ _roteiro=_carState.slides.map(function(s){return (s.title||'')+(s.body?('\n'+s.body):'');}).join('\n\n'); }
+    await ref.set({dataHora:dt,tipo:'carrossel',status:'rascunho',legenda:leg,slidesCount:blobs.filter(Boolean).length,slideTitles:_carState.slides.map(function(s){return s.title||'';}),roteiro:_roteiro,origem:'gerador',localKey:eventId,resultado:{},erro:''});
     await _carSaveIDB(eventId,blobs.filter(Boolean),leg);
     var m=document.getElementById('_carCalModal');if(m)m.remove();
     var dtFmt=new Date(dt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -31912,6 +31957,7 @@ function ccCarCard(it,idx){
       '<span style="font-size:9px;font-weight:800;color:#e1306c;background:rgba(225,48,108,0.15);padding:2px 6px;border-radius:5px;margin-right:8px;">CARROSSEL</span>'+titulo+
     '</div>'+
     '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+
+      '<button onclick="igModalPost(\''+it.id+'\')" title="Editar / ver roteiro" style="padding:6px 9px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.35);border-radius:7px;color:#a78bfa;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-edit"></i> Editar</button>'+
       '<button onclick="igDownloadCarZip(\''+(it.localKey||it.id)+'\')" title="Baixar ZIP dos slides" style="padding:6px 9px;background:linear-gradient(135deg,#833ab4,#e1306c);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:11px;font-weight:700;"><i class="ti ti-download"></i> ZIP</button>'+
       '<button onclick="ccCopy('+idx+',\'legenda\')" title="Copiar legenda" style="padding:6px 9px;background:rgba(225,48,108,0.12);border:1px solid rgba(225,48,108,0.3);border-radius:7px;color:#e1306c;cursor:pointer;font-size:11px;font-weight:600;"><i class="ti ti-copy"></i> Legenda</button>'+
       dtInput+sel+
