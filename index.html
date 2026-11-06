@@ -35092,19 +35092,26 @@ function renderBfBlast(){
      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);">💬 Responderam o disparo <span style="color:#22c55e;">('+_nResp+')</span></div><button onclick="bfLoadStats()" class="btn btn-outline" style="font-size:11px;padding:5px 10px;">↻ Atualizar</button></div>';
   if(!_resp.length){ H+='<div style="font-size:12px;color:var(--muted);">Ninguém respondeu ainda. Quando um lead responder a mensagem pela IA, aparece aqui pra você marcar a reunião.</div>'; }
   else { H+='<div style="display:flex;flex-direction:column;gap:8px;">';
-    _resp.forEach(function(p){ var tel=String(p.tel||'').replace(/\D/g,''); var wa='https://wa.me/'+tel; var quando=p.at?new Date(p.at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    _resp.forEach(function(p){ var tel=String(p.tel||'').replace(/\D/g,''); var wa='https://wa.me/'+tel; var quando=p.at?new Date(p.at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''; var og=_bfOrigem(tel);
       H+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">'+
          '<div style="min-width:180px;flex:1;"><div style="font-size:13px;color:var(--white);font-weight:700;">'+esc(p.nome||'(sem nome)')+' <span style="color:var(--muted);font-weight:400;font-size:11px;">'+esc(tel)+'</span></div>'+
          (p.texto?'<div style="font-size:12px;color:var(--silver);margin-top:2px;">"'+esc(p.texto)+'"</div>':'')+
+         '<div style="font-size:11px;margin-top:3px;"><span style="background:rgba(234,179,8,.15);color:#eab308;border-radius:6px;padding:1px 7px;font-weight:700;">'+og.label+'</span>'+(og.det?' <span style="color:var(--silver);">· '+esc(og.det)+'</span>':'')+'</div>'+
          '<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+(quando?('respondeu '+quando+' · '):'')+'toque '+(p.lastRound||1)+'</div></div>'+
          '<div style="display:flex;gap:6px;align-items:center;">'+
          '<a href="'+wa+'" target="_blank" class="btn btn-outline" style="font-size:12px;padding:6px 10px;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i></a>'+
-         (p.agendado?'<span style="font-size:11px;color:#22c55e;font-weight:700;padding:6px 10px;">✓ Agendado</span>':'<button onclick="bfMarcarReuniao(\''+tel+'\',\''+esc(p.nome||'').replace(/\x27/g,"\\\x27")+'\')" class="btn" style="background:#22c55e;color:#061;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">📅 Marcar reunião</button>')+
+         (p.agendado?'<span style="font-size:11px;color:#22c55e;font-weight:700;padding:6px 10px;">✓ Agendado</span>':'<button onclick="bfMarcarReuniao(\''+tel+'\',\''+esc(p.nome||'').replace(/\x27/g,"\\\x27")+'\',\''+esc(og.det).replace(/\x27/g,"\\\x27")+'\')" class="btn" style="background:#22c55e;color:#061;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">📅 Marcar reunião</button>')+
          '</div></div>';
     });
     H+='</div>';
   }
   H+='</div>';
+  // buscar lead no disparo + agendar
+  H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:16px;">'+
+     '<div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">🔎 Buscar lead no disparo</div>'+
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Procure por número ou nome pra ver de onde o lead veio e marcar reunião na hora.</div>'+
+     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;"><input id="bf-busca" type="text" placeholder="número ou nome…" onkeydown="if(event.key===\'Enter\')bfBuscar()" style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:9px;color:var(--white);padding:9px 12px;font-size:13px;"><button onclick="bfBuscar()" class="btn" style="background:#eab308;color:#111;border:none;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;">Buscar</button></div>'+
+     '<div id="bf-busca-res"><span style="color:var(--muted);font-size:12px;">Digite um número ou nome e clique em Buscar.</span></div></div>';
   // mensagens
   H+='<div style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;"><div style="font-family:var(--font-bn),sans-serif;font-size:15px;color:var(--white);margin-bottom:4px;">1 · As 5 mensagens</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Use <code>{{primeiroNome}}</code>. <code>*texto*</code> fica negrito no WhatsApp.</div>';
   for(var mi=0;mi<5;mi++){H+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#eab308;font-weight:700;margin-bottom:5px;">'+esc(_BF_TOQUES[mi].t)+'</div><textarea id="bf-msg'+mi+'" style="width:100%;min-height:120px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--white);padding:12px;font-size:13px;line-height:1.5;resize:vertical;">'+msgs[mi].replace(/</g,'&lt;')+'</textarea></div>';}
@@ -35146,16 +35153,65 @@ function renderBfBlast(){
 }
 function _bfRerender(){var a=document.getElementById('content');if(a&&a.getAttribute('data-page')==='bf-blast')a.innerHTML=renderBfBlast();}
 function _bfColeta(){var o=[];for(var i=0;i<5;i++){var e=document.getElementById('bf-msg'+i);o.push(e?e.value:'');}return o;}
-function bfMarcarReuniao(tel,nome){
+// Descobre de onde o lead veio, cruzando o telefone com a base do CRM. Sempre marca que passou pelo Disparo Black.
+function _bfOrigem(tel){
+  var t9=String(tel||'').replace(/\D/g,'').slice(-9); if(t9.length<8)return{label:'Disparo Black',det:''};
+  var l=null;
+  try{ l=(allLeads||[]).find(function(x){return String(x.telefone||'').replace(/\D/g,'').slice(-9)===t9;}); }catch(e){}
+  if(!l){ try{ Object.keys(kanbanData||{}).forEach(function(k){var e=kanbanData[k];if(!l&&e&&String(e.telefone||'').replace(/\D/g,'').slice(-9)===t9)l=e;}); }catch(e){} }
+  var det='';
+  if(l){
+    var src=String(l.origem||l._source||'').trim();
+    if(l.ad||l.Ad||l.campanha){ det='Tráfego'+((l.ad||l.Ad)?(' · '+(l.ad||l.Ad)):''); }
+    else if(/sheet|planilha/i.test(src)){ det='Planilha'; }
+    else if(src){ det=src; }
+    else { det='CRM/Funil'; }
+  } else {
+    det='Lista importada (compradores/alunos)';
+  }
+  return {label:'🖤 Disparo Black', det:det};
+}
+function bfMarcarReuniao(tel,nome,origemDet){
   tel=String(tel||'').replace(/\D/g,''); if(tel.length<10){alert('Telefone inválido.');return;}
   var kkey=tel.replace(/[.#$\[\]]/g,'_'); var now=Date.now();
   var cur=(typeof kanbanData!=='undefined'&&kanbanData&&kanbanData[kkey])||{};
-  var novo=Object.assign({},cur,{nome:(nome||cur.nome||''),telefone:tel,origem:(cur.origem||'Disparo Black Friday'),_source:(cur._source||'disparo-black'),_createdAt:(cur._createdAt||now),status:'qualificado',statusAt:now,statusHistory:Object.assign({},(cur.statusHistory||{}),{qualificado:now}),naoArquivar:true});
+  var det=origemDet||_bfOrigem(tel).det||(cur.origem||'');
+  var novo=Object.assign({},cur,{nome:(nome||cur.nome||''),telefone:tel,origem:'Disparo Black Friday',origemDetalhe:det,_source:'disparo-black',_createdAt:(cur._createdAt||now),status:'qualificado',statusAt:now,statusHistory:Object.assign({},(cur.statusHistory||{}),{qualificado:now}),naoArquivar:true});
   if(typeof kanbanData!=='undefined') kanbanData[kkey]=novo;
   try{ if(window.fbDb) fbDb.ref('kanban/'+kkey).update(novo); }catch(e){}
   try{ if(window.fbDb) fbDb.ref('reat_blast_fila/'+kkey+'/agendado').set(true); }catch(e){}
   if(typeof abrirAgendarReuniao==='function'){ abrirAgendarReuniao(kkey); }
   else { showToast&&showToast('Lead no Funil (Qualificado). Abra o Funil pra agendar.'); }
+}
+var _bfFilaCache=null;
+async function bfBuscar(){
+  var q=((document.getElementById('bf-busca')||{}).value||'').trim();
+  var res=document.getElementById('bf-busca-res'); if(!res)return;
+  res.innerHTML='<span style="color:var(--muted);font-size:12px;"><i class="ti ti-loader"></i> Buscando…</span>';
+  try{
+    if(!_bfFilaCache){ var r=await fetch(RECEBERLEAD_URL+'/reat-blast-list?secret='+WEBHOOK_SECRET,{method:'POST'}); var j=await r.json(); _bfFilaCache=(j&&j.lista)||[]; }
+    var qd=q.replace(/\D/g,''); var ql=q.toLowerCase();
+    var hits=_bfFilaCache.filter(function(x){
+      if(!q)return false;
+      if(qd.length>=3) return String(x.tel||'').indexOf(qd)>=0;
+      return String(x.nome||'').toLowerCase().indexOf(ql)>=0;
+    }).slice(0,60);
+    if(!q){ res.innerHTML='<span style="color:var(--muted);font-size:12px;">Digite um número ou nome pra buscar na base do disparo ('+_bfFilaCache.length+' leads).</span>'; return; }
+    if(!hits.length){ res.innerHTML='<span style="color:var(--muted);font-size:12px;">Nenhum lead do disparo com “'+esc(q)+'”.</span>'; return; }
+    var H='<div style="display:flex;flex-direction:column;gap:8px;">';
+    hits.forEach(function(p){ var tel=String(p.tel||'').replace(/\D/g,''); var og=_bfOrigem(tel); var wa='https://wa.me/'+tel;
+      H+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">'+
+         '<div style="min-width:180px;flex:1;"><div style="font-size:13px;color:var(--white);font-weight:700;">'+esc(p.nome||'(sem nome)')+' <span style="color:var(--muted);font-weight:400;font-size:11px;">'+esc(tel)+'</span></div>'+
+         '<div style="font-size:11px;margin-top:3px;"><span style="background:rgba(234,179,8,.15);color:#eab308;border-radius:6px;padding:1px 7px;font-weight:700;">'+og.label+'</span>'+(og.det?' <span style="color:var(--silver);">· '+esc(og.det)+'</span>':'')+'</div>'+
+         '<div style="font-size:10px;color:var(--muted);margin-top:3px;">'+(p.lastRound?('recebeu até o toque '+p.lastRound):'ainda não recebeu')+(p.respondeu?' · 💬 respondeu':'')+'</div></div>'+
+         '<div style="display:flex;gap:6px;align-items:center;">'+
+         '<a href="'+wa+'" target="_blank" class="btn btn-outline" style="font-size:12px;padding:6px 10px;text-decoration:none;"><i class="ti ti-brand-whatsapp"></i></a>'+
+         (p.agendado?'<span style="font-size:11px;color:#22c55e;font-weight:700;padding:6px 10px;">✓ Agendado</span>':'<button onclick="bfMarcarReuniao(\''+tel+'\',\''+esc(p.nome||'').replace(/\x27/g,"\\\x27")+'\',\''+esc(og.det).replace(/\x27/g,"\\\x27")+'\')" class="btn" style="background:#22c55e;color:#061;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">📅 Marcar reunião</button>')+
+         '</div></div>';
+    });
+    H+='</div>'; if(hits.length>=60)H+='<div style="font-size:11px;color:var(--muted);margin-top:6px;">Mostrando os primeiros 60. Refine a busca.</div>';
+    res.innerHTML=H;
+  }catch(e){ res.innerHTML='<span style="color:var(--red);font-size:12px;">Erro: '+e.message+'</span>'; }
 }
 function bfSaveMsgs(){var st=document.getElementById('bf-msg-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgs:_bfColeta()})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color=(j&&j.ok)?'#22c55e':'var(--red)';st.textContent=(j&&j.ok)?'5 mensagens salvas!':'Erro.';}}).catch(function(e){if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;}});}
 function bfSetRound(n){var st=document.getElementById('bf-ctrl-st');fetch(RECEBERLEAD_URL+'/reat-blast?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({round:n,msgs:_bfColeta()})}).then(function(r){return r.json();}).then(function(j){if(st){st.style.color='#22c55e';st.textContent='Toque '+n+' selecionado.';}bfLoadStats();}).catch(function(e){if(st){st.textContent='Erro: '+e.message;}});}
