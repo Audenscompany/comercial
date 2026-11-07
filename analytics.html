@@ -403,7 +403,11 @@ function render(){
   /* leads no período — filtrados pela LP escolhida */
   var leads = [];
   var L = cache.leads||{};
-  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||''; var ok = antiga?isAntiga(src):(black?isBlack(src):(v3?isV3(src):isNova(src))); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  for(var lk in L){ var lv=L[lk]||{}; var src=lv._source||'';
+    /* LP Black: inclui quem fez o Raio-X e confirmou a Black (conta na data da confirmação) */
+    if(black && !isBlack(src) && lv.black_origem==='raio-x'){ var bt=lv.black_interesseAt||0; if(bt>=cut){ var cp={}; for(var ck in lv) cp[ck]=lv[ck]; cp._createdAt=bt; cp._viaRaiox=true; leads.push(cp); } continue; }
+    var ok = antiga?isAntiga(src):(black?isBlack(src):(v3?isV3(src):isNova(src))); if(!ok) continue; var lt=lv._createdAt||0; if(lt>=cut) leads.push(lv); }
+  var nViaRx = leads.filter(function(l){return l._viaRaiox;}).length;
   var nLeads = leads.length;
 
   /* KPIs */
@@ -493,14 +497,14 @@ function render(){
   if(leads.length){
     el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
       leads.slice(0,25).map(function(l){
-        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>';
+        return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+(l._viaRaiox?' <span class="pill" style="background:rgba(229,50,45,.18);color:#ff6a64">via Raio-X</span>':'')+'</td><td>'+wppCell(l)+'</td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>';
       }).join('')+'</tbody></table>';
   } else {
     el('leads').innerHTML = '<div class="empty">Nenhum lead no período selecionado.</div>';
   }
 
   renderAdsDist(cut);
-  var lpLabel = antiga ? 'LP antiga (Elementor)' : (black ? 'LP Black (lp-black · /black/)' : (v3 ? 'LP V3 (lp-v3)' : 'LP nova (audens-lp)'));
+  var lpLabel = antiga ? 'LP antiga (Elementor)' : (black ? 'LP Black (lp-black · /black/)'+(nViaRx?' · '+nViaRx+(nViaRx>1?' leads vieram':' lead veio')+' do Raio-X':'') : (v3 ? 'LP V3 (lp-v3)' : 'LP nova (audens-lp)'));
   var per = (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
     ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
