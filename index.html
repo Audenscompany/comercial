@@ -6805,7 +6805,7 @@ async function confirmarAssinatura(id){
       var isTcv=(vd.tipoValor||'').toLowerCase()==='tcv';
       var mensalidade=isTcv?Math.round((parseFloat(vd.valorTotal)||0)/planoDur):(parseFloat(vd.mensalidade||vd.valorParcela)||0);
       var planoRaw=(vd.plano||'').toLowerCase();
-      var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':
+      var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium-black'?'Premium Black Friday':planoRaw==='premium'?'Premium':
         (planoRaw==='marketplaces'||planoRaw==='marketplace')?'Marketplace':(vd.plano||'');
       var wPayload={
         cliente:{nome:sd.cliente||'',telefone:(sd.telefone||'').replace(/\D/g,''),cnpj:sd.cnpj||vd.cnpj||''},
@@ -9333,7 +9333,7 @@ async function autoSyncAssinaturas(){
       // Cria na coleção contratos
       var _planoDur=parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||1;
       var _planoNome=(vd.plano||'').toLowerCase();
-      var _planoLbl=_planoNome==='starter'?'Plano Starter':_planoNome==='premium'?'Plano Premium':_planoNome==='elite'?'Plano Elite':'Plano '+(_planoNome||'');
+      var _planoLbl=_planoNome==='starter'?'Plano Starter':_planoNome==='premium'?'Plano Premium':_planoNome==='premium-black'?'Plano Premium Black Friday':_planoNome==='elite'?'Plano Elite':'Plano '+(_planoNome||'');
       var _planoSuf=_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
       var _mrr=(vd.tipoValor||'')==='tcv'?Math.round((parseFloat(vd.contrato)||0)/_planoDur):(mensBase||parseFloat(vd.contrato)||0);
       var _tcv=(vd.tipoValor||'')==='tcv'?(parseFloat(vd.contrato)||0):(_mrr*_planoDur);
@@ -9448,7 +9448,7 @@ async function marcarContratoComoVenda(id){
   // Cria entrada na coleção contratos (usada para cálculo de bônus/comissão)
   var _planoDurMCV=parseInt(vd.duracaoMeses)||parseInt(vd.duracao)||1;
   var _planoNomeMCV=(vd.plano||'').toLowerCase();
-  var _planoLblMCV=_planoNomeMCV==='starter'?'Plano Starter':_planoNomeMCV==='premium'?'Plano Premium':_planoNomeMCV==='elite'?'Plano Elite':'Plano '+(_planoNomeMCV||'');
+  var _planoLblMCV=_planoNomeMCV==='starter'?'Plano Starter':_planoNomeMCV==='premium'?'Plano Premium':_planoNomeMCV==='premium-black'?'Plano Premium Black Friday':_planoNomeMCV==='elite'?'Plano Elite':'Plano '+(_planoNomeMCV||'');
   var _planoSufMCV=_planoDurMCV>=6?' - Semestral':_planoDurMCV>=3?' - Trimestral':' - Mensal';
   var _mrrMCV=(vd.tipoValor||'')==='tcv'?Math.round((parseFloat(vd.contrato)||0)/_planoDurMCV):(mensBase||parseFloat(vd.contrato)||0);
   var _tcvMCV=(vd.tipoValor||'')==='tcv'?(parseFloat(vd.contrato)||0):(_mrrMCV*_planoDurMCV);
@@ -9528,7 +9528,7 @@ async function dispararWebhookVenda(id){
     }
     // Mapeamento de plano para o enum do Cockpit
     var planoRaw=(vd.plano||'').toLowerCase();
-    var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium'?'Premium':planoRaw==='marketplaces'||planoRaw==='marketplace'?'Marketplace':(vd.plano||'');
+    var planoMapped=planoRaw==='starter'?'Starter':planoRaw==='elite'?'Elite':planoRaw==='premium-black'?'Premium Black Friday':planoRaw==='premium'?'Premium':planoRaw==='marketplaces'||planoRaw==='marketplace'?'Marketplace':(vd.plano||'');
     // Payload no formato exato do Cockpit (POST /api/webhooks/venda)
     var payload={
       cliente:{
@@ -10103,6 +10103,7 @@ function renderFollowupBody(){
             '<option value="starter">Starter</option>'+
             '<option value="marketplaces">Marketplaces</option>'+
             '<option value="premium">Premium</option>'+
+            '<option value="premium-black">Premium Black Friday 🖤</option>'+
             '<option value="elite">Elite</option>'+
           '</select></div>'+
           '<div id="fu-duracao-wrap">'+_fuDuracaoSelect('6')+'</div>'+
@@ -10142,7 +10143,7 @@ function renderFollowupBody(){
               '<div><label class="f-label">Documento da 2ª loja</label><div style="display:flex;gap:6px;"><select class="f-input" id="fu-seg-doctipo" style="margin-bottom:0;width:90px;" onchange="var i=document.getElementById(\'fu-seg-cnpj\');if(i)i.placeholder=(this.value===\'cpf\'?\'000.000.000-00\':\'00.000.000/0001-00\');"><option value="cnpj">CNPJ</option><option value="cpf">CPF</option></select><input class="f-input" type="text" id="fu-seg-cnpj" placeholder="00.000.000/0001-00" style="margin-bottom:0;flex:1;"></div></div>'+
             '</div>'+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'+
-              '<div><label class="f-label">Plano</label><select class="f-input" id="fu-seg-plano" style="margin-bottom:0;"><option value="starter">Starter</option><option value="marketplaces">Marketplaces</option><option value="premium">Premium</option><option value="elite">Elite</option></select></div>'+
+              '<div><label class="f-label">Plano</label><select class="f-input" id="fu-seg-plano" style="margin-bottom:0;"><option value="starter">Starter</option><option value="marketplaces">Marketplaces</option><option value="premium">Premium</option><option value="premium-black">Premium Black Friday 🖤</option><option value="elite">Elite</option></select></div>'+
               '<div><label class="f-label">Duração (meses)</label><select class="f-input" id="fu-seg-duracao" style="margin-bottom:0;"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses (anual)</option></select></div>'+
             '</div>'+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
@@ -10208,7 +10209,7 @@ function fuOnPlanoChange(){
   // Adicionais são exclusivos dos planos Starter e Premium
   var _adicWrap=document.getElementById('fu-adic-wrap');
   if(_adicWrap){
-    var _adicOK=(plano==='starter'||plano==='premium');
+    var _adicOK=(plano==='starter'||plano==='premium'||plano==='premium-black');
     _adicWrap.style.display=_adicOK?'':'none';
     if(!_adicOK){
       (ADICIONAIS_CATALOGO||[]).forEach(function(a){var el=document.getElementById('fu-adic-'+a.id);if(el)el.checked=false;});
@@ -10263,10 +10264,12 @@ var CONTRATO_TEMPLATES={
   starter:'assets/contratos/contrato-starter.docx',
   marketplaces:'assets/contratos/contrato-marketplaces.docx',
   premium:'assets/contratos/contrato-premium.docx',
+  'premium-black':'assets/contratos/contrato-premium-black.docx',
   elite:'assets/contratos/contrato-elite.docx'
 };
 // Entregáveis por plano (extraídos dos contratos assinados) — enviados ao sistema/Cockpit
 var PLANO_ENTREGAVEIS={"starter": ["Gestão de Tráfego Pago Especializada", "Edição de até 5 criativos para tráfego mensal", "1 Otimização do Cardápio Digital", "Estratégias focadas em retenção dos clientes", "Estratégias focadas em captação de novos clientes", "Suporte no WhatsApp", "Relatório semanal das métricas"], "marketplaces": ["Gestão de iFood", "Gestão de 99Food", "Gestão de Keeta", "Otimização e organização de cardápio digital nos marketplaces"], "premium": ["Gestão de tráfego pago (Meta Ads)", "Criação, edição e otimização de anúncios", "Organização e otimização de cardápio digital", "Disparo de mensagens e ações de relacionamento", "Relatórios periódicos com métricas e análises de desempenho", "Desenvolvimento de produtos, combos e promoções", "Acesso ao curso \"Feed que dá Fome\"", "Acesso à pasta de referências estratégicas da Audens Company", "Suporte via WhatsApp em horário comercial", "Bônus (sem custo): Gestão de iFood e 99Food", "Bônus (sem custo): Criação de Cardápio Digital"], "elite": ["Criação e gestão de campanhas de tráfego pago no Meta Ads", "Criação e gestão de campanhas no Google Ads e Google Meu Negócio", "Criação, edição e otimização de até 6 criativos mensais", "Desenvolvimento de estratégias de captação de novos clientes", "Criação e otimização de cardápio digital", "Estruturação completa no CRM Repediu (até 5 campanhas ativas/mês)", "Campanhas de reativação de clientes via WhatsApp", "Fluxos de automação (aniversariantes, inativos, salão e pós-venda)", "Segmentação estratégica da base para promoções e campanhas", "Gestão e otimização de marketplaces", "Relatórios periódicos com métricas e resultados mensais", "1 acompanhamento financeiro e suporte em precificação com o CEO Lucas Siqueira", "1 acompanhamento estratégico de métricas com o CEO Arthur Menezes", "Suporte via WhatsApp em horário comercial", "Implementação de social media do setup"]};
+PLANO_ENTREGAVEIS["premium-black"]=["Criação e gestão de campanhas no Meta Ads","Edição de até 5 criativos para tráfego mensal (+2 de bônus)","Estratégias focadas na retenção dos clientes","Estratégias focadas na captação de novos clientes","1 Otimização de Cardápio Digital","2 Mentorias de Precificação com o CEO Lucas Siqueira","Assinatura Audens Finance Anual","Estratégia de Promoções com o CEO Lucas Siqueira","Suporte no WhatsApp","Relatório das métricas semanais"];
 function _planoEntregaveis(planoRaw){var k=(planoRaw||'').toLowerCase();if(k==='marketplace')k='marketplaces';return PLANO_ENTREGAVEIS[k]||[];}
 // Catálogo de serviços adicionais (valores mensais)
 var ADICIONAIS_CATALOGO=[
@@ -10331,7 +10334,7 @@ function fmtBRLPlanilha(v){
 }
 // Monta o texto "Plano X - Frequencia" conforme padrao da coluna PLANO da planilha de Clientes
 function buildPlanoLabel(plano,duracao,tipoValor){
-  var nomes={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium',elite:'Elite'};
+  var nomes={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium','premium-black':'Premium Black Friday',elite:'Elite'};
   var nome=nomes[plano]||(plano?(plano.charAt(0).toUpperCase()+plano.slice(1)):'');
   var freq;
   if(tipoValor==='mmr') freq='Recorrente';
@@ -10866,7 +10869,7 @@ function saveFollowup(){
   var docTipo=venda?(((document.getElementById('fu-doctipo')||{}).value)||'cnpj'):'cnpj';
   var mensBase=venda?calcMensalidadeBase():0;
   // Serviços adicionais — exclusivos de Starter e Premium; somam no valor da venda
-  var _adicPermitido=(plano==='starter'||plano==='premium');
+  var _adicPermitido=(plano==='starter'||plano==='premium'||plano==='premium-black');
   var adicionais=(venda&&_adicPermitido)?fuAdicionaisSelecionados('fu'):[];
   var adicValor=(venda&&_adicPermitido)?(parseFloat((document.getElementById('fu-adic-valor')||{}).value)||0):0;
   if(venda&&adicValor>0){
@@ -11017,7 +11020,7 @@ function saveFollowup(){
     // Salva contrato no Firebase para cálculo de comissão
     (function(){
       var _planoDur=duracao||1;
-      var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
+      var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='premium-black'?'Plano Premium Black Friday':plano==='elite'?'Plano Elite':'Plano 3';
       var _planoSufixo=_planoDur===45?' - 45 dias':_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
       // Starter = 45 dias: normaliza TCV para equivalente de 30 dias (MRR mensal)
       var _mrr=(tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato));
@@ -11063,7 +11066,7 @@ function saveFollowup(){
 // Chamado tanto no saveFollowup (venda nova) quanto no saveFollowupEdit (editar resultado).
 function _saveSegundaLojaContrato(seg, fid, dataInicio, tipoValor, leadInfo, mtg){
   if(!seg) return;
-  var _p2=seg.plano==='starter'?'Plano Starter':seg.plano==='premium'?'Plano Premium':seg.plano==='elite'?'Plano Elite':'Plano 3';
+  var _p2=seg.plano==='starter'?'Plano Starter':seg.plano==='premium'?'Plano Premium':seg.plano==='premium-black'?'Plano Premium Black Friday':seg.plano==='elite'?'Plano Elite':'Plano 3';
   var _suf2=seg.duracao>=6?' - Semestral':seg.duracao>=3?' - Trimestral':' - Mensal';
   var _dur=seg.duracao||1;
   var _mrr2=tipoValor==='tcv'?Math.round((seg.contrato||0)/_dur):(seg.mensalidade||seg.contrato||0);
@@ -11124,7 +11127,7 @@ function saveFollowupEdit(){
   var docTipo=venda?(((document.getElementById('fu-doctipo')||{}).value)||'cnpj'):'cnpj';
   var mensBase=venda?calcMensalidadeBase():0;
   // Serviços adicionais (Starter e Premium) — MESMA captura do saveFollowup; antes o modo edição ignorava.
-  var _adicPermitido=(plano==='starter'||plano==='premium');
+  var _adicPermitido=(plano==='starter'||plano==='premium'||plano==='premium-black');
   var adicionais=(venda&&_adicPermitido)?fuAdicionaisSelecionados('fu'):[];
   var adicValor=(venda&&_adicPermitido)?(parseFloat((document.getElementById('fu-adic-valor')||{}).value)||0):0;
   if(venda&&adicValor>0){
@@ -11215,7 +11218,7 @@ function saveFollowupEdit(){
       // Salva contrato no Firebase (apenas na primeira vez ou se veio de marcarContratoComoVenda)
       (function(){
         var _planoDur=duracao||1;
-        var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='elite'?'Plano Elite':'Plano 3';
+        var _planoNome=plano==='starter'?'Plano Starter':plano==='premium'?'Plano Premium':plano==='premium-black'?'Plano Premium Black Friday':plano==='elite'?'Plano Elite':'Plano 3';
         var _planoSufixo=_planoDur===45?' - 45 dias':_planoDur>=6?' - Semestral':_planoDur>=3?' - Trimestral':' - Mensal';
         // Starter = 45 dias: normaliza TCV para MRR equivalente de 30 dias
         var _mrr=(tipoValor==='tcv'?Math.round(contrato/_planoDur):(mensalidade||contrato));
@@ -30054,7 +30057,7 @@ function renderVendas(){
   '</div>';
 
   // Tabela
-  var planoLabels={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium',elite:'Elite',plano3:'Plano 3'};
+  var planoLabels={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium','premium-black':'Premium Black Friday',elite:'Elite',plano3:'Plano 3'};
   var inpStyle='background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--white);font-size:12px;outline:none;';
   var filterBar='<div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border);">'+
     '<div style="position:relative;flex:1;min-width:180px;">'+
@@ -30370,7 +30373,7 @@ function _showVendaDetalhe(fid){
   var cliente=(typeof _empresaCliente==='function')?_empresaCliente(fu,m):(fu.nome||(m&&m.nome)||'Cliente');
   var closer=(m&&m.responsavel)||fu.closer||fu.responsavel||'—';
   var sdr=(normCloserName((m&&(m.sdrName||m.sdr))||fu.sdr||fu.sdrName||''))||'—';
-  var planoLabels={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium',elite:'Elite'};
+  var planoLabels={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium','premium-black':'Premium Black Friday',elite:'Elite'};
   var plano=planoLabels[fu.plano]||fu.plano||'—';
   var dt=_vendaDate(fu,m);
   var dtLabel=dt?(String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear()):'—';
@@ -30623,7 +30626,7 @@ function evOnPlanoChange(){
   // Starter agora é plano normal — não força TCV nem 45 dias
   var _adWrap=document.getElementById('ev-adic-wrap');
   if(_adWrap){
-    var _ok=(plano==='starter'||plano==='premium');
+    var _ok=(plano==='starter'||plano==='premium'||plano==='premium-black');
     _adWrap.style.display=_ok?'':'none';
     if(!_ok){
       (ADICIONAIS_CATALOGO||[]).forEach(function(a){var el=document.getElementById('ev-adic-'+a.id);if(el)el.checked=false;});
@@ -30655,7 +30658,7 @@ async function salvarEdicaoVenda(){
   var dataInicio=document.getElementById('ev-data-inicio').value;
   var origem=document.getElementById('ev-origem').value;
   var sdr=(document.getElementById('ev-sdr').value||'').trim();
-  var _adicOK=(plano==='starter'||plano==='premium');
+  var _adicOK=(plano==='starter'||plano==='premium'||plano==='premium-black');
   var adicionais=_adicOK?fuAdicionaisSelecionados('ev'):[];
   var adicValor=_adicOK?(parseFloat((document.getElementById('ev-adic-valor')||{}).value)||0):0;
   fu.plano=plano;fu.tipoValor=tipo;fu.mensalidade=mensalidade;fu.contrato=contrato;
