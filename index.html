@@ -1745,6 +1745,7 @@ function abrirDetalheKanban(key){
       row('calendar-due','Retorno',e.retornoDisplay,e.retornoDisplay?'<span style="color:var(--amber);">'+e.retornoDisplay+'</span>':null)+
       row('note','Observações',e.obs)+
       _fuHtml+
+      _leadAvaliacoesHTML(key,e)+
       '<div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.08);padding-top:14px;">'+
         '<div style="font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--purple3);margin-bottom:10px;"><i class="ti ti-history"></i> HISTÓRICO & ANOTAÇÕES</div>'+
         '<select id="kh-tipo" class="f-input" style="font-size:12px;padding:7px 9px;margin-bottom:6px;"><option value="obs">📝 Observação</option><option value="reuniao">🗓️ Reunião realizada</option><option value="transcricao">🎙️ Transcrição de reunião</option><option value="ligacao">📞 Ligação</option></select>'+
@@ -1798,6 +1799,115 @@ function khDelNota(key,ts){
   var arr=(Array.isArray(e.historico)?e.historico:Object.keys(e.historico).map(function(k){return e.historico[k];})).filter(function(n){return (n.ts||0)!==ts;});
   e.historico=arr;
   try{ if(window.fbDb) fbDb.ref('kanban/'+key+'/historico').set(arr); }catch(ex){}
+  abrirDetalheKanban(key);
+}
+// ===== Reuniões & Avaliações do lead (nota SPIN + consulta) =====
+function _leadAvalList(key,e){
+  var tel9=String((e&&e.telefone)||'').replace(/\D/g,'').slice(-9);
+  var nome=String((e&&e.nome)||'').trim().toLowerCase();
+  var out=[];
+  Object.keys(_avaliacoes||{}).forEach(function(aid){
+    var a=_avaliacoes[aid]; if(!a)return; var hit=false;
+    if(a.leadKey&&a.leadKey===key) hit=true;
+    else if(tel9&&String(a.telefone||'').replace(/\D/g,'').slice(-9)===tel9) hit=true;
+    else if(nome&&nome.length>2&&String(a.lead||'').trim().toLowerCase()===nome) hit=true;
+    if(hit) out.push(Object.assign({_id:aid},a));
+  });
+  out.sort(function(a,b){return (b.timestamp||0)-(a.timestamp||0);});
+  return out;
+}
+function _leadAvaliacoesHTML(key,e){
+  var arr=_leadAvalList(key,e);
+  var itens = arr.length ? arr.map(function(a){
+    var dt=a.date?String(a.date).split('-').reverse().join('/'):(a.timestamp?new Date(a.timestamp).toLocaleDateString('pt-BR'):'');
+    var nota=(a.notaFinal!=null&&a.notaFinal!=='')?a.notaFinal:null;
+    var cor=(nota>=70?'#4ade80':nota>=50?'#fbbf24':'#f87171');
+    var temDet=(a.criterios&&a.criterios.length);
+    return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'+
+        '<span style="font-size:12px;font-weight:700;color:var(--white);">🗓️ '+(dt||'')+(a.closerNome?' · '+esc(a.closerNome):'')+'</span>'+
+        (nota!=null?'<span style="font-size:13px;font-weight:800;color:'+cor+';">'+nota+'/100</span>':'')+
+      '</div>'+
+      (a.classificacao?'<div style="font-size:11px;color:var(--muted);margin-top:3px;">'+esc(a.classificacao)+'</div>':'')+
+      (a.resultado?'<div style="font-size:11px;color:var(--silver);margin-top:2px;">Resultado: '+esc(a.resultado)+'</div>':'')+
+      (a.resumo?'<div style="font-size:12px;color:var(--white);margin-top:5px;white-space:pre-wrap;max-height:120px;overflow-y:auto;">'+esc(a.resumo)+'</div>':'')+
+      '<div style="margin-top:7px;display:flex;gap:6px;">'+
+        (temDet?'<button onclick="verAvaliacaoCompleta(\''+a._id+'\')" class="btn btn-outline" style="padding:4px 10px;font-size:11px;"><i class="ti ti-file-text"></i> Ver avaliação completa</button>':'')+
+      '</div>'+
+    '</div>';
+  }).join('') : '<div style="font-size:12px;color:var(--muted);">Nenhuma reunião avaliada ainda. Registre a reunião realizada e a avaliação aqui — fica salvo no lead pra consultar depois.</div>';
+  return '<div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.08);padding-top:14px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--purple3);"><i class="ti ti-clipboard-check"></i> REUNIÕES &amp; AVALIAÇÕES</div>'+
+      '<button onclick="abrirRegistrarAvaliacaoLead(\''+key+'\')" class="btn" style="padding:5px 10px;font-size:11px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);"><i class="ti ti-plus"></i> Registrar reunião</button>'+
+    '</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;">'+itens+'</div>'+
+  '</div>';
+}
+function verAvaliacaoCompleta(id){
+  var a=_avaliacoes[id]; if(!a){ alert('Avaliação não encontrada.'); return; }
+  var ex=document.getElementById('modal-aval-full'); if(ex)ex.remove();
+  var body='';
+  try{ body=(typeof _renderAvalDetail==='function')?_renderAvalDetail(a):''; }catch(ex2){ body=''; }
+  if(!body){ body='<div style="padding:4px 2px;font-size:13px;color:var(--white);white-space:pre-wrap;">'+esc(a.resumo||JSON.stringify(a,null,2))+'</div>'; }
+  var html='<div id="modal-aval-full" class="modal-ov active" data-dynamic="1" style="z-index:3200;" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:760px;max-height:88vh;overflow-y:auto;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-clipboard-check"></i> Avaliação da reunião</div><button class="modal-close" onclick="document.getElementById(\'modal-aval-full\').remove()"><i class="ti ti-x"></i></button></div>'+
+      '<div style="padding:8px 2px;">'+body+'</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function abrirRegistrarAvaliacaoLead(key){
+  var e=kanbanData[key]; if(!e) return;
+  var hoje=new Date().toISOString().slice(0,10);
+  var closer=(typeof CU!=='undefined'&&CU)?(CU.name||CU.closer||''):'';
+  var ex=document.getElementById('modal-reg-aval'); if(ex)ex.remove();
+  var html='<div id="modal-reg-aval" class="modal-ov active" data-dynamic="1" style="z-index:3300;" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:480px;max-height:88vh;overflow-y:auto;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-clipboard-plus"></i> Registrar reunião + avaliação</div><button class="modal-close" onclick="document.getElementById(\'modal-reg-aval\').remove()"><i class="ti ti-x"></i></button></div>'+
+      '<div style="padding:4px 2px;">'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Fica salvo neste lead ('+esc(e.nome||'')+') e consultável depois, e também na tela Avaliação Closers.</div>'+
+        '<label class="f-label">Data da reunião</label><input class="f-input" id="ra-data" type="date" value="'+hoje+'" style="margin-bottom:10px;">'+
+        '<label class="f-label">Closer</label><input class="f-input" id="ra-closer" value="'+esc(closer)+'" style="margin-bottom:10px;">'+
+        '<label class="f-label">Resultado</label><select class="f-input" id="ra-resultado" style="margin-bottom:10px;"><option value="compareceu">Compareceu</option><option value="venda">Venda</option><option value="retorno">Retorno</option><option value="noshow">No-show</option><option value="perdida">Perdida</option></select>'+
+        '<label class="f-label">Nota (0–100)</label><input class="f-input" id="ra-nota" type="number" min="0" max="100" placeholder="ex.: 72" style="margin-bottom:10px;">'+
+        '<label class="f-label">Classificação (opcional)</label><input class="f-input" id="ra-class" placeholder="ex.: B — Boa, mas incompleta" style="margin-bottom:10px;">'+
+        '<label class="f-label">Resumo / avaliação (cole a análise SPIN ou escreva)</label><textarea class="f-input" id="ra-resumo" rows="6" placeholder="Pontos fortes, falhas, próximos passos... ou cole a avaliação completa aqui." style="margin-bottom:14px;resize:vertical;"></textarea>'+
+        '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+          '<button class="btn btn-outline" onclick="document.getElementById(\'modal-reg-aval\').remove()">Cancelar</button>'+
+          '<button class="btn btn-primary" style="background:#10b981;" onclick="salvarAvaliacaoLead(\''+key+'\')"><i class="ti ti-device-floppy"></i> Salvar</button>'+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function salvarAvaliacaoLead(key){
+  var e=kanbanData[key]; if(!e) return;
+  var gv=function(i){var el=document.getElementById(i);return el?el.value:'';};
+  var resumo=(gv('ra-resumo')||'').trim();
+  var notaRaw=gv('ra-nota');
+  if(!resumo && !notaRaw){ alert('Preencha ao menos a nota ou o resumo da avaliação.'); return; }
+  var data=gv('ra-data')||new Date().toISOString().slice(0,10);
+  var id='aval_lead_'+key+'_'+Date.now();
+  var record={ id:id, tipo:'closer',
+    leadKey:key, telefone:(e.telefone||''), lead:(e.nome||''),
+    closerNome:(gv('ra-closer')||''), closerEmail:'',
+    date:data, timestamp:Date.now(),
+    resultado:gv('ra-resultado')||'compareceu',
+    notaFinal:(notaRaw!==''?(parseInt(notaRaw,10)||0):null),
+    classificacao:gv('ra-class')||'', resumo:resumo,
+    segmento:(e.segmento||''), origem:(e.origem||'') };
+  if(typeof _avaliacoes!=='undefined') _avaliacoes[id]=record;
+  try{ if(window.fbDb||initFirebase()) fbDb.ref('avaliacoes/'+id).set(record); }catch(ex){}
+  // espelha um resumo no histórico do lead (linha do tempo)
+  try{
+    var linha='Reunião ('+record.resultado+')'+(record.notaFinal!=null?' · nota '+record.notaFinal+'/100':'')+(record.classificacao?' · '+record.classificacao:'')+(resumo?'\n'+resumo:'');
+    var arr=(e.historico&&Array.isArray(e.historico))?e.historico.slice():(e.historico?Object.keys(e.historico).map(function(k){return e.historico[k];}):[]);
+    arr.push({ts:Date.now(),autor:record.closerNome||'',tipo:'reuniao',texto:linha});
+    e.historico=arr; if(window.fbDb) fbDb.ref('kanban/'+key+'/historico').set(arr);
+  }catch(ex){}
+  var m=document.getElementById('modal-reg-aval'); if(m)m.remove();
+  if(typeof showToast==='function') showToast('✅ Reunião e avaliação salvas no lead.');
   abrirDetalheKanban(key);
 }
 function toggleFavorito(key){
