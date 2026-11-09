@@ -9209,6 +9209,10 @@ async function loadAssinaturas(){
       var marcarAssinadoBtn=(r.status!=='assinado'&&!jaTemVenda)
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarAssinadoManual(\''+id+'\')" title="Assinou fora do sistema (gov.br) \u2014 marcar como assinado e registrar venda"><i class="ti ti-writing-sign"></i> Assinou fora / Marcar venda</button>'
         : '';
+      // Editar contrato pendente (datas/pagamento/valores) e regerar \u2014 s\u00f3 p/ n\u00e3o assinados que t\u00eam os dados salvos
+      var editarBtn=(r.status!=='assinado'&&r.contratoDados)
+        ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.15);color:var(--purple3);border:1px solid rgba(99,102,241,0.35);" onclick="abrirEditarContrato(\''+id+'\')" title="Editar datas de pagamento, valores e regerar o contrato"><i class="ti ti-edit"></i> Editar</button>'
+        : '';
       // Botão "Enviar p/ sistema" — webhook manual; aparece só após venda registrada
       var jaDisparou=r._webhookDisparado===true;
       var webhookBtn=jaTemVenda
@@ -9232,7 +9236,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+editarBtn+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -9250,6 +9254,52 @@ async function apagarAssinatura(id, nomeCliente){
   }catch(e){
     alert('Erro ao apagar: '+e.message);
   }
+}
+
+// ===== Editar contrato pendente (datas/pagamento/valores) e regerar mantendo o mesmo link =====
+async function abrirEditarContrato(id){
+  var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro ao carregar: '+e.message); return; }
+  if(!r||!r.contratoDados){ alert('Esse contrato foi gerado antes dessa atualização e não tem os dados salvos pra reeditar. Gere um novo contrato pra poder editá-lo depois.'); return; }
+  var d=r.contratoDados||{};
+  var ex=document.getElementById('modal-editar-contrato'); if(ex)ex.remove();
+  function v(x){return (x==null?'':String(x));}
+  var html='<div id="modal-editar-contrato" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)this.remove()">'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;">'+
+    '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><div style="font-size:16px;font-weight:700;color:var(--white);">Editar contrato — '+esc(r.cliente||'')+'</div>'+
+      '<button onclick="document.getElementById(\'modal-editar-contrato\').remove();" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;"><i class="ti ti-x"></i></button></div>'+
+    '<div style="padding:20px;">'+
+      '<div style="font-size:12px;color:var(--amber);margin-bottom:14px;">Ao salvar, o contrato é gerado de novo com os novos dados — o mesmo link de assinatura continua valendo. Use só em contratos ainda não assinados.</div>'+
+      '<label class="f-label">Data de início</label><input class="f-input" id="ec-inicio" type="date" value="'+v(d.dataInicio)+'" style="margin-bottom:12px;">'+
+      '<label class="f-label">Duração (meses)</label><input class="f-input" id="ec-duracao" type="number" min="1" value="'+v(d.duracaoMeses)+'" style="margin-bottom:12px;">'+
+      '<label class="f-label">Tipo de valor</label><select class="f-input" id="ec-tipovalor" style="margin-bottom:12px;"><option value="mmr"'+(d.tipoValor==='mmr'?' selected':'')+'>Recorrente (mensal)</option><option value=""'+(d.tipoValor!=='mmr'?' selected':'')+'>Valor total do contrato</option></select>'+
+      '<label class="f-label">Valor total (R$)</label><input class="f-input" id="ec-valortotal" type="number" step="0.01" value="'+v(d.valorTotal)+'" style="margin-bottom:12px;">'+
+      '<label class="f-label">Valor da parcela/mensalidade (R$)</label><input class="f-input" id="ec-valorparcela" type="number" step="0.01" value="'+v(d.valorParcela)+'" style="margin-bottom:12px;">'+
+      '<label class="f-label">Frequência de pagamento</label><select class="f-input" id="ec-freq" style="margin-bottom:12px;">'+['mensal','quinzenal','semanal'].map(function(f){return '<option value="'+f+'"'+(d.frequencia===f?' selected':'')+'>'+f+'</option>';}).join('')+'</select>'+
+      '<label class="f-label">Condição / datas de pagamento (vencimento)</label><textarea class="f-input" id="ec-venc" rows="4" style="margin-bottom:16px;resize:vertical;" placeholder="Ex.: todo dia 10 · ou cole a cláusula de pagamento completa">'+esc(v(d.vencimento))+'</textarea>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+        '<button class="btn btn-outline" onclick="document.getElementById(\'modal-editar-contrato\').remove();">Cancelar</button>'+
+        '<button class="btn btn-primary" style="background:#e1306c;" onclick="salvarEditarContrato(\''+id+'\')"><i class="ti ti-refresh"></i> Salvar e regerar contrato</button>'+
+      '</div>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function salvarEditarContrato(id){
+  var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro: '+e.message); return; }
+  if(!r||!r.contratoDados){ alert('Dados do contrato não encontrados.'); return; }
+  var d=JSON.parse(JSON.stringify(r.contratoDados));
+  var gv=function(i){var e=document.getElementById(i);return e?e.value:'';};
+  d.dataInicio=gv('ec-inicio')||d.dataInicio;
+  d.duracaoMeses=parseInt(gv('ec-duracao'),10)||d.duracaoMeses;
+  d.tipoValor=gv('ec-tipovalor');
+  d.valorTotal=parseFloat(gv('ec-valortotal'))||0;
+  d.valorParcela=parseFloat(gv('ec-valorparcela'))||0;
+  d.frequencia=gv('ec-freq')||d.frequencia;
+  d.vencimento=gv('ec-venc');
+  var m=document.getElementById('modal-editar-contrato'); if(m)m.remove();
+  window._regenAssinaturaId=id; // faz o generateContratoDocx ATUALIZAR este registro (mantém o link) em vez de criar outro
+  try{ await generateContratoDocx(d); }
+  catch(e){ window._regenAssinaturaId=null; alert('Erro ao regerar: '+e.message); return; }
+  if(document.getElementById('assinaturas-body')) loadAssinaturas();
 }
 
 // Auto-sync: registra assinaturas assinadas que ainda não foram marcadas como venda
@@ -10751,7 +10801,9 @@ async function generateContratoDocx(dados){
     if(isGcalConnected()){
       try{
         var pdfUrl=await uploadContratoToDrive(out, nomeArquivo, (dados.assinaturaEmpresa||window._fuAssinaturaEmpresa||''));
-        var ref=await fbPush('assinaturas',{
+        // Guarda os dados completos do contrato (sem a imagem da assinatura) p/ permitir reeditar/regerar contratos pendentes
+        var _contratoDados={}; try{ _contratoDados=JSON.parse(JSON.stringify(dados)); delete _contratoDados.assinaturaEmpresa; }catch(e){ _contratoDados={}; }
+        var _assRec={
           cliente:dados.nomeCliente||'',
           contratoNome:nomeArquivo.replace(/\.docx$/i,''),
           pdfUrl:pdfUrl,
@@ -10759,6 +10811,7 @@ async function generateContratoDocx(dados){
           cnpj:dados.cnpjCliente||'',
           status:'pendente',
           createdAt:Date.now(),
+          contratoDados:_contratoDados,
           vendaData:{
             plano:dados.plano||'',
             duracaoMeses:dados.duracaoMeses||1,
@@ -10774,8 +10827,18 @@ async function generateContratoDocx(dados){
             sdrNome:dados.sdrNome||'',
             origem:dados.origem||''
           }
-        });
-        var signId=ref&&ref.key;
+        };
+        var signId;
+        if(window._regenAssinaturaId){
+          // Regeração de um contrato pendente existente: atualiza o MESMO registro (mantém o link)
+          signId=window._regenAssinaturaId; window._regenAssinaturaId=null;
+          delete _assRec.createdAt; // preserva a data de criação original
+          _assRec.updatedAt=Date.now(); _assRec.regeradoEm=Date.now();
+          await fbDb.ref('assinaturas/'+signId).update(_assRec);
+        } else {
+          var ref=await fbPush('assinaturas',_assRec);
+          signId=ref&&ref.key;
+        }
         if(signId){
           var signLink=signLinkFor(signId);
           // NÃO envia automático — mostra tela de REVISÃO; o envio pro cliente é manual (botão)
