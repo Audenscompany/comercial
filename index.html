@@ -1757,6 +1757,7 @@ function abrirDetalheKanban(key){
         '<button class="btn" style="flex:1;padding:9px;font-size:13px;" onclick="closeModal(\'modal-detalhe-kanban\');abrirAgendarReuniao(\''+key+'\')"><i class="ti ti-calendar-event"></i> Agendar</button>'+
         '<button class="btn" style="flex:1;padding:9px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid var(--border);" onclick="closeModal(\'modal-detalhe-kanban\');abrirEditarLead(\''+key+'\')"><i class="ti ti-edit"></i> Editar</button>'+
       '</div>'+
+      '<button class="btn" style="width:100%;margin-top:8px;padding:9px;font-size:13px;background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);" onclick="abrirCriarGrupo(\''+key+'\')"><i class="ti ti-users-plus"></i> Criar grupo no WhatsApp</button>'+
     '</div></div>';
 
   var old=document.getElementById('modal-detalhe-kanban');
@@ -1909,6 +1910,61 @@ function salvarAvaliacaoLead(key){
   var m=document.getElementById('modal-reg-aval'); if(m)m.remove();
   if(typeof showToast==='function') showToast('✅ Reunião e avaliação salvas no lead.');
   abrirDetalheKanban(key);
+}
+// ===== Criar grupo no WhatsApp (cliente + equipe) =====
+async function abrirCriarGrupo(key){
+  var e=kanbanData[key]; if(!e) return;
+  var contatos={}; try{ contatos=await fbGet('config/contatos_equipe')||{}; }catch(ex){ contatos={}; }
+  var clienteTel=(e.telefone||'').replace(/\D/g,'');
+  var nomeCli=(e.nome||'Cliente');
+  var membrosHTML=Object.keys(contatos).map(function(k){
+    var tel=String(contatos[k]||'').replace(/\D/g,''); if(!tel) return '';
+    var lbl=k.charAt(0).toUpperCase()+k.slice(1);
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--white);padding:5px 0;cursor:pointer;"><input type="checkbox" class="cg-membro" data-tel="'+tel+'" checked style="accent-color:var(--purple3);width:15px;height:15px;"> '+esc(lbl)+' <span style="color:var(--muted);font-size:11px;">'+esc(tel)+'</span></label>';
+  }).join('');
+  if(!membrosHTML) membrosHTML='<div style="font-size:12px;color:var(--amber);">Nenhum contato de equipe salvo em config/contatos_equipe. Você pode adicionar telefones extras abaixo.</div>';
+  var ex=document.getElementById('modal-criar-grupo'); if(ex)ex.remove();
+  var html='<div id="modal-criar-grupo" class="modal-ov active" data-dynamic="1" style="z-index:3300;" onclick="if(event.target===this)this.remove()">'+
+    '<div class="modal-box" style="max-width:460px;max-height:88vh;overflow-y:auto;">'+
+      '<div class="modal-hd"><div class="modal-title"><i class="ti ti-users-plus"></i> Criar grupo no WhatsApp</div><button class="modal-close" onclick="document.getElementById(\'modal-criar-grupo\').remove()"><i class="ti ti-x"></i></button></div>'+
+      '<div style="padding:4px 2px;">'+
+        '<label class="f-label">Nome do grupo</label><input class="f-input" id="cg-nome" value="'+esc('Audens · '+nomeCli)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Cliente</label>'+
+        (clienteTel?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--white);padding:5px 0;margin-bottom:8px;"><input type="checkbox" id="cg-cliente" data-tel="'+clienteTel+'" checked style="accent-color:var(--green);width:15px;height:15px;"> '+esc(nomeCli)+' <span style="color:var(--muted);font-size:11px;">'+esc(clienteTel)+'</span></label>':'<div style="font-size:12px;color:var(--amber);margin-bottom:8px;">Lead sem telefone — adicione nos extras.</div>')+
+        '<label class="f-label">Membros da equipe</label><div style="margin-bottom:10px;">'+membrosHTML+'</div>'+
+        '<label class="f-label">Telefones adicionais (um por linha, com DDD)</label><textarea class="f-input" id="cg-extras" rows="2" placeholder="55119...\n55219..." style="margin-bottom:12px;font-family:monospace;font-size:12px;resize:vertical;"></textarea>'+
+        '<label class="f-label">Mensagem de boas-vindas (opcional)</label><textarea class="f-input" id="cg-msg" rows="3" placeholder="Deixe vazio pra não enviar nada." style="margin-bottom:14px;resize:vertical;">Fala, '+esc((nomeCli||'').split(/\s+/)[0])+'! 🙌 Criamos esse grupo pra alinhar tudo do seu projeto com a Audens. Qualquer coisa é por aqui!</textarea>'+
+        '<div id="cg-st" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>'+
+        '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+          '<button class="btn btn-outline" onclick="document.getElementById(\'modal-criar-grupo\').remove()">Cancelar</button>'+
+          '<button class="btn btn-primary" style="background:#22c55e;color:#063;" onclick="criarGrupoWhats(\''+key+'\')"><i class="ti ti-users-plus"></i> Criar grupo</button>'+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function criarGrupoWhats(key){
+  var st=document.getElementById('cg-st');
+  var nome=((document.getElementById('cg-nome')||{}).value||'').trim();
+  var tels=[];
+  var cli=document.getElementById('cg-cliente'); if(cli&&cli.checked&&cli.getAttribute('data-tel')) tels.push(cli.getAttribute('data-tel'));
+  document.querySelectorAll('.cg-membro').forEach(function(c){ if(c.checked&&c.getAttribute('data-tel')) tels.push(c.getAttribute('data-tel')); });
+  ((document.getElementById('cg-extras')||{}).value||'').split(/[\n,;]+/).forEach(function(t){ var d=t.replace(/\D/g,''); if(d.length>=10) tels.push(d); });
+  tels=tels.filter(function(t,i,a){return t&&a.indexOf(t)===i;});
+  if(tels.length<1){ if(st){st.style.color='var(--red)';st.textContent='Selecione ao menos um participante.';} return; }
+  var msg=((document.getElementById('cg-msg')||{}).value||'').trim();
+  if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Criando grupo…';}
+  try{
+    var r=await fetch(RECEBERLEAD_URL+'/criar-grupo?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome,telefones:tels,mensagem:msg})});
+    var j=await r.json();
+    if(j&&j.ok){
+      if(st){st.style.color='#22c55e';st.innerHTML='✅ Grupo criado com '+(j.membros||tels.length)+' participantes!'+(j.invitationLink?' <a href="'+j.invitationLink+'" target="_blank" style="color:var(--purple3);">link de convite</a>':'');}
+      // registra no histórico do lead
+      try{ var e=kanbanData[key]; if(e){ var arr=(e.historico&&Array.isArray(e.historico))?e.historico.slice():(e.historico?Object.keys(e.historico).map(function(k2){return e.historico[k2];}):[]); arr.push({ts:Date.now(),autor:(typeof CU!=='undefined'&&CU)?(CU.name||''):'',tipo:'obs',texto:'Grupo no WhatsApp criado: '+nome+' ('+tels.length+' participantes)'}); e.historico=arr; if(window.fbDb) fbDb.ref('kanban/'+key+'/historico').set(arr);} }catch(ex){}
+    } else {
+      if(st){st.style.color='var(--red)';st.textContent='Não consegui criar: '+((j&&j.error)||'erro')+'. (Confira se a Z-API está conectada.)';}
+    }
+  }catch(e){ if(st){st.style.color='var(--red)';st.textContent='Erro: '+e.message;} }
 }
 function toggleFavorito(key){
   var e=kanbanData[key]; if(!e) return;
