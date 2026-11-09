@@ -1706,9 +1706,10 @@ function abrirDetalheKanban(key){
       '</div>'+
       // Header
       '<div style="padding:14px 0 6px;">'+
-        '<div style="font-size:18px;font-weight:800;color:var(--white);margin-bottom:4px;">'+
-          esc(_leadDisplayName(Object.assign({_key:key},e)))+
-          (leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;font-size:11px;">'+leadTag.label+'</span>':'')+
+        '<div style="font-size:18px;font-weight:800;color:var(--white);margin-bottom:4px;display:flex;align-items:center;gap:8px;">'+
+          '<button onclick="toggleFavorito(\''+key+'\')" title="'+(e.favorito?'Remover dos favoritos':'Favoritar lead')+'" style="background:none;border:none;cursor:pointer;font-size:20px;line-height:1;color:'+(e.favorito?'#fbbf24':'var(--muted)')+';padding:0;flex-shrink:0;"><i class="ti ti-star'+(e.favorito?'-filled':'')+'"></i></button>'+
+          '<span>'+esc(_leadDisplayName(Object.assign({_key:key},e)))+
+          (leadTag?' <span class="badge '+leadTag.cls+'" style="vertical-align:middle;font-size:11px;">'+leadTag.label+'</span>':'')+'</span>'+
         '</div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">'+
           '<span style="font-size:11px;padding:3px 8px;background:rgba(123,47,255,0.15);border:1px solid rgba(123,47,255,0.3);border-radius:6px;color:var(--purple3);">'+_statusLabel+'</span>'+
@@ -1798,6 +1799,54 @@ function khDelNota(key,ts){
   e.historico=arr;
   try{ if(window.fbDb) fbDb.ref('kanban/'+key+'/historico').set(arr); }catch(ex){}
   abrirDetalheKanban(key);
+}
+function toggleFavorito(key){
+  var e=kanbanData[key]; if(!e) return;
+  e.favorito=!e.favorito; if(e.favorito)e.favoritoAt=Date.now();
+  try{ if(window.fbDb) fbDb.ref('kanban/'+key+'/favorito').set(e.favorito); if(window.fbDb&&e.favorito) fbDb.ref('kanban/'+key+'/favoritoAt').set(e.favoritoAt); }catch(ex){}
+  if(typeof showToast==='function') showToast(e.favorito?'⭐ Adicionado aos favoritos':'Removido dos favoritos');
+  // re-renderiza se o modal de detalhe estiver aberto
+  if(document.getElementById('modal-detalhe-kanban')) abrirDetalheKanban(key);
+  // atualiza a tela de favoritos se estiver nela
+  var area=document.getElementById('content'); if(area&&area.getAttribute('data-page')==='favoritos') area.innerHTML=renderFavoritos();
+}
+function renderFavoritos(){
+  var favs=Object.keys(kanbanData||{}).map(function(k){var e=kanbanData[k];return (e&&e.favorito)?Object.assign({_key:k},e):null;}).filter(Boolean);
+  favs.sort(function(a,b){return (b.favoritoAt||0)-(a.favoritoAt||0);});
+  var H='<div class="page active"><div style="max-width:1000px;margin:0 auto;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:6px;">'+
+      '<div><div style="font-family:var(--font-bn),sans-serif;font-size:26px;color:var(--white);"><i class="ti ti-star-filled" style="color:#fbbf24;"></i> Favoritos</div>'+
+      '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Seus leads marcados pra chamar organicamente, aos poucos. '+favs.length+' lead'+(favs.length===1?'':'s')+'.</div></div>'+
+      '<input id="fav-busca" oninput="_favFiltra()" placeholder="Buscar por nome/telefone/empresa…" style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;color:var(--white);padding:9px 12px;font-size:13px;min-width:240px;">'+
+    '</div>';
+  if(!favs.length){ H+='<div class="empty-st" style="margin-top:30px;"><i class="ti ti-star"></i><p>Nenhum lead favoritado ainda. Abra um lead no Funil e clique na ⭐ pra adicionar aqui.</p></div></div></div>'; return H; }
+  H+='<div id="fav-list" style="display:flex;flex-direction:column;gap:10px;margin-top:16px;">';
+  favs.forEach(function(e){
+    var tel=(e.telefone||'').replace(/\D/g,'');
+    var tag=(typeof getLeadTag==='function')?getLeadTag(e.faturamento):null;
+    var _hist=(e.historico&&(Array.isArray(e.historico)?e.historico:Object.keys(e.historico).map(function(k){return e.historico[k];})))||[];
+    var ultima=_hist.length?_hist.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);})[0]:null;
+    var busca=((e.nome||'')+' '+(e.telefone||'')+' '+(e.empresa||'')).toLowerCase();
+    H+='<div class="fav-card" data-busca="'+esc(busca)+'" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">'+
+      '<div style="min-width:200px;flex:1;cursor:pointer;" onclick="abrirDetalheKanban(\''+e._key+'\')">'+
+        '<div style="font-size:15px;font-weight:700;color:var(--white);">'+esc(e.nome||'(sem nome)')+(tag?' <span class="badge '+tag.cls+'" style="font-size:10px;">'+tag.label+'</span>':'')+'</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-top:3px;">'+(e.empresa?esc(e.empresa)+' · ':'')+(e.telefone?esc(e.telefone):'')+(e.faturamento?' · '+esc(e.faturamento):'')+'</div>'+
+        (ultima?'<div style="font-size:11px;color:var(--silver);margin-top:5px;"><i class="ti ti-history"></i> '+_khLabel(ultima.tipo)+': '+esc(String(ultima.texto||'').slice(0,80))+(String(ultima.texto||'').length>80?'…':'')+'</div>':'<div style="font-size:11px;color:var(--muted);margin-top:5px;">Sem anotações ainda</div>')+
+      '</div>'+
+      '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">'+
+        (tel?'<a href="'+waLink(e.telefone)+'" target="_blank" class="btn" style="padding:7px 12px;font-size:12px;background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);text-decoration:none;"><i class="ti ti-brand-whatsapp"></i> Chamar</a>':'')+
+        '<button class="btn btn-outline" style="padding:7px 12px;font-size:12px;" onclick="abrirDetalheKanban(\''+e._key+'\')"><i class="ti ti-eye"></i> Abrir</button>'+
+        '<button class="btn" style="padding:7px 10px;font-size:12px;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);" onclick="toggleFavorito(\''+e._key+'\')" title="Remover dos favoritos"><i class="ti ti-star-filled"></i></button>'+
+      '</div>'+
+    '</div>';
+  });
+  H+='</div></div></div>';
+  return H;
+}
+function _favFiltra(){
+  var q=((document.getElementById('fav-busca')||{}).value||'').toLowerCase().trim();
+  var cards=document.querySelectorAll('#fav-list .fav-card');
+  cards.forEach(function(c){ var b=c.getAttribute('data-busca')||''; c.style.display=(!q||b.indexOf(q)>=0)?'':'none'; });
 }
 function abrirEditarLead(key){
   var e=kanbanData[key];
@@ -4924,7 +4973,8 @@ function buildNav(){
       {id:'bf-blast',icon:'ti-shopping-bag',label:'Disparo Black Friday'},
       {id:'social-selling',icon:'ti-brand-instagram',label:'Social Selling'},
       {id:'parceiros',icon:'ti-heart-handshake',label:'Parceiros'},
-      {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'}
+      {id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+      {id:'favoritos',icon:'ti-star',label:'Favoritos'}
     ]},
     {id:'busca-ia',icon:'ti-building-store',label:'BDR Inteligente'},
     {group:'Inteligência',icon:'ti-brain',items:[
@@ -5031,6 +5081,7 @@ function buildNav(){
       'sdr-reunioes':{id:'sdr-reunioes',icon:'ti-calendar-check',label:'Todas as Reunioes'},
       'sdr-registrar':{id:'sdr-registrar',icon:'ti-plus',label:'Registrar Reuniao'},
       'kanban':{id:'kanban',icon:'ti-layout-kanban',label:'Funil de Leads'},
+      'favoritos':{id:'favoritos',icon:'ti-star',label:'Favoritos'},
       'reativacao':{id:'reativacao',icon:'ti-rotate-clockwise-2',label:'Reativacao'},
       'desempenho-sdr':{id:'desempenho-sdr',icon:'ti-report-analytics',label:'Desempenho SDR'},
       'financeiro':{id:'financeiro',icon:'ti-report-money',label:'Financeiro'},
@@ -5061,7 +5112,7 @@ function buildNav(){
     var _navGroups=[
       {group:'Reunioes',icon:'ti-calendar-check',items:['reunioes','reunioes-noshow']},
       {group:'Instagram',icon:'ti-brand-instagram',items:['carrossel','carrossel-hist','motivacional','instagram','stories-lab','dicas-rapidas','cal-conteudo']},
-      {group:'SDR',icon:'ti-report-analytics',items:['sdr-hoje','sdr-reunioes','sdr-registrar','kanban','reativacao','desempenho-sdr']},
+      {group:'SDR',icon:'ti-report-analytics',items:['sdr-hoje','sdr-reunioes','sdr-registrar','kanban','favoritos','reativacao','desempenho-sdr']},
       {group:'Inteligência',icon:'ti-brain',items:['audens-command','intel']},
       {group:'Gestão',icon:'ti-adjustments',items:['avaliacoes','config-sdr','cadencia-painel']},
       {group:'Financeiro',icon:'ti-report-money',items:['financeiro','contratos','assinaturas','plano-carreira','asaas']},
@@ -5162,7 +5213,7 @@ function showPage(id){
     bonus:renderBonus,'dash-comercial':renderDashComercial,'metricas':renderMetricas,'analise-ads':renderAnaliseAds,'analise-lp':renderAnaliseLP,'meta-ads':renderMetaAds,'funil-aac':renderFunilAAC,'criativos':renderCriativos,'carrossel':renderCarrossel,'carrossel-hist':renderCarHist,'motivacional':renderMotivacional,'dicas-rapidas':renderDicas,'prospeccao':renderProspeccao,'instagram':renderInstagram,'stories-lab':renderStories,'cal-conteudo':renderContentCalendar,
     calendario:renderCalendario,config:renderConfig,'config-sdr':renderConfigSDR,'cadencia-painel':renderCadenciaPainel,'plano-carreira':renderPlanoCarreira,
     'tarefas-dia':renderTarefasDia,'sdr-hoje':renderSDRHoje,'sdr-reunioes':renderSDRReunioes,'sdr-registrar':renderSDRRegistrar,
-    'reativacao':renderReativacao,'kanban':renderKanban,
+    'reativacao':renderReativacao,'kanban':renderKanban,'favoritos':renderFavoritos,
     'minhas-tarefas':renderMinhasTarefas,'desempenho-sdr':renderDesempenhoSDR,
     'assinaturas':renderAssinaturas,'asaas':renderAsaas,'financeiro':renderFinDashboard,'fin-dashboard':renderFinDashboard,'fin-receitas':renderFinReceitas,'fin-despesas':renderFinDespesas,'fin-lancamentos':renderFinLancamentos,'fin-contas':renderFinContas,
     'contratos':renderContratos,'audens-day':renderAudensDay,
