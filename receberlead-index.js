@@ -114,7 +114,7 @@ function mensagemRaioxHub(nomeCompleto, body) {
     "Dá uma olhada aqui 👉 " + RAIOX_HUB_LINK;
 }
 // Lead ≤ R$40k vindo da LPV3: convite pro Audens Club (no lugar da mentoria).
-const CLUB_ORIGENS = /^lp-v3$/i;   // origens que recebem a msg do Club em vez da mentoria
+const CLUB_ORIGENS = /^lp-(v3|black)$/i;   // LPV3 e LP Black: msg do Club em vez da mentoria
 function mensagemAudensClub(nomeCompleto) {
   var primeiroNome = primeiroNomeDe(nomeCompleto);
   return "Oi " + primeiroNome + "! Aqui é o João, do time da Audens 👊\n" +
@@ -1794,6 +1794,7 @@ async function handleReagendar(req, res) {
     meetLink: (oldMeeting && oldMeeting.meetLink) || "",
     reagendamentos: newCount,
     reagendadoDe: meetingId || "",
+    semAutomacao: !!(oldMeeting && oldMeeting.semAutomacao),
     criadoEm: Date.now()
   };
   try {
@@ -1810,8 +1811,10 @@ async function handleReagendar(req, res) {
     } catch (e) { console.error("handleReagendar: erro ao atualizar kanban:", e); }
   }
 
-  // Envia mensagem de reagendamento para o lead
-  await enviarMensagemWhatsapp(telefone, mensagemReagendamento(nome, meetingDisplay));
+  // Envia mensagem de reagendamento para o lead (pula se a reunião foi agendada sem automação)
+  if (!(oldMeeting && oldMeeting.semAutomacao)) {
+    await enviarMensagemWhatsapp(telefone, mensagemReagendamento(nome, meetingDisplay));
+  }
 
   // Notifica equipe (closer + João)
   const msgEquipe =
@@ -2818,6 +2821,9 @@ async function handleShowupTick(req, res) {
     const nome = m.nome || "";
     const send = async (fn, flag, status, note) => {
       if (dry) { acoes.push({ mid, flag, dry: true }); return; }
+      // Reunião agendada sem automação: não envia NADA pro lead, mas avança o estado
+      // (marca o passo como "enviado") para que os alertas internos pro time sigam normais.
+      if (m.semAutomacao) { await suSetSent(mid, flag); acoes.push({ mid, flag, nome, semAutomacao: true }); return; }
       try { await fn(); } catch (e) { console.error("showup send " + flag + ":", e); }
       await suSetSent(mid, flag); await suLog(mid, status, note); acoes.push({ mid, flag, nome });
     };
@@ -3335,6 +3341,7 @@ async function handleWaInbound(req, res) {
     var text = (body.text && body.text.message) || body.message || "";
     try { var _fr = await friaMarkReply(phone, text); if (_fr) return res.status(200).send("ok"); } catch (e) { console.error("friaMarkReply(inbound):", e); }
     try { var _gr = await grupoMarkReply(phone, text); if (_gr) return res.status(200).send("ok"); } catch (e) { console.error("grupoMarkReply(inbound):", e); }
+    try { await reatBlastMarkReply(phone, text); } catch (e) { console.error("reatBlastMarkReply(inbound):", e); } // marca quem respondeu o Disparo Black (não interrompe a IA)
     await cadHandleInbound(phone, text);
   } catch (e) { console.error("wa-inbound:", e); }
   return res.status(200).send("ok");
@@ -4877,14 +4884,58 @@ async function handleReatBlast(req, res) {
 async function handleReatBlastStats(req, res) {
   if (!checaSecret(req)) return res.status(401).send("Unauthorized");
   var f = (await db.ref("reat_blast_fila").once("value")).val() || {}; var cfg = await reatBlastCfg();
-  var s = { total: 0, r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, pendentes: 0 }; var recebidos = [];
+  var s = { total: 0, r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, impactados: 0, pendentes: 0, responderam: 0 }; var recebidos = []; var responderamList = [];
   Object.keys(f).forEach(function (k) {
     var x = f[k] || {}; var lr = x.lastRound || 0; s.total++;
-    if (lr >= 1) { s.r1++; recebidos.push(String(x.tel || "")); } if (lr >= 2) s.r2++; if (lr >= 3) s.r3++; if (lr >= 4) s.r4++; if (lr >= 5) s.r5++;
+    if (lr >= 1) { s.r1++; s.impactados++; recebidos.push(String(x.tel || "")); } if (lr >= 2) s.r2++; if (lr >= 3) s.r3++; if (lr >= 4) s.r4++; if (lr >= 5) s.r5++;
     if (lr < cfg.round) s.pendentes++;
+    if (x.respondeu) { s.responderam++; responderamList.push({ tel: String(x.tel || ""), nome: String(x.nome || ""), texto: String(x.respostaTexto || ""), at: x.respondeuAt || 0, agendado: x.agendado === true, lastRound: lr }); }
   });
+  responderamList.sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
   var hoje = cadBRT(Date.now()).date; var sentToday = (await db.ref("reat_blast_sent/" + hoje).once("value")).val() || 0;
-  return res.status(200).json({ ok: true, stats: s, enviadosHoje: sentToday, config: cfg, recebidos: recebidos });
+  return res.status(200).json({ ok: true, stats: s, enviadosHoje: sentToday, config: cfg, recebidos: recebidos, responderam: responderamList });
+}
+// Resposta de um contato do Disparo Black → marca "respondeu" na fila + tarefa pro João. Chamado pelo /wa-inbound.
+async function reatBlastMarkReply(phone, text) {
+  try {
+    var tel = String(phone || "").replace(/\D/g, ""); if (tel.length < 10) return false;
+    var cands = [tel]; if (tel.indexOf("55") === 0) cands.push(tel.slice(2)); else cands.push("55" + tel);
+    var found = null, fkey = null;
+    for (var i = 0; i < cands.length; i++) { var k = cands[i].replace(/[.#$\[\]]/g, "_"); var c = (await db.ref("reat_blast_fila/" + k).once("value")).val(); if (c) { found = c; fkey = k; break; } }
+    if (!found) return false;
+    await db.ref("reat_blast_fila/" + fkey).update({ respondeu: true, respondeuAt: Date.now(), respostaTexto: String(text || "").slice(0, 200) });
+    try { await db.ref("sdr_tarefas/" + fkey + "_bf").set({ leadKey: fkey, nome: found.nome || "", telefone: found.tel || tel, empresa: "", tipo: "🖤 Respondeu o Disparo Black — marcar reunião", icon: "ti-calendar-heart", dia: 0, periodo: "manha", dataISO: new Date().toISOString().slice(0, 10), done: false, doneAt: null, createdAt: Date.now() }); } catch (e) {}
+    return true;
+  } catch (e) { console.error("reatBlastMarkReply:", e); return false; }
+}
+// Lista completa da fila do Disparo Black (pra busca/filtro na tela). Protegida por secret.
+async function handleReatBlastList(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var f = (await db.ref("reat_blast_fila").once("value")).val() || {};
+  var out = [];
+  Object.keys(f).forEach(function (k) {
+    var x = f[k] || {};
+    out.push({ tel: String(x.tel || ""), nome: String(x.nome || ""), lastRound: x.lastRound || 0, respondeu: x.respondeu === true, respondeuAt: x.respondeuAt || 0, agendado: x.agendado === true });
+  });
+  return res.status(200).json({ ok: true, total: out.length, lista: out });
+}
+// ===== Criar grupo no WhatsApp (cliente + equipe) via Z-API =====
+async function handleCriarGrupo(req, res) {
+  if (!checaSecret(req)) return res.status(401).send("Unauthorized");
+  var b = req.body || {}; if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN) return res.status(400).json({ ok: false, error: "Z-API não configurada" });
+  var nome = String(b.nome || b.groupName || "").trim() || "Grupo Audens";
+  var tels = Array.isArray(b.telefones) ? b.telefones : (Array.isArray(b.phones) ? b.phones : []);
+  var phones = []; tels.forEach(function (t) { var p = toWhatsappPhone(t); if (p && p.indexOf("@g.us") < 0 && phones.indexOf(p) < 0) phones.push(p); });
+  if (!phones.length) return res.status(400).json({ ok: false, error: "informe ao menos 1 telefone válido" });
+  try {
+    var url = "https://api.z-api.io/instances/" + ZAPI_INSTANCE_ID + "/token/" + ZAPI_TOKEN + "/create-group";
+    var r = await fetch(url, { method: "POST", headers: zapiHeaders(), body: JSON.stringify({ autoInvite: true, groupName: nome, phones: phones }) });
+    var j = await r.json().catch(function () { return {}; });
+    var gid = (j && (j.phone || j.id || j.groupId)) || "";
+    if (b.mensagem && gid) { try { await enviarMensagemWhatsapp(gid, String(b.mensagem)); } catch (e) {} }
+    return res.status(200).json({ ok: !!gid, group: gid, invitationLink: (j && (j.invitationLink || j.invitation_link)) || "", membros: phones.length, zapi: j });
+  } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e) }); }
 }
 // ===== CONTEÚDO DIÁRIO (Instagram) — grava SÓ em /audens/daily/{YYYY-MM-DD} =====
 // Rota protegida por secret. A rotina diária (Claude na nuvem) manda o conteúdo aqui e o
@@ -5500,6 +5551,12 @@ http('receberLead', async (req, res) => {
     }
     if (path === "/reat-blast-stats") {
       return await handleReatBlastStats(req, res);
+    }
+    if (path === "/reat-blast-list") {
+      return await handleReatBlastList(req, res);
+    }
+    if (path === "/criar-grupo") {
+      return await handleCriarGrupo(req, res);
     }
     if (path === "/fria-config") {
       return await handleFriaConfig(req, res);

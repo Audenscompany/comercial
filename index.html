@@ -1442,6 +1442,11 @@ function abrirAgendarReuniao(key){
         '<label class="f-label" style="margin-top:12px;display:block;">E-mail do contato (opcional, convite no Google Agenda)</label>'+
         '<input class="f-input" type="email" id="ar-email" value="'+(e.email||'')+'" placeholder="email@exemplo.com" style="margin-bottom:0;">'+
         (!isGcalConnected()?'<div class="info-note" style="margin-top:12px;"><i class="ti ti-info-circle"></i> Sua agenda do Google nao esta conectada. O evento sera aberto numa nova aba pra voce salvar manualmente.</div>':'')+
+        '<label style="margin-top:16px;display:flex;align-items:flex-start;gap:9px;cursor:pointer;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-soft,rgba(124,58,237,.06));">'+
+          '<input type="checkbox" id="ar-automacao" checked style="width:17px;height:17px;margin-top:1px;cursor:pointer;flex:0 0 auto;">'+
+          '<span><span style="font-weight:600;display:block;">Enviar mensagens automáticas pro lead</span>'+
+          '<span style="color:var(--muted);font-size:12px;">Confirmação na hora + jornada Show-up (vídeo, case, lembretes) por WhatsApp. Desmarque pra agendar sem disparar nada pro lead — os alertas internos pro time continuam normalmente.</span></span>'+
+        '</label>'+
       '</div>'+
       '<div style="padding:0 20px 20px;display:flex;gap:10px;">'+
         '<button class="btn btn-primary" onclick="confirmarAgendamentoReuniao(\''+key+'\')"><i class="ti ti-check"></i> Confirmar</button>'+
@@ -1462,6 +1467,8 @@ async function confirmarAgendamentoReuniao(key){
   try{
   var dt=document.getElementById('ar-date').value, hr=document.getElementById('ar-time').value;
   var email=document.getElementById('ar-email').value.trim();
+  var _autoEl=document.getElementById('ar-automacao');
+  var semAutomacao=_autoEl?!_autoEl.checked:false;
   var respEl=document.getElementById('ar-resp');
   var responsavel=respEl?respEl.value:(CLOSERS&&CLOSERS[0])||'';
   if(!dt||!hr){alert('Preencha a data e o horario da reuniao.');_confirmarAgendamentoBusy=false;return;}
@@ -1474,6 +1481,7 @@ async function confirmarAgendamentoReuniao(key){
   kanbanData[key].meetingISO=meetingISO;
   kanbanData[key].meetingDisplay=meetingDisplay;
   kanbanData[key].responsavel=responsavel;
+  kanbanData[key].semAutomacao=semAutomacao;
   kanbanData[key].lembretes={h2:false,h1:false,m10:false};
   if(!kanbanData[key].cadenciaOrigem){var _tk=_cadTrackDoLead(key);if(_tk)kanbanData[key].cadenciaOrigem=_tk;}
   if(email) kanbanData[key].email=email;
@@ -1485,6 +1493,7 @@ async function confirmarAgendamentoReuniao(key){
       meetingISO:meetingISO,
       meetingDisplay:meetingDisplay,
       responsavel:responsavel,
+      semAutomacao:semAutomacao,
       cadenciaOrigem:(kanbanData[key].cadenciaOrigem||_cadTrackDoLead(key)||null),
       lembretes:{h2:false,h1:false,m10:false},
       email:kanbanData[key].email||''
@@ -1534,7 +1543,8 @@ async function confirmarAgendamentoReuniao(key){
     tarefaOrigem: ultimaTarefaSDR ? ultimaTarefaSDR.tipo : '',
     tarefaOrigemDia: ultimaTarefaSDR ? 'Dia '+ultimaTarefaSDR.dia : '',
     audensDay: !!(kanbanData[key]&&kanbanData[key].audensDay),
-    audensDayResp: (kanbanData[key]&&kanbanData[key].audensDayResp)||''};
+    audensDayResp: (kanbanData[key]&&kanbanData[key].audensDayResp)||'',
+    semAutomacao: semAutomacao};
   meetings[mid]=meetingObj;
   kanbanData[key].meetingId=mid;
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -1581,7 +1591,11 @@ async function confirmarAgendamentoReuniao(key){
   // Agora dispara WA com meetLink — nao bloqueia a UI
   // Leads de follow-up recebem confirmação simples (cliente já conhece a empresa)
   var _isFollowupLead = !!(kanbanData[key]&&(kanbanData[key]._fromFollowup||kanbanData[key].origem==='Follow-up'));
-  enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay, responsavel, meetLinkFinal, false, _isFollowupLead);
+  if(!semAutomacao){
+    enviarConfirmacaoReuniaoWA(kanbanData[key].telefone, kanbanData[key].nome, meetingDisplay, responsavel, meetLinkFinal, false, _isFollowupLead);
+  }else{
+    try{showToast&&showToast('Reunião agendada sem automação pro lead.','ok');}catch(e){}
+  }
   }finally{_confirmarAgendamentoBusy=false;}
 }
 // ===== Editar lead (dados do card do Kanban) =====
