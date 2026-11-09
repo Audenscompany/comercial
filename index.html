@@ -1915,8 +1915,10 @@ function salvarAvaliacaoLead(key){
 async function abrirCriarGrupo(key){
   var e=kanbanData[key]; if(!e) return;
   var contatos={}; try{ contatos=await fbGet('config/contatos_equipe')||{}; }catch(ex){ contatos={}; }
+  var fotoPadrao=''; try{ fotoPadrao=String(await fbGet('config/grupo_foto_url')||''); }catch(ex){}
   var clienteTel=(e.telefone||'').replace(/\D/g,'');
   var nomeCli=(e.nome||'Cliente');
+  var nomeGrupo=((e.empresa||e.nome||'Cliente').trim())+' + Audens Company';
   var membrosHTML=Object.keys(contatos).map(function(k){
     var tel=String(contatos[k]||'').replace(/\D/g,''); if(!tel) return '';
     var lbl=k.charAt(0).toUpperCase()+k.slice(1);
@@ -1928,7 +1930,8 @@ async function abrirCriarGrupo(key){
     '<div class="modal-box" style="max-width:460px;max-height:88vh;overflow-y:auto;">'+
       '<div class="modal-hd"><div class="modal-title"><i class="ti ti-users-plus"></i> Criar grupo no WhatsApp</div><button class="modal-close" onclick="document.getElementById(\'modal-criar-grupo\').remove()"><i class="ti ti-x"></i></button></div>'+
       '<div style="padding:4px 2px;">'+
-        '<label class="f-label">Nome do grupo</label><input class="f-input" id="cg-nome" value="'+esc('Audens · '+nomeCli)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Nome do grupo</label><input class="f-input" id="cg-nome" value="'+esc(nomeGrupo)+'" style="margin-bottom:12px;">'+
+        '<label class="f-label">Foto do grupo (URL do logo) <span style="color:var(--muted);font-weight:400;">— opcional, fica salvo como padrão</span></label><input class="f-input" id="cg-foto" value="'+esc(fotoPadrao||'https://audenscompany.github.io/comercial/assets/audens-logo.png')+'" placeholder="https://..." style="margin-bottom:12px;font-size:12px;">'+
         '<label class="f-label">Cliente</label>'+
         (clienteTel?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--white);padding:5px 0;margin-bottom:8px;"><input type="checkbox" id="cg-cliente" data-tel="'+clienteTel+'" checked style="accent-color:var(--green);width:15px;height:15px;"> '+esc(nomeCli)+' <span style="color:var(--muted);font-size:11px;">'+esc(clienteTel)+'</span></label>':'<div style="font-size:12px;color:var(--amber);margin-bottom:8px;">Lead sem telefone — adicione nos extras.</div>')+
         '<label class="f-label">Membros da equipe</label><div style="margin-bottom:10px;">'+membrosHTML+'</div>'+
@@ -1953,9 +1956,10 @@ async function criarGrupoWhats(key){
   tels=tels.filter(function(t,i,a){return t&&a.indexOf(t)===i;});
   if(tels.length<1){ if(st){st.style.color='var(--red)';st.textContent='Selecione ao menos um participante.';} return; }
   var msg=((document.getElementById('cg-msg')||{}).value||'').trim();
+  var foto=((document.getElementById('cg-foto')||{}).value||'').trim();
   if(st){st.style.color='var(--muted)';st.innerHTML='<i class="ti ti-loader"></i> Criando grupo…';}
   try{
-    var r=await fetch(RECEBERLEAD_URL+'/criar-grupo?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome,telefones:tels,mensagem:msg})});
+    var r=await fetch(RECEBERLEAD_URL+'/criar-grupo?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome,telefones:tels,mensagem:msg,fotoUrl:foto})});
     var j=await r.json();
     if(j&&j.ok){
       if(st){st.style.color='#22c55e';st.innerHTML='✅ Grupo criado com '+(j.membros||tels.length)+' participantes!'+(j.invitationLink?' <a href="'+j.invitationLink+'" target="_blank" style="color:var(--purple3);">link de convite</a>':'');}
