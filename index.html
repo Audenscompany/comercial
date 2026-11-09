@@ -9210,7 +9210,7 @@ async function loadAssinaturas(){
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarAssinadoManual(\''+id+'\')" title="Assinou fora do sistema (gov.br) \u2014 marcar como assinado e registrar venda"><i class="ti ti-writing-sign"></i> Assinou fora / Marcar venda</button>'
         : '';
       // Editar contrato pendente (datas/pagamento/valores) e regerar \u2014 s\u00f3 p/ n\u00e3o assinados que t\u00eam os dados salvos
-      var editarBtn=(r.status!=='assinado'&&r.contratoDados)
+      var editarBtn=(r.status!=='assinado'&&(r.contratoDados||r.vendaData))
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.15);color:var(--purple3);border:1px solid rgba(99,102,241,0.35);" onclick="abrirEditarContrato(\''+id+'\')" title="Editar datas de pagamento, valores e regerar o contrato"><i class="ti ti-edit"></i> Editar</button>'
         : '';
       // Botão "Enviar p/ sistema" — webhook manual; aparece só após venda registrada
@@ -9259,8 +9259,14 @@ async function apagarAssinatura(id, nomeCliente){
 // ===== Editar contrato pendente (datas/pagamento/valores) e regerar mantendo o mesmo link =====
 async function abrirEditarContrato(id){
   var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro ao carregar: '+e.message); return; }
-  if(!r||!r.contratoDados){ alert('Esse contrato foi gerado antes dessa atualização e não tem os dados salvos pra reeditar. Gere um novo contrato pra poder editá-lo depois.'); return; }
-  var d=r.contratoDados||{};
+  if(!r){ alert('Contrato não encontrado.'); return; }
+  var d=r.contratoDados;
+  var _reconstruido=false;
+  if(!d){ // contrato antigo: reconstrói os dados a partir do que está salvo (vendaData + topo)
+    _reconstruido=true; var vd=r.vendaData||{}; var cm=r.comercial||{};
+    var _doc=String(r.cnpj||vd.cnpj||'').replace(/\D/g,'');
+    d={nomeCliente:r.cliente||'',cnpjCliente:r.cnpj||vd.cnpj||'',telefone:r.telefone||'',plano:vd.plano||'',duracaoMeses:vd.duracaoMeses||1,dataInicio:vd.dataInicio||'',tipoValor:vd.tipoValor||'',valorTotal:vd.valorTotal||0,valorParcela:vd.valorParcela||vd.mensalidade||0,vencimento:'',frequencia:'mensal',docTipo:(_doc.length===11?'cpf':'cnpj'),closer:cm.closer||'',sdrNome:cm.sdrNome||'',origem:cm.origem||''};
+  }
   var ex=document.getElementById('modal-editar-contrato'); if(ex)ex.remove();
   function v(x){return (x==null?'':String(x));}
   var html='<div id="modal-editar-contrato" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)this.remove()">'+
@@ -9269,6 +9275,10 @@ async function abrirEditarContrato(id){
       '<button onclick="document.getElementById(\'modal-editar-contrato\').remove();" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;"><i class="ti ti-x"></i></button></div>'+
     '<div style="padding:20px;">'+
       '<div style="font-size:12px;color:var(--amber);margin-bottom:14px;">Ao salvar, o contrato é gerado de novo com os novos dados — o mesmo link de assinatura continua valendo. Use só em contratos ainda não assinados.</div>'+
+      (_reconstruido?'<div style="font-size:12px;color:var(--purple3);background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:8px;padding:10px 12px;margin-bottom:14px;">⚠️ Contrato antigo: recuperei os dados que estavam salvos (cliente, plano, valores, datas). Confira tudo e preencha o vencimento antes de regerar.</div>':'')+
+      '<label class="f-label">Plano</label><select class="f-input" id="ec-plano" style="margin-bottom:12px;">'+
+        ['starter','marketplaces','premium','premium-black','elite'].map(function(p){var lbl={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium','premium-black':'Premium Black Friday 🖤',elite:'Elite'}[p];return '<option value="'+p+'"'+(((d.plano||'').toLowerCase()===p)?' selected':'')+'>'+lbl+'</option>';}).join('')+
+      '</select>'+
       '<label class="f-label">Data de início</label><input class="f-input" id="ec-inicio" type="date" value="'+v(d.dataInicio)+'" style="margin-bottom:12px;">'+
       '<label class="f-label">Duração (meses)</label><input class="f-input" id="ec-duracao" type="number" min="1" value="'+v(d.duracaoMeses)+'" style="margin-bottom:12px;">'+
       '<label class="f-label">Tipo de valor</label><select class="f-input" id="ec-tipovalor" style="margin-bottom:12px;"><option value="mmr"'+(d.tipoValor==='mmr'?' selected':'')+'>Recorrente (mensal)</option><option value=""'+(d.tipoValor!=='mmr'?' selected':'')+'>Valor total do contrato</option></select>'+
@@ -9285,9 +9295,13 @@ async function abrirEditarContrato(id){
 }
 async function salvarEditarContrato(id){
   var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro: '+e.message); return; }
-  if(!r||!r.contratoDados){ alert('Dados do contrato não encontrados.'); return; }
-  var d=JSON.parse(JSON.stringify(r.contratoDados));
+  if(!r){ alert('Contrato não encontrado.'); return; }
+  var d;
+  if(r.contratoDados){ d=JSON.parse(JSON.stringify(r.contratoDados)); }
+  else { var vd=r.vendaData||{}; var cm=r.comercial||{}; var _doc=String(r.cnpj||vd.cnpj||'').replace(/\D/g,'');
+    d={nomeCliente:r.cliente||'',cnpjCliente:r.cnpj||vd.cnpj||'',telefone:r.telefone||'',plano:vd.plano||'',duracaoMeses:vd.duracaoMeses||1,dataInicio:vd.dataInicio||'',tipoValor:vd.tipoValor||'',valorTotal:vd.valorTotal||0,valorParcela:vd.valorParcela||vd.mensalidade||0,vencimento:'',frequencia:'mensal',docTipo:(_doc.length===11?'cpf':'cnpj'),closer:cm.closer||'',sdrNome:cm.sdrNome||'',origem:cm.origem||''}; }
   var gv=function(i){var e=document.getElementById(i);return e?e.value:'';};
+  if(gv('ec-plano'))d.plano=gv('ec-plano');
   d.dataInicio=gv('ec-inicio')||d.dataInicio;
   d.duracaoMeses=parseInt(gv('ec-duracao'),10)||d.duracaoMeses;
   d.tipoValor=gv('ec-tipovalor');
