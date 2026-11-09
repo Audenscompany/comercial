@@ -6910,13 +6910,19 @@ async function confirmarAssinatura(id){
           entregaveis:(typeof _planoEntregaveis==='function'?_planoEntregaveis(planoRaw):[])},
         comercial:{closer:com.closer||'',sdr_nome:com.sdrNome||'',origem:com.origem||''}
       };
-      var wHeaders={'Content-Type':'application/json'};
-      if(cfg.secret) wHeaders['Authorization']='Bearer '+cfg.secret;
-      await fetch(cfg.url,{method:'POST',headers:wHeaders,body:JSON.stringify(wPayload)});
-      // Marca no Firebase que o webhook foi disparado
-      if(fbDb||initFirebase()) fbDb.ref('assinaturas/'+id).update({_webhookDisparado:true,_webhookTs:Date.now()});
+      // Envia pelo SERVIDOR (proxy /cockpit-venda) — do navegador do cliente o POST direto no Hub
+      // falha por CORS/rede. O proxy roda no Cloud Run e repassa server-side (sem CORS).
+      var _pr=await fetch(RECEBERLEAD_URL+'/cockpit-venda?secret='+WEBHOOK_SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:cfg.url,secret:cfg.secret||'',payload:wPayload})});
+      var _pj=await _pr.json().catch(function(){return{};});
+      if(_pj&&_pj.ok){
+        if(fbDb||initFirebase()) fbDb.ref('assinaturas/'+id).update({_webhookDisparado:true,_webhookTs:Date.now(),_webhookErro:null});
+      }else{
+        // não conseguiu — deixa _webhookDisparado=false (botão "Enviar p/ sistema" continua aparecendo no CRM) e registra o erro
+        if(fbDb||initFirebase()) fbDb.ref('assinaturas/'+id).update({_webhookErro:(_pj&&(_pj.error||('HTTP '+(_pj.status||'?'))))||'falha',_webhookErroTs:Date.now()});
+      }
     }catch(e){
-      console.warn('[Cockpit webhook] falhou silenciosamente:',e.message);
+      console.warn('[Cockpit webhook] falhou:',e.message);
+      try{ if(fbDb||initFirebase()) fbDb.ref('assinaturas/'+id).update({_webhookErro:String(e.message||e),_webhookErroTs:Date.now()}); }catch(ex){}
     }
   })();
 }
