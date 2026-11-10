@@ -30958,6 +30958,7 @@ function abrirEditarVenda(fid){
         '<div><label class="f-label">Plano</label><select class="f-input" id="ev-plano" onchange="evOnPlanoChange()">'+
           '<option value="starter"'+(fu.plano==='starter'?' selected':'')+'>Starter</option>'+
           '<option value="premium"'+(fu.plano==='premium'?' selected':'')+'>Premium</option>'+
+          '<option value="premium-black"'+(fu.plano==='premium-black'?' selected':'')+'>Premium Black Friday 🖤</option>'+
           '<option value="elite"'+(fu.plano==='elite'?' selected':'')+'>Elite</option>'+
           '<option value="plano3"'+(fu.plano==='plano3'?' selected':'')+'>Plano 3</option>'+
         '</select></div>'+
@@ -31023,7 +31024,7 @@ function fecharEditarVenda(){
 }
 async function salvarEdicaoVenda(){
   var fid=_editVendaFid;if(!fid)return;
-  var fu=followups[fid];if(!fu)return;
+  var fu=_vendaFu(fid);if(!fu){alert('Venda não encontrada.');return;}
   var cliente=(document.getElementById('ev-cliente').value||'').trim();
   var closer=document.getElementById('ev-closer').value;
   var plano=document.getElementById('ev-plano').value;
