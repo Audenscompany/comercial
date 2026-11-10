@@ -30731,7 +30731,7 @@ function toggleVendasMenu(id){
 document.addEventListener('click',function(e){if(!e.target.closest||!e.target.closest('[id^="menu-"]')&&!e.target.textContent.includes('•••'))document.querySelectorAll('[id^="menu-"]').forEach(function(m){m.style.display='none';});});
 
 function _showVendaDetalhe(fid){
-  var fu=followups[fid];if(!fu){return;}
+  var fu=_vendaFu(fid);if(!fu){return;}
   var m=meetings[fu.meetingId]||meetings[fid]||null;
   var cliente=(typeof _empresaCliente==='function')?_empresaCliente(fu,m):(fu.nome||(m&&m.nome)||'Cliente');
   var closer=(m&&m.responsavel)||fu.closer||fu.responsavel||'—';
@@ -30771,7 +30771,7 @@ function _showVendaDetalhe(fid){
   document.body.insertAdjacentHTML('beforeend',html);
 }
 function alterarStatusVenda(fid){
-  var fu=followups[fid];if(!fu)return;
+  var fu=_vendaFu(fid);if(!fu){alert('Venda não encontrada.');return;}
   var statusConfig={ativa:'Ativa',aguardando:'Aguardando início',implantacao:'Implantação',pagamento_pendente:'Pagamento pendente',cancelada:'Cancelada',renovacao_proxima:'Renovação próxima'};
   var opts=Object.keys(statusConfig).map(function(k){return'<option value="'+k+'"'+(fu.statusVenda===k?' selected':'')+'>'+statusConfig[k]+'</option>';}).join('');
   var cur=fu.statusVenda||'ativa';
@@ -30893,8 +30893,22 @@ function _vKpi(icon,label,val,color){
 
 // ── Editar Venda ──────────────────────────────────────────────
 var _editVendaFid=null;
+// Recupera a venda mesmo se o followups em memória foi atualizado pelo Firebase
+// (vendas sintéticas de contratos assinados somem do followups mas ficam no cache).
+function _vendaFu(fid){
+  if(followups[fid]) return followups[fid];
+  try{
+    var srcs=[window._vendasDataCache,(window._vendasPageData&&window._vendasPageData.vendas)];
+    for(var s=0;s<srcs.length;s++){ var c=srcs[s]||[]; for(var i=0;i<c.length;i++){ if(c[i]&&c[i].fid===fid){
+      followups[fid]=c[i].fu;
+      if(c[i].m){ if(!meetings[fid])meetings[fid]=c[i].m; if(c[i].fu&&c[i].fu.meetingId&&!meetings[c[i].fu.meetingId])meetings[c[i].fu.meetingId]=c[i].m; }
+      return c[i].fu;
+    } } }
+  }catch(e){}
+  return null;
+}
 function abrirEditarVenda(fid){
-  var fu=followups[fid];if(!fu){alert('Venda não encontrada.');return;}
+  var fu=_vendaFu(fid);if(!fu){alert('Venda não encontrada.');return;}
   _editVendaFid=fid;
   var m=meetings[fu.meetingId]||meetings[fid];
   var _curCloser=(m&&m.responsavel)||fu.closer||fu.responsavel||'';
