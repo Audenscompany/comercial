@@ -10548,6 +10548,10 @@ function fuToggleSegLoja(){
 }
 // Seletor de duração: Mensal (1) / Trimestral (3) / Semestral (6) — vale para todos os planos
 function _fuDuracaoSelect(cur){
+  var _plano=(document.getElementById('fu-plano')||{}).value||'';
+  if(_plano==='starter'){
+    return '<label class="f-label">Duração <span style="font-size:10px;color:var(--muted);font-weight:400;">— Starter = 45 dias fixo</span></label><input class="f-input" type="number" id="fu-duracao" value="45" readonly style="margin-bottom:12px;opacity:0.65;cursor:default;">';
+  }
   cur=String(cur||'6');
   function o(v,l){return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+l+'</option>';}
   return '<label class="f-label">Duração</label><select class="f-input" id="fu-duracao" style="margin-bottom:12px;" onchange="updateBonusPreview()">'+o('1','Mensal')+o('3','Trimestral')+o('6','Semestral')+o('12','Anual (12 meses)')+'</select>';
@@ -11225,6 +11229,7 @@ function saveFollowup(){
   var _fuAssinaturaEmpresa=(window._fuSigHas&&document.getElementById('fu-sig-canvas'))?document.getElementById('fu-sig-canvas').toDataURL('image/png'):'';
   window._fuAssinaturaEmpresa=_fuAssinaturaEmpresa;
   var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
+  if(venda&&plano==='starter')duracao=45; // Starter = sempre 45 dias
   var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
   var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
@@ -11483,6 +11488,7 @@ function saveFollowupEdit(){
   var _fuAssinaturaEmpresa=(window._fuSigHas&&document.getElementById('fu-sig-canvas'))?document.getElementById('fu-sig-canvas').toDataURL('image/png'):'';
   window._fuAssinaturaEmpresa=_fuAssinaturaEmpresa;
   var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
+  if(venda&&plano==='starter')duracao=45; // Starter = sempre 45 dias
   var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
   var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
