@@ -30062,9 +30062,10 @@ function renderVendas(){
         mensalidade:mensBase,dt:dtBR,_fromContrato:aid,_assinaturaSync:true};
       followups[synId]=synFu;
       var origemRaw=(r.comercial&&r.comercial.origem)||'';
+      // Só bloqueia se ESTA assinatura foi excluída individualmente (_vendaExcluida).
+      // A trava ampla por telefone+nome (sig) não se aplica a contrato novo — senão,
+      // apagar um contrato errado bloqueia pra sempre qualquer venda futura do mesmo cliente.
       if(r._vendaExcluida)return;
-      var _sgA=_vendaSig(synFu,synMeeting);
-      if(_sgA&&_vendasExcluidasSig&&_vendasExcluidasSig[_sgA])return;
       todasVendas.push({fu:synFu,m:synMeeting,fid:synId,origemRaw:origemRaw,origemCat:categorizeOrigem(origemRaw)});
       // Persiste no Firebase em background
       saveFollowupFB(synId,synFu);
