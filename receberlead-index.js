@@ -4928,13 +4928,35 @@ async function handleCriarGrupo(req, res) {
   var tels = Array.isArray(b.telefones) ? b.telefones : (Array.isArray(b.phones) ? b.phones : []);
   var phones = []; tels.forEach(function (t) { var p = toWhatsappPhone(t); if (p && p.indexOf("@g.us") < 0 && phones.indexOf(p) < 0) phones.push(p); });
   if (!phones.length) return res.status(400).json({ ok: false, error: "informe ao menos 1 telefone válido" });
+  // autoInvite: quando true, quem não puder ser adicionado direto (privacidade) recebe o link.
+  // Quando false, só adiciona direto quem tiver a opção liberada — ninguém é convidado.
+  var autoInvite = (b.autoInvite === false || b.autoInvite === "false") ? false : true;
+  // Foto do grupo: usa a enviada, senão o padrão salvo, senão o logo hospedado.
+  var fotoUrl = String(b.fotoUrl || "").trim();
+  if (!fotoUrl) { try { fotoUrl = String((await db.ref("config/grupo_foto_url").once("value")).val() || ""); } catch (e) {} }
+  if (!fotoUrl) fotoUrl = "https://audenscompany.github.io/comercial/assets/audens-logo.png";
   try {
     var url = "https://api.z-api.io/instances/" + ZAPI_INSTANCE_ID + "/token/" + ZAPI_TOKEN + "/create-group";
-    var r = await fetch(url, { method: "POST", headers: zapiHeaders(), body: JSON.stringify({ autoInvite: true, groupName: nome, phones: phones }) });
+    var r = await fetch(url, { method: "POST", headers: zapiHeaders(), body: JSON.stringify({ autoInvite: autoInvite, groupName: nome, phones: phones }) });
     var j = await r.json().catch(function () { return {}; });
     var gid = (j && (j.phone || j.id || j.groupId)) || "";
-    if (b.mensagem && gid) { try { await enviarMensagemWhatsapp(gid, String(b.mensagem)); } catch (e) {} }
-    return res.status(200).json({ ok: !!gid, group: gid, invitationLink: (j && (j.invitationLink || j.invitation_link)) || "", membros: phones.length, zapi: j });
+    var fotoOk = false, msgOk = false;
+    if (gid) {
+      // Dá um tempo pro grupo "assentar" antes de setar foto e mandar a saudação (senão a Z-API falha).
+      await new Promise(function (ok) { setTimeout(ok, 3500); });
+      if (fotoUrl) {
+        try {
+          var pr = await fetch("https://api.z-api.io/instances/" + ZAPI_INSTANCE_ID + "/token/" + ZAPI_TOKEN + "/update-group-photo",
+            { method: "POST", headers: zapiHeaders(), body: JSON.stringify({ phone: gid, groupId: gid, value: fotoUrl }) });
+          var pj = await pr.json().catch(function () { return {}; }); fotoOk = !(pj && pj.error);
+          if (b.fotoUrl) { try { await db.ref("config/grupo_foto_url").set(fotoUrl); } catch (e) {} }
+        } catch (e) {}
+      }
+      if (b.mensagem) {
+        try { await enviarMensagemWhatsapp(gid, String(b.mensagem)); msgOk = true; } catch (e) {}
+      }
+    }
+    return res.status(200).json({ ok: !!gid, group: gid, invitationLink: (j && (j.invitationLink || j.invitation_link)) || "", membros: phones.length, fotoOk: fotoOk, msgOk: msgOk, autoInvite: autoInvite, zapi: j });
   } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e) }); }
 }
 // ===== CONTEÚDO DIÁRIO (Instagram) — grava SÓ em /audens/daily/{YYYY-MM-DD} =====
