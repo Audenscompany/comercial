@@ -30199,9 +30199,6 @@ function renderVendas(){
   // CAC — contagem de vendas de tráfego (síncrona) + período pra buscar o investimento na Meta
   var _cacTrafCount=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).length;
   var _cacTotalCount=vendas.length;
-  // Base por VALOR da venda: TCV = contrato total, MRR = 1ª mensalidade (= _mrrV)
-  var _cacTotalValor=vendas.reduce(function(s,v){return s+(_mrrV(v.fu)||0);},0);
-  var _cacTrafValor=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).reduce(function(s,v){return s+(_mrrV(v.fu)||0);},0);
   // Novos clientes x Renovações (renovação = fu.tipoVenda==='renovacao'; o resto é novo)
   var _renovCount=vendas.filter(function(v){return v.fu&&v.fu.tipoVenda==='renovacao';}).length;
   var _novoCount=vendas.length-_renovCount;
@@ -30345,8 +30342,8 @@ function renderVendas(){
   var cacPanel='<div style="margin-bottom:6px;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);">Custo de Aquisição de Cliente (CAC) <span style="color:var(--purple3);font-size:10px;letter-spacing:1px;">· '+mesLabel+'</span></div>'+
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">'+
       _cacCard('wallet','Investimento em tráfego','cac-invest','Gasto com anúncios (Meta) no período','#60a5fa')+
-      _cacCard('users-group','CAC Geral','cac-geral','÷ '+fmtV(_cacTotalValor)+' em vendas (TCV total · MRR 1ª mens.)','#4ade80')+
-      _cacCard('target','CAC de Tráfego','cac-traf','÷ '+fmtV(_cacTrafValor)+' em vendas de tráfego','#a78bfa')+
+      _cacCard('users-group','CAC Geral','cac-geral','÷ '+_cacTotalCount+' venda'+(_cacTotalCount===1?'':'s')+' (todas as origens)','#4ade80')+
+      _cacCard('target','CAC de Tráfego','cac-traf','÷ '+_cacTrafCount+' venda'+(_cacTrafCount===1?'':'s')+' de tráfego','#a78bfa')+
     '</div>';
 
   // Meta comercial panel
@@ -30515,19 +30512,17 @@ function renderVendas(){
   setTimeout(function(){
     _renderVendasTabela();
     _initVendasChart(dailyLabels,cumulativeData,metaDaily,meta);
-    _vendasFillCAC(_cacPer,_cacSince,_cacUntil,_cacTotalValor,_cacTrafValor);
+    _vendasFillCAC(_cacPer,_cacSince,_cacUntil,_cacTotalCount,_cacTrafCount);
   },50);
 
   return html;
 }
 
-// Preenche os cards de CAC: investimento de tráfego (Meta) ÷ VALOR das vendas
-// (TCV = contrato total, MRR = 1ª mensalidade). Mostra como % do valor gerado.
-async function _vendasFillCAC(period,since,until,totalValor,trafValor){
+// Preenche os cards de CAC: busca o investimento de tráfego na Meta e divide pelos clientes
+async function _vendasFillCAC(period,since,until,totalCount,trafCount){
   var invEl=document.getElementById('cac-invest'),gEl=document.getElementById('cac-geral'),tEl=document.getElementById('cac-traf');
   if(!invEl&&!gEl&&!tEl)return;
   function money(n){if(n==null)return '—';var neg=n<0;n=Math.abs(Math.round(n));var s='R$ '+n.toLocaleString('pt-BR');return neg?('-'+s):s;}
-  function pct(spend,valor){if(!valor||valor<=0)return '—';var p=(spend/valor)*100;return (p>=10?Math.round(p):p.toFixed(1).replace('.',','))+'%';}
   var spend=null;
   try{ if(typeof fetchMetaSpend==='function') spend=await fetchMetaSpend(period,since,until); }catch(e){spend=null;}
   if(spend==null){
@@ -30539,13 +30534,11 @@ async function _vendasFillCAC(period,since,until,totalValor,trafValor){
     return;
   }
   if(invEl)invEl.textContent=money(spend);
-  if(gEl)gEl.textContent=pct(spend,totalValor);
-  if(tEl)tEl.textContent=pct(spend,trafValor);
+  if(gEl)gEl.textContent=totalCount>0?money(spend/totalCount):'—';
+  if(tEl)tEl.textContent=trafCount>0?money(spend/trafCount):'—';
   var sg=document.getElementById('cac-geral-sub'),st=document.getElementById('cac-traf-sub');
-  if(gEl&&totalValor>0)gEl.title=money(spend)+' ÷ '+money(totalValor)+' em vendas';
-  if(tEl&&trafValor>0)tEl.title=money(spend)+' ÷ '+money(trafValor)+' em vendas de tráfego';
-  if(totalValor<=0&&sg)sg.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas no período</span>';
-  if(trafValor<=0&&st)st.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas de tráfego no período</span>';
+  if(totalCount<=0&&sg)sg.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas no período</span>';
+  if(trafCount<=0&&st)st.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas de tráfego no período</span>';
 }
 
 function _empresaCliente(fu,m){
