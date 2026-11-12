@@ -30199,6 +30199,10 @@ function renderVendas(){
   // CAC — contagem de vendas de tráfego (síncrona) + período pra buscar o investimento na Meta
   var _cacTrafCount=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).length;
   var _cacTotalCount=vendas.length;
+  // Valor das vendas p/ ROAS e ticket médio: TCV = contrato total, MRR = mensalidade (= _mrrV)
+  var _cacTotalValor=vendas.reduce(function(s,v){return s+(_mrrV(v.fu)||0);},0);
+  var _cacTrafValor=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).reduce(function(s,v){return s+(_mrrV(v.fu)||0);},0);
+  var _ticketMedio=_cacTotalCount>0?_cacTotalValor/_cacTotalCount:0;
   // Novos clientes x Renovações (renovação = fu.tipoVenda==='renovacao'; o resto é novo)
   var _renovCount=vendas.filter(function(v){return v.fu&&v.fu.tipoVenda==='renovacao';}).length;
   var _novoCount=vendas.length-_renovCount;
@@ -30344,7 +30348,12 @@ function renderVendas(){
       _cacCard('wallet','Investimento em tráfego','cac-invest','Gasto com anúncios (Meta) no período','#60a5fa')+
       _cacCard('users-group','CAC Geral','cac-geral','÷ '+_cacTotalCount+' venda'+(_cacTotalCount===1?'':'s')+' (todas as origens)','#4ade80')+
       _cacCard('target','CAC de Tráfego','cac-traf','÷ '+_cacTrafCount+' venda'+(_cacTrafCount===1?'':'s')+' de tráfego','#a78bfa')+
+      _cacCard('trending-up','ROAS Geral','cac-roas-geral',fmtV(_cacTotalValor)+' vendidos ÷ investimento','#34d399')+
+      _cacCard('rocket','ROAS Tráfego','cac-roas-traf',fmtV(_cacTrafValor)+' de tráfego ÷ investimento','#f472b6')+
+      _cacCard('receipt','Ticket médio','cac-ticket',(_cacTotalValor>0?fmtV(_cacTotalValor)+' ÷ '+_cacTotalCount+' venda'+(_cacTotalCount===1?'':'s'):'—')+' (TCV total · MRR mensal)','#fbbf24')+
     '</div>';
+  // Ticket médio é síncrono (não depende da Meta)
+  setTimeout(function(){var _tk=document.getElementById('cac-ticket');if(_tk)_tk.textContent=_cacTotalCount>0?('R$ '+Math.round(_ticketMedio).toLocaleString('pt-BR')):'—';},0);
 
   // Meta comercial panel
   var pctMetaBar=Math.min(100,pctMeta);
@@ -30512,23 +30521,27 @@ function renderVendas(){
   setTimeout(function(){
     _renderVendasTabela();
     _initVendasChart(dailyLabels,cumulativeData,metaDaily,meta);
-    _vendasFillCAC(_cacPer,_cacSince,_cacUntil,_cacTotalCount,_cacTrafCount);
+    _vendasFillCAC(_cacPer,_cacSince,_cacUntil,_cacTotalCount,_cacTrafCount,_cacTotalValor,_cacTrafValor);
   },50);
 
   return html;
 }
 
-// Preenche os cards de CAC: busca o investimento de tráfego na Meta e divide pelos clientes
-async function _vendasFillCAC(period,since,until,totalCount,trafCount){
+// Preenche os cards: CAC (investimento ÷ nº vendas) e ROAS (valor vendido ÷ investimento)
+async function _vendasFillCAC(period,since,until,totalCount,trafCount,totalValor,trafValor){
   var invEl=document.getElementById('cac-invest'),gEl=document.getElementById('cac-geral'),tEl=document.getElementById('cac-traf');
+  var rgEl=document.getElementById('cac-roas-geral'),rtEl=document.getElementById('cac-roas-traf');
   if(!invEl&&!gEl&&!tEl)return;
   function money(n){if(n==null)return '—';var neg=n<0;n=Math.abs(Math.round(n));var s='R$ '+n.toLocaleString('pt-BR');return neg?('-'+s):s;}
+  function roas(valor,spend){if(!spend||spend<=0||!valor)return '—';return (valor/spend).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x';}
   var spend=null;
   try{ if(typeof fetchMetaSpend==='function') spend=await fetchMetaSpend(period,since,until); }catch(e){spend=null;}
   if(spend==null){
     if(invEl)invEl.textContent='—';
     if(gEl)gEl.textContent='—';
     if(tEl)tEl.textContent='—';
+    if(rgEl)rgEl.textContent='—';
+    if(rtEl)rtEl.textContent='—';
     var sub=document.getElementById('cac-invest-sub');
     if(sub)sub.innerHTML='<span style="color:#fbbf24;">Conecte a Meta Ads (Configurações) pra puxar o investimento.</span>';
     return;
@@ -30536,6 +30549,8 @@ async function _vendasFillCAC(period,since,until,totalCount,trafCount){
   if(invEl)invEl.textContent=money(spend);
   if(gEl)gEl.textContent=totalCount>0?money(spend/totalCount):'—';
   if(tEl)tEl.textContent=trafCount>0?money(spend/trafCount):'—';
+  if(rgEl)rgEl.textContent=roas(totalValor,spend);
+  if(rtEl)rtEl.textContent=roas(trafValor,spend);
   var sg=document.getElementById('cac-geral-sub'),st=document.getElementById('cac-traf-sub');
   if(totalCount<=0&&sg)sg.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas no período</span>';
   if(trafCount<=0&&st)st.innerHTML='<span style="color:rgba(255,255,255,0.35);">Sem vendas de tráfego no período</span>';
