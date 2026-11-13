@@ -530,7 +530,8 @@ function _fatMinSrv(faixa, faturamento){
   if (s.indexOf("milh") !== -1) mn = mn * 1e6; else if (s.indexOf("mil") !== -1 && mn < 1000) mn = mn * 1000;
   return mn;
 }
-function _tagOf(faixa, faturamento){ var fm = _fatMinSrv(faixa, faturamento); return { fm: fm, tag: fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : "Starter") }; }
+// UPSELL: lead de R$20k a R$40k recebe a tag "Upsell" e é tratado como lead de reunião (assessoria), não mentoria/Club.
+function _tagOf(faixa, faturamento){ var fm = _fatMinSrv(faixa, faturamento); return { fm: fm, tag: fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : (fm >= 40000 ? "Starter" : (fm >= 20000 ? "Upsell" : "Starter"))) }; }
 const NOTIF_JOAO_LEAD = (process.env.NOTIF_JOAO_LEAD || "1") !== "0";
 function _gkeyDate(x){ var s=String(x||"").trim(); var m=s.match(/(\d{4})[-\/.](\d{2})[-\/.](\d{2})/); if(m) return m[1]+"-"+m[2]+"-"+m[3]; var m2=s.match(/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/); if(m2) return m2[3]+"-"+m2[2]+"-"+m2[1]; return ""; }
 function _gnum(x){ if(x===null||x===undefined) return 0; var s=String(x).replace(/[^\d.,-]/g,""); if(!s) return 0; var lc=s.lastIndexOf(","), ld=s.lastIndexOf("."); if(lc>-1 && ld>-1){ if(lc>ld){ s=s.replace(/\./g,"").replace(",","."); } else { s=s.replace(/,/g,""); } } else if(lc>-1){ if(/,\d{1,2}$/.test(s)) s=s.replace(",","."); else s=s.replace(/,/g,""); } else if(ld>-1){ if(/\.\d{3}$/.test(s) && !/\.\d{1,2}$/.test(s)) s=s.replace(/\./g,""); } var n=parseFloat(s); return isFinite(n)?n:0; }
@@ -605,8 +606,8 @@ async function runRiscoTick(RISK_H, dry) {
     var dms = new Date(m.dtISO).getTime(); if (isNaN(dms)) continue;
     var hLeft = (dms - now) / 3600000; if (hLeft < 0 || hLeft > RISK_H) continue;
     var fm = Number(m.tag_fatmin || 0) || _fatMinSrv(m.faixa || "", m.faturamentoLead || m.faturamento || "");
-    if (fm < 40000) continue; // só reuniões qualificadas (>=40k)
-    var tag = m.tag || (fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : "Starter"));
+    if (fm < NURT_MIN_FAT) continue; // só reuniões qualificadas (>=20k, inclui Upsell)
+    var tag = m.tag || (fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : (fm >= 40000 ? "Starter" : "Upsell")));
     var su = m.showup || {}; var conf = !!(m.confirmado || m.confirmacao || su.confirmado || su.status === "confirmado"); if (conf) continue;
     lista.push({ nome: m.nome || "", tel: m.tel || "", quando: m.dtDisplay || m.dtISO, tag: tag, closer: m.responsavel || "", faltam_h: Math.round(hLeft) });
     if (!dry) {
@@ -956,6 +957,14 @@ async function handleReceberLead(req, res) {
       }
     }
   }
+
+  // UPSELL (20–40k): garante a tarefa pro João ligar e chamar pra reunião, mesmo com a régua desligada.
+  // Usa a mesma chave da régua (_nurt_call0) — se a régua já criou, não duplica.
+  try {
+    if (!faixaBaixa && _fmEntry >= NURT_MIN_FAT && _fmEntry < 40000) {
+      await nurtCreateTaskOnce(key + "_nurt_call0", leadData, "📞 Ligar — lead UPSELL (20–40k) · " + primeiroNomeDe(nome || "") + " — chamar pra reunião", "ti-phone", nurtPeriodoAgora());
+    }
+  } catch (e) { console.error("upsell task:", e); }
 
   if (isBrowser) {
     return res.redirect(302, _mentoriaLead ? _mentoriaRedir : REDIRECT_OK);
@@ -4442,7 +4451,8 @@ async function campDrainCore() {
 // ligar imediata. Quando o João marca "Liguei" (contatoAt na tarefa), dispara: +5min msg de valor,
 // +1h nova tarefa de ligar, +1h05 tarefa de áudio. Em paralelo: 10 dias de tarefas de ligar
 // (manhã + tarde). As 10 mensagens automáticas (CAD_TEMPLATES) seguem rodando normalmente.
-const NURT_MIN_FAT = 40000;
+// Piso de lead "de reunião": a partir de R$20k (20–40k = Upsell). Abaixo disso vai pra mentoria/Club.
+const NURT_MIN_FAT = 20000;
 async function nurtCfg() {
   try { var v = (await db.ref("config/nurturing").once("value")).val() || {};
     return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), dias: parseInt(v.dias, 10) || 10 }; }
@@ -4471,7 +4481,7 @@ async function nurtStart(leadKey, lead) {
     await db.ref("leads/" + leadKey + "/nurt").set({ status: "active", enteredAt: now, fatMin: fm,
       ligouAt: null, valueSentAt: null, call2Created: false, audioCreated: false, createdAt: now });
     await db.ref("nurt_ativos/" + leadKey).set({ at: now, tel: String(lead.telefone || "").replace(/\D/g, ""), nome: lead.nome || "" });
-    await nurtCreateTaskOnce(leadKey + "_nurt_call0", lead, "📞 Ligar — novo lead qualificado · " + primeiroNomeDe(lead.nome || ""), "ti-phone", nurtPeriodoAgora());
+    await nurtCreateTaskOnce(leadKey + "_nurt_call0", lead, (fm < 40000 ? "📞 Ligar — lead UPSELL (20–40k) · " : "📞 Ligar — novo lead qualificado · ") + primeiroNomeDe(lead.nome || "") + (fm < 40000 ? " — chamar pra reunião" : ""), "ti-phone", nurtPeriodoAgora());
     await db.ref("cadencia_events").push({ type: "nurt_started", leadKey: leadKey, fatMin: fm, at: now });
     return { qualified: true };
   } catch (e) { console.error("nurtStart:", e); return { qualified: false }; }
