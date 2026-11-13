@@ -9501,6 +9501,7 @@ async function loadAssinaturas(){
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="marcarAssinadoManual(\''+id+'\')" title="Assinou fora do sistema (gov.br) \u2014 marcar como assinado e registrar venda"><i class="ti ti-writing-sign"></i> Assinou fora / Marcar venda</button>'
         : '';
       // Editar contrato pendente (datas/pagamento/valores) e regerar \u2014 s\u00f3 p/ n\u00e3o assinados que t\u00eam os dados salvos
+      var rascBtn=r._rascunho?'<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.35);" onclick="gerarPdfRascunho(\''+id+'\',this)" title="Gerar o PDF no Drive e o link de assinatura"><i class="ti ti-file-check"></i> Gerar PDF e link</button>':'';
       var editarBtn=(r.status!=='assinado'&&(r.contratoDados||r.vendaData))
         ? '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(99,102,241,0.15);color:var(--purple3);border:1px solid rgba(99,102,241,0.35);" onclick="abrirEditarContrato(\''+id+'\')" title="Editar datas de pagamento, valores e regerar o contrato"><i class="ti ti-edit"></i> Editar</button>'
         : '';
@@ -9527,7 +9528,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+editarBtn+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+(r._rascunho?'':'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>')+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+rascBtn+editarBtn+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+(r._rascunho?'':'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>')+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -9567,22 +9568,70 @@ async function abrirEditarContrato(id){
     '<div style="padding:20px;">'+
       '<div style="font-size:12px;color:var(--amber);margin-bottom:14px;">Ao salvar, o contrato é gerado de novo com os novos dados — o mesmo link de assinatura continua valendo. Use só em contratos ainda não assinados.</div>'+
       (_reconstruido?'<div style="font-size:12px;color:var(--purple3);background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:8px;padding:10px 12px;margin-bottom:14px;">⚠️ Contrato antigo: recuperei os dados que estavam salvos (cliente, plano, valores, datas). Confira tudo e preencha o vencimento antes de regerar.</div>':'')+
-      '<label class="f-label">Plano</label><select class="f-input" id="ec-plano" style="margin-bottom:12px;">'+
-        ['starter','marketplaces','premium','premium-black','elite'].map(function(p){var lbl={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium','premium-black':'Premium Black Friday 🖤',elite:'Elite'}[p];return '<option value="'+p+'"'+(((d.plano||'').toLowerCase()===p)?' selected':'')+'>'+lbl+'</option>';}).join('')+
-      '</select>'+
-      '<label class="f-label">Data de início</label><input class="f-input" id="ec-inicio" type="date" value="'+v(d.dataInicio)+'" style="margin-bottom:12px;">'+
-      '<label class="f-label">Duração (meses)</label><input class="f-input" id="ec-duracao" type="number" min="1" value="'+v(d.duracaoMeses)+'" style="margin-bottom:12px;">'+
-      '<label class="f-label">Tipo de valor</label><select class="f-input" id="ec-tipovalor" style="margin-bottom:12px;"><option value="mmr"'+(d.tipoValor==='mmr'?' selected':'')+'>Recorrente (mensal)</option><option value=""'+(d.tipoValor!=='mmr'?' selected':'')+'>Valor total do contrato</option></select>'+
-      '<label class="f-label">Valor total (R$)</label><input class="f-input" id="ec-valortotal" type="number" step="0.01" value="'+v(d.valorTotal)+'" style="margin-bottom:12px;">'+
-      '<label class="f-label">Valor da parcela/mensalidade (R$)</label><input class="f-input" id="ec-valorparcela" type="number" step="0.01" value="'+v(d.valorParcela)+'" style="margin-bottom:12px;">'+
-      '<label class="f-label">Frequência de pagamento</label><select class="f-input" id="ec-freq" style="margin-bottom:12px;">'+['mensal','quinzenal','semanal'].map(function(f){return '<option value="'+f+'"'+(d.frequencia===f?' selected':'')+'>'+f+'</option>';}).join('')+'</select>'+
-      '<label class="f-label">Condição / datas de pagamento (vencimento)</label><textarea class="f-input" id="ec-venc" rows="4" style="margin-bottom:16px;resize:vertical;" placeholder="Ex.: todo dia 10 · ou cole a cláusula de pagamento completa">'+esc(v(d.vencimento))+'</textarea>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">Tipo de venda</label><select class="f-input" id="ec-tipovenda" style="margin-bottom:0;"><option value="novo"'+(d.tipoVenda!=='renovacao'?' selected':'')+'>Novo cliente</option><option value="renovacao"'+(d.tipoVenda==='renovacao'?' selected':'')+'>Renovação (cliente atual)</option></select></div>'+
+      '<div style="margin-bottom:12px;"><label class="f-label">Nome da Contratante (vai no contrato)</label><input class="f-input" type="text" id="ec-contratante" value="'+esc(v(d.nomeCliente))+'" placeholder="Razão social ou nome" style="margin-bottom:0;"></div>'+
+      '<div class="modal-grid2" style="margin-bottom:12px;"><div><label class="f-label">Documento do cliente</label><select class="f-input" id="ec-doctipo" style="margin-bottom:0;"><option value="cnpj"'+(d.docTipo!=='cpf'?' selected':'')+'>CNPJ</option><option value="cpf"'+(d.docTipo==='cpf'?' selected':'')+'>CPF</option></select></div><div><label class="f-label">Número do documento</label><input class="f-input" type="text" id="ec-cnpj" value="'+esc(v(d.cnpjCliente))+'" style="margin-bottom:0;"></div></div>'+
+      '<div class="modal-grid2">'+
+        '<div><label class="f-label">Plano</label><select class="f-input" id="ec-plano" style="margin-bottom:12px;" onchange="ecOnPlanoChange()">'+
+          ['starter','marketplaces','premium','premium-black','elite'].map(function(p){var lbl={starter:'Starter',marketplaces:'Marketplaces',premium:'Premium','premium-black':'Premium Black Friday 🖤',elite:'Elite'}[p];return '<option value="'+p+'"'+(((d.plano||'').toLowerCase()===p)?' selected':'')+'>'+lbl+'</option>';}).join('')+
+        '</select></div>'+
+        '<div id="ec-duracao-wrap">'+_ecDuracaoHTML(d.plano,d.duracaoMeses)+'</div>'+
+      '</div>'+
+      '<div class="modal-grid2">'+
+        '<div><label class="f-label">Data de inicio do contrato</label><input class="f-input" id="ec-inicio" type="date" value="'+v(d.dataInicio)+'" style="margin-bottom:12px;"></div>'+
+        '<div><label class="f-label">Tipo de valor</label><select class="f-input" id="ec-tipovalor" style="margin-bottom:12px;" onchange="ecToggleTipo()"><option value="tcv"'+(d.tipoValor!=='mmr'?' selected':'')+'>TCV (valor total fechado)</option><option value="mmr"'+(d.tipoValor==='mmr'?' selected':'')+'>MMR (recorrente mensal)</option></select></div>'+
+      '</div>'+
+      '<div class="modal-grid2">'+
+        '<div><label class="f-label">Valor Total do Contrato (R$)</label><input class="f-input" id="ec-valortotal" type="number" step="0.01" value="'+v(d.valorTotal)+'" style="margin-bottom:0;"></div>'+
+        '<div id="ec-mens-wrap" style="'+(d.tipoValor==='mmr'?'':'display:none;')+'"><label class="f-label">Valor da Mensalidade (R$)</label><input class="f-input" id="ec-valorparcela" type="number" step="0.01" value="'+v(d.valorParcela)+'" style="margin-bottom:0;"></div>'+
+      '</div>'+
+      '<div id="ec-freq-wrap" style="margin-top:12px;'+(d.tipoValor==='mmr'?'':'display:none;')+'"><label class="f-label">Frequencia de Pagamento</label><select class="f-input" id="ec-freq" style="margin-bottom:0;">'+['mensal','quinzenal','semanal'].map(function(f){return '<option value="'+f+'"'+((d.frequencia||'mensal')===f?' selected':'')+'>'+f.charAt(0).toUpperCase()+f.slice(1)+'</option>';}).join('')+'</select></div>'+
+      '<div style="margin-top:12px;"><label class="f-label">Vencimento / Condição de Pagamento</label><textarea class="f-input" id="ec-venc" rows="4" style="margin-bottom:0;resize:vertical;" placeholder="Ex: todo dia 10 / 50% entrada + 50% em 30d — OU cole a cláusula completa de pagamento (parágrafos preservados)">'+esc(v(d.vencimento))+'</textarea></div>'+
+      fuAdicionaisHTML('ec')+
+      (d.segundaLoja&&(d.segundaLoja.cnpj||d.segundaLoja.empresa)?'<div style="margin-top:12px;font-size:12px;color:var(--muted);padding:8px 10px;border:1px dashed var(--border);border-radius:8px;">2ª loja mantida: <b>'+esc(d.segundaLoja.empresa||d.segundaLoja.nome||'')+'</b></div>':'')+
+      '<div style="height:16px;"></div>'+
       '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
         '<button class="btn btn-outline" onclick="document.getElementById(\'modal-editar-contrato\').remove();">Cancelar</button>'+
         '<button class="btn btn-primary" style="background:#e1306c;" onclick="salvarEditarContrato(\''+id+'\')"><i class="ti ti-refresh"></i> Salvar e regerar contrato</button>'+
       '</div>'+
     '</div></div></div>';
   document.body.insertAdjacentHTML('beforeend',html);
+  try{ (d.adicionais||[]).forEach(function(a){var el=document.getElementById('ec-adic-'+(a.id||a));if(el)el.checked=true;});
+    var _av=document.getElementById('ec-adic-valor'); if(_av&&d.adicionaisValor){_av.value=d.adicionaisValor;_av.dataset.userEdited='1';}
+    fuUpdateAdicionais('ec'); }catch(e){}
+  ecOnPlanoChange(true);
+}
+// Duração igual à tela de venda: Starter = 45 dias fixo; demais = Mensal/Trimestral/Semestral/Anual
+function _ecDuracaoHTML(plano,cur){
+  if(String(plano||'').toLowerCase()==='starter')
+    return '<label class="f-label">Duração <span style="font-size:10px;color:var(--muted);font-weight:400;">— Starter = 45 dias fixo</span></label><input class="f-input" type="number" id="ec-duracao" value="45" readonly style="margin-bottom:12px;opacity:0.65;cursor:default;">';
+  cur=String(parseInt(cur,10)||6); if(cur==='45')cur='6';
+  var ops=[['1','Mensal'],['3','Trimestral'],['6','Semestral'],['12','Anual (12 meses)']];
+  if(!ops.some(function(o){return o[0]===cur;}))ops.push([cur,cur+' meses']);
+  return '<label class="f-label">Duração</label><select class="f-input" id="ec-duracao" style="margin-bottom:12px;">'+ops.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===cur?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>';
+}
+function ecOnPlanoChange(inicial){
+  var plano=(document.getElementById('ec-plano')||{}).value||'';
+  var w=document.getElementById('ec-duracao-wrap');
+  if(w&&!inicial){var cur=(document.getElementById('ec-duracao')||{}).value||'6';w.innerHTML=_ecDuracaoHTML(plano,cur);}
+  var ad=document.getElementById('ec-adic-wrap');
+  if(ad){var ok=(plano==='starter'||plano==='premium'||plano==='premium-black');ad.style.display=ok?'':'none';
+    if(!ok){(ADICIONAIS_CATALOGO||[]).forEach(function(a){var el=document.getElementById('ec-adic-'+a.id);if(el)el.checked=false;});var _v=document.getElementById('ec-adic-valor');if(_v){_v.value='';try{delete _v.dataset.userEdited;}catch(e){}}}}
+}
+function ecToggleTipo(){
+  var mmr=((document.getElementById('ec-tipovalor')||{}).value==='mmr');
+  var a=document.getElementById('ec-mens-wrap'),b=document.getElementById('ec-freq-wrap');
+  if(a)a.style.display=mmr?'':'none'; if(b)b.style.display=mmr?'':'none';
+}
+async function gerarPdfRascunho(id,btn){
+  if(!isGcalConnected()){ alert('O Google está desconectado. Conecte em Configurações → Google e depois clique aqui de novo — o rascunho continua salvo.'); return; }
+  var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro: '+e.message); return; }
+  if(!r||!r.contratoDados){ abrirEditarContrato(id); return; }
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Gerando...';}
+  window._regenAssinaturaId=id;
+  try{ await generateContratoDocx(JSON.parse(JSON.stringify(r.contratoDados))); }
+  catch(e){ window._regenAssinaturaId=null; alert('Erro ao gerar: '+e.message); }
+  if(document.getElementById('assinaturas-body')) loadAssinaturas();
 }
 async function salvarEditarContrato(id){
   var r; try{ r=await fbGet('assinaturas/'+id); }catch(e){ alert('Erro: '+e.message); return; }
@@ -9593,13 +9642,25 @@ async function salvarEditarContrato(id){
     d={nomeCliente:r.cliente||'',cnpjCliente:r.cnpj||vd.cnpj||'',telefone:r.telefone||'',plano:vd.plano||'',duracaoMeses:vd.duracaoMeses||1,dataInicio:vd.dataInicio||'',tipoValor:vd.tipoValor||'',valorTotal:vd.valorTotal||0,valorParcela:vd.valorParcela||vd.mensalidade||0,vencimento:'',frequencia:'mensal',docTipo:(_doc.length===11?'cpf':'cnpj'),closer:cm.closer||'',sdrNome:cm.sdrNome||'',origem:cm.origem||''}; }
   var gv=function(i){var e=document.getElementById(i);return e?e.value:'';};
   if(gv('ec-plano'))d.plano=gv('ec-plano');
+  if(gv('ec-tipovenda'))d.tipoVenda=gv('ec-tipovenda');
+  if(document.getElementById('ec-contratante'))d.nomeCliente=gv('ec-contratante').trim()||d.nomeCliente;
+  if(gv('ec-doctipo'))d.docTipo=gv('ec-doctipo');
+  if(document.getElementById('ec-cnpj'))d.cnpjCliente=gv('ec-cnpj').trim();
   d.dataInicio=gv('ec-inicio')||d.dataInicio;
   d.duracaoMeses=parseInt(gv('ec-duracao'),10)||d.duracaoMeses;
-  d.tipoValor=gv('ec-tipovalor');
+  if(d.plano==='starter')d.duracaoMeses=45;
+  d.tipoValor=(gv('ec-tipovalor')==='mmr')?'mmr':'tcv';
   d.valorTotal=parseFloat(gv('ec-valortotal'))||0;
-  d.valorParcela=parseFloat(gv('ec-valorparcela'))||0;
-  d.frequencia=gv('ec-freq')||d.frequencia;
+  if(d.tipoValor==='mmr'){ d.valorParcela=parseFloat(gv('ec-valorparcela'))||0; d.frequencia=gv('ec-freq')||'mensal'; }
+  else { d.valorParcela=0; d.frequencia=''; }
   d.vencimento=gv('ec-venc');
+  if(document.getElementById('ec-adic-wrap')){
+    var _adOk=(d.plano==='starter'||d.plano==='premium'||d.plano==='premium-black');
+    d.adicionais=_adOk?fuAdicionaisSelecionados('ec'):[];
+    d.adicionaisValor=_adOk?(parseFloat(gv('ec-adic-valor'))||0):0;
+  }
+  if(d.tipoValor==='mmr'&&!d.valorParcela){ alert('Informe o valor da mensalidade.'); return; }
+  if(!d.valorTotal){ alert('Informe o valor total do contrato.'); return; }
   var m=document.getElementById('modal-editar-contrato'); if(m)m.remove();
   window._regenAssinaturaId=id; // faz o generateContratoDocx ATUALIZAR este registro (mantém o link) em vez de criar outro
   try{ await generateContratoDocx(d); }
