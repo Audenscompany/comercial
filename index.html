@@ -9605,6 +9605,7 @@ async function abrirEditarContrato(id){
 }
 // Duração igual à tela de venda: Starter = 45 dias fixo; demais = Mensal/Trimestral/Semestral/Anual
 function _ecDuracaoHTML(plano,cur){
+  if(String(plano||'').toLowerCase()==='upsell') return '<label class="f-label">Duração</label><div class="f-input" style="margin-bottom:12px;opacity:0.75;cursor:default;">Pontual</div><input type="hidden" id="ec-duracao" value="1">';
   if(String(plano||'').toLowerCase()==='starter')
     return '<label class="f-label">Duração <span style="font-size:10px;color:var(--muted);font-weight:400;">— Starter = 45 dias fixo</span></label><input class="f-input" type="number" id="ec-duracao" value="45" readonly style="margin-bottom:12px;opacity:0.65;cursor:default;">';
   cur=String(parseInt(cur,10)||6); if(cur==='45')cur='6';
@@ -9652,6 +9653,7 @@ async function salvarEditarContrato(id){
   d.dataInicio=gv('ec-inicio')||d.dataInicio;
   d.duracaoMeses=parseInt(gv('ec-duracao'),10)||d.duracaoMeses;
   if(d.plano==='starter')d.duracaoMeses=45;
+  if(d.plano==='upsell')d.duracaoMeses=1;
   d.tipoValor=(gv('ec-tipovalor')==='mmr')?'mmr':'tcv';
   d.valorTotal=parseFloat(gv('ec-valortotal'))||0;
   if(d.tipoValor==='mmr'){ d.valorParcela=parseFloat(gv('ec-valorparcela'))||0; d.frequencia=gv('ec-freq')||'mensal'; }
@@ -10620,6 +10622,7 @@ function fuToggleSegLoja(){
 // Seletor de duração: Mensal (1) / Trimestral (3) / Semestral (6) — vale para todos os planos
 function _fuDuracaoSelect(cur){
   var _plano=(document.getElementById('fu-plano')||{}).value||'';
+  if(_plano==='upsell') return '<label class="f-label">Duração</label><div class="f-input" style="margin-bottom:12px;opacity:0.75;cursor:default;">Pontual</div><input type="hidden" id="fu-duracao" value="1">';
   if(_plano==='starter'){
     return '<label class="f-label">Duração <span style="font-size:10px;color:var(--muted);font-weight:400;">— Starter = 45 dias fixo</span></label><input class="f-input" type="number" id="fu-duracao" value="45" readonly style="margin-bottom:12px;opacity:0.65;cursor:default;">';
   }
@@ -11376,6 +11379,7 @@ function saveFollowup(){
   window._fuAssinaturaEmpresa=_fuAssinaturaEmpresa;
   var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
   if(venda&&plano==='starter')duracao=45; // Starter = sempre 45 dias
+  if(venda&&plano==='upsell')duracao=1; // Upsell = pontual
   var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
   var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
@@ -11638,6 +11642,7 @@ function saveFollowupEdit(){
   window._fuAssinaturaEmpresa=_fuAssinaturaEmpresa;
   var duracao=venda?(parseInt(document.getElementById('fu-duracao').value,10)||0):0;
   if(venda&&plano==='starter')duracao=45; // Starter = sempre 45 dias
+  if(venda&&plano==='upsell')duracao=1; // Upsell = pontual
   var dataInicio=venda?document.getElementById('fu-data-inicio').value:'';
   var tipoValor=venda?document.getElementById('fu-tipo-valor').value:'';
   var contrato=venda?(parseFloat(document.getElementById('fu-contrato').value)||0):0;
@@ -30465,7 +30470,7 @@ function renderVendas(){
   function getStatusVenda(fu){
     if(fu.statusVenda&&statusConfig[fu.statusVenda])return fu.statusVenda;
     if(fu.dataInicio){var di=new Date(fu.dataInicio);if(di>now)return 'aguardando';}
-    if(fu.duracao&&fu.dataInicio){
+    if(fu.plano!=='upsell'&&fu.duracao&&fu.dataInicio){
       var fim=new Date(fu.dataInicio);fim.setMonth(fim.getMonth()+parseInt(fu.duracao));
       var diff=(fim-now)/(1000*60*60*24);
       if(diff<=30&&diff>0)return 'renovacao_proxima';
@@ -30741,7 +30746,7 @@ function _renderVendasTabela(){
     var now=new Date();
     if(fu.statusVenda&&statusConfig[fu.statusVenda])return fu.statusVenda;
     if(fu.dataInicio){var di=new Date(fu.dataInicio);if(di>now)return 'aguardando';}
-    if(fu.duracao&&fu.dataInicio){var fim=new Date(fu.dataInicio);fim.setMonth(fim.getMonth()+parseInt(fu.duracao));var diff=(fim-now)/(1000*60*60*24);if(diff<=30&&diff>0)return 'renovacao_proxima';}
+    if(fu.plano!=='upsell'&&fu.duracao&&fu.dataInicio){var fim=new Date(fu.dataInicio);fim.setMonth(fim.getMonth()+parseInt(fu.duracao));var diff=(fim-now)/(1000*60*60*24);if(diff<=30&&diff>0)return 'renovacao_proxima';}
     return 'ativa';
   }
   // Apply filters
@@ -30781,7 +30786,7 @@ function _renderVendasTabela(){
       var val=_mrrV(fu);
       var dt=_vendaDate(fu,m);
       var dtLabel=dt?(String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear()):'—';
-      var dur=fu.duracao?fu.duracao+'m':'—';
+      var dur=(fu.plano==='upsell')?'pontual':(fu.duracao?fu.duracao+'m':'—');
       var vigencia=fu.dataInicio?(fu.dataInicio.split('-').reverse().join('/')+' ('+dur+')'):('— ('+dur+')');
       var st=getStatus(fu);var sc=statusConfig[st]||statusConfig.ativa;
       // Origem — usar origem REAL do meeting (não a categoria de 3 buckets)
@@ -31178,6 +31183,7 @@ function abrirEditarVenda(fid){
   }catch(e){}
 }
 function _buildEvDuracao(plano, val){
+  if(plano==='upsell') return '<label class="f-label">Duração</label><div class="f-input" style="margin-bottom:12px;opacity:0.75;cursor:default;">Pontual</div><input type="hidden" id="ev-duracao" value="1">';
   if(String(val)==='45'){
     return '<label class="f-label">Duração (dias) <span style="font-size:10px;color:var(--muted);">contrato legado (45 dias)</span></label>'+
       '<input class="f-input" type="number" id="ev-duracao" value="45" min="1" readonly style="opacity:0.6;cursor:default;">';
@@ -31223,6 +31229,7 @@ async function salvarEdicaoVenda(){
   var contrato=parseFloat(document.getElementById('ev-contrato').value)||0;
   var duracao=parseInt(document.getElementById('ev-duracao').value)||1;
   if(plano==='starter') duracao=45; // Starter = sempre 45 dias
+  if(plano==='upsell') duracao=1; // Upsell = pontual
   var dataInicio=document.getElementById('ev-data-inicio').value;
   var origem=document.getElementById('ev-origem').value;
   var sdr=(document.getElementById('ev-sdr').value||'').trim();
