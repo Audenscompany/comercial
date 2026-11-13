@@ -9483,7 +9483,9 @@ async function loadAssinaturas(){
       var statusBadge = r.status==='assinado'
         ? '<span class="badge b-green">Assinado'+(r.signedAt?(' em '+new Date(r.signedAt).toLocaleDateString('pt-BR')):'')+'</span>'+
           (r.signatureDataUrl?'<div style="margin-top:5px;"><img src="'+r.signatureDataUrl+'" style="height:32px;max-width:110px;border:1px solid rgba(255,255,255,0.1);border-radius:4px;background:#fff;padding:2px;object-fit:contain;" title="Assinatura de '+esc(r.signerName||r.cliente||'')+'"></div>':'')
-        : '<span class="badge b-amber">Pendente</span>';
+        : (r._rascunho
+            ? '<span class="badge b-amber">Rascunho — sem PDF</span><div style="font-size:10px;color:var(--muted);margin-top:4px;max-width:170px;line-height:1.3;">Conecte o Google e clique em <b>Editar → Salvar</b> pra gerar o PDF e o link.</div>'
+            : '<span class="badge b-amber">Pendente</span>');
       var criado=r.createdAt?new Date(r.createdAt).toLocaleDateString('pt-BR'):'-';
       var pagBadge = r.asaasStatus ? asaasStatusBadge(r.asaasStatus) : '<span style="color:var(--muted);font-size:12px;">-</span>';
       var asaasBtn = !r.asaasStatus
@@ -9525,7 +9527,7 @@ async function loadAssinaturas(){
         '<td>'+pagBadge+'</td>'+
         '<td>'+criado+'</td>'+
         '<td>'+(r.pdfUrl?('<a href="'+r.pdfUrl+'" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;"><i class="ti ti-file-text"></i> PDF</a>'):'-')+'</td>'+
-        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+editarBtn+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>'+
+        '<td style="display:flex;gap:6px;flex-wrap:wrap;">'+editarBtn+asaasBtn+pdfAssinadoBtn+marcarAssinadoBtn+marcarVendaBtn+webhookBtn+(r._rascunho?'':'<button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="copiarLinkAssinatura(\''+id+'\',this)"><i class="ti ti-link"></i> Copiar link</button>')+
         '<button class="btn" style="padding:4px 10px;font-size:12px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="apagarAssinatura(\''+id+'\',\''+esc(r.cliente||'')+'\')" title="Apagar"><i class="ti ti-trash"></i></button></td>'+
       '</tr>';
     }).join('');
@@ -10870,6 +10872,22 @@ async function _enviarAssinaturaAoCliente(btn){
   if(st){ st.style.color=ok?'var(--green)':'var(--red)'; st.innerHTML=ok?'<i class="ti ti-circle-check"></i> Enviado pro cliente no WhatsApp!':'Não consegui enviar — copie o link e mande manualmente.'; }
   if(btn){ btn.disabled=false; btn.innerHTML=ok?'<i class="ti ti-check"></i> Enviado':'<i class="ti ti-brand-whatsapp"></i> Tentar de novo'; }
 }
+// Salva o contrato como RASCUNHO em Assinaturas quando o Drive/Google falha — assim ele não se perde
+// se a página recarregar (ex.: ao conectar o Google) e pode ser editado/regerado depois (Editar → Salvar).
+async function _salvarRascunhoAssinatura(dados,nomeArquivo){
+  try{
+    if(window._regenAssinaturaId){ window._lastRascunhoId=window._regenAssinaturaId; window._regenAssinaturaId=null; return; }
+    var cd={}; try{ cd=JSON.parse(JSON.stringify(dados)); delete cd.assinaturaEmpresa; }catch(e){ cd={}; }
+    var ref=await fbPush('assinaturas',{
+      cliente:dados.nomeCliente||'', contratoNome:String(nomeArquivo||'Contrato').replace(/\.docx$/i,''), pdfUrl:'',
+      telefone:dados.telefone||'', cnpj:dados.cnpjCliente||'', status:'pendente', _rascunho:true, createdAt:Date.now(),
+      contratoDados:cd,
+      vendaData:{plano:dados.plano||'',duracaoMeses:dados.duracaoMeses||1,dataInicio:dados.dataInicio||'',tipoValor:dados.tipoValor||'',valorTotal:dados.valorTotal||0,valorParcela:dados.valorParcela||0,mensalidade:dados.valorParcela||0,cnpj:dados.cnpjCliente||''},
+      comercial:{closer:dados.closer||'',sdrNome:dados.sdrNome||'',origem:dados.origem||''}
+    });
+    window._lastRascunhoId=ref&&ref.key;
+  }catch(e){ console.error('rascunho assinatura:',e); }
+}
 function mostrarModalErroAssinatura(motivo){
   var html='<div class="modal-ov active" id="modal-assin-erro" onclick="if(event.target===this)this.remove()">'+
     '<div class="modal-box" style="max-width:460px;">'+
@@ -10909,7 +10927,7 @@ async function reenviarAssinaturaContrato(btn){
         dataInicio:dd.dataInicio,tipoValor:dd.tipoValor,contrato:dd.valorTotal,mensalidade:dd.valorParcela});
       d._asaasFeito=true;
     }
-    var ref=await fbPush('assinaturas',{
+    var _recRetry={
       cliente:d.dados.nomeCliente||'',
       contratoNome:d.nomeArquivo.replace(/\.docx$/i,''),
       pdfUrl:pdfUrl,
@@ -10928,8 +10946,10 @@ async function reenviarAssinaturaContrato(btn){
         cnpj:d.dados.cnpjCliente||''
       },
       comercial:{closer:d.dados.closer||'',sdrNome:d.dados.sdrNome||'',origem:d.dados.origem||''}
-    });
-    var signId=ref&&ref.key;
+    };
+    var signId;
+    if(window._lastRascunhoId){ signId=window._lastRascunhoId; window._lastRascunhoId=null; delete _recRetry.createdAt; _recRetry._rascunho=null; _recRetry.updatedAt=Date.now(); await fbDb.ref('assinaturas/'+signId).update(_recRetry); }
+    else { var ref=await fbPush('assinaturas',_recRetry); signId=ref&&ref.key; }
     if(signId){
       var signLink=signLinkFor(signId);
       var waOk=await enviarLinkAssinaturaWA(d.dados.telefone, d.dados.nomeCliente, signLink);
@@ -11119,6 +11139,7 @@ async function generateContratoDocx(dados){
           telefone:dados.telefone||'',
           cnpj:dados.cnpjCliente||'',
           status:'pendente',
+          _rascunho:null,
           createdAt:Date.now(),
           contratoDados:_contratoDados,
           vendaData:{
@@ -11155,10 +11176,12 @@ async function generateContratoDocx(dados){
         }
       }catch(e2){
         console.error('Erro ao criar link de assinatura:',e2);
+        await _salvarRascunhoAssinatura(dados,nomeArquivo);
         mostrarModalErroAssinatura('Erro ao enviar para o Drive: '+e2.message);
       }
     }else{
       // Google nao conectado — avisa e oferece retry após reconectar
+      await _salvarRascunhoAssinatura(dados,nomeArquivo);
       mostrarModalErroAssinatura('Token Google expirado ou nao conectado.');
     }
   }catch(err){
@@ -30213,9 +30236,10 @@ function renderVendas(){
   var _cacTrafValor=vendas.filter(function(v){return v.origemCat==='Trafego Pago';}).reduce(function(s,v){return s+(_mrrV(v.fu)||0);},0);
   var _ticketMedio=_cacTotalCount>0?_cacTotalValor/_cacTotalCount:0;
   // Novos clientes x Renovações (renovação = fu.tipoVenda==='renovacao'; o resto é novo)
-  var _renovCount=vendas.filter(function(v){return v.fu&&v.fu.tipoVenda==='renovacao';}).length;
+  function _ehRenov(v){return !!(v&&((v.fu&&v.fu.tipoVenda==='renovacao')||(v.m&&v.m._renovacao)||/renova/i.test(String(v.origemRaw||(v.m&&v.m.origem)||(v.fu&&v.fu.origem)||''))));}
+  var _renovCount=vendas.filter(_ehRenov).length;
   var _novoCount=vendas.length-_renovCount;
-  var _renovPrev=vendasPrev.filter(function(v){return v.fu&&v.fu.tipoVenda==='renovacao';}).length;
+  var _renovPrev=vendasPrev.filter(_ehRenov).length;
   var _novoPrev=vendasPrev.length-_renovPrev;
   var _cacPer=vPeriodoAtivo?null:((filtM+1)+'/'+filtY);
   var _cacSince=vPeriodoAtivo?_vendasPeriodo.from:null;
@@ -30666,6 +30690,7 @@ function _renderVendasTabela(){
             '<div id="menu-'+fid+'" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:#1a1a2e;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;z-index:100;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,0.5);">'+
               '<button onclick="abrirEditarVenda(\''+fid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;background:none;border:none;color:var(--white);font-size:12px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'none\'"><i class="ti ti-edit" style="margin-right:8px;color:#a78bfa;"></i>Editar venda</button>'+
               '<button onclick="alterarStatusVenda(\''+fid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;background:none;border:none;color:var(--white);font-size:12px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'none\'"><i class="ti ti-flag" style="margin-right:8px;color:#60a5fa;"></i>Alterar status</button>'+
+              '<button onclick="gerarContratoDaVenda(\''+fid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;background:none;border:none;color:var(--white);font-size:12px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'none\'"><i class="ti ti-file-text" style="margin-right:8px;color:#34d399;"></i>Gerar / editar contrato</button>'+
               '<div style="height:1px;background:rgba(255,255,255,0.07);margin:4px 0;"></div>'+
               '<button onclick="removerVenda(\''+fid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;background:none;border:none;color:#f87171;font-size:12px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background=\'rgba(248,113,113,0.08)\'" onmouseout="this.style.background=\'none\'"><i class="ti ti-trash" style="margin-right:8px;"></i>Excluir venda</button>'+
             '</div>'+
@@ -31161,6 +31186,31 @@ async function restaurarVendaExcluida(sig,nomeKey){
     var ov=document.getElementById('vexcl-overlay'); if(ov)ov.remove();
     showPage('vendas');
   }catch(e){ alert('Erro ao restaurar: '+e.message); }
+}
+// Gera (ou reabre) o contrato de uma venda já registrada: se já existe assinatura pendente do mesmo
+// telefone, abre o Editar dela; senão cria um rascunho com os dados da venda e abre o Editar.
+async function gerarContratoDaVenda(fid){
+  var fu=_vendaFu(fid); if(!fu){ alert('Venda não encontrada.'); return; }
+  var m=meetings[fu.meetingId]||meetings[fid]||{};
+  var ke=(m.kanbanKey&&kanbanData[m.kanbanKey])||{};
+  var tel=String(m.tel||fu.tel||ke.telefone||'').replace(/\D/g,'');
+  function _t(x){return String(x||'').replace(/\D/g,'').slice(-11);}
+  try{
+    var ass=await fbGet('assinaturas')||{};
+    var achou=Object.keys(ass).filter(function(k){var a=ass[k]||{};return a.status!=='assinado'&&tel&&_t(a.telefone)===_t(tel);})
+      .sort(function(a,b){return (ass[b].createdAt||0)-(ass[a].createdAt||0);})[0];
+    if(achou){ abrirEditarContrato(achou); return; }
+  }catch(e){}
+  var cnpj=String(ke.cnpj||fu.cnpj||'').replace(/\D/g,'');
+  var dados={plano:fu.plano||'',nomeCliente:(fu.contratante||ke.empresa||fu.nome||m.nome||''),cnpjCliente:cnpj,
+    docTipo:(cnpj.length===11?'cpf':'cnpj'),telefone:tel,duracaoMeses:parseInt(fu.duracao)||1,dataInicio:fu.dataInicio||'',
+    tipoValor:fu.tipoValor||'tcv',valorTotal:parseFloat(fu.contrato)||0,valorParcela:parseFloat(fu.mensalidade)||0,
+    adicionais:fu.adicionais||[],adicionaisValor:fu.adicionaisValor||0,frequencia:fu.frequencia||'',vencimento:fu.vencimento||'',
+    closer:m.responsavel||fu.closer||'',sdrNome:m.sdrName||m.sdr||'',origem:m.origem||fu.origem||''};
+  window._regenAssinaturaId=null;
+  await _salvarRascunhoAssinatura(dados,'Contrato - '+(dados.nomeCliente||'Cliente')+'.docx');
+  var id=window._lastRascunhoId; window._lastRascunhoId=null;
+  if(id) abrirEditarContrato(id); else alert('Não consegui criar o rascunho do contrato.');
 }
 function abrirVendasExcluidas(){
   var sigs=Object.keys(_vendasExcluidasSig||{});
