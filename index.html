@@ -20036,6 +20036,9 @@ var _reunMesFiltro=null; // {m:0-11, y:YYYY} ou null=mês atual
 var _reunPeriodo=null; // {from,to} YYYY-MM-DD ou null (período customizado)
 // ===== Escopo dos relatórios: Tudo / Comercial / Audens Food =====
 var _escopoComercial='tudo'; // 'tudo' | 'comercial' | 'audensfood'
+var _vendasTipoFiltro='todos'; // 'todos' | 'novo' | 'renovacao' — filtra todos os números da tela de Vendas
+function setVendasTipo(v){_vendasTipoFiltro=(v==='novo'||v==='renovacao')?v:'todos';showPage('vendas');}
+function _vendasTipoSelectorHTML(){var o=[['todos','Todos'],['novo','Novos clientes'],['renovacao','Renovações']];return '<div title="Filtra todos os números da tela" style="display:flex;gap:3px;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:3px;">'+o.map(function(x){var on=_vendasTipoFiltro===x[0];return '<button onclick="setVendasTipo(\''+x[0]+'\')" style="border:none;border-radius:6px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;background:'+(on?'var(--purple3)':'transparent')+';color:'+(on?'#fff':'var(--muted)')+';">'+x[1]+'</button>';}).join('')+'</div>';}
 function setEscopoComercial(v){_escopoComercial=(v==='comercial'||v==='audensfood')?v:'tudo';var p=window._currentPage||'reunioes';showPage(p);}
 function _afPhonesBuild(){var s={};try{Object.keys(kanbanData||{}).forEach(function(k){var v=kanbanData[k];if(v&&v._board==='audensfood'){var t=String(v.telefone||k).replace(/\D/g,'').slice(-9);if(t)s[t]=1;}});}catch(e){}window._afPhonesCache=s;return s;}
 function _mIsAF(m){if(!m)return false;if(/audens\s*food/i.test(String(m.origem||'')))return true;var kk=m.kanbanKey;if(kk&&typeof kanbanData!=='undefined'&&kanbanData[kk]&&kanbanData[kk]._board==='audensfood')return true;var t=String(m.tel||m.telefone||'').replace(/\D/g,'').slice(-9);if(t&&window._afPhonesCache&&window._afPhonesCache[t])return true;return false;}
@@ -30263,6 +30266,8 @@ function renderVendas(){
   window._todasVendasCache=todasVendas; window._todasVendasCacheFull=true;
   // Filtro de escopo (Tudo / Comercial / Audens Food) só para a exibição desta tela
   if(_escopoComercial!=='tudo'){ _afPhonesBuild(); todasVendas=todasVendas.filter(function(v){ var af=_mIsAF(v.m)||/audens\s*food/i.test(String((v.origemRaw)||(v.fu&&v.fu.origem)||'')); return _escopoComercial==='audensfood'?af:!af; }); }
+  // Filtro Novos clientes / Renovações — vale pra KPIs, CAC, gráfico, ranking e tabela
+  if(_vendasTipoFiltro!=='todos'){ todasVendas=todasVendas.filter(function(v){ var r=_ehRenov(v); return _vendasTipoFiltro==='renovacao'?r:!r; }); }
 
   // Meses disponíveis
   var mesKeys={};
@@ -30574,6 +30579,7 @@ function renderVendas(){
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
       _escopoSelectorHTML()+
+      _vendasTipoSelectorHTML()+
       mesSelect+
       periodoBox+
       '<select onchange="setVendasFiltro(\'closer\',this.value);_vendasFiltros.closer=this.value;document.getElementById(\'vf-closer\')&&(document.getElementById(\'vf-closer\').value=this.value);_renderVendasTabela()" style="'+sel+'"><option value="">Todos closers</option>'+closerOpts+'</select>'+
