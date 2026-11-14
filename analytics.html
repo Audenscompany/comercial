@@ -392,7 +392,7 @@ function render(){
   var sess = [];
   if(!antiga){
     var S = cache.sessions||{};
-    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(black){ if(!sessIsBlack(v)) continue; } else if(v3){ var _vv=String(v.variante||''); var _pg=String(v.page||'').toLowerCase(); if(_vv!=='lp-v3' && _pg.indexOf('lpv3')<0) continue; } else if(sessIsBlack(v)) continue; sess.push(v); }
+    for(var k in S){ var v=S[k]||{}; var t=v.firstSeen||v.lastSeen||0; if(t<cut) continue; if(black){ if(!sessIsBlack(v)) continue; } else if(v3){ var _vv=String(v.variante||''); var _pg=String(v.page||'').toLowerCase(); if(_vv!=='lp-v3' && _pg.indexOf('lpv3')<0) continue; } else if(sessIsBlack(v) || String(v.variante||'')==='bio') continue; sess.push(v); }
   }
   var total = sess.length;
   var reachedForm = sess.filter(function(s){return s.reachedForm;}).length;
