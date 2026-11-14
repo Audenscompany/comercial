@@ -123,6 +123,7 @@
         <button data-m="quiz">Quiz FV1</button>
         <button data-m="quizfv2">Quiz FV2</button>
         <button data-m="raiox">Raio-X</button>
+        <button data-m="bio">Links da bio</button>
         <button data-m="antiga">LP antiga</button>
       </div>
       <div class="seg" id="range">
@@ -380,6 +381,7 @@ function render(){
   if(MODE==='quiz'){ return renderQuiz('fv1'); }
   if(MODE==='quizfv2'){ return renderQuiz('fv2'); }
   if(MODE==='raiox'){ return renderRaioX(); }
+  if(MODE==='bio'){ return renderBio(); }
   setH2('funnel','Funil da LP');
   setH2('abandono','Abandono por seção (onde pararam)');
   var antiga = (MODE==='antiga');
@@ -512,6 +514,79 @@ function render(){
 }
 
 /* ===== Funil do RAIO-X DO DELIVERY (assessoriaaudens.com.br/raio-x/, lê analytics/sessions + events) ===== */
+function renderBio(){
+  setH2('funnel','Funil da página de links');
+  setH2('sources','Origem das visitas');
+  setH2('devices','Dispositivos');
+  setH2('abandono','Cliques por botão');
+  setH2('pedidosDist','Visualizações e cliques por dia');
+  setH2('adsDist','Taxa de clique por botão');
+  setH2('leads','Leads que chegaram pelos links da bio');
+  var now=Date.now();
+  var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
+  var NOMES={black:'Destaque Black Friday',assessoria:'Assessoria de marketing','raio-x':'Raio-X do Delivery',club:'Audens Club',finance:'Audens Finance',youtube:'Canal no YouTube (card)','youtube-icone':'YouTube (ícone)',instagram:'Instagram (ícone)',tiktok:'TikTok (ícone)','insta-burguer':'Instagram Burguer FC','insta-pizza':'Instagram Pizza FC'};
+  function isBio(sid){ var sv=S[sid]||{}; return sv.variante==='bio' || /\/links\/?/.test(String(sv.page||'')); }
+  function agg(a,b){
+    var r={vis:0,views:0,clicks:0,clickers:0,dest:{},destSess:{},dev:{desktop:{t:0,c:0},mobile:{t:0,c:0}},srcMap:{},day:{}};
+    for(var sid in S){ if(!isBio(sid)) continue; var sv=S[sid]||{}; var t=sv.firstSeen||sv.lastSeen||0; if(t<a||t>=b) continue;
+      r.vis++; var ev=E[sid]||{}, nv=0, nc=0, seen={};
+      for(var k in ev){ var e=ev[k]||{}; var et=e.t||t; var dk=new Date(et); dk=dk.getFullYear()+'-'+('0'+(dk.getMonth()+1)).slice(-2)+'-'+('0'+dk.getDate()).slice(-2);
+        if(!r.day[dk]) r.day[dk]={v:0,c:0};
+        if(e.e==='lp_view'){ nv++; r.day[dk].v++; }
+        if(e.e==='bio_click'){ nc++; r.day[dk].c++; var d=(e.p&&e.p.destino)||'?'; r.dest[d]=(r.dest[d]||0)+1; if(!seen[d]){ seen[d]=1; r.destSess[d]=(r.destSess[d]||0)+1; } } }
+      if(!nv){ nv=1; var dk2=new Date(t); dk2=dk2.getFullYear()+'-'+('0'+(dk2.getMonth()+1)).slice(-2)+'-'+('0'+dk2.getDate()).slice(-2); if(!r.day[dk2]) r.day[dk2]={v:0,c:0}; r.day[dk2].v++; }
+      r.views+=nv; r.clicks+=nc; if(nc) r.clickers++;
+      var dv=sv.device==='mobile'?'mobile':(sv.device==='desktop'?'desktop':null); if(dv){ r.dev[dv].t++; if(nc) r.dev[dv].c++; }
+      var src=(sv.utm_source||'').trim()||(sv.ref?dominio(sv.ref):'')||'direto (app do Instagram)';
+      if(!r.srcMap[src]) r.srcMap[src]={sess:0,leads:0}; r.srcMap[src].sess++; if(nc) r.srcMap[src].leads++;
+    }
+    return r;
+  }
+  var C=agg(cut,Infinity), P=null, PREVLBL='';
+  if(RANGE>0&&RANGE<99999){ var sp=RANGE*86400000; P=agg(cut-sp,cut); PREVLBL='vs '+RANGE+'d ant.'; }
+  function DL(cur,prev){ if(prev==null) return ''; if(prev===0&&cur===0) return '<span class="dl flat">— <em>'+PREVLBL+'</em></span>'; if(prev===0) return '<span class="dl up">▲ novo</span>'; var d=Math.round((cur-prev)/prev*100),cls=d===0?'flat':(d>0?'up':'down'),ar=d>0?'▲':(d<0?'▼':'•'); return '<span class="dl '+cls+'">'+ar+' '+Math.abs(d)+'% <em>'+PREVLBL+'</em></span>'; }
+  var ls=[]; for(var lk in L){ var lv=L[lk]||{}; var med=String(lv.utm_medium||'').toLowerCase(); if(med!=='bio') continue; if((lv._createdAt||0)>=cut) ls.push(lv); }
+  el('kpis').innerHTML =
+    kpiD(KICO.users,'#7c3aed',DL(C.views,P?P.views:null),fmt(C.views),'Visualizações') +
+    kpiD(KICO.id,'#4f46e5',DL(C.vis,P?P.vis:null),fmt(C.vis),'Visitantes') +
+    kpiD(KICO.cal,'#F5B851',DL(C.clicks,P?P.clicks:null),fmt(C.clicks),'Cliques nos botões','a') +
+    kpiD(KICO.check,'#3AD07E',DL(C.clickers,P?P.clickers:null),fmt(C.clickers),'Visitantes que clicaram','g') +
+    kpiD(KICO.pct,'#A66BFF',DL(Math.round(C.clickers/(C.vis||1)*1000),P?Math.round(P.clickers/(P.vis||1)*1000):null),pct(C.clickers,C.vis),'Taxa de clique (visitante → clique)','p') +
+    kpiD(KICO.check,'#14b8a6','',fmt(ls.length),'Leads vindos da bio');
+  el('funnel').innerHTML = funnelHTML([
+    {n:'Visitantes',sub:'Abriram a página de links',v:C.vis},
+    {n:'Clicaram em algum botão',sub:'Pelo menos um clique',v:C.clickers},
+    {n:'Viraram lead',sub:'Preencheram uma LP vindo da bio',v:ls.length}
+  ], C.vis);
+  el('sources').innerHTML = barsFrom(C.srcMap,'sess',C.vis) || '<div class="empty">Sem visitas neste período.</div>';
+  (function(){ var dt=C.dev.desktop.t, mt=C.dev.mobile.t, tot=dt+mt;
+    if(!tot){ el('devices').innerHTML='<div class="empty">Sem dado de dispositivo ainda.</div>'; return; }
+    var ang=Math.round(dt/tot*360), cvD=dt?(C.dev.desktop.c/dt*100):0, cvM=mt?(C.dev.mobile.c/mt*100):0;
+    function dleg(c,nm,v,cv){ return '<div class="dleg"><span class="dot" style="background:'+c+'"></span><span class="nm">'+nm+'</span><div class="vv"><b>'+pct(v,tot)+'</b><span>'+fmt(v)+' visitas · '+cv.toFixed(1)+'% clicaram</span></div></div>'; }
+    el('devices').innerHTML='<div class="donut-wrap"><div class="donut" style="background:conic-gradient(#7C34F0 0 '+ang+'deg,#14b8a6 '+ang+'deg 360deg)"><div class="donut-hole"><b>'+fmt(tot)+'</b><span>visitas</span></div></div><div class="donut-leg">'+dleg('#7C34F0','Desktop',dt,cvD)+dleg('#14b8a6','Celular',mt,cvM)+'</div></div>';
+  })();
+  (function(){ var ks=Object.keys(C.dest).sort(function(a,b){return C.dest[b]-C.dest[a];});
+    if(!ks.length){ el('abandono').innerHTML='<div class="empty">Nenhum clique neste período.</div>'; return; }
+    var mx=C.dest[ks[0]]||1;
+    el('abandono').innerHTML=ks.map(function(k){ return '<div class="row"><div class="name">'+esc(NOMES[k]||k)+'</div><div class="bar"><span class="b" style="width:'+(C.dest[k]/mx*100)+'%"></span></div><div class="val">'+fmt(C.dest[k])+'</div></div>'; }).join('');
+    el('adsDist').innerHTML='<table><thead><tr><th>Botão</th><th class="num">Cliques</th><th class="num">Visitantes que clicaram</th><th class="num">Taxa de clique</th></tr></thead><tbody>'+
+      ks.map(function(k){ return '<tr><td>'+esc(NOMES[k]||k)+'</td><td class="num">'+fmt(C.dest[k])+'</td><td class="num">'+fmt(C.destSess[k]||0)+'</td><td class="num">'+pct(C.destSess[k]||0,C.vis)+'</td></tr>'; }).join('')+'</tbody></table>';
+  })();
+  if(!Object.keys(C.dest).length) el('adsDist').innerHTML='<div class="empty">Nenhum clique neste período.</div>';
+  (function(){ var ds=Object.keys(C.day).sort().reverse().slice(0,31);
+    if(!ds.length){ el('pedidosDist').innerHTML='<div class="empty">Sem visitas neste período.</div>'; return; }
+    el('pedidosDist').innerHTML='<table><thead><tr><th>Dia</th><th class="num">Visualizações</th><th class="num">Cliques</th></tr></thead><tbody>'+
+      ds.map(function(d){ var p=d.split('-'); return '<tr><td>'+p[2]+'/'+p[1]+'</td><td class="num">'+fmt(C.day[d].v)+'</td><td class="num">'+fmt(C.day[d].c)+'</td></tr>'; }).join('')+'</tbody></table>';
+  })();
+  ls.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  el('leads').innerHTML = ls.length ? '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
+    ls.slice(0,40).map(function(l){ return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td>'+esc(normLPName(l))+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>'
+    : '<div class="empty">Nenhum lead veio pelos links da bio neste período.</div>';
+  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  el('status').textContent = C.vis===0 ? 'Ainda não há visitas na página de links neste período.' : ('Atualizado agora · Links da bio (/links/) · período: '+per);
+}
+function normLPName(l){ var s=String(l._source||l.origem||'').toLowerCase(); if(/raio-?x/.test(s)) return 'Raio-X'; if(/black/.test(s)) return 'LP Black'; if(/v3/.test(s)) return 'LP V3'; if(/quiz|fv/.test(s)) return 'Quiz'; return s||'—'; }
 function renderRaioX(){
   setH2('funnel','Funil do Raio-X');
   setH2('sources','Origem do tráfego');
