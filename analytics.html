@@ -131,7 +131,14 @@
         <button data-d="7" class="on">7 dias</button>
         <button data-d="30">30 dias</button>
         <button data-d="99999">Tudo</button>
+        <button data-d="custom" id="btnCustom">Período</button>
       </div>
+      <span id="customBox" style="display:none;align-items:center;gap:6px;">
+        <input type="date" id="cFrom" style="background:transparent;border:1px solid var(--line);color:var(--white);border-radius:8px;padding:6px 8px;font-size:12.5px;color-scheme:dark;">
+        <span style="color:var(--muted);font-size:12px;">até</span>
+        <input type="date" id="cTo" style="background:transparent;border:1px solid var(--line);color:var(--white);border-radius:8px;padding:6px 8px;font-size:12.5px;color-scheme:dark;">
+        <button class="btn" id="cApply">Aplicar</button>
+      </span>
       <button class="btn" id="reload">↻ Atualizar</button>
     </div>
   </div>
@@ -175,6 +182,11 @@
 
     <div class="card" style="margin-top:16px">
       <h2>Leads recentes (com atribuição)</h2>
+      <div style="display:flex;gap:8px;align-items:center;margin:4px 0 12px;">
+        <input id="leadQ" placeholder="🔎 Buscar lead por telefone ou nome (em toda a base)…" style="flex:1;background:transparent;border:1px solid var(--line);color:var(--white);border-radius:10px;padding:9px 12px;font-size:13px;">
+        <button class="btn" id="leadQclear" style="display:none;">Limpar</button>
+      </div>
+      <div id="leadQres"></div>
       <div id="leads"></div>
     </div>
 
@@ -196,10 +208,14 @@ var firebaseConfig = {
 };
 var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
 
+var CUSTOM=null; // período personalizado {from:ms,to:ms}
+function _cutFrom(now){ if(CUSTOM) return CUSTOM.from; return _cutFrom(now); }
+function _fmtD(ms){ var d=new Date(ms); return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear(); }
+function _perLabel(){ if(CUSTOM) return _fmtD(CUSTOM.from)+' a '+_fmtD(CUSTOM.to); return _perLabel(); }
 var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null, events:null, kanban:null};
 var LOADED_LIMIT=-1; // quantas sessões/eventos o cache atual tem (0 = tudo); -1 = nada ainda
 // Quantas sessões buscar p/ o período atual (cobre o dobro do range p/ comparação "vs anterior"). 0 = tudo.
-function _sessLimit(){ if(RANGE>=30) return 0; return RANGE<=0 ? 2500 : (RANGE*2*500); }
+function _sessLimit(){ if(CUSTOM) return 0; if(RANGE>=30) return 0; return RANGE<=0 ? 2500 : (RANGE*2*500); }
 /* LP antiga = Elementor (só gerava leads, sem tracking próprio). LP nova = 'lp-audens' (tracking completo). */
 var OLD_SOURCES = {'lp-elementor':1,'elementor':1,'lp-antiga':1};
 function el(id){return document.getElementById(id);}
@@ -348,6 +364,8 @@ el('reload').addEventListener('click', load);
 Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b){
   b.addEventListener('click', function(){
     el('range').querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
+    if(b.dataset.d==='custom'){ el('customBox').style.display='inline-flex'; b.classList.add('on'); return; }
+    CUSTOM=null; el('customBox').style.display='none';
     b.classList.add('on'); RANGE = +b.dataset.d;
     // só rebusca se o novo período precisar de MAIS dados do que o cache tem; senão renderiza na hora
     var need=_sessLimit();
@@ -356,6 +374,17 @@ Array.prototype.forEach.call(el('range').querySelectorAll('button'), function(b)
     if(enough) render(); else load();
   });
 });
+el('cApply').addEventListener('click', function(){
+  var f=el('cFrom').value, t=el('cTo').value;
+  if(!f||!t){ alert('Escolha a data inicial e a final.'); return; }
+  var from=new Date(f+'T00:00:00').getTime(), to=new Date(t+'T23:59:59').getTime();
+  if(to<from){ alert('A data final é antes da inicial.'); return; }
+  CUSTOM={from:from,to:to}; RANGE=-1;
+  if(LOADED_LIMIT===0) render(); else load();
+});
+var _lqT=null;
+el('leadQ').addEventListener('input', function(){ clearTimeout(_lqT); _lqT=setTimeout(renderBusca,200); });
+el('leadQclear').addEventListener('click', function(){ el('leadQ').value=''; renderBusca(); });
 Array.prototype.forEach.call(el('lpmode').querySelectorAll('button'), function(b){
   b.addEventListener('click', function(){
     el('lpmode').querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
@@ -373,7 +402,37 @@ function sessIsBlack(v){ return String(v.variante||'')==='lp-black' || /\/black\
 
 function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.card'); if(card){ var h=card.querySelector('h2'); if(h) h.textContent=text; } } }
 
+function _ateTo(obj,fields,to){ var o={}; for(var k in obj){ var v=obj[k]||{}; var t=0; for(var i=0;i<fields.length&&!t;i++) t=v[fields[i]]||0; if(!t||t<=to) o[k]=v; } return o; }
+function _eventsAteTo(E,to){ var o={}; for(var sid in E){ var g=E[sid]||{}, gg={}; for(var k in g){ var ev=g[k]||{}; if(!ev.t||ev.t<=to) gg[k]=ev; } o[sid]=gg; } return o; }
 function render(){
+  if(!CUSTOM){ _renderCore(); renderBusca(); return; }
+  var bak={s:cache.sessions,l:cache.leads,e:cache.events};
+  try{
+    cache.sessions=_ateTo(bak.s||{},['firstSeen','lastSeen'],CUSTOM.to);
+    cache.leads=_ateTo(bak.l||{},['_createdAt'],CUSTOM.to);
+    cache.events=_eventsAteTo(bak.e||{},CUSTOM.to);
+    _renderCore();
+  } finally { cache.sessions=bak.s; cache.leads=bak.l; cache.events=bak.e; }
+  renderBusca();
+}
+/* Busca de lead por telefone/nome em TODA a base de leads (independe da aba e do período) */
+function renderBusca(){
+  var box=el('leadQres'); if(!box) return;
+  var q=String((el('leadQ')||{}).value||'').trim(); el('leadQclear').style.display=q?'':'none';
+  if(!q){ box.innerHTML=''; return; }
+  var qd=q.replace(/\D/g,'').replace(/^55(?=\d{10,11}$)/,''), qt=q.toLowerCase();
+  var L=cache.leads||{}, out=[];
+  for(var k in L){ var l=L[k]||{}; var tel=String(leadTel(l)||l.telefone||'').replace(/\D/g,'');
+    var okTel=qd.length>=4 && tel.indexOf(qd)>=0;
+    var okNome=!/^\d+$/.test(q.replace(/[\s()+-]/g,'')) && String(l.nome||'').toLowerCase().indexOf(qt)>=0;
+    if(okTel||okNome) out.push(l); }
+  out.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  box.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">'+out.length+' resultado'+(out.length===1?'':'s')+' na base inteira</div>'+
+    (out.length?'<table style="margin-bottom:18px;"><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th class="num">Quando</th></tr></thead><tbody>'+
+      out.slice(0,50).map(function(l){ return '<tr><td>'+esc(l.nome||'—')+'</td><td>'+wppCell(l)+'</td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||l.faixa||'—')+'</td><td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+
+      '</tbody></table>':'<div class="empty" style="margin-bottom:14px;">Nenhum lead encontrado com esse telefone/nome.</div>');
+}
+function _renderCore(){
   setH2('sources','Origem do tráfego');
   setH2('pedidosDist','Pedidos por faixa — quem qualifica × quem vai pro Vivendo');
   setH2('adsDist','Anúncios que trazem leads — Qualificados × Vivendo');
@@ -388,7 +447,7 @@ function render(){
   var v3 = (MODE==='v3');
   var black = (MODE==='black');
   var now = Date.now();
-  var cut = RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000);
+  var cut = _cutFrom(now);
 
   /* sessões no período — só existem para a LP nova (a LP antiga nunca teve o tracking próprio) */
   var sess = [];
@@ -507,7 +566,7 @@ function render(){
 
   renderAdsDist(cut);
   var lpLabel = antiga ? 'LP antiga (Elementor)' : (black ? 'LP Black (lp-black · /black/)'+(nViaRx?' · '+nViaRx+(nViaRx>1?' leads vieram':' lead veio')+' do Raio-X':'') : (v3 ? 'LP V3 (lp-v3)' : 'LP nova (audens-lp)'));
-  var per = (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  var per = _perLabel();
   el('status').textContent = ((antiga? nLeads===0 : (total===0 && nLeads===0))
     ? (antiga ? 'Nenhum lead da LP antiga neste período.' : 'Ainda não há dados da LP nova neste período. Assim que o tráfego chegar (ou você navegar nela), os números aparecem aqui.')
     : 'Atualizado agora · '+lpLabel+' · período: '+per);
@@ -523,7 +582,7 @@ function renderBio(){
   setH2('adsDist','Taxa de clique por botão');
   setH2('leads','Leads que chegaram pelos links da bio');
   var now=Date.now();
-  var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var cut = _cutFrom(now);
   var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
   var NOMES={black:'Destaque Black Friday',assessoria:'Assessoria de marketing','raio-x':'Raio-X do Delivery',club:'Audens Club',finance:'Audens Finance',youtube:'Canal no YouTube (card)','youtube-icone':'YouTube (ícone)',instagram:'Instagram (ícone)',tiktok:'TikTok (ícone)','insta-burguer':'Instagram Burguer FC','insta-pizza':'Instagram Pizza FC'};
   function isBio(sid){ var sv=S[sid]||{}; return sv.variante==='bio' || /\/links\/?/.test(String(sv.page||'')); }
@@ -583,7 +642,7 @@ function renderBio(){
   el('leads').innerHTML = ls.length ? '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
     ls.slice(0,40).map(function(l){ return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+'</td><td>'+wppCell(l)+'</td><td>'+esc(normLPName(l))+'</td><td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>'
     : '<div class="empty">Nenhum lead veio pelos links da bio neste período.</div>';
-  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  var per=_perLabel();
   el('status').textContent = C.vis===0 ? 'Ainda não há visitas na página de links neste período.' : ('Atualizado agora · Links da bio (/links/) · período: '+per);
 }
 function normLPName(l){ var s=String(l._source||l.origem||'').toLowerCase(); if(/raio-?x/.test(s)) return 'Raio-X'; if(/black/.test(s)) return 'LP Black'; if(/v3/.test(s)) return 'LP V3'; if(/quiz|fv/.test(s)) return 'Quiz'; return s||'—'; }
@@ -595,7 +654,7 @@ function renderRaioX(){
   setH2('adsDist','Restaurantes analisados (todas as visitas)');
   setH2('leads','Leads do Raio-X (com atribuição)');
   var now=Date.now();
-  var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var cut = _cutFrom(now);
   var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
   function isRX(sid){ var sv=S[sid]||{}; if(String(sv.page||'').indexOf('raio-x')>=0||sv.variante==='raio-x') return true; var ev=E[sid]; if(ev){ for(var k in ev){ var e=ev[k]||{}; if(e.e==='lp_view'&&e.p&&e.p.variante==='raio-x') return true; } } return false; }
   function evOf(sid){ var o={n:{},etapa:0,rest:'',nota:'',faixa:'',oferta:'',notaRX:''}; var ev=E[sid]; if(ev){ for(var k in ev){ var e=ev[k]||{}, p=e.p||{}; if(!e.e) continue; o.n[e.e]=(o.n[e.e]||0)+1;
@@ -679,7 +738,7 @@ function renderRaioX(){
   el('leads').innerHTML = ls.length ? '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Restaurante</th><th>Nota Raio-X</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
     ls.slice(0,40).map(function(l){ return '<tr><td>'+esc((l.nome||'—').split(' ').slice(0,2).join(' '))+(l.black_interesse?' <span class="pill" style="background:rgba(229,50,45,.18);color:#ff6a64">🖤 Black</span>':'')+'</td><td>'+wppCell(l)+'</td><td>'+esc(l.empresa||l.restaurante||'—')+'</td><td>'+(function(){ var m=String(l.desafio||'').match(/Raio-X (\d+)\/100/); return m?m[1]+'/100':(l.raiox_nota!=null?esc(l.raiox_nota)+'/100':'—'); })()+'</td>'+origemCell(l)+adCell(l)+campCell(l)+'<td>'+esc(l.faturamento||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+'</tbody></table>'
     : '<div class="empty">Nenhum lead do Raio-X no período. </div>';
-  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  var per=_perLabel();
   el('status').textContent = C.vis===0 ? 'Ainda não há visitas no Raio-X neste período.' : ('Atualizado agora · Raio-X do Delivery (/raio-x/) · período: '+per);
 }
 
@@ -697,7 +756,7 @@ function renderQuiz(variant){
   setH2('funnel','Funil do quiz');
   setH2('abandono','Onde pararam (por pergunta)');
   var now=Date.now();
-  var cut = RANGE>=99999?0:(RANGE===0?new Date().setHours(0,0,0,0):now-RANGE*86400000);
+  var cut = _cutFrom(now);
   var S=cache.sessions||{}, E=cache.events||{}, L=cache.leads||{};
   function evOf(sid){ var o={n:{},p:{},ped:null,pedOut:null}; var ev=E[sid]; if(ev){ for(var kk in ev){ var e=ev[kk]||{}; if(e.e) o.n[e.e]=1; if(e.e==='quiz_answer'&&e.p&&e.p.pergunta) o.p[e.p.pergunta]=1; if((e.e==='qualified_lead'||e.e==='lp_vivendo_view'||e.e==='lp_vivendo_redirect')&&e.p&&e.p.pedidos){ o.ped=e.p.pedidos; o.pedOut=(e.e==='qualified_lead'?'qual':'viv'); } } } return o; }
   /* agrega uma janela de tempo [a,b) — reusada p/ período atual e anterior */
@@ -800,7 +859,7 @@ function renderQuiz(variant){
   if(rowsHtml){
     el('leads').innerHTML = '<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faixa</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+(qsRows.length?('<div class="empty" style="margin-top:8px">⚠ '+qsRows.length+' qualificaram no quiz mas não deixaram nome/WhatsApp na LP (agendaram direto ou saíram antes do contato).</div>'):'');
   } else { el('leads').innerHTML = '<div class="empty">Nenhum lead do quiz no período.</div>'; }
-  var per=(RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias'));
+  var per=_perLabel();
   el('status').textContent = vis===0 ? 'Ainda não há dados do '+VNAME+' neste período.' : ('Atualizado agora · '+VNAME+' ('+VPAGE+') · período: '+per);
 }
 
