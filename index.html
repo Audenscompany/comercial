@@ -617,6 +617,7 @@ function startRealtimeSync(){
     kanbanData = fbKanban;
     try{ purgeArchivedLeadTasks(); }catch(e){}
     try{ autoArquivarLeadsAntigos(); }catch(e){}
+    try{ restaurarUpsellArquivados(); }catch(e){}
     try{ autoArquivarLeadsBaixoFat(); }catch(e){}
     var changed = JSON.stringify(kanbanData) !== prev;
     if(changed){
@@ -2913,8 +2914,50 @@ function _fatFloorCli(faixa,faturamento){
 // Lead QUALIFICADO (>= R$40 mil) — piso. "Ate 40 mil" e sem-dado NAO qualificam.
 function _qual40(faixa,fat){ return _fatFloorCli(faixa,fat)>=KANBAN_TASK_FAT_MIN; }
 // Faturamento é CONHECIDO e abaixo de 40k (para arquivar). Sem-dado => false (nao arquiva).
-function _fatConhecidoBaixo(faixa,fat){ var temDado=!!(String(faixa||'').trim()||String(fat||'').trim()); return temDado && !_qual40(faixa,fat); }
+// Piso do FUNIL (quem fica no kanban, recebe cadência e tarefa do João): R$20 mil — 20–40k = Upsell.
+// (_qual40 continua valendo só pros relatórios de "qualificado ≥40k")
+var KANBAN_FUNIL_FAT_MIN=20000;
+function _qualFunil(faixa,fat){ return _fatFloorCli(faixa,fat)>=KANBAN_FUNIL_FAT_MIN; }
+function _fatConhecidoBaixo(faixa,fat){ var temDado=!!(String(faixa||'').trim()||String(fat||'').trim()); return temDado && !_qualFunil(faixa,fat); }
 var _autoArqFatBusy=false;
+// UMA VEZ: devolve pro funil (Novo Lead) os leads de R$20–40k que entraram desde 13/11/2026 e foram
+// arquivados pela regra antiga (<40k). Religa a cadência e recria a tarefa do João de chamar pra reunião.
+var _restUpsellFeito=false;
+async function restaurarUpsellArquivados(){
+  if(_restUpsellFeito)return; _restUpsellFeito=true;
+  if(!fbDb && !initFirebase())return; if(typeof kanbanData==='undefined'||!kanbanData)return;
+  try{ var flag=await fbGet('config/migr_upsell_restore_v1'); if(flag)return; }catch(e){ return; }
+  var desde=Date.parse('2026-11-13T00:00:00-03:00'), now=Date.now(), updates={}, n=0;
+  var b=new Date(now).toLocaleString('en-CA',{timeZone:'America/Sao_Paulo',hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit'});
+  var mm=b.match(/(\d{4})-(\d{2})-(\d{2})[,\s]+(\d{2})/); var hoje=mm?(mm[1]+'-'+mm[2]+'-'+mm[3]):new Date().toISOString().slice(0,10);
+  var hojeISO=new Date().toISOString().slice(0,10);
+  Object.keys(kanbanData).forEach(function(k){
+    var e=kanbanData[k]; if(!e||e.status!=='arquivado')return;
+    var _rec=(typeof _leadRec==='function')?_leadRec(e):null;
+    var cri=e._createdAt||(_rec&&_rec._createdAt)||0; if(!cri||cri<desde)return;
+    if(e.meetingId||e.meetingISO)return;
+    var faix=e.faixa||(_rec&&_rec.faixa)||'', fat=e.faturamento||(_rec&&_rec.faturamento)||'';
+    var fl=_fatFloorCli(faix,fat); if(!(fl>=20000&&fl<40000))return;
+    var _sh=e.statusHistory||{}; _sh['novo']=now;
+    e.status='novo'; e.statusAt=now; e.statusHistory=_sh;
+    updates['kanban/'+k+'/status']='novo'; updates['kanban/'+k+'/statusAt']=now; updates['kanban/'+k+'/statusHistory']=_sh;
+    updates['leads/'+k+'/cadencia/status']='active'; updates['leads/'+k+'/cadencia/startedAt']=hoje; updates['leads/'+k+'/cadencia/stopReason']=null; updates['leads/'+k+'/cadencia/paused']=false;
+    updates['cadencia_ativos/'+k]={startedAt:hoje,especialista:'Lucas',at:now,viaRestauracaoUpsell:true};
+    var nome=e.nome||(_rec&&_rec.nome)||'';
+    var tk=k+'_nurt_call0';
+    if(!(sdrTarefas&&sdrTarefas[tk])){
+      var t={leadKey:k,nome:nome,telefone:String(e.telefone||(_rec&&_rec.telefone)||'').replace(/\D/g,''),empresa:e.empresa||(_rec&&_rec.empresa)||'',faturamento:fat||faix,
+        tipo:'📞 Ligar — lead UPSELL (20–40k) · '+String(nome).split(' ')[0]+' — chamar pra reunião',icon:'ti-phone',dia:0,periodo:(new Date().getHours()<13?'manha':'tarde'),
+        dataISO:hojeISO,done:false,doneAt:null,nurt:true,createdAt:now};
+      updates['sdr_tarefas/'+tk]=t; if(sdrTarefas)sdrTarefas[tk]=t;
+    }
+    n++;
+  });
+  updates['config/migr_upsell_restore_v1']={at:now,restaurados:n};
+  try{ await fbDb.ref().update(updates); }catch(e){ console.error('restaurarUpsell:',e); return; }
+  try{ localStorage.setItem('audens_kanban',JSON.stringify(kanbanData)); }catch(e){}
+  if(n){ try{ showSheetToast(n+' lead'+(n===1?'':'s')+' de Upsell (20–40k) voltaram pro funil.',false); }catch(e){} }
+}
 // Arquiva automaticamente leads com faturamento CONHECIDO < R$40 mil (em Novo/Qualificado),
 // pra nao poluir o kanban nem gerar tarefa. Sem-dado fica no funil.
 function autoArquivarLeadsBaixoFat(){
@@ -3068,7 +3111,7 @@ function kanbanBusinessDay(baseDate,n){
 // Gera as tarefas de cadencia para o Joao quando um lead qualificado (>= R$20 mil) entra no funil
 function generateCadenciaTasks(lead,leadKey,forced){
   if(!fbDb && !initFirebase()) return;
-  if(!forced && !_qual40(lead.faixa,lead.faturamento)) return;
+  if(!forced && !_qualFunil(lead.faixa,lead.faturamento)) return;
   var base=new Date();
   // Se o lead chegou após as 17h (ou em fim de semana), tarefas começam no próximo dia útil
   if(base.getHours()>=17 || !checkDay(base).ok){
@@ -3101,7 +3144,7 @@ function purgeLowFatCallTasks(){
     if(/_nurt_/.test(tk)||t.nurt===true) return;
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[t.leadKey])||null;
     var faix=(kb&&kb.faixa)||'', fat=t.faturamento||(kb&&kb.faturamento)||'';
-    if(_qual40(faix,fat)) return; // >=40k fica
+    if(_qualFunil(faix,fat)) return; // >=20k fica (inclui Upsell)
     upd['sdr_tarefas/'+tk]=null; delete sdrTarefas[tk]; n++;
   });
   if(n){ try{ fbDb.ref().update(upd); }catch(e){} try{localStorage.setItem('audens_sdr_tarefas',JSON.stringify(sdrTarefas));}catch(e){} }
@@ -3116,7 +3159,7 @@ function syncJoaoCallTasks(){
     var kb=(typeof kanbanData!=='undefined'&&kanbanData[leadKey])||{};
     var ca=(cadenciaAtivos&&cadenciaAtivos[leadKey])||{};
     // Só gera tarefa de ligação para lead QUALIFICADO (>= R$40 mil). Nada de tarefa em lead <40k.
-    if(!_qual40(kb.faixa||ca.faixa||'', kb.faturamento||ca.faturamento||'')) return;
+    if(!_qualFunil(kb.faixa||ca.faixa||'', kb.faturamento||ca.faturamento||'')) return;
     generateCadenciaTasks({nome:kb.nome||ca.nome||ca.primeiroNome||'',telefone:kb.telefone||ca.telefone||ca.phone||'',empresa:kb.empresa||ca.empresa||'',faturamento:kb.faturamento||ca.faturamento||''},leadKey);
   });
 }
