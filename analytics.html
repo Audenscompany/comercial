@@ -25,6 +25,8 @@
   .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .seg button{background:transparent;border:0;color:var(--muted);font-family:var(--ff);font-size:12.5px;font-weight:600;padding:8px 12px;cursor:pointer}
   .seg button.on{background:var(--purple);color:#fff}
+  .lf input,.lf select{background:transparent;border:1px solid var(--line);color:var(--white);border-radius:10px;padding:8px 10px;font-size:12.5px;font-family:var(--ff);color-scheme:dark}
+  .lf select option{background:#14121c;color:#fff}
   .btn{background:transparent;border:1px solid var(--line);color:var(--white);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
   .btn:hover{border-color:var(--purple2)}
   .wrap{max-width:1180px;margin:0 auto;padding:22px}
@@ -182,11 +184,19 @@
 
     <div class="card" style="margin-top:16px">
       <h2>Leads recentes (com atribuição)</h2>
-      <div style="display:flex;gap:8px;align-items:center;margin:4px 0 12px;">
-        <input id="leadQ" placeholder="🔎 Buscar lead por telefone ou nome (em toda a base)…" style="flex:1;background:transparent;border:1px solid var(--line);color:var(--white);border-radius:10px;padding:9px 12px;font-size:13px;">
-        <button class="btn" id="leadQclear" style="display:none;">Limpar</button>
+      <div class="lf" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 12px;">
+        <input id="leadQ" placeholder="🔎 Nome ou telefone…" style="flex:1 1 220px;">
+        <select id="lfPag" title="Página de origem">
+          <option value="">Todas as páginas</option><option value="nova">LP nova</option><option value="v3">LP V3</option><option value="black">LP Black</option>
+          <option value="quiz">Quiz (FV1/FV2)</option><option value="raiox">Raio-X</option><option value="bio">Links da bio</option><option value="antiga">LP antiga</option><option value="outros">Outros / manual</option>
+        </select>
+        <select id="lfFat" title="Faturamento">
+          <option value="">Todo faturamento</option><option value="lt10">Até R$10 mil</option><option value="10-20">R$10–20 mil</option><option value="20-40">R$20–40 mil (Upsell)</option>
+          <option value="40-60">R$40–60 mil</option><option value="60-100">R$60–100 mil</option><option value="100">R$100 mil+</option><option value="na">Sem informação</option>
+        </select>
+        <select id="lfAd" title="Anúncio" style="max-width:260px;"><option value="">Todos os anúncios</option></select>
+        <button class="btn" id="lfClear">Limpar filtros</button>
       </div>
-      <div id="leadQres"></div>
       <div id="leads"></div>
     </div>
 
@@ -209,7 +219,7 @@ var firebaseConfig = {
 var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
 
 var CUSTOM=null; // período personalizado {from:ms,to:ms}
-function _cutFrom(now){ if(CUSTOM) return CUSTOM.from; return _cutFrom(now); }
+function _cutFrom(now){ if(CUSTOM) return CUSTOM.from; return RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000); }
 function _fmtD(ms){ var d=new Date(ms); return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear(); }
 function _perLabel(){ if(CUSTOM) return _fmtD(CUSTOM.from)+' a '+_fmtD(CUSTOM.to); return _perLabel(); }
 var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null, events:null, kanban:null};
@@ -383,8 +393,9 @@ el('cApply').addEventListener('click', function(){
   if(LOADED_LIMIT===0) render(); else load();
 });
 var _lqT=null;
-el('leadQ').addEventListener('input', function(){ clearTimeout(_lqT); _lqT=setTimeout(renderBusca,200); });
-el('leadQclear').addEventListener('click', function(){ el('leadQ').value=''; renderBusca(); });
+el('leadQ').addEventListener('input', function(){ clearTimeout(_lqT); _lqT=setTimeout(function(){ LF_SHOW=100; renderLeadsTable(); },200); });
+['lfPag','lfFat','lfAd'].forEach(function(id){ el(id).addEventListener('change', function(){ LF_SHOW=100; renderLeadsTable(); }); });
+el('lfClear').addEventListener('click', function(){ el('leadQ').value=''; el('lfPag').value=''; el('lfFat').value=''; el('lfAd').value=''; LF_SHOW=100; renderLeadsTable(); });
 Array.prototype.forEach.call(el('lpmode').querySelectorAll('button'), function(b){
   b.addEventListener('click', function(){
     el('lpmode').querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
@@ -405,7 +416,7 @@ function setH2(innerId,text){ var c=el(innerId); if(c){ var card=c.closest('.car
 function _ateTo(obj,fields,to){ var o={}; for(var k in obj){ var v=obj[k]||{}; var t=0; for(var i=0;i<fields.length&&!t;i++) t=v[fields[i]]||0; if(!t||t<=to) o[k]=v; } return o; }
 function _eventsAteTo(E,to){ var o={}; for(var sid in E){ var g=E[sid]||{}, gg={}; for(var k in g){ var ev=g[k]||{}; if(!ev.t||ev.t<=to) gg[k]=ev; } o[sid]=gg; } return o; }
 function render(){
-  if(!CUSTOM){ _renderCore(); renderBusca(); return; }
+  if(!CUSTOM){ _renderCore(); renderLeadsTable(); return; }
   var bak={s:cache.sessions,l:cache.leads,e:cache.events};
   try{
     cache.sessions=_ateTo(bak.s||{},['firstSeen','lastSeen'],CUSTOM.to);
@@ -413,24 +424,60 @@ function render(){
     cache.events=_eventsAteTo(bak.e||{},CUSTOM.to);
     _renderCore();
   } finally { cache.sessions=bak.s; cache.leads=bak.l; cache.events=bak.e; }
-  renderBusca();
+  renderLeadsTable();
 }
-/* Busca de lead por telefone/nome em TODA a base de leads (independe da aba e do período) */
-function renderBusca(){
-  var box=el('leadQres'); if(!box) return;
-  var q=String((el('leadQ')||{}).value||'').trim(); el('leadQclear').style.display=q?'':'none';
-  if(!q){ box.innerHTML=''; return; }
-  var qd=q.replace(/\D/g,'').replace(/^55(?=\d{10,11}$)/,''), qt=q.toLowerCase();
-  var L=cache.leads||{}, out=[];
-  for(var k in L){ var l=L[k]||{}; var tel=String(leadTel(l)||l.telefone||'').replace(/\D/g,'');
-    var okTel=qd.length>=4 && tel.indexOf(qd)>=0;
-    var okNome=!/^\d+$/.test(q.replace(/[\s()+-]/g,'')) && String(l.nome||'').toLowerCase().indexOf(qt)>=0;
-    if(okTel||okNome) out.push(l); }
-  out.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
-  box.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">'+out.length+' resultado'+(out.length===1?'':'s')+' na base inteira</div>'+
-    (out.length?'<table style="margin-bottom:18px;"><thead><tr><th>Nome</th><th>WhatsApp</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th class="num">Quando</th></tr></thead><tbody>'+
-      out.slice(0,50).map(function(l){ return '<tr><td>'+esc(l.nome||'—')+'</td><td>'+wppCell(l)+'</td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||l.faixa||'—')+'</td><td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+
-      '</tbody></table>':'<div class="empty" style="margin-bottom:14px;">Nenhum lead encontrado com esse telefone/nome.</div>');
+/* ===== Tabela geral de leads: TODAS as páginas, com filtros (data = período do topo, página, faturamento, anúncio, busca) ===== */
+var LF_SHOW=100;
+function _pagOf(l){
+  var src=String(l._source||'').toLowerCase();
+  var hay=[l._source,l.origem,l.variante_lp,l.utm_source,l.variante,l.page,l.lp,l.funil].map(function(x){return String(x||'').toLowerCase();}).join(' ');
+  if(hay.indexOf('raio-x')>=0||hay.indexOf('raiox')>=0) return 'raiox';
+  if(String(l.utm_medium||'').toLowerCase()==='bio') return 'bio';
+  if(hay.indexOf('quiz')>=0||hay.indexOf('fv1')>=0||hay.indexOf('fv2')>=0) return 'quiz';
+  if(isBlack(src)) return 'black'; if(isV3(src)) return 'v3'; if(isNova(src)) return 'nova';
+  if(src && isAntiga(src)) return 'antiga';
+  return 'outros';
+}
+var _PAG_LBL={nova:'LP nova',v3:'LP V3',black:'LP Black',quiz:'Quiz',raiox:'Raio-X',bio:'Links da bio',antiga:'LP antiga',outros:'Outros'};
+function _fatFloor(l){
+  var f=String(l.faixa||'').trim(), m=f.match(/^(\d+)\s*-\s*(\d+)$/); if(m) return parseInt(m[1],10)*1000;
+  if(/^\d+\+$/.test(f)) return parseInt(f,10)*1000;
+  var s=String(l.faturamento||'').toLowerCase().trim(); if(!s&&!f) return null;
+  if(/^\s*(r\$)?\s*(at[eé]|menos de|abaixo|no m[aá]ximo)/.test(s)) return 0;
+  var raw=s.match(/\d[\d.,]*/g); if(!raw) return f?0:null;
+  var nums=raw.map(function(t){t=t.replace(/\.(?=\d{3}\b)/g,'').replace(/,(?=\d{3}\b)/g,'').replace(',','.');return parseFloat(t)||0;}).filter(function(x){return x>0;});
+  if(!nums.length) return 0; var mn=Math.min.apply(null,nums);
+  if(s.indexOf('milh')!==-1) mn=mn*1e6; else if(s.indexOf('mil')!==-1&&mn<1000) mn=mn*1000; return mn;
+}
+function _fatBucket(l){ var v=_fatFloor(l); if(v==null) return 'na'; if(v<10000) return 'lt10'; if(v<20000) return '10-20'; if(v<40000) return '20-40'; if(v<60000) return '40-60'; if(v<100000) return '60-100'; return '100'; }
+function renderLeadsTable(){
+  var box=el('leads'); if(!box) return;
+  var now=Date.now(), cut=_cutFrom(now), to=CUSTOM?CUSTOM.to:Infinity;
+  var q=String(el('leadQ').value||'').trim(), pag=el('lfPag').value, fat=el('lfFat').value, ad=el('lfAd').value;
+  var qd=q.replace(/\D/g,'').replace(/^55(?=\d{10,11}$)/,''), soNum=!!q&&/^[\d\s()+-]+$/.test(q), qt=q.toLowerCase();
+  var L=cache.leads||{}, base=[];
+  for(var k in L){ var l=L[k]||{}; var t=l._createdAt||0; if(t<cut||t>to) continue; if(pag&&_pagOf(l)!==pag) continue; if(fat&&_fatBucket(l)!==fat) continue; base.push(l); }
+  var adCount={}; base.forEach(function(l){ var a=adTxt(l); adCount[a]=(adCount[a]||0)+1; });
+  var adKeys=Object.keys(adCount).sort(function(a,b){return adCount[b]-adCount[a];});
+  if(ad&&!adCount[ad]) ad='';
+  el('lfAd').innerHTML='<option value="">Todos os anúncios ('+adKeys.length+')</option>'+adKeys.map(function(a){return '<option value="'+esc(a)+'"'+(a===ad?' selected':'')+'>'+esc(a.length>60?a.slice(0,60)+'…':a)+' ('+adCount[a]+')</option>';}).join('');
+  var ls=base.filter(function(l){
+    if(ad&&adTxt(l)!==ad) return false;
+    if(!q) return true;
+    if(soNum){ return qd.length>=3 && String(leadTel(l)).indexOf(qd)>=0; }
+    return String(l.nome||'').toLowerCase().indexOf(qt)>=0 || String(l.empresa||'').toLowerCase().indexOf(qt)>=0;
+  });
+  ls.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  var filtros=(q||pag||fat||ad);
+  var head='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+ls.length+' lead'+(ls.length===1?'':'s')+' · período: '+_perLabel()+(filtros?' · com filtros':'')+(q&&!ls.length&&!CUSTOM&&RANGE<99999?' — <a href="#" id="lfTudo" style="color:#a78bfa;">buscar em todo o histórico</a>':'')+'</div>';
+  if(!ls.length){ box.innerHTML=head+'<div class="empty">Nenhum lead com esses filtros.</div>'; }
+  else {
+    box.innerHTML=head+'<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Página</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
+      ls.slice(0,LF_SHOW).map(function(l){ return '<tr><td>'+esc(l.nome||'—')+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(_PAG_LBL[_pagOf(l)]||'—')+'</span></td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||l.faixa||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+
+      '</tbody></table>'+(ls.length>LF_SHOW?'<div style="text-align:center;margin-top:12px;"><button class="btn" id="lfMais">Mostrar mais ('+(ls.length-LF_SHOW)+' restantes)</button></div>':'');
+  }
+  var mais=el('lfMais'); if(mais) mais.onclick=function(){ LF_SHOW+=200; renderLeadsTable(); };
+  var tudo=el('lfTudo'); if(tudo) tudo.onclick=function(e){ e.preventDefault(); var bt=document.querySelector('#range button[data-d="99999"]'); if(bt) bt.click(); };
 }
 function _renderCore(){
   setH2('sources','Origem do tráfego');
