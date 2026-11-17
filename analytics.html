@@ -221,7 +221,7 @@ var GATE_PASS = "audens2026";   /* <-- troque a senha aqui se quiser */
 var CUSTOM=null; // período personalizado {from:ms,to:ms}
 function _cutFrom(now){ if(CUSTOM) return CUSTOM.from; return RANGE>=99999 ? 0 : (RANGE===0 ? new Date().setHours(0,0,0,0) : now - RANGE*86400000); }
 function _fmtD(ms){ var d=new Date(ms); return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear(); }
-function _perLabel(){ if(CUSTOM) return _fmtD(CUSTOM.from)+' a '+_fmtD(CUSTOM.to); return _perLabel(); }
+function _perLabel(){ if(CUSTOM) return _fmtD(CUSTOM.from)+' a '+_fmtD(CUSTOM.to); return (RANGE>=99999?'tudo':(RANGE===0?'hoje':RANGE+' dias')); }
 var fbDb=null, RANGE=7, MODE='nova', cache={sessions:null, leads:null, events:null, kanban:null};
 var LOADED_LIMIT=-1; // quantas sessões/eventos o cache atual tem (0 = tudo); -1 = nada ainda
 // Quantas sessões buscar p/ o período atual (cobre o dobro do range p/ comparação "vs anterior"). 0 = tudo.
