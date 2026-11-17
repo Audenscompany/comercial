@@ -186,6 +186,7 @@
       <h2>Leads recentes (com atribuição)</h2>
       <div class="lf" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 12px;">
         <input id="leadQ" placeholder="🔎 Nome ou telefone…" style="flex:1 1 220px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="font-size:12px;color:var(--muted);">De</span><input type="date" id="lfDe" title="Chegaram a partir de"><span style="font-size:12px;color:var(--muted);">até</span><input type="date" id="lfAte" title="Chegaram até"></span>
         <select id="lfPag" title="Página de origem">
           <option value="">Todas as páginas</option><option value="nova">LP nova</option><option value="v3">LP V3</option><option value="black">LP Black</option>
           <option value="quiz">Quiz (FV1/FV2)</option><option value="raiox">Raio-X</option><option value="bio">Links da bio</option><option value="antiga">LP antiga</option><option value="outros">Outros / manual</option>
@@ -394,8 +395,8 @@ el('cApply').addEventListener('click', function(){
 });
 var _lqT=null;
 el('leadQ').addEventListener('input', function(){ clearTimeout(_lqT); _lqT=setTimeout(function(){ LF_SHOW=100; renderLeadsTable(); },200); });
-['lfPag','lfFat','lfAd'].forEach(function(id){ el(id).addEventListener('change', function(){ LF_SHOW=100; renderLeadsTable(); }); });
-el('lfClear').addEventListener('click', function(){ el('leadQ').value=''; el('lfPag').value=''; el('lfFat').value=''; el('lfAd').value=''; LF_SHOW=100; renderLeadsTable(); });
+['lfPag','lfFat','lfAd','lfDe','lfAte'].forEach(function(id){ el(id).addEventListener('change', function(){ LF_SHOW=100; renderLeadsTable(); }); });
+el('lfClear').addEventListener('click', function(){ el('lfDe').value=''; el('lfAte').value=''; el('leadQ').value=''; el('lfPag').value=''; el('lfFat').value=''; el('lfAd').value=''; LF_SHOW=100; renderLeadsTable(); });
 Array.prototype.forEach.call(el('lpmode').querySelectorAll('button'), function(b){
   b.addEventListener('click', function(){
     el('lpmode').querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
@@ -452,7 +453,12 @@ function _fatFloor(l){
 function _fatBucket(l){ var v=_fatFloor(l); if(v==null) return 'na'; if(v<10000) return 'lt10'; if(v<20000) return '10-20'; if(v<40000) return '20-40'; if(v<60000) return '40-60'; if(v<100000) return '60-100'; return '100'; }
 function renderLeadsTable(){
   var box=el('leads'); if(!box) return;
-  var now=Date.now(), cut=_cutFrom(now), to=CUSTOM?CUSTOM.to:Infinity;
+  var now=Date.now(), cut=_cutFrom(now), to=CUSTOM?CUSTOM.to:Infinity, perTxt=_perLabel();
+  var de=el('lfDe').value, ate=el('lfAte').value;
+  if(de||ate){ // datas da própria tabela têm prioridade sobre o período do topo
+    cut=de?new Date(de+'T00:00:00').getTime():0; to=ate?new Date(ate+'T23:59:59').getTime():Infinity;
+    perTxt=(de?_fmtD(cut):'início')+' a '+(ate?_fmtD(to):'hoje');
+  }
   var q=String(el('leadQ').value||'').trim(), pag=el('lfPag').value, fat=el('lfFat').value, ad=el('lfAd').value;
   var qd=q.replace(/\D/g,'').replace(/^55(?=\d{10,11}$)/,''), soNum=!!q&&/^[\d\s()+-]+$/.test(q), qt=q.toLowerCase();
   var L=cache.leads||{}, base=[];
@@ -469,7 +475,7 @@ function renderLeadsTable(){
   });
   ls.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
   var filtros=(q||pag||fat||ad);
-  var head='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+ls.length+' lead'+(ls.length===1?'':'s')+' · período: '+_perLabel()+(filtros?' · com filtros':'')+(q&&!ls.length&&!CUSTOM&&RANGE<99999?' — <a href="#" id="lfTudo" style="color:#a78bfa;">buscar em todo o histórico</a>':'')+'</div>';
+  var head='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+ls.length+' lead'+(ls.length===1?'':'s')+' · período: '+perTxt+(filtros?' · com filtros':'')+(q&&!ls.length&&!CUSTOM&&!de&&!ate&&RANGE<99999?' — <a href="#" id="lfTudo" style="color:#a78bfa;">buscar em todo o histórico</a>':'')+'</div>';
   if(!ls.length){ box.innerHTML=head+'<div class="empty">Nenhum lead com esses filtros.</div>'; }
   else {
     box.innerHTML=head+'<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Página</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
