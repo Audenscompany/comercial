@@ -2882,7 +2882,7 @@ function setKanbanBoard(b){_kanbanBoard=(b==='audensfood')?'audensfood':'comerci
 // Mapeia um lead do Audens Food pra uma coluna do quadro AF, mesmo que tenha status do comercial (reunião/venda)
 function _afCol(e){var s=String((e&&e.status)||'');if(s.indexOf('af_')===0)return s;if(s==='fechado')return 'af_fechado';if(s==='perdido'||s==='arquivado')return 'af_perdido';if(s==='reuniao'||s==='proposta'||s==='recuperacao')return 'af_negociacao';return 'af_qualificado';}
 // Origens possiveis de um lead/reuniao (usado no card do Kanban e na coluna ORIGEM da planilha de reunioes)
-var KANBAN_ORIGENS=['Tráfego','Coldcall','Recuperação','Social Selling','Lives','Orgânico','Indicação'];
+var KANBAN_ORIGENS=['Tráfego','Coldcall','Recuperação','Social Selling','Lives','Orgânico','Indicação','Audens Club'];
 // Opcoes de faturamento (mesmas do formulario da LP), usadas no modal de edicao do lead
 var FATURAMENTO_OPTS=['até 10 mil','10 mil até 20 mil','20 mil até 40 mil','40 mil até 60 mil','60 mil até 100 mil','100 mil até 150 mil','150 mil até 300 mil','300 mil até 500 mil','500 mil até 700 mil','acima de 700 mil'];
 // URL base da Cloud Function receberlead (Cloud Run) e secret do webhook,
@@ -12738,7 +12738,7 @@ function _openReunEdit(mid){
   var origen=m.origem||'';
   var cOpts=CLOSERS.map(function(c){return'<option value="'+c+'"'+(c===closer?' selected':'')+'>'+c+'</option>';}).join('');
   var sOpts=['João','Gustavo','Lucas'].map(function(s){return'<option value="'+s+'"'+(s===sdr?' selected':'')+'>'+s+'</option>';}).join('');
-  var origOpts=['Tráfego Pago','Cold Call','Indicação','Orgânico','Social Selling','Recuperação','Manual'].map(function(o){return'<option value="'+o+'"'+(o===origen?' selected':'')+'>'+o+'</option>';}).join('');
+  var origOpts=['Tráfego Pago','Cold Call','Indicação','Orgânico','Social Selling','Recuperação','Audens Club','Manual'].map(function(o){return'<option value="'+o+'"'+(o===origen?' selected':'')+'>'+o+'</option>';}).join('');
   // Remove existing modal if any
   var old=document.getElementById('_reunEditModal');if(old)old.remove();
   var div=document.createElement('div');
@@ -20781,6 +20781,7 @@ function renderReunioesPersonal(){
     if(nl==='indicacao'||nl==='indicacoes'||nl==='indicacoes / outros'||nl==='indicacoes/outros')return'Indicação';
     if(nl==='organico'||nl==='organic'||nl==='organica')return'Orgânico';
     if(nl==='recuperacao'||nl==='recuperacoes'||nl==='retorno')return'Recuperação';
+    if(nl.indexOf('club')>=0)return'Audens Club';
     return n;
   }
   var origMap={};
@@ -20830,7 +20831,7 @@ function renderReunioesPersonal(){
     'cold call':'phone','coldcall':'phone','ligacao':'phone','ligação':'phone','ligacoes':'phone',
     'evento':'calendar-event',
     'recuperacao':'refresh','recuperação':'refresh','retorno':'refresh',
-    'kanban':'layout-kanban','manual':'pencil','outros':'dots-circle-horizontal','bdr':'headset'
+    'kanban':'layout-kanban','manual':'pencil','outros':'dots-circle-horizontal','bdr':'headset','audens club':'crown'
   };
   var origColMap={
     'trafego pago':'var(--purple3)','tráfego pago':'var(--purple3)','trafego':'var(--purple3)','tráfego':'var(--purple3)','ads':'var(--purple3)','meta':'var(--purple3)',
@@ -20840,7 +20841,7 @@ function renderReunioesPersonal(){
     'cold call':'var(--amber)','coldcall':'var(--amber)','ligacao':'var(--amber)','ligação':'var(--amber)','ligacoes':'var(--amber)',
     'evento':'#f97316',
     'recuperacao':'var(--red)','recuperação':'var(--red)','retorno':'var(--red)',
-    'kanban':'var(--purple3)','manual':'var(--muted)','outros':'var(--muted)','bdr':'var(--cyan)'
+    'kanban':'var(--purple3)','manual':'var(--muted)','outros':'var(--muted)','bdr':'var(--cyan)','audens club':'#eab308'
   };
   var origRows=origList.length===0
     ?'<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Sem dados</div>'
@@ -26098,7 +26099,7 @@ function filtrarContratos(){
 
 function buildContratosModal(){
   var gestores=['Arthur G.','Yan Moreira','João Victor','Gabriel C.','Elias Julio','Fernando R.','Diego Torres','Raian Reis'];
-  var origens=['Orgânico','Indicação','Tráfego Pago','Disparo','Cold Call','Social Selling'];
+  var origens=['Orgânico','Indicação','Tráfego Pago','Disparo','Cold Call','Social Selling','Audens Club'];
   return '<div id="modal-contrato" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9000;align-items:center;justify-content:center;" onclick="if(event.target===this)fecharModalContrato()">'+
     '<div style="background:var(--bg1);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;" onclick="event.stopPropagation()">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'+
@@ -30836,14 +30837,14 @@ function _renderVendasTabela(){
       var origCat=v.origemCat||'Indicacoes / Outros';
       var _rawOrig=((v.m&&v.m.origem)||v.origemRaw||'').trim();
       // Normalizar para display
-      function _nOrig(s){if(!s)return'Indicação';var l=s.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'Tráfego Pago';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('cold'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('recupera'))return'Recuperação';if(l.includes('bdr'))return'BDR';return s.slice(0,20);}
+      function _nOrig(s){if(!s)return'Indicação';var l=s.toLowerCase().replace(/[áàãâ]/g,'a').replace(/[éêè]/g,'e').replace(/[íì]/g,'i').replace(/[óõôò]/g,'o').replace(/[úù]/g,'u');if(l.includes('club'))return'Audens Club';if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'Tráfego Pago';if(l.includes('social')||l.includes('selling'))return'Social Selling';if(l.includes('cold'))return'Cold Call';if(l.includes('indica'))return'Indicação';if(l.includes('organ'))return'Orgânico';if(l.includes('recupera'))return'Recuperação';if(l.includes('bdr'))return'BDR';return s.slice(0,20);}
       var origLabel=_nOrig(_rawOrig);
       var _adL=(fu.adicionais&&fu.adicionais.length)?fu.adicionais:[];
       var _adV=fu.adicionaisValor||0;
       var _adChip=(_adL.length||_adV>0)?('<span title="Serviços adicionais" style="margin-left:5px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;background:rgba(52,211,153,0.14);color:#34d399;white-space:nowrap;">+'+(_adL.length||'')+' adic</span>'):'';
       // Ícone e cor baseados na origem real (não só na categoria)
-      var origIcon=origLabel==='Tráfego Pago'?'🎯':origLabel==='Orgânico'?'🌱':origLabel==='Social Selling'?'📲':origLabel==='Cold Call'?'📞':origLabel==='Recuperação'?'🔄':'🤝';
-      var origColor=origLabel==='Tráfego Pago'?'#f472b6':origLabel==='Orgânico'?'#34d399':origLabel==='Social Selling'?'#22d3ee':origLabel==='Cold Call'?'#fbbf24':origLabel==='Recuperação'?'#f97316':'#60a5fa';
+      var origIcon=origLabel==='Audens Club'?'🏅':origLabel==='Tráfego Pago'?'🎯':origLabel==='Orgânico'?'🌱':origLabel==='Social Selling'?'📲':origLabel==='Cold Call'?'📞':origLabel==='Recuperação'?'🔄':'🤝';
+      var origColor=origLabel==='Audens Club'?'#eab308':origLabel==='Tráfego Pago'?'#f472b6':origLabel==='Orgânico'?'#34d399':origLabel==='Social Selling'?'#22d3ee':origLabel==='Cold Call'?'#fbbf24':origLabel==='Recuperação'?'#f97316':'#60a5fa';
       return'<tr onclick="_showVendaDetalhe(\''+fid+'\')" style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'transparent\'">'+
         '<td style="padding:10px 12px;font-weight:600;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+cliente+'</td>'+
         '<td style="padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.5);white-space:nowrap;">'+dtLabel+'</td>'+
@@ -31159,12 +31160,13 @@ function abrirEditarVenda(fid){
   var _origens=[
     {v:'trafego pago',l:'🎯 Tráfego Pago'},
     {v:'social selling',l:'📲 Social Selling'},
+    {v:'audens club',l:'🏅 Audens Club'},
     {v:'cold call',l:'📞 Cold Call'},
     {v:'indicacao',l:'🤝 Indicação'},
     {v:'organico',l:'🌱 Orgânico'},
     {v:'bdr',l:'📋 BDR'}
   ];
-  function _normOrigVal(s){if(!s)return'';var l=s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'trafego pago';if(l.includes('social')||l.includes('selling'))return'social selling';if(l.includes('cold'))return'cold call';if(l.includes('indica'))return'indicacao';if(l.includes('organ'))return'organico';if(l.includes('bdr'))return'bdr';return'';}
+  function _normOrigVal(s){if(!s)return'';var l=s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');if(l.includes('club'))return'audens club';if(l.includes('trafego')||l.includes('pago')||l.includes('ads'))return'trafego pago';if(l.includes('social')||l.includes('selling'))return'social selling';if(l.includes('cold'))return'cold call';if(l.includes('indica'))return'indicacao';if(l.includes('organ'))return'organico';if(l.includes('bdr'))return'bdr';return'';}
   var _selOrig=_normOrigVal(_curOrig);
   var origOpts=_origens.map(function(o){return'<option value="'+o.v+'"'+(_selOrig===o.v?' selected':'')+'>'+o.l+'</option>';}).join('');
   // SDR atual (normalizado)
