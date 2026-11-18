@@ -616,9 +616,8 @@ function startRealtimeSync(){
     var prev = JSON.stringify(kanbanData);
     kanbanData = fbKanban;
     try{ purgeArchivedLeadTasks(); }catch(e){}
-    try{ autoArquivarLeadsAntigos(); }catch(e){}
+    // regra 18/11/2026: NENHUM arquivamento automático — todo lead fica no funil e recebe mensagem
     try{ restaurarUpsellArquivados(); }catch(e){}
-    try{ autoArquivarLeadsBaixoFat(); }catch(e){}
     var changed = JSON.stringify(kanbanData) !== prev;
     if(changed){
       localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
@@ -630,8 +629,7 @@ function startRealtimeSync(){
       _kanbanFirstLoad = false;
       // Na primeira carga: sync de pendentes após Google auth estar pronto
       setTimeout(syncPendingLeadsToSheets, 2000);
-      setTimeout(function(){try{autoArquivarLeadsAntigos();}catch(e){}},3000);
-      setInterval(function(){try{autoArquivarLeadsAntigos();}catch(e){}},30*60000);
+      // (arquivamento automático por inatividade desligado — regra 18/11/2026)
     } else if(changed && isGcalConnected()){
       // Kanban atualizou em tempo real: verifica se há entradas novas sem _sheetSynced
       Object.keys(fbKanban).forEach(function(key){
@@ -2433,7 +2431,7 @@ function renderKanban(){
       '<option value="40-60">R$40 mil a R$60 mil</option>'+
       '<option value="60-100">R$60 mil a R$100 mil</option>'+
       '<option value="gte100">Acima de R$100 mil</option>'+
-      '<option value="gte40">Qualificado (R$40 mil+)</option>'+
+      '<option value="gte40">R$40 mil+</option>'+
     '</select>'+
     syncBtn+'<button class="btn btn-primary" onclick="abrirCriarLead()"><i class="ti ti-plus"></i> Novo Lead</button>'+
     '<span class="badge b-purple" id="kanban-total-badge">'+entries.length+' leads</span>'+
@@ -2895,7 +2893,7 @@ var webhookVendaSecret=localStorage.getItem('webhookVendaSecret')||'';
 // Limite de faturamento (R$) para considerar lead "qualificado" e destacar no card (agora 20 mil)
 var KANBAN_FAT_DESTAQUE=20000;
 // Limite de faturamento (R$) a partir do qual geramos a cadencia de tarefas para o Joao
-var KANBAN_TASK_FAT_MIN=40000;
+var KANBAN_TASK_FAT_MIN=60000; // ICP: lead qualificado = faturamento a partir de R$60 mil (relatórios de anúncio/tráfego)
 // Piso de faturamento (mesma logica do servidor _fatMinSrv): trata "ate X"/"menos de" como TETO (=0),
 // faixa "50-100" como 50000, e usa o menor valor do intervalo. "Ate R$40 mil" => 0 (NAO qualifica).
 function _fatFloorCli(faixa,faturamento){
@@ -2911,12 +2909,12 @@ function _fatFloorCli(faixa,faturamento){
   if(s.indexOf('milh')!==-1) mn=mn*1e6; else if(s.indexOf('mil')!==-1 && mn<1000) mn=mn*1000;
   return mn;
 }
-// Lead QUALIFICADO (>= R$40 mil) — piso. "Ate 40 mil" e sem-dado NAO qualificam.
+// Lead QUALIFICADO / ICP (>= R$60 mil) — piso. Sem-dado NAO qualifica. Usado só nos relatórios.
 function _qual40(faixa,fat){ return _fatFloorCli(faixa,fat)>=KANBAN_TASK_FAT_MIN; }
 // Faturamento é CONHECIDO e abaixo de 40k (para arquivar). Sem-dado => false (nao arquiva).
 // Piso do FUNIL (quem fica no kanban, recebe cadência e tarefa do João): R$20 mil — 20–40k = Upsell.
 // (_qual40 continua valendo só pros relatórios de "qualificado ≥40k")
-var KANBAN_FUNIL_FAT_MIN=20000;
+var KANBAN_FUNIL_FAT_MIN=0; // regra 18/11/2026: todo lead é lead de reunião (sem corte)
 function _qualFunil(faixa,fat){ return _fatFloorCli(faixa,fat)>=KANBAN_FUNIL_FAT_MIN; }
 function _fatConhecidoBaixo(faixa,fat){ var temDado=!!(String(faixa||'').trim()||String(fat||'').trim()); return temDado && !_qualFunil(faixa,fat); }
 var _autoArqFatBusy=false;
@@ -16423,7 +16421,7 @@ function buildAnaliseAdsHTML(data){
   var _kj=[
     {label:'Investido',val:fmtBRL3(gastoAds),sub:'',delta:adsDelta2(gastoAds,_prevGastoAds,false),icon:'ti-coins',bg:'rgba(245,158,11,0.15)',cl:'var(--amber)'},
     {label:'Leads',val:String(totLeads||0),sub:'CPL '+fmtBRL3(_cpl2),delta:adsDelta2(totLeads,_prevTotL,false),icon:'ti-users',bg:'rgba(123,47,255,0.15)',cl:'var(--purple3)'},
-    {label:'Qualificados',val:String(totQualif||0),sub:'CPQL '+fmtBRL3(_cpql)+' · '+Math.round(_txQ2*100)+'%',delta:adsDelta2(totQualif,_prevTotQ,false),icon:'ti-user-check',bg:'rgba(6,182,212,0.15)',cl:'var(--cyan)'},
+    {label:'ICP (60k+)',val:String(totQualif||0),sub:'CPQL '+fmtBRL3(_cpql)+' · '+Math.round(_txQ2*100)+'%',delta:adsDelta2(totQualif,_prevTotQ,false),icon:'ti-user-check',bg:'rgba(6,182,212,0.15)',cl:'var(--cyan)'},
     {label:'Agendadas',val:String(funilAgend||0),sub:'Custo '+fmtBRL3(_custoAgend),delta:adsDelta2(funilAgend,_prevAgend,false),icon:'ti-calendar-plus',bg:'rgba(245,158,11,0.12)',cl:'var(--amber)'},
     {label:'Realizadas',val:String(funilReal||0),sub:'Custo '+fmtBRL3(_cpr2),delta:adsDelta2(funilReal,_prevReal,false),icon:'ti-calendar-check',bg:'rgba(6,182,212,0.12)',cl:'var(--cyan)'},
     {label:'Vendas',val:String(funilFech||0),sub:'CAC '+fmtBRL3(_cac2),delta:adsDelta2(funilFech,_prevFech,false),icon:'ti-cash',bg:'rgba(34,197,94,0.12)',cl:'var(--green)'}

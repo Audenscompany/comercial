@@ -178,7 +178,7 @@
     </div>
 
     <div class="card" style="margin-top:16px">
-      <h2>Anúncios que trazem leads — Qualificados × Vivendo</h2>
+      <h2>Anúncios que trazem leads — ICP (60k+) × demais</h2>
       <div id="adsDist"><div class="empty">Agrupa os leads do período por anúncio (utm_content/ad) e separa quem qualifica de quem vai pro Vivendo.</div></div>
     </div>
 
@@ -193,7 +193,7 @@
         </select>
         <select id="lfFat" title="Faturamento">
           <option value="">Todo faturamento</option><option value="lt10">Até R$10 mil</option><option value="10-20">R$10–20 mil</option><option value="20-40">R$20–40 mil (Upsell)</option>
-          <option value="40-60">R$40–60 mil</option><option value="60-100">R$60–100 mil</option><option value="100">R$100 mil+</option><option value="na">Sem informação</option>
+          <option value="40-60">R$40–60 mil</option><option value="icp">⭐ ICP (R$60 mil+)</option><option value="60-100">R$60–100 mil</option><option value="100">R$100 mil+</option><option value="na">Sem informação</option>
         </select>
         <select id="lfAd" title="Anúncio" style="max-width:260px;"><option value="">Todos os anúncios</option></select>
         <button class="btn" id="lfClear">Limpar filtros</button>
@@ -258,7 +258,7 @@ function destinoLead(l){
   var faixa=String(l.faixa||'');
   var KB=cache.kanban||{}; var kb=KB[leadTel(l)]||null; var st=kb&&kb.status;
   var agendouDeFato=(st==='reuniao'||st==='proposta'||st==='fechado');
-  if(['ate-15','0-15','ate-20'].indexOf(faixa)>=0) return {t:'🎓 Curso (Vivendo de Delivery)', bg:'rgba(124,52,240,.18)', fg:'#c9a2ff'};
+  // (regra 18/11/2026: faixa baixa não vai mais pro curso — todo lead é lead comercial)
   if(agendouDeFato) return {t:'✅ Agendou reunião'+(st!=='reuniao'?' ('+st+')':''), bg:'rgba(37,211,102,.18)', fg:'#25d366'};
   var isQuiz=/quiz/i.test(String(l._source||''));
   if(!isQuiz) return {t:'Lead comercial', bg:'rgba(255,255,255,.06)', fg:'var(--muted)'};
@@ -462,7 +462,7 @@ function renderLeadsTable(){
   var q=String(el('leadQ').value||'').trim(), pag=el('lfPag').value, fat=el('lfFat').value, ad=el('lfAd').value;
   var qd=q.replace(/\D/g,'').replace(/^55(?=\d{10,11}$)/,''), soNum=!!q&&/^[\d\s()+-]+$/.test(q), qt=q.toLowerCase();
   var L=cache.leads||{}, base=[];
-  for(var k in L){ var l=L[k]||{}; var t=l._createdAt||0; if(t<cut||t>to) continue; if(pag&&_pagOf(l)!==pag) continue; if(fat&&_fatBucket(l)!==fat) continue; base.push(l); }
+  for(var k in L){ var l=L[k]||{}; var t=l._createdAt||0; if(t<cut||t>to) continue; if(pag&&_pagOf(l)!==pag) continue; if(fat){ if(fat==='icp'){ var _fi=_fatFloor(l); if(_fi==null||_fi<60000) continue; } else if(_fatBucket(l)!==fat) continue; } base.push(l); }
   var adCount={}; base.forEach(function(l){ var a=adTxt(l); adCount[a]=(adCount[a]||0)+1; });
   var adKeys=Object.keys(adCount).sort(function(a,b){return adCount[b]-adCount[a];});
   if(ad&&!adCount[ad]) ad='';
@@ -479,7 +479,7 @@ function renderLeadsTable(){
   if(!ls.length){ box.innerHTML=head+'<div class="empty">Nenhum lead com esses filtros.</div>'; }
   else {
     box.innerHTML=head+'<table><thead><tr><th>Nome</th><th>WhatsApp</th><th>Página</th><th>Origem</th><th>Anúncio</th><th>Campanha</th><th>Faturamento</th><th>Onde parou</th><th class="num">Quando</th></tr></thead><tbody>'+
-      ls.slice(0,LF_SHOW).map(function(l){ return '<tr><td>'+esc(l.nome||'—')+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(_PAG_LBL[_pagOf(l)]||'—')+'</span></td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||l.faixa||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+
+      ls.slice(0,LF_SHOW).map(function(l){ return '<tr><td>'+esc(l.nome||'—')+((function(){var f=_fatFloor(l);return f!=null&&f>=60000;})()?' <span class="pill" style="background:rgba(34,197,94,.16);color:#4ade80">⭐ ICP</span>':'')+'</td><td>'+wppCell(l)+'</td><td><span class="pill">'+esc(_PAG_LBL[_pagOf(l)]||'—')+'</span></td>'+origemCell(l)+adCell(l)+'<td>'+esc(l.campanha||'—')+'</td><td>'+esc(l.faturamento||l.faixa||'—')+'</td>'+destinoCell(l)+'<td class="num">'+quando(l._createdAt)+'</td></tr>'; }).join('')+
       '</tbody></table>'+(ls.length>LF_SHOW?'<div style="text-align:center;margin-top:12px;"><button class="btn" id="lfMais">Mostrar mais ('+(ls.length-LF_SHOW)+' restantes)</button></div>':'');
   }
   var mais=el('lfMais'); if(mais) mais.onclick=function(){ LF_SHOW+=200; renderLeadsTable(); };
@@ -488,7 +488,7 @@ function renderLeadsTable(){
 function _renderCore(){
   setH2('sources','Origem do tráfego');
   setH2('pedidosDist','Pedidos por faixa — quem qualifica × quem vai pro Vivendo');
-  setH2('adsDist','Anúncios que trazem leads — Qualificados × Vivendo');
+  setH2('adsDist','Anúncios que trazem leads — ICP (60k+) × demais');
   setH2('leads','Leads recentes (com atribuição)');
   if(MODE==='quiz'){ return renderQuiz('fv1'); }
   if(MODE==='quizfv2'){ return renderQuiz('fv2'); }
@@ -962,11 +962,11 @@ function renderAdsDist(cut){
   for(var k in L){ var l=L[k]||{}; if((l._createdAt||0)<cut) continue;
     var ad=String(l.ad||l.utm_content||'').trim();
     if(!ad){ var _fn=String(l.fonte||'').trim(); ad = _fn ? ('◦ '+_fn) : '(sem anúncio / origem desconhecida)'; }
-    var oc=_leadOutcome(l);
+    // regra 18/11/2026: ICP = faturamento a partir de R$60 mil; o resto é "demais" (todos seguem como lead)
+    var _fv=_fatFloor(l);
     if(!map[ad]) map[ad]={qual:0,viv:0,tot:0};
     map[ad].tot++;
-    if(oc==='qualificado'){ map[ad].qual++; tq++; }
-    else if(oc==='vivendo'){ map[ad].viv++; tv++; }
+    if(_fv!=null&&_fv>=60000){ map[ad].qual++; tq++; } else { map[ad].viv++; tv++; }
   }
   var ks=Object.keys(map).sort(function(a,b){ return (map[b].qual+map[b].viv)-(map[a].qual+map[a].viv); }).slice(0,12);
   if(!ks.length || (tq+tv)===0){ box.innerHTML='<div class="empty">Sem leads com atribuição de anúncio no período. (Os leads precisam ter chegado pela LP com utm_content/ad do anúncio.)</div>'; return; }
@@ -974,10 +974,10 @@ function renderAdsDist(cut){
   var rows=ks.map(function(k){ var q=map[k].qual,v=map[k].viv;
     return '<div class="row" style="align-items:center"><div class="name" style="min-width:180px" title="'+esc(k)+'">'+esc(k)+'</div>'+
       '<div class="bar" style="display:flex"><span class="g" style="width:'+Math.round(q/mx*100)+'%"></span><span class="a" style="width:'+Math.round(v/mx*100)+'%"></span></div>'+
-      '<div class="val" style="min-width:130px"><b style="color:var(--green)">'+q+'</b> qual · <b style="color:var(--amber)">'+v+'</b> viv</div></div>';
+      '<div class="val" style="min-width:130px"><b style="color:var(--green)">'+q+'</b> ICP · <b style="color:var(--amber)">'+v+'</b> demais</div></div>';
   }).join('');
   box.innerHTML='<div class="bars">'+rows+'</div>'+
-    '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = leads qualificados · <span style="color:var(--amber)">âmbar</span> = leads Vivendo. Total no período: <b style="color:var(--green)">'+tq+'</b> qualif × <b style="color:var(--amber)">'+tv+'</b> Vivendo. Cruze com o CTR/gasto de cada anúncio pra ver quais trazem qualificado e quais só alimentam o Vivendo. As linhas com <b>◦</b> na frente não são anúncio pago — são a origem real do lead (bio, Instagram orgânico, direto, indicação), agora rastreada automaticamente.</div>';
+    '<div class="empty" style="margin-top:8px"><span style="color:var(--green)">verde</span> = ICP (faturamento R$60 mil+) · <span style="color:var(--amber)">âmbar</span> = demais leads. Total no período: <b style="color:var(--green)">'+tq+'</b> ICP × <b style="color:var(--amber)">'+tv+'</b> demais. Cruze com o CTR/gasto de cada anúncio pra ver quais trazem qualificado e quais só alimentam o Vivendo. As linhas com <b>◦</b> na frente não são anúncio pago — são a origem real do lead (bio, Instagram orgânico, direto, indicação), agora rastreada automaticamente.</div>';
 }
 
 tryGate();

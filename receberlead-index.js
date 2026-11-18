@@ -266,6 +266,31 @@ function toWhatsappPhone(tel) {
   return d;
 }
 
+// ===== Validação de WhatsApp (regra 18/11/2026: só entra lead com WhatsApp válido) =====
+// Celular BR: DDD (11–99, sem 0 no fim) + 9 + 8 dígitos. Aceita com/sem 55 e qualquer máscara.
+function waValidoBR(telRaw) {
+  var d = String(telRaw || "").replace(/\D/g, "");
+  if (d.indexOf("55") === 0 && (d.length === 12 || d.length === 13)) d = d.slice(2);
+  if (d.length !== 11) return null;
+  var ddd = parseInt(d.slice(0, 2), 10);
+  if (ddd < 11 || ddd > 99 || d.charAt(1) === "0") return null;
+  if (d.charAt(2) !== "9") return null;
+  if (/^(\d)\1+$/.test(d.slice(3))) return null; // 99999999 etc.
+  return "55" + d;
+}
+// Confere na Z-API se o número tem WhatsApp. Só bloqueia se a Z-API disser explicitamente que NÃO existe
+// (se a Z-API cair/demorar, deixa passar pra não perder lead).
+async function waExisteZapi(phone55) {
+  if (!ZAPI_INSTANCE_ID || !ZAPI_TOKEN) return true;
+  try {
+    var ctrl = new AbortController(); var tm = setTimeout(function () { ctrl.abort(); }, 4000);
+    var r = await fetch("https://api.z-api.io/instances/" + ZAPI_INSTANCE_ID + "/token/" + ZAPI_TOKEN + "/phone-exists/" + phone55, { headers: zapiHeaders(), signal: ctrl.signal });
+    clearTimeout(tm);
+    var j = await r.json().catch(function () { return {}; });
+    return !(j && j.exists === false);
+  } catch (e) { return true; }
+}
+
 function zapiHeaders() {
   const headers = { "Content-Type": "application/json" };
   if (ZAPI_CLIENT_TOKEN) headers["Client-Token"] = ZAPI_CLIENT_TOKEN;
@@ -606,7 +631,7 @@ async function runRiscoTick(RISK_H, dry) {
     var dms = new Date(m.dtISO).getTime(); if (isNaN(dms)) continue;
     var hLeft = (dms - now) / 3600000; if (hLeft < 0 || hLeft > RISK_H) continue;
     var fm = Number(m.tag_fatmin || 0) || _fatMinSrv(m.faixa || "", m.faturamentoLead || m.faturamento || "");
-    if (fm < NURT_MIN_FAT) continue; // só reuniões qualificadas (>=20k, inclui Upsell)
+    // regra 18/11/2026: alerta vale pra todas as reuniões
     var tag = m.tag || (fm >= 100000 ? "Elite" : (fm >= 60000 ? "Premium" : (fm >= 40000 ? "Starter" : "Upsell")));
     var su = m.showup || {}; var conf = !!(m.confirmado || m.confirmacao || su.confirmado || su.status === "confirmado"); if (conf) continue;
     lista.push({ nome: m.nome || "", tel: m.tel || "", quando: m.dtDisplay || m.dtISO, tag: tag, closer: m.responsavel || "", faltam_h: Math.round(hLeft) });
@@ -839,6 +864,17 @@ async function handleReceberLead(req, res) {
     });
   }
 
+  // Só aceita WhatsApp válido (formato BR + existe no WhatsApp)
+  const _wa = waValidoBR(telefoneRaw);
+  if (!_wa || !(await waExisteZapi(_wa))) {
+    try { await db.ref("leads_invalidos").push({ nome: String(nome || ""), telefone: String(telefoneRaw || ""), motivo: _wa ? "sem_whatsapp" : "formato", origem: String(origem || ""), at: Date.now() }); } catch (e) {}
+    var _msgWa = "Informe um WhatsApp válido com DDD (ex.: 31 99999-9999).";
+    if (isBrowser) {
+      var _ref = String(req.headers.referer || REDIRECT_ERR);
+      return res.redirect(302, _ref + (_ref.indexOf("?") >= 0 ? "&" : "?") + "erro=whatsapp");
+    }
+    return res.status(400).json({ ok: false, error: "whatsapp_invalido", mensagem: _msgWa });
+  }
   const tel = String(telefoneRaw).replace(/\D/g, "");
   const key = (tel || "lead_" + Date.now()).replace(/[.#$\[\]]/g, "_");
 
@@ -872,6 +908,7 @@ async function handleReceberLead(req, res) {
     compromisso_v: String(compromisso_v || ""),
     tag: tag,
     tag_fatmin: _tagInfo.fm,
+    icp: _tagInfo.fm >= 60000, // ICP = faturamento a partir de R$60 mil (pra medir qual anúncio traz lead bom)
     fonte: String(fonte || ""),
     ref: String(refOrigin || ""),
     first_touch: first_touch || null,
@@ -914,12 +951,13 @@ async function handleReceberLead(req, res) {
   // e NÃO recebem mensagem (entram arquivados no board, apenas salvos no banco).
   const _invLC = String(investimento || "").toLowerCase();
   const _naoQuer = _invLC === "nao" || _invLC.indexOf("prioridade") >= 0 || _invLC.indexOf("não pretendo") >= 0 || _invLC.indexOf("nao pretendo") >= 0 || _invLC.indexOf("não consigo") >= 0 || _invLC.indexOf("nao consigo") >= 0;
-  const faixaBaixa = ["ate-15", "0-15", "ate-20"].includes(String(faixa || "")) || (_naoQuer && ["15-20", "20-50", "15-30", "30-50"].includes(String(faixa || "")));
+  // Regra 18/11/2026: TODO lead recebe mensagem e entra pra reunião (faixa baixa não bloqueia mais).
+  const faixaBaixa = false && ["ate-15", "0-15", "ate-20"].includes(String(faixa || "")) || (_naoQuer && ["15-20", "20-50", "15-30", "30-50"].includes(String(faixa || "")));
   // Regra Lucas: lead ABAIXO de R$40k (ou SEM faturamento informado, fm=0) não recebe a mensagem
   // de "você tem perfil pra assessoria" — recebe a mensagem da MENTORIA (+ redirect pra LP da mentoria).
   // Acima de 40k segue o fluxo normal (quiz qualificado / primeiro contato + nurturing).
   var _fmEntry = _fatMinSrv(String(faixa || ""), String(faturamento || ""));
-  var _mentoriaLead = (_fmEntry < NURT_MIN_FAT);
+  var _mentoriaLead = false; // regra 18/11/2026: ninguém vai mais pra mentoria/Club — todos são lead comercial
   var _mentoriaBase = MENTORIA_LINK, _mentoriaWhats = MENTORIA_LINK_WHATS, _mentoriaRedir = MENTORIA_LINK_REDIRECT;
   if (_mentoriaLead) {
     try { var _mlv = (await db.ref("config/mentoria/link").once("value")).val(); if (_mlv) { _mentoriaBase = String(_mlv); var _sep = (_mentoriaBase.indexOf("?") >= 0 ? "&" : "?"); _mentoriaWhats = _mentoriaBase + _sep + "utm_source=whatsapp&utm_medium=sdr-joao&utm_campaign=mentoria-lead-abaixo40k"; _mentoriaRedir = _mentoriaBase + _sep + "utm_source=lp-assessoria&utm_medium=redirect&utm_campaign=mentoria-lead-abaixo40k"; } } catch (e) {}
@@ -958,13 +996,11 @@ async function handleReceberLead(req, res) {
     }
   }
 
-  // UPSELL (20–40k): garante a tarefa pro João ligar e chamar pra reunião, mesmo com a régua desligada.
+  // TODO lead: garante a tarefa pro João ligar e chamar pra reunião, mesmo com a régua desligada.
   // Usa a mesma chave da régua (_nurt_call0) — se a régua já criou, não duplica.
   try {
-    if (!faixaBaixa && _fmEntry >= NURT_MIN_FAT && _fmEntry < 40000) {
-      await nurtCreateTaskOnce(key + "_nurt_call0", leadData, "📞 Ligar — lead UPSELL (20–40k) · " + primeiroNomeDe(nome || "") + " — chamar pra reunião", "ti-phone", nurtPeriodoAgora());
-    }
-  } catch (e) { console.error("upsell task:", e); }
+    await nurtCreateTaskOnce(key + "_nurt_call0", leadData, (_fmEntry >= 60000 ? "📞 Ligar — lead ICP (60k+) · " : "📞 Ligar — novo lead · ") + primeiroNomeDe(nome || "") + " — chamar pra reunião", "ti-phone", nurtPeriodoAgora());
+  } catch (e) { console.error("call task:", e); }
 
   if (isBrowser) {
     return res.redirect(302, _mentoriaLead ? _mentoriaRedir : REDIRECT_OK);
@@ -3195,7 +3231,7 @@ function cadParseFat(str) {
 }
 function cadResolveEsp(fat) {
   var v = cadParseFat(fat);
-  if (v == null || isNaN(v) || v <= 0) return { nome: null, motivo: "faturamento_invalido" };
+  if (v == null || isNaN(v) || v <= 0) return { nome: "Lucas", motivo: "distribuicao_lucas_sem_fat" }; // regra 18/11: sem faturamento também entra
   // Todos os leads vão para o Lucas (Gustavo saiu da distribuição — 23/09/26)
   return { nome: "Lucas", motivo: "distribuicao_lucas" };
 }
@@ -4452,7 +4488,7 @@ async function campDrainCore() {
 // +1h nova tarefa de ligar, +1h05 tarefa de áudio. Em paralelo: 10 dias de tarefas de ligar
 // (manhã + tarde). As 10 mensagens automáticas (CAD_TEMPLATES) seguem rodando normalmente.
 // Piso de lead "de reunião": a partir de R$20k (20–40k = Upsell). Abaixo disso vai pra mentoria/Club.
-const NURT_MIN_FAT = 20000;
+const NURT_MIN_FAT = 0; // regra 18/11/2026: sem corte — todo lead é lead de reunião
 async function nurtCfg() {
   try { var v = (await db.ref("config/nurturing").once("value")).val() || {};
     return { enabled: v.enabled === true, testPhone: String(v.testPhone || "").replace(/\D/g, ""), dias: parseInt(v.dias, 10) || 10 }; }
@@ -4476,12 +4512,12 @@ async function nurtCreateTaskOnce(key, lead, tipo, icon, periodo) {
 async function nurtStart(leadKey, lead) {
   try {
     var fm = _fatMinSrv(lead.faixa || "", lead.faturamento || "");
-    if (!fm || fm < NURT_MIN_FAT) return { qualified: false };
+    // regra 18/11/2026: todo lead entra na régua (sem corte de faturamento)
     var now = Date.now();
     await db.ref("leads/" + leadKey + "/nurt").set({ status: "active", enteredAt: now, fatMin: fm,
       ligouAt: null, valueSentAt: null, call2Created: false, audioCreated: false, createdAt: now });
     await db.ref("nurt_ativos/" + leadKey).set({ at: now, tel: String(lead.telefone || "").replace(/\D/g, ""), nome: lead.nome || "" });
-    await nurtCreateTaskOnce(leadKey + "_nurt_call0", lead, (fm < 40000 ? "📞 Ligar — lead UPSELL (20–40k) · " : "📞 Ligar — novo lead qualificado · ") + primeiroNomeDe(lead.nome || "") + (fm < 40000 ? " — chamar pra reunião" : ""), "ti-phone", nurtPeriodoAgora());
+    await nurtCreateTaskOnce(leadKey + "_nurt_call0", lead, (fm >= 60000 ? "📞 Ligar — lead ICP (60k+) · " : "📞 Ligar — novo lead · ") + primeiroNomeDe(lead.nome || "") + " — chamar pra reunião", "ti-phone", nurtPeriodoAgora());
     await db.ref("cadencia_events").push({ type: "nurt_started", leadKey: leadKey, fatMin: fm, at: now });
     return { qualified: true };
   } catch (e) { console.error("nurtStart:", e); return { qualified: false }; }
