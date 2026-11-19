@@ -5191,6 +5191,228 @@ async function handleFriaF2Catchup(req, res) {
 }
 // ═══════════════════════ FIM PROSPECÇÃO FRIA ═══════════════════════
 
+// ═══════════════════════ MCP (Model Context Protocol) — acesso SÓ LEITURA do Claude ao CRM ═══════════════════════
+// Rota POST /mcp (JSON-RPC, Streamable HTTP sem streaming). Conecte no Claude em Conectores → "Adicionar conector
+// personalizado" com a URL .../mcp e o cabeçalho  Authorization: Bearer <MCP_TOKEN>.
+// MCP_TOKEN é variável de ambiente do Cloud Run (NUNCA no código — este arquivo fica num repositório público).
+// Nada aqui grava, altera ou envia mensagem: só lê o Firebase.
+const MCP_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const MCP_NOS_PERMITIDOS = ["leads", "kanban", "meetings", "followups", "assinaturas", "contratos", "sdr_tarefas", "gasto_ads",
+  "avaliacoes", "reat_blast_fila", "fria_contatos", "grupo_contatos", "leads_invalidos", "tracking_excecoes", "cadencia_events",
+  "vendas_excluidas", "vendas_excluidas_sig", "analytics/sessions", "instagram/calendario", "financeiro/recebimentos"];
+function mcpAuthOk(req) {
+  var tok = process.env.MCP_TOKEN || "";
+  if (!tok) return false; // sem token configurado o MCP fica fechado
+  var h = String(req.headers["authorization"] || "");
+  var given = h.toLowerCase().indexOf("bearer ") === 0 ? h.slice(7).trim() : String(req.headers["x-mcp-token"] || "");
+  return given === tok;
+}
+function mcpDayBRT(ms) { if (!ms) return ""; var d = new Date(Number(ms) - 3 * 3600 * 1000); if (isNaN(d)) return ""; return d.toISOString().slice(0, 10); }
+function mcpDayISO(iso) { if (!iso) return ""; var d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 10); return mcpDayBRT(d.getTime()); }
+function mcpDayBR(s) { var m = String(s || "").match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? (m[3] + "-" + m[2] + "-" + m[1]) : ""; }
+function mcpInRange(day, de, ate) { if (!day) return !de && !ate; if (de && day < de) return false; if (ate && day > ate) return false; return true; }
+function mcpT9(t) { var d = String(t || "").replace(/\D/g, ""); return d.length > 9 ? d.slice(-9) : d; }
+function mcpNum(x) { var n = parseFloat(x); return isFinite(n) ? n : 0; }
+function mcpFaixaOk(l, min, max) {
+  if (min == null && max == null) return true;
+  var v = _fatMinSrv(l.faixa || "", l.faturamento || "");
+  if (min != null && v < min) return false; if (max != null && v >= max) return false; return true;
+}
+function mcpValorVenda(fu) { return fu.tipoValor === "tcv" ? mcpNum(fu.contrato) : (mcpNum(fu.mensalidade) || mcpNum(fu.contrato)); }
+async function mcpLoad(nos) { var out = {}; await Promise.all(nos.map(async function (n) { try { out[n] = (await db.ref(n).once("value")).val() || {}; } catch (e) { out[n] = {}; } })); return out; }
+function mcpLeadResumo(k, l, kb) {
+  l = l || {}; kb = kb || {};
+  return { key: k, nome: l.nome || kb.nome || "", telefone: l.telefone || kb.telefone || "", email: l.email || kb.email || "",
+    empresa: l.empresa || kb.empresa || "", cidade: l.cidade || kb.cidade || "", faturamento: l.faturamento || kb.faturamento || l.faixa || "",
+    tag: l.tag || kb.tag || "", icp: !!(l.icp || _fatMinSrv(l.faixa || "", l.faturamento || kb.faturamento || "") >= 60000),
+    origem: l._source || kb.origem || l.origem || "", anuncio: l.ad || l.ad_name || kb.ad || "", campanha: l.campanha || kb.campanha || "",
+    conjunto: l.conjunto || "", instagram: l.instagram || kb.instagram || "", status_funil: kb.status || "", entrou_em: mcpDayBRT(l._createdAt || kb._createdAt),
+    reuniao: kb.meetingDisplay || "", responsavel: kb.responsavel || "", favorito: !!kb.favorito };
+}
+const MCP_TOOLS = [
+  { name: "buscar_lead", description: "Busca leads por telefone (qualquer formato), nome ou empresa e devolve a ficha completa: dados, etapa no funil, reuniões, vendas, tarefas pendentes, cadência e anotações.",
+    inputSchema: { type: "object", properties: { consulta: { type: "string", description: "Telefone, nome ou empresa" }, limite: { type: "integer", description: "Máx. de leads (padrão 5)" } }, required: ["consulta"] } },
+  { name: "listar_leads", description: "Lista leads que entraram num período, com filtros. Datas em YYYY-MM-DD (fuso de Brasília). Faturamento em reais (piso da faixa informada).",
+    inputSchema: { type: "object", properties: { de: { type: "string" }, ate: { type: "string" }, origem: { type: "string", description: "Trecho da origem/LP, ex.: lp-black, quiz, raio-x" }, anuncio: { type: "string", description: "Trecho do nome do anúncio" }, faturamento_min: { type: "number" }, faturamento_max: { type: "number" }, status_funil: { type: "string", description: "novo, qualificado, reuniao, proposta, fechado, arquivado..." }, so_icp: { type: "boolean", description: "Só ICP (R$60 mil+)" }, limite: { type: "integer", description: "Padrão 200, máx. 2000" } } } },
+  { name: "resumo_funil", description: "Números de um período: leads (por origem, faixa, ICP, anúncio), reuniões (agendadas, realizadas, no-show, pendentes), vendas (quantidade, valor, por plano/origem/closer, novos x renovações x upsell) e conversões. Datas YYYY-MM-DD.",
+    inputSchema: { type: "object", properties: { de: { type: "string" }, ate: { type: "string" } }, required: ["de", "ate"] } },
+  { name: "listar_reunioes", description: "Lista reuniões com data no período, com status, resultado (venda/retorno/perdida/no-show), closer, origem e faturamento do lead.",
+    inputSchema: { type: "object", properties: { de: { type: "string" }, ate: { type: "string" }, closer: { type: "string" }, status: { type: "string", description: "pending, done, noshow, reagendado, cancelado" }, limite: { type: "integer" } } } },
+  { name: "listar_vendas", description: "Lista vendas (fechamentos) do período por data de início do contrato: cliente, plano, TCV/MRR, valores, duração, tipo (novo/renovação), origem, closer, entregáveis do Upsell.",
+    inputSchema: { type: "object", properties: { de: { type: "string" }, ate: { type: "string" }, plano: { type: "string" }, limite: { type: "integer" } } } },
+  { name: "tarefas_pendentes", description: "Tarefas abertas do time (João/SDR): ligações, respostas de lead, confirmações de reunião. Opcionalmente filtra por data (YYYY-MM-DD) ou trecho do tipo.",
+    inputSchema: { type: "object", properties: { data: { type: "string" }, tipo: { type: "string" }, limite: { type: "integer" } } } },
+  { name: "analise_anuncios", description: "Leads, ICP (60k+), gasto e CPL/CPQL por anúncio e conjunto no período (usa o gasto importado da Meta). Datas YYYY-MM-DD.",
+    inputSchema: { type: "object", properties: { de: { type: "string" }, ate: { type: "string" } }, required: ["de", "ate"] } },
+  { name: "ler_dados", description: "Leitura bruta de um nó do banco do CRM (só leitura, só nós de negócio). Nós: " + MCP_NOS_PERMITIDOS.join(", ") + ". Use 'campos' pra trazer só alguns campos e 'chave' pra um registro.",
+    inputSchema: { type: "object", properties: { no: { type: "string" }, chave: { type: "string" }, campos: { type: "string", description: "Lista separada por vírgula" }, limite: { type: "integer", description: "Padrão 300" } }, required: ["no"] } }
+];
+async function mcpCallTool(name, a) {
+  a = a || {};
+  if (name === "buscar_lead") {
+    var q = String(a.consulta || "").trim(); if (!q) throw new Error("informe 'consulta'");
+    var lim = Math.min(20, parseInt(a.limite, 10) || 5);
+    var D = await mcpLoad(["leads", "kanban", "meetings", "followups", "sdr_tarefas", "assinaturas"]);
+    var qd = mcpT9(q), soNum = /^[\d\s()+\-.]+$/.test(q), qt = q.toLowerCase(), hits = [];
+    var keys = {}; Object.keys(D.leads).forEach(function (k) { keys[k] = 1; }); Object.keys(D.kanban).forEach(function (k) { keys[k] = 1; });
+    Object.keys(keys).forEach(function (k) {
+      var l = D.leads[k] || {}, kb = D.kanban[k] || {};
+      var tel = mcpT9(l.telefone || kb.telefone || k);
+      var ok = soNum ? (qd.length >= 4 && tel.indexOf(qd.slice(-Math.min(qd.length, 9))) >= 0)
+        : (String(l.nome || kb.nome || "").toLowerCase().indexOf(qt) >= 0 || String(l.empresa || kb.empresa || "").toLowerCase().indexOf(qt) >= 0);
+      if (ok) hits.push(k);
+    });
+    hits.sort(function (x, y) { return ((D.leads[y] || {})._createdAt || 0) - ((D.leads[x] || {})._createdAt || 0); });
+    return { total: hits.length, leads: hits.slice(0, lim).map(function (k) {
+      var l = D.leads[k] || {}, kb = D.kanban[k] || {}, t9 = mcpT9(l.telefone || kb.telefone || k);
+      var reun = Object.keys(D.meetings).filter(function (m) { var x = D.meetings[m] || {}; return x.kanbanKey === k || (t9 && mcpT9(x.tel) === t9); })
+        .map(function (m) { var x = D.meetings[m] || {}, fu = D.followups[m] || {}; return { id: m, data: x.dtDisplay || x.dtISO || "", status: x.status || "", resultado: fu.resultado || "", closer: x.responsavel || "", semAutomacao: !!x.semAutomacao }; });
+      var vendas = Object.keys(D.followups).filter(function (f) { var x = D.followups[f] || {}; return x.resultado === "venda" && t9 && mcpT9(x.tel) === t9; })
+        .map(function (f) { var x = D.followups[f]; return { plano: x.plano || "", tipoValor: x.tipoValor || "", valor: mcpValorVenda(x), inicio: x.dataInicio || "", duracao: x.duracao || "", tipoVenda: x.tipoVenda || "" }; });
+      var tarefas = Object.keys(D.sdr_tarefas).filter(function (t) { var x = D.sdr_tarefas[t] || {}; return !x.done && x.leadKey === k; }).map(function (t) { var x = D.sdr_tarefas[t]; return { tipo: x.tipo || "", data: x.dataISO || "" }; });
+      var assin = Object.keys(D.assinaturas).filter(function (s) { var x = D.assinaturas[s] || {}; return t9 && mcpT9(x.telefone) === t9; }).map(function (s) { var x = D.assinaturas[s]; return { contrato: x.contratoNome || "", status: x.status || "", rascunho: !!x._rascunho, criado: mcpDayBRT(x.createdAt) }; });
+      var hist = Array.isArray(kb.historico) ? kb.historico : (kb.historico ? Object.values(kb.historico) : []);
+      return Object.assign(mcpLeadResumo(k, l, kb), { cadencia: (l.cadencia && l.cadencia.status) || "", reunioes: reun, vendas: vendas, tarefas_abertas: tarefas, contratos: assin,
+        anotacoes: hist.slice(-10).map(function (h) { return { em: mcpDayBRT(h.ts), autor: h.autor || "", texto: String(h.texto || "").slice(0, 400) }; }) });
+    }) };
+  }
+  if (name === "listar_leads") {
+    var D2 = await mcpLoad(["leads", "kanban"]); var lim2 = Math.min(2000, parseInt(a.limite, 10) || 200), out2 = [];
+    Object.keys(D2.leads).forEach(function (k) {
+      var l = D2.leads[k] || {}, kb = D2.kanban[k] || {};
+      if (!mcpInRange(mcpDayBRT(l._createdAt), a.de, a.ate)) return;
+      if (a.origem && String(l._source || l.origem || kb.origem || "").toLowerCase().indexOf(String(a.origem).toLowerCase()) < 0) return;
+      if (a.anuncio && String(l.ad || l.ad_name || "").toLowerCase().indexOf(String(a.anuncio).toLowerCase()) < 0) return;
+      if (a.status_funil && String(kb.status || "novo") !== String(a.status_funil)) return;
+      if (!mcpFaixaOk(l, a.faturamento_min, a.faturamento_max)) return;
+      if (a.so_icp && _fatMinSrv(l.faixa || "", l.faturamento || "") < 60000) return;
+      out2.push(mcpLeadResumo(k, l, kb));
+    });
+    out2.sort(function (x, y) { return x.entrou_em < y.entrou_em ? 1 : -1; });
+    return { total: out2.length, mostrando: Math.min(lim2, out2.length), leads: out2.slice(0, lim2) };
+  }
+  if (name === "resumo_funil" || name === "listar_reunioes" || name === "listar_vendas") {
+    var D3 = await mcpLoad(["leads", "kanban", "meetings", "followups", "vendas_excluidas"]);
+    var reunioes = [];
+    Object.keys(D3.meetings).forEach(function (mid) {
+      var m = D3.meetings[mid] || {}; if (m._hidden || m._retorno) return;
+      if (!mcpInRange(mcpDayISO(m.dtISO), a.de, a.ate)) return;
+      if (a.closer && String(m.responsavel || "").toLowerCase().indexOf(String(a.closer).toLowerCase()) < 0) return;
+      if (a.status && String(m.status || "") !== String(a.status)) return;
+      var fu = D3.followups[mid] || {}, l = D3.leads[m.kanbanKey] || {};
+      var res = String(fu.resultado || "").toLowerCase(), st = String(m.status || "").toLowerCase();
+      var cat = (res === "noshow" || st === "noshow") ? "no_show" : ((res || fu.comparecimento === "sim" || st === "done") ? "realizada" : ((st === "reagendado" || st === "cancelado") ? st : "pendente"));
+      reunioes.push({ id: mid, data: m.dtDisplay || m.dtISO || "", dia: mcpDayISO(m.dtISO), nome: m.nome || "", telefone: m.tel || "", closer: m.responsavel || "", sdr: m.sdrName || m.sdr || "",
+        origem: m.origem || l._source || "", faturamento: m.faturamentoLead || l.faturamento || l.faixa || "", situacao: cat, resultado: fu.resultado || "", plano: fu.plano || "", valor: res === "venda" ? mcpValorVenda(fu) : 0 });
+    });
+    var vendas = [];
+    Object.keys(D3.followups).forEach(function (fid) {
+      var fu = D3.followups[fid] || {}; if (fu.resultado !== "venda" || D3.vendas_excluidas[fid]) return;
+      var dia = fu.dataInicio || mcpDayBR(fu.dt); if (!mcpInRange(dia, a.de, a.ate)) return;
+      if (a.plano && String(fu.plano || "").toLowerCase() !== String(a.plano).toLowerCase()) return;
+      var m = D3.meetings[fu.meetingId] || D3.meetings[fid] || {};
+      var renov = fu.tipoVenda === "renovacao" || m._renovacao || /renova/i.test(String(m.origem || fu.origem || ""));
+      vendas.push({ id: fid, cliente: fu.contratante || fu.nome || m.nome || "", telefone: fu.tel || m.tel || "", inicio: dia, plano: fu.plano || "", tipoValor: fu.tipoValor || "",
+        valor: mcpValorVenda(fu), contrato_total: mcpNum(fu.contrato), mensalidade: mcpNum(fu.mensalidade), duracao: fu.duracao || "", tipo: renov ? "renovacao" : (String(fu.plano || "").toLowerCase() === "upsell" ? "upsell" : "novo"),
+        origem: fu.origem || m.origem || "", closer: m.responsavel || fu.closer || "", statusVenda: fu.statusVenda || "ativa",
+        adicionais: (fu.adicionais || []).map(function (x) { return x.nome; }), entregaveis_upsell: (fu.entregaveisUpsell || []).map(function (x) { return x.nome; }) });
+    });
+    var limR = Math.min(2000, parseInt(a.limite, 10) || 300);
+    if (name === "listar_reunioes") { reunioes.sort(function (x, y) { return x.dia < y.dia ? 1 : -1; }); return { total: reunioes.length, reunioes: reunioes.slice(0, limR) }; }
+    if (name === "listar_vendas") { vendas.sort(function (x, y) { return x.inicio < y.inicio ? 1 : -1; }); return { total: vendas.length, valor_total: vendas.reduce(function (t, v) { return t + v.valor; }, 0), vendas: vendas.slice(0, limR) }; }
+    // resumo
+    var L = { total: 0, icp: 0, sem_faturamento: 0, por_origem: {}, por_faixa: {}, por_anuncio: {} };
+    Object.keys(D3.leads).forEach(function (k) {
+      var l = D3.leads[k] || {}; if (!mcpInRange(mcpDayBRT(l._createdAt), a.de, a.ate)) return;
+      L.total++; var v = _fatMinSrv(l.faixa || "", l.faturamento || ""); var temFat = !!(String(l.faixa || l.faturamento || "").trim());
+      if (!temFat) L.sem_faturamento++; if (v >= 60000) L.icp++;
+      var fx = !temFat ? "sem dado" : (v >= 100000 ? "100k+" : v >= 60000 ? "60-100k" : v >= 40000 ? "40-60k" : v >= 20000 ? "20-40k" : "até 20k");
+      L.por_faixa[fx] = (L.por_faixa[fx] || 0) + 1;
+      var o = l._source || l.origem || "sem origem"; L.por_origem[o] = (L.por_origem[o] || 0) + 1;
+      var ad = String(l.ad || l.ad_name || "(sem anúncio)"); if (!L.por_anuncio[ad]) L.por_anuncio[ad] = { leads: 0, icp: 0 }; L.por_anuncio[ad].leads++; if (v >= 60000) L.por_anuncio[ad].icp++;
+    });
+    var R = { agendadas: reunioes.length, realizadas: 0, no_show: 0, pendentes: 0, reagendadas_canceladas: 0, por_closer: {} };
+    reunioes.forEach(function (r) { if (r.situacao === "realizada") R.realizadas++; else if (r.situacao === "no_show") R.no_show++; else if (r.situacao === "pendente") R.pendentes++; else R.reagendadas_canceladas++; var c = r.closer || "—"; if (!R.por_closer[c]) R.por_closer[c] = { agendadas: 0, realizadas: 0, no_show: 0, vendas: 0 }; R.por_closer[c].agendadas++; if (r.situacao === "realizada") R.por_closer[c].realizadas++; if (r.situacao === "no_show") R.por_closer[c].no_show++; if (r.resultado === "venda") R.por_closer[c].vendas++; });
+    var V = { quantidade: vendas.length, valor: 0, novos: 0, renovacoes: 0, upsell: 0, por_plano: {}, por_origem: {}, por_closer: {} };
+    vendas.forEach(function (v) { V.valor += v.valor; if (v.tipo === "renovacao") V.renovacoes++; else if (v.tipo === "upsell") V.upsell++; else V.novos++;
+      [["por_plano", v.plano || "—"], ["por_origem", v.origem || "—"], ["por_closer", v.closer || "—"]].forEach(function (p) { if (!V[p[0]][p[1]]) V[p[0]][p[1]] = { qtd: 0, valor: 0 }; V[p[0]][p[1]].qtd++; V[p[0]][p[1]].valor += v.valor; }); });
+    var topAds = Object.keys(L.por_anuncio).map(function (k) { return Object.assign({ anuncio: k }, L.por_anuncio[k]); }).sort(function (x, y) { return y.icp - x.icp || y.leads - x.leads; }).slice(0, 25);
+    L.por_anuncio = topAds;
+    function pct(x, y) { return y > 0 ? Math.round(x / y * 1000) / 10 : null; }
+    return { periodo: { de: a.de, ate: a.ate }, leads: L, reunioes: R, vendas: V,
+      conversoes: { lead_para_reuniao_pct: pct(R.agendadas, L.total), comparecimento_pct: pct(R.realizadas, R.realizadas + R.no_show), reuniao_realizada_para_venda_pct: pct(V.quantidade, R.realizadas), ticket_medio: V.quantidade ? Math.round(V.valor / V.quantidade) : 0 },
+      obs: "ICP = faturamento a partir de R$60 mil. Valor da venda: TCV = contrato total; MRR = mensalidade. Vendas pela data de início do contrato." };
+  }
+  if (name === "tarefas_pendentes") {
+    var T = (await db.ref("sdr_tarefas").once("value")).val() || {}; var limT = Math.min(1000, parseInt(a.limite, 10) || 200);
+    var lst = Object.keys(T).filter(function (k) { var t = T[k] || {}; if (t.done) return false; if (a.data && t.dataISO !== a.data) return false; if (a.tipo && String(t.tipo || "").toLowerCase().indexOf(String(a.tipo).toLowerCase()) < 0) return false; return true; })
+      .map(function (k) { var t = T[k]; return { id: k, tipo: t.tipo || "", data: t.dataISO || "", periodo: t.periodo || "", lead: t.nome || "", telefone: t.telefone || "", faturamento: t.faturamento || "", criada: mcpDayBRT(t.createdAt) }; })
+      .sort(function (x, y) { return x.data < y.data ? -1 : 1; });
+    var porTipo = {}; lst.forEach(function (t) { var tp = String(t.tipo).split("·")[0].trim(); porTipo[tp] = (porTipo[tp] || 0) + 1; });
+    return { total: lst.length, por_tipo: porTipo, tarefas: lst.slice(0, limT) };
+  }
+  if (name === "analise_anuncios") {
+    var D4 = await mcpLoad(["leads", "gasto_ads"]); var ads = {};
+    Object.keys(D4.leads).forEach(function (k) { var l = D4.leads[k] || {}; if (!mcpInRange(mcpDayBRT(l._createdAt), a.de, a.ate)) return;
+      var id = String(l.ad_id || "").trim(), nm = String(l.ad || l.ad_name || "(sem anúncio)"); var key = id || nm;
+      if (!ads[key]) ads[key] = { ad_id: id, anuncio: nm, conjunto: l.conjunto || l.adset_name || "", campanha: l.campanha || "", leads: 0, icp: 0, gasto: 0 };
+      ads[key].leads++; if (_fatMinSrv(l.faixa || "", l.faturamento || "") >= 60000) ads[key].icp++; });
+    var gastoTotal = 0;
+    Object.keys(D4.gasto_ads).forEach(function (day) { if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !mcpInRange(day, a.de, a.ate)) return; var g = D4.gasto_ads[day] || {};
+      Object.keys(g).forEach(function (adid) { var sp = mcpNum((g[adid] || {}).spend); gastoTotal += sp; if (!ads[adid]) ads[adid] = { ad_id: adid, anuncio: (g[adid] || {}).ad_name || adid, conjunto: (g[adid] || {}).adset_name || "", campanha: (g[adid] || {}).campaign_name || "", leads: 0, icp: 0, gasto: 0 }; ads[adid].gasto += sp; }); });
+    var arr = Object.keys(ads).map(function (k) { var x = ads[k]; x.gasto = Math.round(x.gasto * 100) / 100; x.cpl = x.leads && x.gasto ? Math.round(x.gasto / x.leads * 100) / 100 : null; x.custo_por_icp = x.icp && x.gasto ? Math.round(x.gasto / x.icp * 100) / 100 : null; return x; })
+      .sort(function (x, y) { return y.icp - x.icp || y.leads - x.leads || y.gasto - x.gasto; });
+    return { periodo: { de: a.de, ate: a.ate }, gasto_total: Math.round(gastoTotal * 100) / 100, anuncios: arr.slice(0, 150), obs: gastoTotal ? "" : "Sem gasto importado da Meta nesse período (gasto_ads vazio) — CPL/CPQL ficam nulos." };
+  }
+  if (name === "ler_dados") {
+    var no = String(a.no || "").replace(/^\/+|\/+$/g, "");
+    if (MCP_NOS_PERMITIDOS.indexOf(no) < 0) throw new Error("nó não permitido. Use um destes: " + MCP_NOS_PERMITIDOS.join(", "));
+    var chave = String(a.chave || "").replace(/[.#$\[\]]/g, "");
+    if (chave) { var one = (await db.ref(no + "/" + chave).once("value")).val(); return { no: no, chave: chave, valor: one }; }
+    var limD = Math.min(3000, parseInt(a.limite, 10) || 300);
+    var all = (await db.ref(no).once("value")).val() || {}; var ks = Object.keys(all);
+    var campos = String(a.campos || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+    var outD = {}; ks.slice(-limD).forEach(function (k) { var r = all[k]; if (campos.length && r && typeof r === "object") { var o = {}; campos.forEach(function (c) { if (r[c] !== undefined) o[c] = r[c]; }); outD[k] = o; } else outD[k] = r; });
+    return { no: no, total: ks.length, mostrando: Object.keys(outD).length, registros: outD };
+  }
+  throw new Error("ferramenta desconhecida: " + name);
+}
+async function mcpHandleOne(msg) {
+  var id = (msg && msg.id !== undefined) ? msg.id : null, method = msg && msg.method;
+  if (id === null || id === undefined) return null; // notificação: sem resposta
+  try {
+    if (method === "initialize") {
+      var pv = msg.params && msg.params.protocolVersion; if (MCP_VERSIONS.indexOf(pv) < 0) pv = MCP_VERSIONS[0];
+      return { jsonrpc: "2.0", id: id, result: { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "audens-crm", version: "1.0.0" },
+        instructions: "CRM comercial da Audens Company (assessoria de marketing para food service). Só leitura. Datas em YYYY-MM-DD no fuso de Brasília. ICP = faturamento a partir de R$60 mil. Comece por resumo_funil para visão geral e buscar_lead para um lead específico." } };
+    }
+    if (method === "ping") return { jsonrpc: "2.0", id: id, result: {} };
+    if (method === "tools/list") return { jsonrpc: "2.0", id: id, result: { tools: MCP_TOOLS.map(function (t) { return Object.assign({ annotations: { readOnlyHint: true, openWorldHint: false } }, t); }) } };
+    if (method === "tools/call") {
+      var p = msg.params || {};
+      try {
+        var r = await mcpCallTool(p.name, p.arguments || {});
+        var txt = JSON.stringify(r); if (txt.length > 400000) txt = txt.slice(0, 400000) + "…[cortado — use filtros/limite menores]";
+        return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: txt }] } };
+      } catch (e) { return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: "Erro: " + String((e && e.message) || e) }], isError: true } }; }
+    }
+    if (method === "resources/list") return { jsonrpc: "2.0", id: id, result: { resources: [] } };
+    if (method === "prompts/list") return { jsonrpc: "2.0", id: id, result: { prompts: [] } };
+    return { jsonrpc: "2.0", id: id, error: { code: -32601, message: "método não suportado: " + method } };
+  } catch (e) { return { jsonrpc: "2.0", id: id, error: { code: -32603, message: String((e && e.message) || e) } }; }
+}
+async function handleMcp(req, res) {
+  if (req.method === "GET" || req.method === "DELETE") { res.set("Allow", "POST"); return res.status(405).send("Method Not Allowed"); }
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+  if (!mcpAuthOk(req)) return res.status(401).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } });
+  var body = req.body; if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { return res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON inválido" } }); } }
+  if (Array.isArray(body)) { var outs = []; for (var i = 0; i < body.length; i++) { var o = await mcpHandleOne(body[i]); if (o) outs.push(o); } if (!outs.length) return res.status(202).send(""); return res.status(200).json(outs); }
+  var one = await mcpHandleOne(body || {});
+  if (!one) return res.status(202).send("");
+  return res.status(200).json(one);
+}
+// ═══════════════════════ FIM MCP ═══════════════════════
+
 http('receberLead', async (req, res) => {
   // CORS: o CRM (index.html) chama /agendar via fetch POST com
   // Content-Type: application/json, o que faz o navegador disparar um
@@ -5199,7 +5421,7 @@ http('receberLead', async (req, res) => {
   // fotos nunca chegam).
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type, X-Webhook-Secret");
+  res.set("Access-Control-Allow-Headers", "Content-Type, X-Webhook-Secret, Authorization, Mcp-Session-Id, Mcp-Protocol-Version");
 
   if (req.method === "OPTIONS") {
     return res.status(204).send("");
@@ -5646,6 +5868,9 @@ http('receberLead', async (req, res) => {
       await db.ref("config/nurturing").update(_nu);
       var _cur = (await db.ref("config/nurturing").once("value")).val() || {};
       return res.status(200).json({ ok: true, config: _cur });
+    }
+    if (path === "/mcp") {
+      return await handleMcp(req, res);
     }
     if (path === "/cockpit-venda") {
       return await handleCockpitProxy(req, res);
