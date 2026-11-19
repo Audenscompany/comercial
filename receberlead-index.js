@@ -992,6 +992,9 @@ async function handleReceberLead(req, res) {
       if (_nurtOn) { try { _nr = await nurtStart(key, leadData); } catch (e) { console.error("nurtStart:", e); } }
       if (!_nr.qualified) {
         try { await enviarMensagemWhatsapp(tel, mensagemPrimeiroContato(nome)); } catch (e) { console.error("momento0 valor:", e); }
+      } else {
+        // O intake só mandou o "Nome?" — o 1º toque da cadência (d1_manha, apresentação do João) sai ~5 min depois pela fila.
+        try { await cadEnqueueIntakeD1(key); } catch (e) { console.error("cadEnqueueIntakeD1:", e); }
       }
     }
   }
@@ -3413,6 +3416,32 @@ async function cadStart(leadKey, lead) {
   } catch (e) { console.error("cadStart:", e); }
 }
 
+// 1º toque da cadência disparado a partir do cadastro (o intake mandou só o "Nome?").
+async function cadEnqueueIntakeD1(leadKey) {
+  var cfg = await cadCfg();
+  var itemRef = db.ref("cadencia_fila/" + leadKey + "_d1_manha");
+  var created = false;
+  await itemRef.transaction(function (cur) { if (cur) return; created = true; return { leadKey: leadKey, templateId: "d1_manha", day: 1, period: "manha", intakeD1: true, status: "queued", batchId: "intake", scheduledAt: 0, createdAt: Date.now() }; });
+  if (!created) return false;
+  var sa = Math.max(Date.now() + 5 * 60000, await cadReserveSlot(cfg.intervalSeconds));
+  await itemRef.update({ scheduledAt: sa });
+  await db.ref("cadencia_msg/" + leadKey + "/d1_manha").set({ status: "queued", via: "intake_d1", templateId: "d1_manha", scheduledAt: sa });
+  return true;
+}
+async function cadValidateIntakeD1(leadKey) {
+  var lead = (await db.ref("leads/" + leadKey).once("value")).val();
+  if (!lead) return { eligible: false, reason: "lead_not_found" };
+  if (String(lead.telefone || "").replace(/\D/g, "").length < 10) return { eligible: false, reason: "invalid_phone", lead: lead };
+  var kb = (await db.ref("kanban/" + leadKey).once("value")).val() || {};
+  if (!CAD_COLUNAS_OK[kb.status || ""]) return { eligible: false, reason: (kb.status === "reuniao" ? "meeting_scheduled" : "left_columns"), lead: lead };
+  var opt = (await db.ref("whatsapp_optout/" + leadKey).once("value")).val();
+  if (opt && opt.optOut) return { eligible: false, reason: "opt_out", lead: lead };
+  var sent = (await db.ref("cadencia_msg/" + leadKey + "/d1_manha").once("value")).val();
+  if (sent && sent.status === "sent") return { eligible: false, reason: "already_sent", lead: lead };
+  if (!lead.especialistaNome) return { eligible: false, reason: "missing_variable", lead: lead };
+  return { eligible: true, reason: "eligible", lead: lead, touch: { templateId: "d1_manha", day: 1, period: "manha" } };
+}
+
 function cadTouchFor(cad, period, todayDate) {
   if (!cad || cad.status !== "active" || !cad.startedAt) return null;
   var day = cadDaysBetween(cad.startedAt, todayDate) + 1;
@@ -3532,8 +3561,8 @@ async function handleCadenciaDrain(req, res) {
     out.processed++;
     var item = (await itemRef.once("value")).val();
     var leadKey = item.leadKey;
-    // revalida
-    var v = await cadValidate(leadKey, item.period, today, true);
+    // revalida (o 1º toque vindo do cadastro tem validação própria — não depende do dia/período da cadência)
+    var v = item.intakeD1 ? await cadValidateIntakeD1(leadKey) : await cadValidate(leadKey, item.period, today, true);
     var msgRef = db.ref("cadencia_msg/" + leadKey + "/" + item.templateId);
     if (!v.eligible) {
       await itemRef.update({ status: "cancelled_before_send", cancelReason: v.reason, cancelledAt: Date.now() });
@@ -4563,9 +4592,8 @@ async function nurtTickCore(cfg) {
         await db.ref("leads/" + leadKey + "/nurt/ligouAt").set(nurt.ligouAt);
       }
     }
-    // 2) Mensagem de valor (apresentação do João) — sai sozinha 5min após o cadastro, sem esperar a ligação.
-    //    Recupera quem entrou nas últimas 24h e ficou sem ela; no máx. 2 envios por rodada (anti-rajada).
-    if (!nurt.valueSentAt && nurt.enteredAt && now >= (nurt.enteredAt + 5 * 60000) && (now - nurt.enteredAt) <= 24 * 3600000 && out.valor_enviado < 2) {
+    // 2) +5min após ligar -> mensagem de valor
+    if (nurt.ligouAt && !nurt.valueSentAt && now >= (nurt.ligouAt + 5 * 60000)) {
       try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE nurt valor] " : "") + mensagemPrimeiroContato(lead.nome || "")); } catch (e) {}
       await db.ref("leads/" + leadKey + "/nurt/valueSentAt").set(now); out.valor_enviado++;
     }
