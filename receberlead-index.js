@@ -5205,7 +5205,10 @@ function mcpAuthOk(req) {
   if (!tok) return false; // sem token configurado o MCP fica fechado
   var h = String(req.headers["authorization"] || "");
   var given = h.toLowerCase().indexOf("bearer ") === 0 ? h.slice(7).trim() : String(req.headers["x-mcp-token"] || "");
-  return given === tok;
+  if (given === tok) return true;
+  // alternativa: chave na própria URL  .../mcp/<MCP_TOKEN>  (evita o Claude tentar OAuth)
+  var pth = String(req.path || "").replace(/\/+$/, "");
+  return pth.indexOf("/mcp/") === 0 && pth.slice(5) === tok;
 }
 function mcpDayBRT(ms) { if (!ms) return ""; var d = new Date(Number(ms) - 3 * 3600 * 1000); if (isNaN(d)) return ""; return d.toISOString().slice(0, 10); }
 function mcpDayISO(iso) { if (!iso) return ""; var d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 10); return mcpDayBRT(d.getTime()); }
@@ -5869,8 +5872,12 @@ http('receberLead', async (req, res) => {
       var _cur = (await db.ref("config/nurturing").once("value")).val() || {};
       return res.status(200).json({ ok: true, config: _cur });
     }
-    if (path === "/mcp") {
+    if (path === "/mcp" || path.indexOf("/mcp/") === 0) {
       return await handleMcp(req, res);
+    }
+    // MCP sem OAuth: descoberta de OAuth não existe neste servidor (evita o Claude tentar registrar)
+    if (path.indexOf("/.well-known/") === 0 || path === "/register" || path === "/authorize" || path === "/token") {
+      return res.status(404).json({ error: "not_found" });
     }
     if (path === "/cockpit-venda") {
       return await handleCockpitProxy(req, res);
