@@ -4563,8 +4563,9 @@ async function nurtTickCore(cfg) {
         await db.ref("leads/" + leadKey + "/nurt/ligouAt").set(nurt.ligouAt);
       }
     }
-    // 2) +5min após ligar -> mensagem de valor
-    if (nurt.ligouAt && !nurt.valueSentAt && now >= (nurt.ligouAt + 5 * 60000)) {
+    // 2) Mensagem de valor (apresentação do João) — sai sozinha 5min após o cadastro, sem esperar a ligação.
+    //    Recupera quem entrou nas últimas 24h e ficou sem ela; no máx. 2 envios por rodada (anti-rajada).
+    if (!nurt.valueSentAt && nurt.enteredAt && now >= (nurt.enteredAt + 5 * 60000) && (now - nurt.enteredAt) <= 24 * 3600000 && out.valor_enviado < 2) {
       try { await enviarMensagemWhatsapp(alvo, (cfg.testPhone ? "[TESTE nurt valor] " : "") + mensagemPrimeiroContato(lead.nome || "")); } catch (e) {}
       await db.ref("leads/" + leadKey + "/nurt/valueSentAt").set(now); out.valor_enviado++;
     }
