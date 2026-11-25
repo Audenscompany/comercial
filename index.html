@@ -470,16 +470,20 @@ window.addEventListener('DOMContentLoaded', function(){
     localStorage.setItem('audens_session',JSON.stringify({email:ident}));
     showMain();
   }
-  // 1) Sessao REAL do Firebase Auth (persistida) — autoridade quando existir
+  // Sessao REAL do Firebase Auth e a UNICA autoridade. O banco so aceita leitura/escrita
+  // com login real; abrir o CRM pela sessao salva no navegador deixava a tela "logada"
+  // mas tudo dava PERMISSION_DENIED. Sem login real -> tela de entrada.
   try{
     if(typeof firebase!=='undefined' && firebase.auth){
-      firebase.auth().onAuthStateChanged(function(user){ if(user && user.email) _bootFromEmail(user.email); });
+      firebase.auth().onAuthStateChanged(function(user){
+        if(user && user.email){ _bootFromEmail(user.email); return; }
+        var estavaDentro=_bootDone || (document.getElementById('main-screen')||{classList:{contains:function(){return false;}}}).classList.contains('active');
+        _bootDone=false;
+        doLogout();
+        if(estavaDentro){ var _er=document.getElementById('login-err'); if(_er) _er.textContent='Sua sessão expirou. Entre de novo para continuar.'; }
+      });
     }
   }catch(e){}
-  // 2) Fallback de transicao: enquanto o login real nao esta ativo (regras ainda abertas),
-  //    restaura a sessao local. Assim que o Auth real assume, este ramo e ignorado.
-  var saved=localStorage.getItem('audens_session');
-  if(saved){ try{ var s=JSON.parse(saved); setTimeout(function(){ if(!_bootDone && !(typeof firebase!=='undefined'&&firebase.auth&&firebase.auth().currentUser)) _bootFromEmail(s.email); }, 900); }catch(e){ localStorage.removeItem('audens_session'); } }
 });
 // ===== FIREBASE CONFIG =====
 var firebaseConfig = {
@@ -5035,11 +5039,19 @@ function doLogin(){
     if(typeof firebase!=='undefined' && firebase.auth){
       firebase.auth().signInWithEmailAndPassword(em,pw)
         .then(function(){ _finish(); })
-        .catch(function(e){ _fallbackLocal(); }); // conta ainda nao criada / provider off / etc -> transicao
+        .catch(function(e){
+          // Sem fallback local: entrar sem login real abre o CRM "vazio" e nada salva.
+          var c=(e&&e.code)||'';
+          if(c==='auth/wrong-password'||c==='auth/invalid-credential'||c==='auth/invalid-login-credentials') er.textContent='Senha incorreta.';
+          else if(c==='auth/user-not-found') er.textContent='Esse e-mail ainda não tem login ativo no CRM. Use "Entrar com Google" ou fale com o Lucas.';
+          else if(c==='auth/too-many-requests') er.textContent='Muitas tentativas. Espere alguns minutos e tente de novo.';
+          else if(c==='auth/network-request-failed') er.textContent='Sem conexão. Verifique a internet e tente de novo.';
+          else er.textContent='Não foi possível entrar ('+(c||'erro')+').';
+        });
       return;
     }
   }catch(e){}
-  _fallbackLocal();
+  er.textContent='Login indisponível neste navegador. Recarregue a página.';
 }
 function doLogout(){
   try{ if(typeof firebase!=='undefined'&&firebase.auth) firebase.auth().signOut(); }catch(e){}
