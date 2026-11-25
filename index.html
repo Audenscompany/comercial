@@ -15,6 +15,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Audens Company · CRM</title>
 <script>window.__CRM_BUILD="2026-09-08-tabelas-valor";console.info("CRM build:",window.__CRM_BUILD);</script>
+<script>
+// O localStorage é só cache (a fonte é o Firebase). Quando enche (limite ~5 MB), setItem
+// lançava QuotaExceededError e derrubava ações no meio (ex.: agendar reunião não fechava).
+// Aqui: se não couber, tira a versão velha da mesma chave e tenta de novo; se ainda não couber,
+// segue sem cache dessa chave (sem quebrar a ação e sem deixar cache desatualizado).
+(function(){try{var _set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){try{return _set.call(this,k,v);}catch(e){if(e&&(e.name==='QuotaExceededError'||e.name==='NS_ERROR_DOM_QUOTA_REACHED'||e.code===22||e.code===1014)){try{this.removeItem(k);}catch(_){}try{return _set.call(this,k,v);}catch(e2){try{console.warn('[storage] sem espaço para "'+k+'": segue só no Firebase');}catch(_){}return;}}throw e;}};}catch(e){}})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
