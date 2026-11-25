@@ -1560,6 +1560,8 @@ async function confirmarAgendamentoReuniao(key){
   localStorage.setItem('audens_kanban', JSON.stringify(kanbanData));
   saveAll();saveMeetingFB(mid,meetingObj);
   if(fbDb || initFirebase()){ fbDb.ref('kanban/'+key).update({meetingId:mid}); }
+  // Lead do Disparo Black: marca "Agendado" só agora, com a reunião criada
+  try{ if(fbDb){ fbDb.ref('reat_blast_fila/'+key).once('value').then(function(s){ if(s.exists()) fbDb.ref('reat_blast_fila/'+key+'/agendado').set(true); }); if(typeof _bfFilaCache!=='undefined') _bfFilaCache=null; } }catch(e){}
   // Preenche a planilha de reunioes e salva o número da linha no meeting para updates futuros
   // Só grava se tiver dados mínimos (evita linhas em branco por double-click ou corrida)
   if(kanbanData[key]&&kanbanData[key].nome&&meetingDisplay){
@@ -35900,7 +35902,7 @@ function bfMarcarReuniao(tel,nome,origemDet){
   var novo=Object.assign({},cur,{nome:(nome||cur.nome||''),telefone:tel,origem:'Disparo Black Friday',origemDetalhe:det,_source:'disparo-black',_createdAt:(cur._createdAt||now),status:'qualificado',statusAt:now,statusHistory:Object.assign({},(cur.statusHistory||{}),{qualificado:now}),naoArquivar:true});
   if(typeof kanbanData!=='undefined') kanbanData[kkey]=novo;
   try{ if(window.fbDb) fbDb.ref('kanban/'+kkey).update(novo); }catch(e){}
-  try{ if(window.fbDb) fbDb.ref('reat_blast_fila/'+kkey+'/agendado').set(true); }catch(e){}
+  // "Agendado" no disparo só é marcado quando a reunião é confirmada (confirmarAgendamentoReuniao)
   if(typeof abrirAgendarReuniao==='function'){ abrirAgendarReuniao(kkey); }
   else { showToast&&showToast('Lead no Funil (Qualificado). Abra o Funil pra agendar.'); }
 }
